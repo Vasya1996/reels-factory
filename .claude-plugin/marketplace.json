@@ -1,0 +1,15 @@
+{
+  "name": "reels-factory-market",
+  "description": "Маркетплейс коробочной фабрики рилсов: AI-блогер и продуктовый цикл выпуска вертикальных рилсов на своих ключах HeyGen и ElevenLabs.",
+  "owner": {
+    "name": "Vasya"
+  },
+  "plugins": [
+    {
+      "name": "reels-factory",
+      "source": "./plugins/reels-factory",
+      "description": "Коробочная фабрика рилсов: AI-блогер + видеоряд по теме и продуктовый цикл анализ → гипотезы → сценарий → рилс → playbook.",
+      "version": "0.1.0"
+    }
+  ]
+}
