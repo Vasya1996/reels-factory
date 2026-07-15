@@ -79,7 +79,15 @@ def _cmd_verify(args, cfg):
 
     wd = _resolve_workdir(args.workdir)
     mp4 = Path(args.mp4) if args.mp4 else wd / "reel.mp4"
-    timed = json.loads((wd / "scenario.timed.json").read_text(encoding="utf-8"))
+    timed_path = wd / "scenario.timed.json"
+    try:
+        timed = json.loads(timed_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        print(json.dumps(
+            {"ok": False, "error": f"Не найден {timed_path}: сначала выполните "
+             "'python -m reels_factory make' (сборка создаёт scenario.timed.json)."},
+            ensure_ascii=False))
+        sys.exit(1)
     words_path = wd / "words.fixed.json"
     words = json.loads(words_path.read_text(encoding="utf-8")) if words_path.exists() else None
     qa = verify_reel(mp4, timed, words=words, hypothesis=_fixes_hypothesis(cfg))
