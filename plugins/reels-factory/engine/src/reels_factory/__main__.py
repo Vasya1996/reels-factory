@@ -114,7 +114,8 @@ def main():
     p_m.add_argument("--offset", type=float, default=None,
                      help="один offset на весь ролик (без --broll-plan)")
     p_m.add_argument("--broll-plan", default=None, dest="broll_plan",
-                     help="JSON {segments:[{role,offset,slow?}], ...} — мультисегментный низ")
+                     help="JSON {segments:[{role,offset,slow?}], punch:[[start,dur],...], ...} "
+                          "— мультисегментный низ + панч-окна (наезд на килл/пик-моментах)")
 
     p_v = sub.add_parser("verify", help="перепроверить готовый рилс (7 QA-гейтов)")
     p_v.add_argument("--workdir", required=True)

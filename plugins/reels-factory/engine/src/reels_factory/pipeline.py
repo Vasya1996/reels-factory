@@ -61,6 +61,7 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
     avatar_cfg = config.get("avatar") or {}
     caption_fixes = build_caption_fixes(_fixes_hypothesis(config))
     broll_segments = broll_plan.get("segments") if broll_plan else None
+    punch_windows = broll_plan.get("punch") if broll_plan else None
 
     if fmt == "split" and avatar_client is None:
         avatar_client = HeyGenClient(
@@ -103,7 +104,8 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
         res = assemble_fn(wd, scenario, broll_mp4, broll_offset_s, out_mp4,
                           format=fmt, avatar_mp4s=avatar_mp4s or None,
                           voice_wavs=voice_wavs or None,
-                          broll_segments=broll_segments, caption_fixes=caption_fixes)
+                          broll_segments=broll_segments, punch_windows=punch_windows,
+                          caption_fixes=caption_fixes)
         mp4 = res["mp4"]
         timed = res["timed_scenario"]
         words = res.get("words_fixed")

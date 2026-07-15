@@ -109,12 +109,12 @@ python -m venv .venv
 Спроси у пользователя путь(и) к фото для аватара-блогерши.
 
 Правило кадра (важно для формата `split` — верхняя часть экрана 1080×672):
-- фото должно быть **горизонтальным** (альбомная ориентация, примерно
-  1080×672 либо шире — этот регион и так кропается движком под 1080×672
-  на этапе сборки, финальный кроп делает ffmpeg, HeyGen генерирует видео
-  под исходный размер фото, см. `avatar.py`: `_generate_v3`);
-- лицо **не должно быть по центру самого края кадра** (не впритык к рамке —
-  оставь отступы, иначе после кропа 1080×672 лицо может обрезаться);
+- соотношение сторон фото близкое к 1080×672 НЕ обязательно — движок сам
+  кадрирует под нужный размер (`scale=...:force_original_aspect_ratio=increase,
+  crop=...`, см. `compose.py`), HeyGen генерирует видео под исходный размер
+  фото (`avatar.py`: `_generate_v3`), а финальный кроп уже делает ffmpeg;
+- лицо держи **по центру кадра** — при кропе под 1080×672 края могут
+  срезаться, особенно если фото сильно шире или уже целевого соотношения;
 - взгляд — **«в монитор»** (прямо в камеру), т.к. в split-формате аватар
   занимает верх экрана и должен визуально обращаться к зрителю.
 
@@ -137,7 +137,7 @@ requests — при 401/403 сообщи пользователю, что клю
 ## Шаг 6. Голос: список русских голосов ElevenLabs
 
 ```powershell
-$env:ELEVENLABS_API_KEY="<ключ>"; .venv\Scripts\python.exe -c "import os,requests; k=os.environ['ELEVENLABS_API_KEY']; r=requests.get('https://api.elevenlabs.io/v2/voices', headers={'xi-api-key':k}, params={'page_size':100}); r.raise_for_status(); vs=r.json()['voices']; ru=[v for v in vs if any((l.get('language')=='ru') for l in (v.get('verified_languages') or []))]; pick=ru or vs; [print(v['voice_id'], '-', v['name']) for v in pick[:15]]"
+$env:ELEVENLABS_API_KEY="<ключ>"; .venv\Scripts\python.exe -c "import os,requests; k=os.environ['ELEVENLABS_API_KEY']; r=requests.get('https://api.elevenlabs.io/v2/voices', headers={'xi-api-key':k}, params={'page_size':100}, timeout=60); r.raise_for_status(); vs=r.json()['voices']; ru=[v for v in vs if any((l.get('language')=='ru') for l in (v.get('verified_languages') or []))]; pick=ru or vs; [print(v['voice_id'], '-', v['name']) for v in pick[:15]]"
 ```
 
 Из напечатанного списка выбери 3-5 голосов и предложи пользователю в чате

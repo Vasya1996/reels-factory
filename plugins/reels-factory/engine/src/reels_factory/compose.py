@@ -208,12 +208,14 @@ def retime_scenario(scenario: dict, frag_durs: list) -> dict:
 
 def build_concat_filter(n: int, holds: list) -> str:
     """filter_complex для конката аватар-фрагментов (split) с нормализацией к
-    1080x672/FPS. Хвост фрагмента продлевается заморозкой последнего кадра на
-    holds[i] секунд (видео tpad=stop_mode=clone, аудио apad) — на паузу после
-    блока. holds — список по всем фрагментам."""
+    1080x672/FPS (scale+crop, чтобы фото/видео другого соотношения не
+    растягивалось). Хвост фрагмента продлевается заморозкой последнего кадра
+    на holds[i] секунд (видео tpad=stop_mode=clone, аудио apad) — на паузу
+    после блока. holds — список по всем фрагментам."""
     parts, maps = [], []
     for i in range(n):
-        vchain = f"[{i}:v]scale={OUT_W}:{TOP_H},fps={FPS},setsar=1"
+        vchain = (f"[{i}:v]scale={OUT_W}:{TOP_H}:force_original_aspect_ratio=increase,"
+                  f"crop={OUT_W}:{TOP_H},fps={FPS},setsar=1")
         achain = f"[{i}:a]aresample=48000"
         hold = float(holds[i]) if i < len(holds) else 0.0
         if hold > 0:
@@ -368,12 +370,13 @@ def build_punch_filter(in_label: str, punch_windows: list) -> tuple:
 def build_video_filter(fmt: str, punch_windows: list | None = None) -> str:
     """Видео-часть filter_complex.
 
-    split: [0:v]=аватар-верх (scale 1080x672) + [1:v]=видеоряд (scale/crop
+    split: [0:v]=аватар-верх (scale/crop 1080x672) + [1:v]=видеоряд (scale/crop
     1080x1248) -> vstack -> [base]. fullscreen: [0:v]=видеоряд (scale/crop
     1080x1920) -> [base]. Затем (опц.) панч-ины. Выход [v]."""
     if fmt == "split":
         parts = [
-            f"[0:v]scale={OUT_W}:{TOP_H},setsar=1[top]",
+            f"[0:v]scale={OUT_W}:{TOP_H}:force_original_aspect_ratio=increase,"
+            f"crop={OUT_W}:{TOP_H},setsar=1[top]",
             f"[1:v]scale={OUT_W}:{BOT_H}:force_original_aspect_ratio=increase,"
             f"crop={OUT_W}:{BOT_H},setsar=1,fps={FPS}[bot]",
             "[top][bot]vstack=inputs=2[base]",

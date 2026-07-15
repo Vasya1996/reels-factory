@@ -57,6 +57,7 @@ def _fakes(monkeypatch, tmp_path, calls, captured=None):
         if captured is not None:
             captured["caption_fixes"] = kw.get("caption_fixes")
             captured["broll_segments"] = kw.get("broll_segments")
+            captured["punch_windows"] = kw.get("punch_windows")
         Path(out_mp4).write_bytes(b"")
         timed = dict(scenario, total=25.0)
         return {"mp4": str(out_mp4), "dur": 25.0, "lufs": -14.0,
@@ -156,3 +157,33 @@ def test_caption_fixes_и_broll_plan_прокидываются(monkeypatch, tmp
     assert "Гайд" in captured["caption_fixes"]
     assert "кофе" in captured["caption_fixes"]
     assert captured["broll_segments"] == broll_plan["segments"]
+
+
+def test_punch_из_broll_plan_прокидывается_в_assemble(monkeypatch, tmp_path):
+    calls = []
+    captured = {}
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+    broll_plan = {"segments": [{"role": "hook", "offset": 30.0}],
+                  "punch": [[15.0, 0.5], [20.0, 0.6]], "facts": {}}
+
+    res = pipeline.run_make(_cfg("split"), "broll.mp4", 0.0, wd, broll_plan=broll_plan,
+                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi, assemble_fn=fa)
+
+    assert res["ok"] is True
+    assert captured["punch_windows"] == broll_plan["punch"]
+
+
+def test_без_broll_plan_punch_windows_none(monkeypatch, tmp_path):
+    calls = []
+    captured = {}
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+
+    res = pipeline.run_make(_cfg("split"), "broll.mp4", 30.0, wd,
+                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi, assemble_fn=fa)
+
+    assert res["ok"] is True
+    assert captured["punch_windows"] is None

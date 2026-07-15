@@ -36,29 +36,31 @@ TikTok сюда сам не ищешь — только если пользов�
 На каждую фразу из `niche_keywords` (и на саму тему, если фраз мало):
 
 ```powershell
-.venv\Scripts\yt-dlp.exe "ytsearch40:<ключевая фраза> shorts" --dump-json --no-warnings --skip-download >> work/research_pool.jsonl
+.venv\Scripts\yt-dlp.exe "ytsearch40:<ключевая фраза> shorts" --print "%(id)s\t%(view_count)s\t%(duration)s\t%(upload_date)s\t%(channel)s\t%(channel_id)s\t%(title)s" --no-warnings --skip-download >> work/research_pool.tsv
 ```
 
-`--dump-json` даёт по одной JSON-строке на видео: `id`, `webpage_url`,
-`title`, `view_count`, `duration`, `upload_date` (YYYYMMDD), `channel_id`,
-`channel_url`, `channel`. Собери строки в `work/research_pool.jsonl`, убери
-дубли по `id`.
+`--print` печатает ОДНУ короткую строку на видео (7 полей через таб): `id`,
+`view_count`, `duration`, `upload_date` (YYYYMMDD), `channel`, `channel_id`,
+`title`. НЕ используй `--dump-json` здесь — полный JSON на видео весит на
+порядки больше и не даёт ничего, чего нет в этих 7 полях (правило «сырые
+json yt-dlp не читать» — см. «Общие правила»). URL видео при необходимости
+собери сам: `https://www.youtube.com/watch?v=<id>`. Собери строки в
+`work/research_pool.tsv`, убери дубли по `id`.
 
 Шортс — обычно `duration` ≤ 60-180с; ytsearch-выдача может подмешать обычные
 ролики — отфильтруй их по `duration` и по факту, что ролик лежит в разделе
 `/shorts` канала (проверишь на шаге 2).
 
-Критерий: в `work/research_pool.jsonl` есть уникальные кандидаты (без дублей
-по `id`), у каждого — `view_count`, `duration`, `channel_id`/`channel_url`,
-`upload_date`.
+Критерий: в `work/research_pool.tsv` есть уникальные кандидаты (без дублей
+по `id`), у каждого — `view_count`, `duration`, `channel_id`, `upload_date`.
 
 ## Шаг 2. Медиана канала и множитель виральности
 
-На каждый уникальный `channel_id`/`channel_url` из пула — последние ~20
-шортсов этого канала:
+На каждый уникальный `channel_id` из пула — последние ~20 шортсов этого
+канала (URL канала собери сам: `https://www.youtube.com/channel/<channel_id>`):
 
 ```powershell
-.venv\Scripts\yt-dlp.exe "<channel_url>/shorts" --dump-json --no-warnings --skip-download --playlist-end 20 >> work/channel_<id>.jsonl
+.venv\Scripts\yt-dlp.exe "https://www.youtube.com/channel/<channel_id>/shorts" --print "%(id)s\t%(view_count)s\t%(duration)s\t%(upload_date)s\t%(channel)s\t%(channel_id)s\t%(title)s" --no-warnings --skip-download --playlist-end 20 >> work/channel_<id>.tsv
 ```
 
 Посчитай медиану `view_count` по этим ~20 роликам. На каждого кандидата из
@@ -94,8 +96,9 @@ TikTok сюда сам не ищешь — только если пользов�
 .venv\Scripts\yt-dlp.exe "<url>" -f "bv*[height<=1080]+ba/b[height<=1080]/b" --merge-output-format mp4 --no-warnings -o "work/research/<n>/source.mp4"
 ```
 
-(`<n>` — порядковый номер ролика в выборке.) Критерий: у каждого отобранного
-ролика есть `work/research/<n>/source.mp4`.
+(`<n>` — порядковый номер ролика в выборке; `<url>` — либо ссылка, присланная
+пользователем, либо `https://www.youtube.com/watch?v=<id>` по `id` из шага 1.)
+Критерий: у каждого отобранного ролика есть `work/research/<n>/source.mp4`.
 
 ## Шаг 5. Хук покадрово — контактный лист + транскрипция
 
@@ -122,13 +125,24 @@ ffmpeg -y -ss 0 -t 3 -i work/research/<n>/source.mp4 -vf "fps=6,scale=320:-1,til
 
 ## Шаг 6. Комментарии
 
+Скачай комментарии в сырой info.json (НЕ читай этот файл сам — он может
+разрастись на тысячи строк и разнести контекст):
+
 ```powershell
-.venv\Scripts\yt-dlp.exe "<url>" --write-comments --dump-json --skip-download --no-warnings > work/research/<n>/meta_comments.json
+.venv\Scripts\yt-dlp.exe "<url>" --write-comments --write-info-json --skip-download --no-warnings -o "work/research/<n>/meta"
 ```
 
-Из поля `comments` возьми топ по `like_count`: цитаты «что зацепило»,
-повторяющиеся вопросы/боли аудитории, реакция на конкретные приёмы. Для
-TikTok, если yt-dlp не отдаёт комментарии — так и отметь, не выдумывай.
+Сразу отфильтруй его в компактный текст (топ-20 по `like_count`, автор+текст,
+обрезка 200 символов) — и читай ДАЛЬШЕ только этот файл:
+
+```powershell
+.venv\Scripts\python.exe -c "import json; d=json.load(open('work/research/<n>/meta.info.json', encoding='utf-8')); cs=sorted(d.get('comments') or [], key=lambda c: c.get('like_count') or 0, reverse=True)[:20]; lines=[str(c.get('author') or '?') + ': ' + str(c.get('text') or '')[:200] for c in cs]; open('work/research/<n>/comments_top.txt', 'w', encoding='utf-8').write(chr(10).join(lines)); print('ok', len(lines))"
+```
+
+Прочитай инструментом чтения файлов ТОЛЬКО `work/research/<n>/comments_top.txt`
+— из него возьми топ по лайкам: цитаты «что зацепило», повторяющиеся вопросы/
+боли аудитории, реакция на конкретные приёмы. Для TikTok, если yt-dlp не
+отдаёт комментарии — так и отметь, не выдумывай.
 
 ## Шаг 7. Разбор по канону → `factory/analysis-<тема>.md`
 
@@ -165,6 +179,11 @@ question_hook/before_after/insight_reveal/другое своими словам
 рецепт явно выделяется.
 
 ## Общие правила
+- Сырые JSON/JSONL-выдачи yt-dlp (полный `--dump-json`, `meta.info.json` с
+  комментариями) НИКОГДА не читай инструментом чтения файлов целиком — они
+  раздувают контекст токенами. Используй `--print` с коротким списком полей
+  (шаги 1-2) и питон-фильтр в компактный текст (шаг 6, `comments_top.txt`) —
+  читай только их.
 - Неоднозначная формулировка (порог отбора, спорный паттерн) — переспроси
   пользователя, не решай молча.
 - Свои надписи на видеоряд НИКОГДА не добавляй — даже если у конкурентов в

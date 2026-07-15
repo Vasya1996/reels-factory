@@ -48,7 +48,8 @@ def _scenario():
 def test_build_video_filter_split_vstack():
     fc = build_video_filter("split")
     assert "vstack" in fc
-    assert f"scale=1080:{TOP_H}" in fc
+    assert f"scale=1080:{TOP_H}:force_original_aspect_ratio=increase" in fc
+    assert f"crop=1080:{TOP_H}" in fc
     assert f"scale=1080:{BOT_H}:force_original_aspect_ratio=increase" in fc
     assert f"crop=1080:{BOT_H}" in fc
     assert "fps=30" in fc
@@ -141,9 +142,10 @@ def test_retime_pause_after_сдвигает_следующий():
 def test_build_concat_filter_tpad_только_на_паузе():
     holds = [0.5, 0.0, 0.0, 0.0]
     fc = build_concat_filter(4, holds)
-    assert "[0:v]scale=1080:672,fps=30,setsar=1,tpad=stop_mode=clone:stop_duration=0.500[v0]" in fc
+    assert ("[0:v]scale=1080:672:force_original_aspect_ratio=increase,crop=1080:672,"
+            "fps=30,setsar=1,tpad=stop_mode=clone:stop_duration=0.500[v0]") in fc
     assert "[0:a]aresample=48000,apad=pad_dur=0.500[a0]" in fc
-    assert "[1:v]scale=1080:672,fps=30,setsar=1[v1]" in fc
+    assert "[1:v]scale=1080:672:force_original_aspect_ratio=increase,crop=1080:672,fps=30,setsar=1[v1]" in fc
     assert fc.count("tpad") == 1
     assert fc.endswith("concat=n=4:v=1:a=1[v][a]")
 

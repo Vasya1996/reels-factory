@@ -29,6 +29,17 @@ def test_verify_без_scenario_timed_чистая_ошибка(monkeypatch, tmp
     assert "reels_factory make" in out["error"]
 
 
+def test_make_help_упоминает_punch(monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["reels_factory", "make", "--help"])
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "punch" in out
+
+
 def test_verify_с_scenario_timed_работает(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(cli, "WORK_ROOT", tmp_path)
     wd = tmp_path / "demo"
