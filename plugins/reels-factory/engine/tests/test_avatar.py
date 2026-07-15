@@ -1,0 +1,174 @@
+from pathlib import Path
+
+from reels_factory.avatar import DEFAULT_MOTION_PROMPT, HeyGenClient, cached_generate
+
+
+class _Resp:
+    def __init__(self, payload=None, content=b""):
+        self._p, self.content = payload, content
+
+    def json(self):
+        return self._p
+
+    def raise_for_status(self):
+        pass
+
+
+class _FakeHttp:
+    def __init__(self):
+        self.posts, self.gets, self._n = [], [], 0
+
+    def post(self, url, json=None, headers=None, timeout=None, files=None):
+        self.posts.append((url, json, headers, files))
+        if "assets" in url:
+            return _Resp({"data": {"asset_id": "aud1"}})
+        return _Resp({"data": {"video_id": "vid1"}})
+
+    def get(self, url, headers=None, timeout=None):
+        self.gets.append(url)
+        if "/videos/" in url:
+            self._n += 1
+            st = "processing" if self._n < 2 else "completed"
+            return _Resp({"data": {"status": st, "video_url": "http://dl/x.mp4"}})
+        return _Resp(content=b"mp4bytes")
+
+
+def _wav(path: Path, data=b"wavdata") -> Path:
+    path.write_bytes(data)
+    return path
+
+
+class _RespWithStatus(_Resp):
+    def __init__(self, payload=None, content=b"", status_code=200):
+        super().__init__(payload, content)
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+class _FakeHttpV3Forbidden:
+    """Все v3-запросы (включая аплоад) отвечают 403 → должен сработать фолбэк на v2."""
+
+    def __init__(self):
+        self.posts, self.gets, self._n = [], [], 0
+
+    def post(self, url, json=None, headers=None, timeout=None, files=None, data=None):
+        self.posts.append((url, json, headers, files, data))
+        if "v3" in url:
+            return _RespWithStatus(status_code=403)
+        if "upload.heygen.com" in url:
+            return _RespWithStatus({"data": {"asset_id": "aud2"}})
+        return _RespWithStatus({"data": {"video_id": "vid2"}})
+
+    def get(self, url, headers=None, timeout=None):
+        self.gets.append(url)
+        if "video_status" in url:
+            self._n += 1
+            st = "processing" if self._n < 2 else "completed"
+            return _RespWithStatus({"data": {"status": st, "video_url": "http://dl/y.mp4"}})
+        return _RespWithStatus(content=b"mp4bytes2")
+
+
+def test_generate_загружает_аудио_создаёт_видео_с_motion_prompt_и_скачивает(tmp_path):
+    http = _FakeHttp()
+    c = HeyGenClient(api_key="k", avatar_id="a1", motion_prompt="ведёт эфир",
+                     http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "a.wav")
+
+    out = c.generate(audio, tmp_path / "out.mp4")
+
+    assert out.read_bytes() == b"mp4bytes"
+
+    upload_url, _, upload_headers, files = http.posts[0]
+    assert "assets" in upload_url
+    assert upload_headers["X-Api-Key"] == "k"
+    assert files is not None
+
+    create_url, body, create_headers, _ = http.posts[1]
+    assert "videos" in create_url
+    assert body["audio_asset_id"] == "aud1"
+    assert body["motion_prompt"] == "ведёт эфир"
+    assert create_headers["X-Api-Key"] == "k"
+
+    assert any("vid1" in g for g in http.gets)
+
+
+def test_дефолтный_motion_prompt_блогерша_в_камеру_и_expressiveness_medium(monkeypatch, tmp_path):
+    monkeypatch.delenv("HEYGEN_MOTION_PROMPT", raising=False)
+    monkeypatch.delenv("HEYGEN_EXPRESSIVENESS", raising=False)
+    http = _FakeHttp()
+    c = HeyGenClient(api_key="k", avatar_id="a1", http=http, sleep=lambda s: None)
+
+    assert c.motion_prompt == DEFAULT_MOTION_PROMPT
+    assert "camera" in DEFAULT_MOTION_PROMPT
+    assert c.expressiveness == "medium"
+
+    audio = _wav(tmp_path / "a.wav")
+    c.generate(audio, tmp_path / "out.mp4")
+    _, body, _, _ = http.posts[1]
+    assert body["expressiveness"] == "medium"
+    assert body["motion_prompt"] == DEFAULT_MOTION_PROMPT
+
+
+def test_expressiveness_из_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("HEYGEN_EXPRESSIVENESS", "low")
+    http = _FakeHttp()
+    c = HeyGenClient(api_key="k", avatar_id="a1", motion_prompt="m", http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "a.wav")
+
+    c.generate(audio, tmp_path / "out.mp4")
+
+    _, body, _, _ = http.posts[1]
+    assert body["expressiveness"] == "low"
+
+
+def test_кэш_не_дёргает_сеть(tmp_path):
+    http = _FakeHttp()
+    c = HeyGenClient(api_key="k", avatar_id="a1", motion_prompt="m", http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "cta.wav", b"ctawavdata")
+
+    p1 = cached_generate(c, audio, tmp_path / "cache")
+    n_posts = len(http.posts)
+    p2 = cached_generate(c, audio, tmp_path / "cache")
+
+    assert p1 == p2 and len(http.posts) == n_posts
+
+
+def test_кэш_другой_motion_prompt_даёт_другой_ключ(tmp_path):
+    http = _FakeHttp()
+    audio = _wav(tmp_path / "cta.wav", b"ctawavdata2")
+    cache_dir = tmp_path / "cache"
+
+    c1 = HeyGenClient(api_key="k", avatar_id="a1", motion_prompt="m1", http=http, sleep=lambda s: None)
+    p1 = cached_generate(c1, audio, cache_dir)
+    n_posts_after_first = len(http.posts)
+
+    c2 = HeyGenClient(api_key="k", avatar_id="a1", motion_prompt="m2", http=http, sleep=lambda s: None)
+    p2 = cached_generate(c2, audio, cache_dir)
+
+    assert p1 != p2
+    assert len(http.posts) > n_posts_after_first
+
+
+def test_v3_403_на_аплоаде_переключает_на_v2_без_повторного_захода_в_v3(tmp_path):
+    http = _FakeHttpV3Forbidden()
+    c = HeyGenClient(api_key="k", avatar_id="a1", motion_prompt="m", http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "a.wav")
+
+    out = c.generate(audio, tmp_path / "out.mp4")
+
+    assert out.read_bytes() == b"mp4bytes2"
+
+    v3_calls = [p for p in http.posts if "v3" in p[0]]
+    assert len(v3_calls) == 1  # только неудавшийся аплоад, повторного захода в v3 нет
+
+    v2_upload_calls = [p for p in http.posts if "upload.heygen.com" in p[0]]
+    assert len(v2_upload_calls) == 1
+
+    v2_create_calls = [p for p in http.posts if "v2/video/generate" in p[0]]
+    assert len(v2_create_calls) == 1
+    assert v2_create_calls[0][1]["video_inputs"][0]["voice"]["audio_asset_id"] == "aud2"
+
+    assert any("video_status" in g for g in http.gets)

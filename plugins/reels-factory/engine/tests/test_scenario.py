@@ -1,0 +1,173 @@
+import json
+
+from reels_factory.llm import FakeRunner
+from reels_factory.scenario import generate_scenario, validate_scenario, ScenarioError, _mentions_theme
+
+CTA = "пиши кофе в комменты"
+
+
+def _hyp(**kw):
+    base = {"theme": "кофе", "theme_spoken": "кофе", "cta_phrase": CTA, "product_name": "Гайд"}
+    base.update(kw)
+    return base
+
+
+def _ok_4blocks():
+    return {
+        "theme": "кофе", "hook_type": "insight_reveal", "premise": "p",
+        "title": "t", "broll_query": "q",
+        "blocks": [
+            {"role": "hook", "start": 0.0, "end": 3.0,
+             "speech": "Почему кофе дома всегда кислит?", "pause_after": 0.5},
+            {"role": "development", "start": 3.0, "end": 15.0, "speech": "молол слишком мелко"},
+            {"role": "payoff", "start": 15.0, "end": 22.0, "speech": "стало ровно и сладко"},
+            {"role": "cta", "start": 22.0, "end": 25.0, "speech": f"{CTA} — скину гайд"},
+        ],
+    }
+
+
+def _ok_5blocks():
+    sc = _ok_4blocks()
+    sc["blocks"] = [
+        sc["blocks"][0],
+        {"role": "context", "start": 3.0, "end": 6.0, "speech": "пробовал разные зёрна"},
+        {"role": "development", "start": 6.0, "end": 15.0, "speech": "молол слишком мелко"},
+        sc["blocks"][2], sc["blocks"][3],
+    ]
+    sc["blocks"][3]["start"] = 15.0
+    return sc
+
+
+def test_валидный_4блочный_проходит():
+    assert validate_scenario(_ok_4blocks(), _hyp()) == []
+
+
+def test_валидный_5блочный_проходит():
+    assert validate_scenario(_ok_5blocks(), _hyp()) == []
+
+
+def test_cta_без_дословной_фразы_ошибка():
+    sc = _ok_4blocks()
+    sc["blocks"][3]["speech"] = "подпишись на канал"
+    errs = validate_scenario(sc, _hyp())
+    assert any("cta" in e and "дословн" in e for e in errs)
+
+
+def test_generate_пишет_файл_и_ретраит(tmp_path):
+    bad = json.dumps({"blocks": []})
+    good = json.dumps(_ok_4blocks(), ensure_ascii=False)
+    runner = FakeRunner([bad, good])
+    sc = generate_scenario(tmp_path, _hyp(hook_type="insight_reveal"), runner)
+    assert sc["theme"] == "кофе"
+    assert json.loads((tmp_path / "scenario.json").read_text(encoding="utf-8"))["theme"] == "кофе"
+    assert len(runner.prompts) == 2
+
+
+def test_эмоц_теги_не_считаются_словами():
+    sc = _ok_4blocks()
+    tags = " ".join(f"[тег{i}]" for i in range(30))
+    sc["blocks"][1]["speech"] = tags + " короткая реплика"
+    assert validate_scenario(sc, _hyp()) == []
+
+
+def test_development_без_speech_ошибка():
+    sc = _ok_4blocks()
+    sc["blocks"][1]["speech"] = ""
+    errs = validate_scenario(sc, _hyp())
+    assert any("development" in e and "speech" in e for e in errs)
+
+
+def test_болтливый_сценарий_отклоняется():
+    sc = _ok_4blocks()
+    sc["blocks"][1]["speech"] = "слово " * 80
+    errs = validate_scenario(sc, _hyp())
+    assert any("слишком длинная" in e for e in errs)
+
+
+def test_hook_без_вопроса_валиден():
+    sc = _ok_4blocks()
+    sc["blocks"][0]["speech"] = "Кофе дома почти всегда кислит на этом шаге"
+    assert validate_scenario(sc, _hyp()) == []
+
+
+def test_hook_без_темы_ошибка():
+    sc = _ok_4blocks()
+    sc["blocks"][0]["speech"] = "Почему всегда получается кисло?"
+    sc["blocks"][1]["speech"] = "и что теперь делать?"
+    errs = validate_scenario(sc, _hyp())
+    assert any("тема" in e and "перв" in e for e in errs)
+
+
+def test_тема_только_в_development_валидна():
+    sc = _ok_4blocks()
+    sc["blocks"][0]["speech"] = "Зацените, что сейчас будет"
+    sc["blocks"][1]["speech"] = "весь секрет кофе — в помоле"
+    assert validate_scenario(sc, _hyp()) == []
+
+
+def test_hook_с_брендом_в_речи_ошибка():
+    sc = _ok_4blocks()
+    sc["blocks"][0]["speech"] = "Гайд по кофе спасёт твой завтрак"
+    errs = validate_scenario(sc, _hyp())
+    assert any("hook" in e and ("продукт" in e or "бренд" in e) for e in errs)
+
+
+def test_hook_упоминает_theme_spoken_из_гипотезы():
+    sc = _ok_4blocks()
+    sc["theme"] = "кофе"
+    sc["blocks"][0]["speech"] = "Почему эспрессо всегда горчит?"
+    # theme_spoken "эспрессо" встречается в хуке по корню
+    assert validate_scenario(sc, _hyp(theme_spoken="эспрессо")) == []
+
+
+def test_pause_after_вне_диапазона_ошибка():
+    sc = _ok_4blocks()
+    sc["blocks"][0]["pause_after"] = 2
+    errs = validate_scenario(sc, _hyp())
+    assert any("pause_after" in e for e in errs)
+
+
+def test_pause_after_в_диапазоне_ок():
+    sc = _ok_4blocks()
+    sc["blocks"][0]["pause_after"] = 0.5
+    assert validate_scenario(sc, _hyp()) == []
+
+
+def test_нарушение_скелета_роли():
+    sc = _ok_4blocks()
+    sc["blocks"][1]["role"] = "middle"
+    errs = validate_scenario(sc, _hyp())
+    assert any("roles" in e for e in errs)
+
+
+def test_mentions_theme_с_цифрой_матчится_по_корню():
+    assert _mentions_theme("Почему в Доте 2 саппорт виноват?", None, "Дота 2") is True
+
+
+def test_mentions_theme_без_упоминания_не_матчится():
+    assert _mentions_theme("...с напарником по делу", None, "ПАБГ") is False
+
+
+def test_mentions_theme_падежная_форма_матчится():
+    assert _mentions_theme("Почему в ПАБГе бегут в Покровку?", None, "ПАБГ") is True
+
+
+def test_промпт_содержит_theme_spoken_и_cta(tmp_path):
+    good = json.dumps(_ok_4blocks(), ensure_ascii=False)
+    runner = FakeRunner([good])
+    generate_scenario(tmp_path, _hyp(theme_spoken="эспрессо", hook_type="insight_reveal"), runner)
+    prompt = runner.prompts[0]
+    assert "эспрессо" in prompt
+    assert CTA in prompt
+
+
+def test_insight_и_facts_пробрасываются_в_промпт(tmp_path):
+    good = json.dumps(_ok_4blocks(), ensure_ascii=False)
+    runner = FakeRunner([good])
+    hyp = _hyp(insight="мелкий помол даёт переэкстракцию",
+               facts={"hook": "чашка кислого кофе", "payoff": "ровный вкус"})
+    generate_scenario(tmp_path, hyp, runner)
+    prompt = runner.prompts[0]
+    assert "мелкий помол даёт переэкстракцию" in prompt
+    assert "чашка кислого кофе" in prompt
+    assert "ровный вкус" in prompt
