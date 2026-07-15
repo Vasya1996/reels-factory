@@ -79,9 +79,17 @@ def build_caption_fixes(hypothesis: dict) -> dict:
     if theme:
         theme_spoken = hypothesis.get("theme_spoken") or theme
         variants = list(hypothesis.get("theme_captions") or [])
-        root = str(theme_spoken).strip().lower()
-        if root:
-            variants += [root + suf for suf in _THEME_CASE_SUFFIXES]
+        # Авто-словоформы корня — только когда theme само однословное (кейс
+        # "theme — короткое имя/бренд типа «ПАБГ», theme_spoken — та же
+        # словоформа в другом падеже"). Для МНОГОсловной темы ("домашний
+        # кофе") theme_spoken обычно не падежная форма, а сокращение/другая
+        # фраза — авто-генерация тогда подменяла бы ПРАВИЛЬНО распознанное
+        # слово (например "кофе") на всю фразу темы, ломая субтитры вместо
+        # починки. Явные theme_captions продолжают работать в любом случае.
+        if len(str(theme).split()) == 1:
+            root = str(theme_spoken).strip().lower()
+            if root:
+                variants += [root + suf for suf in _THEME_CASE_SUFFIXES]
         fixes.setdefault(str(theme), [])
         fixes[str(theme)] += variants
 

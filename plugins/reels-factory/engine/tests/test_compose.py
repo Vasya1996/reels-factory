@@ -297,6 +297,18 @@ def test_apply_caption_fixes_тема_падежная_форма():
     assert apply_caption_fixes(words, fixes)[0]["text"] == "пабг"
 
 
+def test_build_caption_fixes_многословная_тема_не_ломает_theme_spoken():
+    # regression: theme "домашний кофе" / theme_spoken "кофе" — theme_spoken
+    # тут не падежная форма темы, а сокращение. Раньше авто-словоформы корня
+    # ("кофе"+суффиксы) регистрировались как варианты для замены на ВСЮ фразу
+    # темы, и корректно распознанное "кофе" (в т.ч. внутри дословной CTA)
+    # подменялось на "домашний кофе" — сабы переставали совпадать с речью.
+    hyp = {"theme": "домашний кофе", "theme_spoken": "кофе"}
+    fixes = build_caption_fixes(hyp)
+    words = [{"start": 0.0, "end": 0.3, "text": "кофе"}]
+    assert apply_caption_fixes(words, fixes)[0]["text"] == "кофе"
+
+
 # --- интеграция (slow) ---
 
 def _lavfi_clip(path, dur, size="1280x720", freq=440):

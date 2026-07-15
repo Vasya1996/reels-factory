@@ -112,8 +112,11 @@ ffmpeg -y -ss <кандидат-секунда> -i work/<имя>/broll_source.mp
 ## Шаг 5. Сборка
 
 ```powershell
-.venv\Scripts\python.exe -m reels_factory make --workdir <имя> --broll work/<имя>/broll_source.mp4 --broll-plan work/<имя>/broll_plan.json
+$env:PYTHONUTF8="1"; .venv\Scripts\python.exe -m reels_factory make --workdir <имя> --broll work/<имя>/broll_source.mp4 --broll-plan work/<имя>/broll_plan.json
 ```
+
+(`PYTHONUTF8=1` — иначе русский текст в JSON-выводе (например причина
+провала гейта) в stdout PowerShell читается абракадаброй.)
 
 Может идти долго (HeyGen рендерит аватар-фрагменты по одному блоку с
 поллингом до 10 минут на блок при `format: split`) — если запускаешь в

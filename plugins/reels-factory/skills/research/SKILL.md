@@ -18,8 +18,11 @@ description: Этап 1-2 продуктового цикла — собирае
 ## Шаг 0. Прочитать конфиг
 
 ```powershell
-.venv\Scripts\python.exe -c "from reels_factory.config import load_config; import json; c=load_config(); print(json.dumps({'theme':c['theme'],'theme_spoken':c.get('theme_spoken'),'niche_keywords':c.get('niche_keywords')}, ensure_ascii=False))"
+$env:PYTHONUTF8="1"; .venv\Scripts\python.exe -c "from reels_factory.config import load_config; import json; c=load_config(); print(json.dumps({'theme':c['theme'],'theme_spoken':c.get('theme_spoken'),'niche_keywords':c.get('niche_keywords')}, ensure_ascii=False))"
 ```
+
+(`PYTHONUTF8=1` — иначе русский текст в stdout PowerShell выводится
+абракадаброй, хотя в файлах на диске всё в порядке.)
 
 Возьми `theme`, `theme_spoken`, `niche_keywords` — по ним пойдёт поиск.
 Критерий: у тебя есть тема и хотя бы одна ключевая фраза ниши (если
@@ -36,22 +39,29 @@ TikTok сюда сам не ищешь — только если пользов�
 На каждую фразу из `niche_keywords` (и на саму тему, если фраз мало):
 
 ```powershell
-.venv\Scripts\yt-dlp.exe "ytsearch40:<ключевая фраза> shorts" --print "%(id)s\t%(view_count)s\t%(duration)s\t%(upload_date)s\t%(channel)s\t%(channel_id)s\t%(title)s" --no-warnings --skip-download >> work/research_pool.tsv
+.venv\Scripts\yt-dlp.exe "ytsearch40:<ключевая фраза> shorts" --print "%(id)s|%(view_count)s|%(duration)s|%(upload_date)s|%(channel)s|%(channel_id)s|%(title)s" --no-warnings --skip-download >> work/research_pool.txt
 ```
 
-`--print` печатает ОДНУ короткую строку на видео (7 полей через таб): `id`,
+`--print` печатает ОДНУ короткую строку на видео (7 полей через `|`): `id`,
 `view_count`, `duration`, `upload_date` (YYYYMMDD), `channel`, `channel_id`,
-`title`. НЕ используй `--dump-json` здесь — полный JSON на видео весит на
-порядки больше и не даёт ничего, чего нет в этих 7 полях (правило «сырые
-json yt-dlp не читать» — см. «Общие правила»). URL видео при необходимости
-собери сам: `https://www.youtube.com/watch?v=<id>`. Собери строки в
-`work/research_pool.tsv`, убери дубли по `id`.
+`title`. Разделитель — именно символ `|` в самом выводе, а не `\t`: yt-dlp
+не разворачивает `\t` в символ табуляции внутри `--print`, он попадёт в файл
+буквальной последовательностью из двух символов (обратный слэш + `t`), что
+незаметно ломает разбор построчно — `|` печатается как есть и не зависит от
+того, разворачивает ли шелл/yt-dlp escape-последовательности. `title` —
+последнее поле, так что даже если в названии ролика тоже встретится `|`,
+разбирай строку с ограничением на количество частей (первые 6 полей по `|`,
+всё остальное — `title`). НЕ используй `--dump-json` здесь — полный JSON на
+видео весит на порядки больше и не даёт ничего, чего нет в этих 7 полях
+(правило «сырые json yt-dlp не читать» — см. «Общие правила»). URL видео при
+необходимости собери сам: `https://www.youtube.com/watch?v=<id>`. Собери
+строки в `work/research_pool.txt`, убери дубли по `id`.
 
 Шортс — обычно `duration` ≤ 60-180с; ytsearch-выдача может подмешать обычные
 ролики — отфильтруй их по `duration` и по факту, что ролик лежит в разделе
 `/shorts` канала (проверишь на шаге 2).
 
-Критерий: в `work/research_pool.tsv` есть уникальные кандидаты (без дублей
+Критерий: в `work/research_pool.txt` есть уникальные кандидаты (без дублей
 по `id`), у каждого — `view_count`, `duration`, `channel_id`, `upload_date`.
 
 ## Шаг 2. Медиана канала и множитель виральности
@@ -60,7 +70,7 @@ json yt-dlp не читать» — см. «Общие правила»). URL в
 канала (URL канала собери сам: `https://www.youtube.com/channel/<channel_id>`):
 
 ```powershell
-.venv\Scripts\yt-dlp.exe "https://www.youtube.com/channel/<channel_id>/shorts" --print "%(id)s\t%(view_count)s\t%(duration)s\t%(upload_date)s\t%(channel)s\t%(channel_id)s\t%(title)s" --no-warnings --skip-download --playlist-end 20 >> work/channel_<id>.tsv
+.venv\Scripts\yt-dlp.exe "https://www.youtube.com/channel/<channel_id>/shorts" --print "%(id)s|%(view_count)s|%(duration)s|%(upload_date)s|%(channel)s|%(channel_id)s|%(title)s" --no-warnings --skip-download --playlist-end 20 >> work/channel_<id>.txt
 ```
 
 Посчитай медиану `view_count` по этим ~20 роликам. На каждого кандидата из

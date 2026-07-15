@@ -38,8 +38,11 @@ before_after/insight_reveal — тот, что использует выбран
 новый рилс) и из корня рабочей папки проекта:
 
 ```powershell
-.venv\Scripts\python.exe -m reels_factory script --workdir <имя> --theme "<тема>" --theme-spoken "<как звучит>" --hook-type <тип> --case "<кейс>" --insight "<инсайт, если есть>"
+$env:PYTHONUTF8="1"; .venv\Scripts\python.exe -m reels_factory script --workdir <имя> --theme "<тема>" --theme-spoken "<как звучит>" --hook-type <тип> --case "<кейс>" --insight "<инсайт, если есть>"
 ```
+
+(`PYTHONUTF8=1` — иначе русская речь сценария в stdout PowerShell читается
+абракадаброй; в самом файле `scenario.json` при этом всё корректно.)
 
 Движок сам подставит `legend`/`cta_phrase`/`product_name` из
 `factory/config.yaml`, прогонит валидатор (роли по порядку hook/development/
