@@ -25,6 +25,19 @@ def _cfg(fmt="split"):
             "avatar": {"heygen_asset_id": "a1"}}
 
 
+def _fake_covered_block(calls_out=None):
+    """Фейк render_covered_block — без реального ffmpeg (voice_*.wav в тестах
+    пустые, media_dur на них упал бы)."""
+    def _fn(wav, out_mp4):
+        if calls_out is not None:
+            calls_out.append(str(wav))
+        out_mp4 = Path(out_mp4)
+        out_mp4.parent.mkdir(parents=True, exist_ok=True)
+        out_mp4.write_bytes(b"")
+        return out_mp4
+    return _fn
+
+
 class _FakeAvatar:
     def __init__(self):
         self.avatar_id = "a1"; self.motion_prompt = "m"; self.expressiveness = "medium"
@@ -149,11 +162,40 @@ def test_avatar_со_вставками_ingest_вызывается(monkeypatch,
                   "facts": {}}
 
     res = pipeline.run_make(_cfg("avatar"), "broll.mp4", 0.0, wd, broll_plan=broll_plan,
-                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi, assemble_fn=fa)
+                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi, assemble_fn=fa,
+                            covered_block_fn=_fake_covered_block())
 
     assert res["ok"] is True
     assert any(c[0] == "ingest" for c in calls)  # источник вставок скачивается
     assert captured["broll_segments"] == broll_plan["segments"]
+
+
+def test_avatar_блок_на_100pct_закрытый_вставкой_не_дёргает_heygen(monkeypatch, tmp_path):
+    """development на 100% под вставкой (insert=True) -> HeyGen не рендерит его,
+    вместо этого дешёвый локальный covered_block_fn (голос поверх чёрного кадра)."""
+    calls = []
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+    broll_plan = {"segments": [{"role": "development", "offset": 30.0, "insert": True}],
+                  "facts": {}}
+
+    covered_calls = []
+
+    res = pipeline.run_make(_cfg("avatar"), "broll.mp4", 0.0, wd, broll_plan=broll_plan,
+                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi, assemble_fn=fa,
+                            covered_block_fn=_fake_covered_block(covered_calls))
+
+    assert res["ok"] is True
+    # development пропущен у HeyGen — остались только hook, payoff, cta (3, не 4)
+    assert len(avatar.calls) == 3
+    assert not any("voice_1.wav" in str(c[1]) for c in avatar.calls)
+    # вместо этого ровно один вызов дешёвого локального рендера, на voice_1.wav
+    assert len(covered_calls) == 1
+    assert "voice_1.wav" in covered_calls[0]
+    # общее число фрагментов аватара для сборки не меняется (4 — все блоки покрыты)
+    assemble_call = next(c for c in calls if c[0] == "assemble")
+    assert assemble_call[2] == 4
 
 
 def test_провал_ingest_даёт_stage_ingest(monkeypatch, tmp_path):

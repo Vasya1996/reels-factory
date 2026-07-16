@@ -4,15 +4,21 @@
 
 run_make() гонит стадии подряд; при исключении на любой стадии останавливается и
 возвращает {"ok": False, "workdir", "mp4": None, "qa_pass": False, "stage",
-"error"}. DI на внешние ресурсы (synth/ingest/avatar/assemble) — тестируемо без
-сети/ffmpeg. verify_reel не параметр (детерминированная QA-логика).
+"error"}. DI на внешние ресурсы (synth/ingest/avatar/assemble/covered_block) —
+тестируемо без сети/ffmpeg. verify_reel не параметр (детерминированная QA-логика).
+
+Для формата avatar блок, чья роль на 100% закрыта вставкой видеоряда
+(broll_plan segments с "insert": true — plan_avatar_inserts берёт вставку
+строго на весь [start,end] блока), не рендерится через HeyGen: аватар всё
+равно не виден под вставкой, поэтому вместо avatar_client.generate() идёт
+дешёвый локальный render_covered_block() (голос поверх чёрного кадра).
 """
 import json
 import sys
 from pathlib import Path
 
 from reels_factory.config import WORK_ROOT
-from reels_factory.avatar import HeyGenClient, cached_generate
+from reels_factory.avatar import HeyGenClient, cached_generate, render_covered_block
 from reels_factory.tts import synth_voice as _synth_voice
 from reels_factory.ingest import ingest as _ingest
 from reels_factory.compose import assemble as _assemble, build_caption_fixes
@@ -37,7 +43,8 @@ def _fixes_hypothesis(config: dict) -> dict:
 
 def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
              broll_plan: dict | None = None, scenario: dict | None = None,
-             avatar_client=None, synth_fn=None, ingest_fn=None, assemble_fn=None) -> dict:
+             avatar_client=None, synth_fn=None, ingest_fn=None, assemble_fn=None,
+             covered_block_fn=None) -> dict:
     fmt = config.get("format", "split")
     wd = Path(workdir)
     wd.mkdir(parents=True, exist_ok=True)
@@ -45,6 +52,7 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
     synth_fn = synth_fn or _synth_voice
     ingest_fn = ingest_fn or _ingest
     assemble_fn = assemble_fn or _assemble
+    covered_block_fn = covered_block_fn or render_covered_block
 
     def fail(stage, e):
         return {"ok": False, "workdir": str(wd), "mp4": None, "qa_pass": False,
@@ -70,6 +78,12 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
             expressiveness=avatar_cfg.get("expressiveness"),
         )
 
+    # avatar: роли, чей блок целиком уходит под вставку видеоряда — HeyGen для
+    # них не нужен (см. docstring модуля и plan_avatar_inserts в compose.py).
+    insert_roles = set()
+    if fmt == "avatar" and broll_segments:
+        insert_roles = {s["role"] for s in broll_segments if s.get("insert")}
+
     _log("voice")
     try:
         avatar_mp4s, voice_wavs = [], []
@@ -81,8 +95,11 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
             wav = wd / f"voice_{i}.wav"
             synth_fn(text, wav, voice_id=voice_id)
             if fmt in ("split", "avatar"):
-                if b.get("role") == "cta":
+                role = b.get("role")
+                if role == "cta":
                     mp4 = cached_generate(avatar_client, wav, cache_dir)
+                elif role in insert_roles:
+                    mp4 = covered_block_fn(wav, wd / f"avatar_{i}.mp4")
                 else:
                     mp4 = avatar_client.generate(wav, wd / f"avatar_{i}.mp4")
                 avatar_mp4s.append(mp4)
