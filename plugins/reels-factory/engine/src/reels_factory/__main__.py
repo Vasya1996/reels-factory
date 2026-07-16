@@ -41,6 +41,7 @@ def _cmd_script(args, cfg):
         "legend": product.get("legend"),
         "cta_phrase": product.get("cta_phrase"),
         "product_name": product.get("name"),
+        "persona": cfg.get("persona"),
     }
     wd = _resolve_workdir(args.workdir)
     wd.mkdir(parents=True, exist_ok=True)
@@ -58,9 +59,12 @@ def _cmd_make(args, cfg):
     broll_plan = None
     if args.broll_plan:
         broll_plan = json.loads(Path(args.broll_plan).read_text(encoding="utf-8"))
+    fmt = cfg.get("format", "split")
     offset = args.offset
     if offset is None:
-        if broll_plan is None:
+        # avatar собирается и без низового видеоряда (вставки — по broll-plan);
+        # split/fullscreen нужен непрерывный низ, значит offset или broll-plan
+        if fmt != "avatar" and broll_plan is None:
             print(json.dumps({"ok": False, "error": "нужен --offset либо --broll-plan"},
                              ensure_ascii=False))
             sys.exit(1)
@@ -90,7 +94,8 @@ def _cmd_verify(args, cfg):
         sys.exit(1)
     words_path = wd / "words.fixed.json"
     words = json.loads(words_path.read_text(encoding="utf-8")) if words_path.exists() else None
-    qa = verify_reel(mp4, timed, words=words, hypothesis=_fixes_hypothesis(cfg))
+    qa = verify_reel(mp4, timed, words=words, hypothesis=_fixes_hypothesis(cfg),
+                     format=cfg.get("format", "split"))
     print(json.dumps(qa, ensure_ascii=False))
     sys.exit(0 if qa["all_pass"] else 2)
 
@@ -110,7 +115,9 @@ def main():
 
     p_m = sub.add_parser("make", help="сборка рилса из scenario.json + QA-гейты")
     p_m.add_argument("--workdir", required=True)
-    p_m.add_argument("--broll", required=True, help="ссылка на видеоряд или локальный файл")
+    p_m.add_argument("--broll", default=None,
+                     help="ссылка на видеоряд или локальный файл (для avatar-формата "
+                          "без вставок можно опустить)")
     p_m.add_argument("--offset", type=float, default=None,
                      help="один offset на весь ролик (без --broll-plan)")
     p_m.add_argument("--broll-plan", default=None, dest="broll_plan",

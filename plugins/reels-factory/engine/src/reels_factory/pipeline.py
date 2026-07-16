@@ -63,7 +63,7 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
     broll_segments = broll_plan.get("segments") if broll_plan else None
     punch_windows = broll_plan.get("punch") if broll_plan else None
 
-    if fmt == "split" and avatar_client is None:
+    if fmt in ("split", "avatar") and avatar_client is None:
         avatar_client = HeyGenClient(
             avatar_id=avatar_cfg.get("heygen_asset_id"),
             motion_prompt=avatar_cfg.get("motion_prompt"),
@@ -80,7 +80,7 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
                 raise RuntimeError(f"блок {i} ({b.get('role')}): пустой speech")
             wav = wd / f"voice_{i}.wav"
             synth_fn(text, wav, voice_id=voice_id)
-            if fmt == "split":
+            if fmt in ("split", "avatar"):
                 if b.get("role") == "cta":
                     mp4 = cached_generate(avatar_client, wav, cache_dir)
                 else:
@@ -93,8 +93,12 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
 
     _log("ingest")
     try:
-        meta = ingest_fn(broll_source, wd)
-        broll_mp4 = meta["video_path"]
+        # для avatar-формата видеоряд опционален (вставки); без --broll — нет низа
+        if broll_source:
+            meta = ingest_fn(broll_source, wd)
+            broll_mp4 = meta["video_path"]
+        else:
+            broll_mp4 = None
     except Exception as e:
         return fail("ingest", e)
 
@@ -114,7 +118,8 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
 
     _log("verify")
     try:
-        qa = verify_reel(Path(mp4), timed, words=words, hypothesis=_fixes_hypothesis(config))
+        qa = verify_reel(Path(mp4), timed, words=words,
+                         hypothesis=_fixes_hypothesis(config), format=fmt)
     except Exception as e:
         return fail("verify", e)
 

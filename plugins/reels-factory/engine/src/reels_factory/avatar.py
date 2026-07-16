@@ -1,4 +1,4 @@
-"""Клиент HeyGen для аватара-блогерши (v3 Avatar IV: image+audio asset,
+"""Клиент HeyGen для аватара-ведущего (v3 Avatar IV: image+audio asset,
 motion_prompt/expressiveness; фолбэк на старый v2 video/generate).
 
 generate() гонит НАШЕ аудио (ElevenLabs) в HeyGen: (1) загружает wav как
@@ -30,7 +30,7 @@ STATUS_V2_URL = "https://api.heygen.com/v1/video_status.get"
 
 _AUDIO_MIME_BY_SUFFIX = {".wav": "audio/wav", ".mp3": "audio/mpeg"}
 
-# Дефолт для блогерши-ведущей: говорит прямо в камеру, живая, без переигрывания.
+# Дефолт для аватара-ведущего: говорит прямо в камеру, живо, без переигрывания.
 DEFAULT_MOTION_PROMPT = (
     "talking directly to the camera as a friendly presenter, natural warm "
     "expression, subtle head movements and light hand gestures while speaking, "

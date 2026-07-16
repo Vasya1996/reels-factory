@@ -95,6 +95,54 @@ def test_тихая_сцена_не_фейлит_d6(tmp_path):
     assert report["gates"]["D6_broll_bed"].startswith("PASS")
 
 
+def _avatar_scenario(inserts, total_end=25.0):
+    sc = _scenario(total_end)
+    sc["inserts"] = inserts
+    return sc
+
+
+def test_d6_avatar_skip_без_вставок(tmp_path):
+    mp4 = _prep(tmp_path)
+    report = verify_reel(
+        mp4, _avatar_scenario([]), format="avatar",
+        dur_fn=lambda f: 24.5, wh_fn=lambda f: (1080, 1920),
+        lufs_fn=lambda f: -14.2, fps_fn=lambda f: 30.0, volume_fn=_vol_ok,
+    )
+    assert report["gates"]["D6_broll_bed"].startswith("SKIP")
+    assert report["all_pass"] is True  # SKIP не проваливает набор
+
+
+def test_d6_avatar_замер_в_окне_первой_вставки(tmp_path):
+    mp4 = _prep(tmp_path)
+    inserts = [{"role": "development", "start": 5.0, "end": 9.0}]
+    report = verify_reel(
+        mp4, _avatar_scenario(inserts), format="avatar",
+        dur_fn=lambda f: 24.5, wh_fn=lambda f: (1080, 1920),
+        lufs_fn=lambda f: -14.2, fps_fn=lambda f: 30.0, volume_fn=_vol_ok,
+    )
+    assert report["gates"]["D6_broll_bed"].startswith("PASS")
+    assert "вставка" in report["gates"]["D6_broll_bed"]
+    assert report["all_pass"] is True
+
+
+def test_d6_avatar_тихая_вставка_фейлит(tmp_path):
+    mp4 = _prep(tmp_path)
+    inserts = [{"role": "development", "start": 5.0, "end": 9.0}]
+
+    def vol(f, start, end):
+        # тихо в окне вставки [5,9], громко в окне хука (D5)
+        return -70.0 if start >= 4.0 else -18.0
+
+    report = verify_reel(
+        mp4, _avatar_scenario(inserts), format="avatar",
+        dur_fn=lambda f: 24.5, wh_fn=lambda f: (1080, 1920),
+        lufs_fn=lambda f: -14.2, fps_fn=lambda f: 30.0, volume_fn=vol,
+    )
+    assert report["gates"]["D6_broll_bed"].startswith("FAIL")
+    assert report["gates"]["D5_voice"].startswith("PASS")
+    assert report["all_pass"] is False
+
+
 def test_d7_ловит_непочиненный_вариант_бренда(tmp_path):
     mp4 = _prep(tmp_path)
     words = [{"start": 0.0, "end": 0.3, "text": "гайт"}]

@@ -4,10 +4,12 @@ D1 duration   — длительность 14-40с и в пределах ±2с 
 D2 resolution — 1080x1920 @ 30fps.
 D3 loudness   — LUFS -14 ± 1.5.
 D4 captions   — caps.ass лежит рядом с mp4.
-D5 voice      — голос блогерши слышен: mean_volume в окне первой реплики
+D5 voice      — голос ведущего слышен: mean_volume в окне первой реплики
                 [hook_start+0.3, hook_speech_end-0.3] >= -35 dB.
 D6 broll_bed  — слой видеоряда: в окне паузы после хука (иначе весь ролик)
-                >= -50 dB (детектор ПРОПАЖИ слоя, а не тишины сцены).
+                >= -50 dB (детектор ПРОПАЖИ слоя, а не тишины сцены). Для формата
+                avatar: SKIP, если вставок нет; замер в окне первой вставки, если
+                есть.
 D7 captions   — автогейт по words (транскрипт после caption-фиксов). FAIL — если
                 слово точно совпадает с известным вариантом бренд-словаря, но не
                 с display (регресс проводки apply_caption_fixes). Левенштейн-
@@ -100,7 +102,8 @@ def _first_speech_window(scenario: dict):
 
 
 def verify_reel(mp4: Path, scenario: dict, dur_fn=None, wh_fn=None, lufs_fn=None,
-                fps_fn=None, volume_fn=None, words=None, hypothesis: dict | None = None) -> dict:
+                fps_fn=None, volume_fn=None, words=None, hypothesis: dict | None = None,
+                format: str = "split") -> dict:
     mp4 = Path(mp4)
     dur_fn = dur_fn or media_dur
     wh_fn = wh_fn or probe_wh
@@ -130,33 +133,48 @@ def verify_reel(mp4: Path, scenario: dict, dur_fn=None, wh_fn=None, lufs_fn=None
     d4_ok = caps_path.exists()
     gates["D4_captions"] = "PASS" if d4_ok else f"FAIL({caps_path} не найден)"
 
-    # D5: слышен ли голос блогерши в окне первой реплики
+    # D5: слышен ли голос ведущего в окне первой реплики
     fs, fe = _first_speech_window(scenario)
     mv = volume_fn(str(mp4), fs + 0.3, max(fs + 0.3, fe - 0.3))
     d5_ok = mv is not None and mv >= -35.0
     gates["D5_voice"] = f"PASS({mv} dB)" if d5_ok else f"FAIL({mv} dB)"
 
-    # D6: слышен ли слой видеоряда — окно паузы после хука, иначе весь ролик; >= -50 dB
-    hook = next((b for b in scenario["blocks"] if b.get("role") == "hook"), None)
-    pause = None
-    if hook is not None:
-        p = _pause_after(hook)
-        if p and p > 0:
-            pause = (float(hook["end"]) - p, float(hook["end"]))
-    if pause is not None:
-        gv = volume_fn(str(mp4), pause[0], pause[1])
-        label = "пауза"
+    # D6: слышен ли слой видеоряда — >= -50 dB (детектор ПРОПАЖИ слоя)
+    if format == "avatar":
+        # avatar: SKIP без вставок; замер в окне первой вставки, если есть
+        inserts = scenario.get("inserts") or []
+        if not inserts:
+            gates["D6_broll_bed"] = "SKIP(нет вставок видеоряда)"
+        else:
+            w0 = inserts[0]
+            s, e = float(w0["start"]), float(w0["end"])
+            gv = volume_fn(str(mp4), s + 0.05, max(s + 0.05, e - 0.05))
+            d6_ok = gv is not None and gv >= -50.0
+            gates["D6_broll_bed"] = (f"PASS({gv} dB/вставка)" if d6_ok
+                                     else f"FAIL({gv} dB — вставка видеоряда отсутствует)")
     else:
-        gv = volume_fn(str(mp4), 0.0, total)
-        label = "ролик"
-    d6_ok = gv is not None and gv >= -50.0
-    gates["D6_broll_bed"] = (f"PASS({gv} dB/{label})" if d6_ok
-                             else f"FAIL({gv} dB — слой видеоряда отсутствует)")
+        # окно паузы после хука, иначе весь ролик
+        hook = next((b for b in scenario["blocks"] if b.get("role") == "hook"), None)
+        pause = None
+        if hook is not None:
+            p = _pause_after(hook)
+            if p and p > 0:
+                pause = (float(hook["end"]) - p, float(hook["end"]))
+        if pause is not None:
+            gv = volume_fn(str(mp4), pause[0], pause[1])
+            label = "пауза"
+        else:
+            gv = volume_fn(str(mp4), 0.0, total)
+            label = "ролик"
+        d6_ok = gv is not None and gv >= -50.0
+        gates["D6_broll_bed"] = (f"PASS({gv} dB/{label})" if d6_ok
+                                 else f"FAIL({gv} dB — слой видеоряда отсутствует)")
 
     # D7: автогейт по субтитрам — не осталось ли непочиненных коверканий бренда/темы
     words_list = words if (words is None or isinstance(words, list)) else load_words_file(str(words))
     fixes = build_caption_fixes(hypothesis or {"theme": scenario.get("theme")})
     gates["D7_captions"] = _d7_captions(words_list, fixes)
 
-    all_pass = all(v.startswith("PASS") for v in gates.values())
+    # SKIP (например D6 для avatar без вставок) не считается провалом
+    all_pass = all(not v.startswith("FAIL") for v in gates.values())
     return {"all_pass": all_pass, "gates": gates}

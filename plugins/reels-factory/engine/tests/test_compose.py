@@ -15,6 +15,7 @@ from reels_factory.config import FFMPEG
 from reels_factory.compose import (
     build_video_filter, build_audio_filter, build_concat_filter, build_voice_concat_filter,
     retime_scenario, assemble, plan_broll_cuts, build_broll_concat_filter, build_punch_filter,
+    build_avatar_audio_filter, plan_avatar_inserts,
     _slow_src_dur, build_caption_fixes, apply_caption_fixes, _atempo_chain,
     TOP_H, BOT_H, BROLL_VOLUME, WHOOSH_VOLUME, HOOK_PAUSE_S,
 )
@@ -64,6 +65,31 @@ def test_build_video_filter_fullscreen_на_весь_кадр():
     assert fc.endswith("[v]")
 
 
+def test_build_video_filter_avatar_фуллскрин_база():
+    fc = build_video_filter("avatar")
+    assert "vstack" not in fc
+    assert "scale=1080:1920:force_original_aspect_ratio=increase" in fc
+    assert "crop=1080:1920" in fc
+    assert "overlay" not in fc  # без вставок — чистая база
+    assert fc.endswith("[v]")
+
+
+def test_build_video_filter_avatar_вставка_pts_сдвиг_и_окно():
+    fc = build_video_filter("avatar", insert_windows=[(3.0, 7.0)])
+    assert "[1:v]scale=1080:1920:force_original_aspect_ratio=increase" in fc  # вставка — вход [1:v]
+    assert "setpts=PTS+3.000/TB" in fc  # PTS-сдвиг на начало окна
+    assert "overlay=0:0:enable='between(t,3.000,7.000)'" in fc
+    assert fc.endswith("[v]")
+
+
+def test_build_video_filter_avatar_панч_поверх_вставки():
+    fc = build_video_filter("avatar", punch_windows=[(4.0, 1.5)], insert_windows=[(3.0, 7.0)])
+    assert "setpts=PTS+3.000/TB" in fc
+    assert "crop=iw/1.12:ih/1.12" in fc
+    assert "between(t,4.0,5.5)" in fc
+    assert fc.endswith("[v]")
+
+
 def test_build_punch_filter_наезд_на_окне():
     parts, out = build_punch_filter("base", [(5.0, 2.0)])
     fc = ";".join(parts)
@@ -108,6 +134,31 @@ def test_build_audio_filter_с_whoosh_входы_и_громкость():
 
 def test_build_audio_filter_каждая_метка_потребляется_ровно_один_раз():
     fc = build_audio_filter(include_game=True, whoosh_delays_ms=[500, 3000])
+    counts = _labels_used_once(fc)
+    bad = {name: c for name, c in counts.items() if c != 2}
+    assert bad == {}, f"метки с некорректным числом упоминаний: {bad}"
+
+
+# --- аудио-фильтр avatar ---
+
+def test_build_avatar_audio_filter_без_вставок_только_голос():
+    assert build_avatar_audio_filter([]) == "[0:a]aresample=48000[mix]"
+
+
+def test_build_avatar_audio_filter_вставка_adelay_и_whoosh():
+    fc = build_avatar_audio_filter([3000], whoosh_delays_ms=[3000, 7000])
+    # вставка — вход [1:a], звучит ТОЛЬКО в окне (adelay), не постоянным слоем
+    assert f"[1:a]volume={BROLL_VOLUME},adelay=3000:all=1" in fc
+    assert f"[2:a]volume={WHOOSH_VOLUME},adelay=3000:all=1" in fc
+    assert f"[3:a]volume={WHOOSH_VOLUME},adelay=7000:all=1" in fc
+    # a0 + bed0 + w0 + w1 = 4 дорожки
+    assert "amix=inputs=4:normalize=0[mixraw]" in fc
+    assert "alimiter=limit=0.95[mix]" in fc
+    assert fc.endswith("[mix]")
+
+
+def test_build_avatar_audio_filter_каждая_метка_потребляется_ровно_один_раз():
+    fc = build_avatar_audio_filter([2000, 5000], whoosh_delays_ms=[2000])
     counts = _labels_used_once(fc)
     bad = {name: c for name, c in counts.items() if c != 2}
     assert bad == {}, f"метки с некорректным числом упоминаний: {bad}"
@@ -203,6 +254,49 @@ def test_plan_broll_cuts_slow_укорачивает_отрезок():
 
 def test_slow_src_dur_математика():
     assert _slow_src_dur(12.0, {"at": 3.0, "dur": 4.0, "factor": 2}) == 10.0
+
+
+# --- план вставок avatar ---
+
+def _timed_avatar():
+    return {"blocks": [
+        {"role": "hook", "start": 0.0, "end": 3.0},
+        {"role": "development", "start": 3.0, "end": 15.0},
+        {"role": "payoff", "start": 15.0, "end": 22.0},
+        {"role": "cta", "start": 22.0, "end": 25.0},
+    ]}
+
+
+def test_plan_avatar_inserts_окно_из_блока_и_offset():
+    segs = [{"role": "development", "offset": 100.0, "insert": True},
+            {"role": "payoff", "offset": 200.0}]  # без insert:true — игнорируется
+    inserts = plan_avatar_inserts(_timed_avatar(), segs, src_dur=1000.0)
+    assert len(inserts) == 1
+    ins = inserts[0]
+    assert ins["role"] == "development"
+    assert ins["start"] == 3.0 and ins["end"] == 15.0        # окно = блок в таймлайне рилса
+    assert ins["offset"] == 100.0 and ins["src_dur"] == 12.0  # кусок исходника с offset
+
+
+def test_plan_avatar_inserts_несколько_в_порядке_блоков():
+    segs = [{"role": "payoff", "offset": 200.0, "insert": True},
+            {"role": "hook", "offset": 10.0, "insert": True}]
+    inserts = plan_avatar_inserts(_timed_avatar(), segs, src_dur=1000.0)
+    assert [i["role"] for i in inserts] == ["hook", "payoff"]  # порядок блоков, не сегментов
+
+
+def test_plan_avatar_inserts_гард_выхода_за_конец():
+    segs = [{"role": "development", "offset": 995.0, "insert": True}]
+    try:
+        plan_avatar_inserts(_timed_avatar(), segs, src_dur=1000.0)
+        assert False, "должен был поднять RuntimeError"
+    except RuntimeError as e:
+        assert "development" in str(e)
+
+
+def test_plan_avatar_inserts_без_insert_сегментов_пусто():
+    segs = [{"role": "development", "offset": 100.0}]  # insert не задан
+    assert plan_avatar_inserts(_timed_avatar(), segs, src_dur=1000.0) == []
 
 
 def test_atempo_chain_в_диапазоне():
@@ -399,3 +493,60 @@ def test_assemble_fullscreen_синтетика(tmp_path):
                    voice_wavs=voice_wavs, transcribe_fn=lambda vw, rd: _FAKE_WORDS)
 
     _assert_common(res, out)
+
+
+def _avatar_frags(tmp_path):
+    avatar_mp4s = []
+    for i, d in enumerate(_FRAG_DURS):
+        p = tmp_path / f"a{i}.mp4"
+        _lavfi_clip(p, d, size="1080x1920", freq=300 + 20 * i)
+        avatar_mp4s.append(p)
+    return avatar_mp4s
+
+
+@pytest.mark.slow
+def test_assemble_avatar_со_вставкой(tmp_path):
+    rdir = tmp_path / "rdir"; rdir.mkdir()
+    avatar_mp4s = _avatar_frags(tmp_path)
+    broll = tmp_path / "broll.mp4"
+    _lavfi_clip(broll, 15, size="1920x1080", freq=200)
+    segments = [{"role": "development", "offset": 2.0, "insert": True}]
+
+    out = tmp_path / "out.mp4"
+    res = assemble(rdir, _slow_scenario(), broll, 0.0, out, format="avatar",
+                   avatar_mp4s=avatar_mp4s, broll_segments=segments,
+                   transcribe_fn=lambda vw, rd: _FAKE_WORDS)
+
+    expected_total = sum(_FRAG_DURS) + HOOK_PAUSE_S
+    assert abs(res["timed_scenario"]["total"] - expected_total) < 0.1
+    assert probe_wh(str(out)) == (1080, 1920)
+    assert abs(media_dur(str(out)) - expected_total) < 0.3
+    assert res["lufs"] is not None
+    # голос ведущего слышен в окне первой реплики
+    hook_end = res["timed_scenario"]["blocks"][0]["end"]
+    voice_mv = _mean_volume(str(out), 0.2, hook_end - HOOK_PAUSE_S - 0.1)
+    assert voice_mv is not None and voice_mv >= -35.0, f"голос тихий: {voice_mv} dB"
+    # вставка развития записана в timed; в её окне есть звук видеоряда (D6)
+    inserts = res["timed_scenario"]["inserts"]
+    assert len(inserts) == 1 and inserts[0]["role"] == "development"
+    ds, de = inserts[0]["start"], inserts[0]["end"]
+    bed_mv = _mean_volume(str(out), ds + 0.2, de - 0.2)
+    assert bed_mv is not None and bed_mv >= -50.0, f"вставка тихая: {bed_mv} dB"
+
+
+@pytest.mark.slow
+def test_assemble_avatar_без_вставок_без_broll(tmp_path):
+    rdir = tmp_path / "rdir"; rdir.mkdir()
+    avatar_mp4s = _avatar_frags(tmp_path)
+
+    out = tmp_path / "out.mp4"
+    res = assemble(rdir, _slow_scenario(), None, 0.0, out, format="avatar",
+                   avatar_mp4s=avatar_mp4s, transcribe_fn=lambda vw, rd: _FAKE_WORDS)
+
+    expected_total = sum(_FRAG_DURS) + HOOK_PAUSE_S
+    assert probe_wh(str(out)) == (1080, 1920)
+    assert abs(media_dur(str(out)) - expected_total) < 0.3
+    assert res["timed_scenario"]["inserts"] == []
+    hook_end = res["timed_scenario"]["blocks"][0]["end"]
+    voice_mv = _mean_volume(str(out), 0.2, hook_end - HOOK_PAUSE_S - 0.1)
+    assert voice_mv is not None and voice_mv >= -35.0, f"голос тихий: {voice_mv} dB"

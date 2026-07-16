@@ -1,15 +1,20 @@
-"""Сборка вертикального рилса из голоса блогерши и видеоряда (broll).
+"""Сборка вертикального рилса из голоса ведущего и видеоряда (broll).
 
-Два формата (config.format):
-  split      — верх: аватар-блогерша от HeyGen (1080x672), низ: видеоряд
+Три формата (config.format):
+  split      — верх: аватар-ведущий от HeyGen (1080x672), низ: видеоряд
                (1080x1248), vstack; голос уже вшит в аватар-фрагменты.
-  fullscreen — видеоряд на весь кадр (1080x1920), голос блогерши за кадром
+  fullscreen — видеоряд на весь кадр (1080x1920), голос ведущего за кадром
                (только TTS, аватар HeyGen'ом НЕ рендерится — вдвое дешевле).
+  avatar     — аватар-ведущий от HeyGen на весь кадр (1080x1920), голос вшит;
+               видеоряд опционален — отдельные ВСТАВКИ поверх аватара в окнах
+               своих блоков (broll_plan сегменты с "insert": true). Без вставок
+               видеоряд не нужен вовсе.
 
-Звук = голос блогерши (volume 1.0) + ПОСТОЯННЫЙ слой видеоряда (volume=BROLL_VOLUME,
-без дакинга) + whoosh'и на переходах, всё через один amix и alimiter от клиппинга.
-Субтитры-караоке — ТОЛЬКО голос блогерши: дорожка на распознавание (voice.wav)
-собирается без слоя видеоряда.
+Звук = голос ведущего (volume 1.0) + слой видеоряда (volume=BROLL_VOLUME, без
+дакинга: split/fullscreen — ПОСТОЯННЫЙ слой; avatar — только в окнах вставок
+через adelay) + whoosh'и на переходах, всё через один amix и alimiter от
+клиппинга. Субтитры-караоке — ТОЛЬКО голос ведущего: дорожка на распознавание
+(voice.wav) собирается без слоя видеоряда.
 
 Конвейер `assemble` (каждый шаг — render.run):
   0) ретайминг сценария под фактические длительности фрагментов (retime_scenario);
@@ -214,16 +219,17 @@ def retime_scenario(scenario: dict, frag_durs: list) -> dict:
     return sc
 
 
-def build_concat_filter(n: int, holds: list) -> str:
-    """filter_complex для конката аватар-фрагментов (split) с нормализацией к
-    1080x672/FPS (scale+crop, чтобы фото/видео другого соотношения не
-    растягивалось). Хвост фрагмента продлевается заморозкой последнего кадра
-    на holds[i] секунд (видео tpad=stop_mode=clone, аудио apad) — на паузу
-    после блока. holds — список по всем фрагментам."""
+def build_concat_filter(n: int, holds: list, height: int = TOP_H) -> str:
+    """filter_complex для конката аватар-фрагментов с нормализацией к
+    1080x{height}/FPS (scale+crop, чтобы фото/видео другого соотношения не
+    растягивалось). height=TOP_H (672) для split — верхняя половина; height=OUT_H
+    (1920) для avatar — аватар на весь кадр. Хвост фрагмента продлевается
+    заморозкой последнего кадра на holds[i] секунд (видео tpad=stop_mode=clone,
+    аудио apad) — на паузу после блока. holds — список по всем фрагментам."""
     parts, maps = [], []
     for i in range(n):
-        vchain = (f"[{i}:v]scale={OUT_W}:{TOP_H}:force_original_aspect_ratio=increase,"
-                  f"crop={OUT_W}:{TOP_H},fps={FPS},setsar=1")
+        vchain = (f"[{i}:v]scale={OUT_W}:{height}:force_original_aspect_ratio=increase,"
+                  f"crop={OUT_W}:{height},fps={FPS},setsar=1")
         achain = f"[{i}:a]aresample=48000"
         hold = float(holds[i]) if i < len(holds) else 0.0
         if hold > 0:
@@ -292,6 +298,35 @@ def plan_broll_cuts(timed_scenario: dict, segments: list, src_dur: float) -> lis
         cuts.append({"start": start, "src_dur": src, "screen_dur": screen, "slow": slow})
         cursor = start + src
     return cuts
+
+
+def plan_avatar_inserts(timed_scenario: dict, insert_segments: list, src_dur: float) -> list:
+    """Окна вставок видеоряда для формата avatar (чистая функция).
+
+    insert_segments — записи broll_plan с "insert": true (у каждой role+offset).
+    На каждый блок ретаймленного сценария, чья роль есть в insert_segments,
+    создаётся вставка: окно [start, end] блока в ТАЙМЛАЙНЕ РИЛСА, кусок исходника
+    от offset длиной с окно (src_dur=screen). Гард: кусок не должен вылезать за
+    конец исходника — RuntimeError с ролью. Возвращает список в порядке блоков:
+    {"role","start","end","offset","src_dur"}."""
+    seg_by_role = {s["role"]: s for s in insert_segments if s.get("insert")}
+    inserts = []
+    for b in timed_scenario["blocks"]:
+        role = b.get("role")
+        seg = seg_by_role.get(role)
+        if seg is None:
+            continue
+        start = float(b["start"])
+        end = float(b["end"])
+        offset = float(seg["offset"])
+        dur = end - start
+        if offset + dur > src_dur:
+            raise RuntimeError(
+                f"вставка видеоряда для роли {role!r} выходит за конец исходника: "
+                f"{offset:.2f}+{dur:.2f}с > {src_dur:.2f}с")
+        inserts.append({"role": role, "start": start, "end": end,
+                        "offset": offset, "src_dur": dur})
+    return inserts
 
 
 def _atempo_chain(tempo: float) -> str:
@@ -375,12 +410,16 @@ def build_punch_filter(in_label: str, punch_windows: list) -> tuple:
     return parts, cur
 
 
-def build_video_filter(fmt: str, punch_windows: list | None = None) -> str:
+def build_video_filter(fmt: str, punch_windows: list | None = None,
+                       insert_windows: list | None = None) -> str:
     """Видео-часть filter_complex.
 
     split: [0:v]=аватар-верх (scale/crop 1080x672) + [1:v]=видеоряд (scale/crop
     1080x1248) -> vstack -> [base]. fullscreen: [0:v]=видеоряд (scale/crop
-    1080x1920) -> [base]. Затем (опц.) панч-ины. Выход [v]."""
+    1080x1920) -> [base]. avatar: [0:v]=аватар-фуллскрин (scale/crop 1080x1920)
+    -> [base], затем на каждую вставку (start,end) вход [i+1:v] — видеоряд
+    фуллскрин со сдвигом PTS на start (setpts=PTS+start/TB) и overlay с enable по
+    окну [start,end]. Затем (опц.) панч-ины. Выход [v]."""
     if fmt == "split":
         parts = [
             f"[0:v]scale={OUT_W}:{TOP_H}:force_original_aspect_ratio=increase,"
@@ -389,12 +428,27 @@ def build_video_filter(fmt: str, punch_windows: list | None = None) -> str:
             f"crop={OUT_W}:{BOT_H},setsar=1,fps={FPS}[bot]",
             "[top][bot]vstack=inputs=2[base]",
         ]
+        cur = "base"
+    elif fmt == "avatar":
+        parts = [
+            f"[0:v]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
+            f"crop={OUT_W}:{OUT_H},setsar=1,fps={FPS}[base]",
+        ]
+        cur = "base"
+        for i, (s, e) in enumerate(insert_windows or []):
+            s, e = float(s), float(e)
+            parts.append(
+                f"[{i + 1}:v]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
+                f"crop={OUT_W}:{OUT_H},setsar=1,fps={FPS},setpts=PTS+{s:.3f}/TB[ins{i}]")
+            parts.append(
+                f"[{cur}][ins{i}]overlay=0:0:enable='between(t,{s:.3f},{e:.3f})'[ov{i}]")
+            cur = f"ov{i}"
     else:  # fullscreen
         parts = [
             f"[0:v]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
             f"crop={OUT_W}:{OUT_H},setsar=1,fps={FPS}[base]",
         ]
-    cur = "base"
+        cur = "base"
     if punch_windows:
         punch_parts, cur = build_punch_filter(cur, punch_windows)
         parts.extend(punch_parts)
@@ -429,11 +483,41 @@ def build_audio_filter(include_game: bool, whoosh_delays_ms: list | None = None)
     return ";".join(parts)
 
 
-def _concat_avatars(rdir: Path, avatar_mp4s: list, holds: list) -> Path:
-    """Склейка аватар-фрагментов (split) concat-фильтром -> top.mp4 (видео+голос)."""
+def build_avatar_audio_filter(insert_delays_ms: list, whoosh_delays_ms: list | None = None) -> str:
+    """Аудио-часть filter_complex для формата avatar (чистая функция, без ffmpeg).
+
+    [0:a] — голос ведущего (вшит в аватар). Вставок нет — только голос
+    [0:a]->[mix]. Вставки есть: каждый вход [i+1:a] — звук видеоряда вставки,
+    поднят/приглушён volume=BROLL_VOLUME и сдвинут adelay в окно вставки (звучит
+    ТОЛЬКО в окне, не постоянным слоем); дальше whoosh'и volume=WHOOSH_VOLUME на
+    границах вставок. ОДИН amix, в конце alimiter=limit=0.95 -> [mix]. Порядок
+    входов: голос, вставки, whoosh-wav'ы."""
+    if not insert_delays_ms:
+        return "[0:a]aresample=48000[mix]"
+
+    whoosh_delays_ms = whoosh_delays_ms or []
+    parts = ["[0:a]aresample=48000[a0]"]
+    labels = ["[a0]"]
+    idx = 1  # [1:a] — первая вставка
+    for i, ms in enumerate(insert_delays_ms):
+        parts.append(f"[{idx}:a]volume={BROLL_VOLUME},adelay={ms}:all=1,aresample=48000[bed{i}]")
+        labels.append(f"[bed{i}]")
+        idx += 1
+    for j, ms in enumerate(whoosh_delays_ms):
+        parts.append(f"[{idx}:a]volume={WHOOSH_VOLUME},adelay={ms}:all=1,aresample=48000[w{j}]")
+        labels.append(f"[w{j}]")
+        idx += 1
+    parts.append("".join(labels) + f"amix=inputs={len(labels)}:normalize=0[mixraw]")
+    parts.append("[mixraw]alimiter=limit=0.95[mix]")
+    return ";".join(parts)
+
+
+def _concat_avatars(rdir: Path, avatar_mp4s: list, holds: list, height: int = TOP_H) -> Path:
+    """Склейка аватар-фрагментов concat-фильтром -> top.mp4 (видео+голос).
+    height=TOP_H для split (верх), OUT_H для avatar (фуллскрин)."""
     top = rdir / "top.mp4"
     n = len(avatar_mp4s)
-    fc = build_concat_filter(n, holds)
+    fc = build_concat_filter(n, holds, height)
     cmd = [FFMPEG, "-y"]
     for a in avatar_mp4s:
         cmd += ["-i", str(a)]
@@ -472,7 +556,7 @@ def _build_video(rdir: Path, fmt: str, top: Path | None, broll: Path, offset: fl
 def _mix_audio(rdir: Path, voice_src: Path, broll: Path, offset: float, T: float,
                out_wav: Path, include_game: bool,
                whoosh_at: list | None = None, whoosh_wav: Path | None = None) -> Path:
-    """Микс: голос блогерши + (опц.) постоянный слой видеоряда и whoosh'и
+    """Микс: голос ведущего + (опц.) постоянный слой видеоряда и whoosh'и
     (см. build_audio_filter). Порядок входов — голос, (опц.) видеоряд, whoosh-wav'ы."""
     whoosh_at = whoosh_at or []
     cmd = [FFMPEG, "-y", "-i", str(voice_src)]
@@ -485,6 +569,45 @@ def _mix_audio(rdir: Path, voice_src: Path, broll: Path, offset: float, T: float
             whoosh_ms.append(int(round(float(t) * 1000)))
 
     fc = build_audio_filter(include_game, whoosh_ms)
+    cmd += ["-filter_complex", fc, "-map", "[mix]", "-ar", "48000", "-ac", "2", str(out_wav)]
+    run(cmd)
+    return out_wav
+
+
+def _build_video_avatar(rdir: Path, top: Path, broll_mp4, inserts: list, T: float,
+                        punch_windows: list | None = None) -> Path:
+    """Немой видеослой 1080x1920 для avatar: [0]=аватар-фуллскрин, поверх — вставки
+    видеоряда в окнах своих блоков (см. build_video_filter avatar). Каждая вставка
+    — вход исходника с -ss offset -t src_dur (кадр 0 = start окна после setpts)."""
+    stacked = rdir / "stacked.mp4"
+    insert_windows = [(c["start"], c["end"]) for c in inserts]
+    fc = build_video_filter("avatar", punch_windows, insert_windows)
+    cmd = [FFMPEG, "-y", "-i", str(top)]  # [0] = аватар-фуллскрин
+    for c in inserts:
+        cmd += ["-ss", f"{c['offset']}", "-t", f"{c['src_dur']}", "-i", str(broll_mp4)]
+    cmd += ["-filter_complex", fc, "-map", "[v]", *VENC, "-an", "-t", f"{T}", str(stacked)]
+    run(cmd)
+    return stacked
+
+
+def _mix_audio_avatar(rdir: Path, voice_src: Path, broll_mp4, inserts: list, T: float,
+                      out_wav: Path, include_bed: bool,
+                      whoosh_at: list | None = None, whoosh_wav: Path | None = None) -> Path:
+    """Микс для avatar: голос ведущего + (если include_bed и есть вставки) звук
+    видеоряда ТОЛЬКО в окнах вставок (adelay) и whoosh'и на границах вставок
+    (см. build_avatar_audio_filter). Порядок входов — голос, вставки, whoosh-wav'ы."""
+    cmd = [FFMPEG, "-y", "-i", str(voice_src)]
+    insert_delays_ms = []
+    whoosh_ms = []
+    if include_bed and inserts:
+        for c in inserts:
+            cmd += ["-ss", f"{c['offset']}", "-t", f"{c['src_dur']}", "-i", str(broll_mp4)]
+            insert_delays_ms.append(int(round(float(c["start"]) * 1000)))
+        if whoosh_wav is not None:
+            for t in (whoosh_at or []):
+                cmd += ["-i", str(whoosh_wav)]
+                whoosh_ms.append(int(round(float(t) * 1000)))
+    fc = build_avatar_audio_filter(insert_delays_ms, whoosh_ms)
     cmd += ["-filter_complex", fc, "-map", "[mix]", "-ar", "48000", "-ac", "2", str(out_wav)]
     run(cmd)
     return out_wav
@@ -505,15 +628,20 @@ def assemble(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out_mp4, *,
 
     format="split" требует avatar_mp4s (по одному на блок, голос вшит).
     format="fullscreen" требует voice_wavs (TTS по одному на блок).
+    format="avatar" требует avatar_mp4s (голос вшит); видеоряд опционален —
+    broll_segments с "insert": true дают вставки поверх аватара (broll_mp4 может
+    быть None, если вставок нет). Для avatar в timed пишется поле "inserts"
+    (окна вставок) — их читает гейт D6.
 
-    broll_segments — мультисегментный низ (plan_broll_cuts), иначе один offset.
-    caption_fixes — карта apply_caption_fixes (см. build_caption_fixes); None ->
-    дефолт (без бренда/темы). transcribe_fn(voice_wav, rdir)->words — DI для тестов.
+    broll_segments — мультисегментный низ (plan_broll_cuts, split/fullscreen)
+    либо вставки (plan_avatar_inserts, avatar); иначе один offset. caption_fixes
+    — карта apply_caption_fixes (см. build_caption_fixes); None -> дефолт (без
+    бренда/темы). transcribe_fn(voice_wav, rdir)->words — DI для тестов.
     """
     rdir = Path(rdir)
     rdir.mkdir(parents=True, exist_ok=True)
     out_mp4 = Path(out_mp4)
-    broll_mp4 = Path(broll_mp4)
+    broll_mp4 = Path(broll_mp4) if broll_mp4 is not None else None
     transcribe_fn = transcribe_fn or _default_transcribe
 
     blocks = scenario["blocks"]
@@ -521,12 +649,16 @@ def assemble(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out_mp4, *,
         if not avatar_mp4s:
             raise RuntimeError("format=split требует avatar_mp4s (аватар на каждый блок)")
         frag_srcs = avatar_mp4s
+    elif format == "avatar":
+        if not avatar_mp4s:
+            raise RuntimeError("format=avatar требует avatar_mp4s (аватар на каждый блок)")
+        frag_srcs = avatar_mp4s
     elif format == "fullscreen":
         if not voice_wavs:
             raise RuntimeError("format=fullscreen требует voice_wavs (TTS на каждый блок)")
         frag_srcs = voice_wavs
     else:
-        raise RuntimeError(f"неизвестный format: {format!r} (нужно split|fullscreen)")
+        raise RuntimeError(f"неизвестный format: {format!r} (нужно split|fullscreen|avatar)")
     if len(frag_srcs) != len(blocks):
         raise RuntimeError(
             f"число фрагментов ({len(frag_srcs)}) != числу блоков ({len(blocks)})")
@@ -534,53 +666,85 @@ def assemble(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out_mp4, *,
     # 0) ретайминг под фактические длительности
     frag_durs = [media_dur(str(a)) for a in frag_srcs]
     timed = retime_scenario(scenario, frag_durs)
-    (rdir / "scenario.timed.json").write_text(
-        json.dumps(timed, ensure_ascii=False, indent=1), encoding="utf-8")
     T = timed["total"]
-
-    # видеоряд: один offset на весь ролик либо мультисегментный план
-    broll_dur = media_dur(str(broll_mp4))
-    if broll_segments is None:
-        if broll_dur - broll_offset_s < T:
-            raise RuntimeError(
-                f"видеоряд короче offset+T: {broll_dur:.2f}с - offset {broll_offset_s:.2f}с "
-                f"< нужных {T:.2f}с (увеличь длину записи или уменьши offset)")
-        bottom_mp4, bottom_offset = broll_mp4, broll_offset_s
-    else:
-        cuts = plan_broll_cuts(timed, broll_segments, broll_dur)
-        bottom_mp4 = _concat_broll(rdir, broll_mp4, cuts)
-        bottom_offset = 0.0
-
     holds = [_pause_after(b) for b in timed["blocks"]]
 
-    # голосовой источник: split -> top(видео+голос), fullscreen -> voice_track(звук)
-    if format == "split":
-        voice_src = _concat_avatars(rdir, avatar_mp4s, holds)
-        top_for_video = voice_src
-    else:
-        voice_src = _concat_voice(rdir, voice_wavs, holds)
-        top_for_video = None
-
-    # свуши на переходах: по умолчанию — границы блоков (кроме нулевой) + панчи
     whoosh_wav = ensure_whoosh()
     if not whoosh_wav.exists():
         whoosh_wav = None
-    if whoosh_at is None:
-        pts = [float(b["start"]) for b in timed["blocks"][1:]]
-        if punch_windows:
-            pts += [float(s) for s, _ in punch_windows]
-        whoosh_at = sorted(set(pts))
 
-    # 1) немой видеослой
-    stacked = _build_video(rdir, format, top_for_video, bottom_mp4, bottom_offset, T,
-                           punch_windows)
+    if format == "avatar":
+        # аватар-фуллскрин (голос вшит) + опциональные вставки видеоряда
+        voice_src = _concat_avatars(rdir, avatar_mp4s, holds, height=OUT_H)
+        insert_segs = [s for s in (broll_segments or []) if s.get("insert")]
+        inserts = []
+        if insert_segs:
+            if broll_mp4 is None or not broll_mp4.exists():
+                raise RuntimeError(
+                    "format=avatar со вставками требует broll (источник видеоряда)")
+            inserts = plan_avatar_inserts(timed, insert_segs, media_dur(str(broll_mp4)))
+        timed["inserts"] = inserts
+        (rdir / "scenario.timed.json").write_text(
+            json.dumps(timed, ensure_ascii=False, indent=1), encoding="utf-8")
 
-    # 2) аудио: полный микс (в ролик) и голос (на субтитры)
-    mix_wav = _mix_audio(rdir, voice_src, bottom_mp4, bottom_offset, T,
-                         rdir / "mix.wav", include_game=True,
-                         whoosh_at=whoosh_at, whoosh_wav=whoosh_wav)
-    voice_wav = _mix_audio(rdir, voice_src, bottom_mp4, bottom_offset, T,
-                           rdir / "voice.wav", include_game=False)
+        # свуши — на границах вставок (+ панчи)
+        if whoosh_at is None:
+            pts = []
+            for c in inserts:
+                pts += [c["start"], c["end"]]
+            if punch_windows:
+                pts += [float(s) for s, _ in punch_windows]
+            whoosh_at = sorted(set(pts))
+
+        # 1) немой видеослой + 2) аудио (микс со вставками / голос на субтитры)
+        stacked = _build_video_avatar(rdir, voice_src, broll_mp4, inserts, T, punch_windows)
+        mix_wav = _mix_audio_avatar(rdir, voice_src, broll_mp4, inserts, T,
+                                    rdir / "mix.wav", include_bed=True,
+                                    whoosh_at=whoosh_at, whoosh_wav=whoosh_wav)
+        voice_wav = _mix_audio_avatar(rdir, voice_src, broll_mp4, inserts, T,
+                                      rdir / "voice.wav", include_bed=False)
+    else:
+        (rdir / "scenario.timed.json").write_text(
+            json.dumps(timed, ensure_ascii=False, indent=1), encoding="utf-8")
+
+        # видеоряд: один offset на весь ролик либо мультисегментный план
+        broll_dur = media_dur(str(broll_mp4))
+        if broll_segments is None:
+            if broll_dur - broll_offset_s < T:
+                raise RuntimeError(
+                    f"видеоряд короче offset+T: {broll_dur:.2f}с - offset {broll_offset_s:.2f}с "
+                    f"< нужных {T:.2f}с (увеличь длину записи или уменьши offset)")
+            bottom_mp4, bottom_offset = broll_mp4, broll_offset_s
+        else:
+            cuts = plan_broll_cuts(timed, broll_segments, broll_dur)
+            bottom_mp4 = _concat_broll(rdir, broll_mp4, cuts)
+            bottom_offset = 0.0
+
+        # голосовой источник: split -> top(видео+голос), fullscreen -> voice_track(звук)
+        if format == "split":
+            voice_src = _concat_avatars(rdir, avatar_mp4s, holds)
+            top_for_video = voice_src
+        else:
+            voice_src = _concat_voice(rdir, voice_wavs, holds)
+            top_for_video = None
+
+        # свуши на переходах: по умолчанию — границы блоков (кроме нулевой) + панчи
+        if whoosh_at is None:
+            pts = [float(b["start"]) for b in timed["blocks"][1:]]
+            if punch_windows:
+                pts += [float(s) for s, _ in punch_windows]
+            whoosh_at = sorted(set(pts))
+
+        # 1) немой видеослой
+        stacked = _build_video(rdir, format, top_for_video, bottom_mp4, bottom_offset, T,
+                               punch_windows)
+
+        # 2) аудио: полный микс (в ролик) и голос (на субтитры)
+        mix_wav = _mix_audio(rdir, voice_src, bottom_mp4, bottom_offset, T,
+                             rdir / "mix.wav", include_game=True,
+                             whoosh_at=whoosh_at, whoosh_wav=whoosh_wav)
+        voice_wav = _mix_audio(rdir, voice_src, bottom_mp4, bottom_offset, T,
+                               rdir / "voice.wav", include_game=False)
 
     # 3) субтитры: распознать голос -> ass -> прожечь
     fixes = caption_fixes if caption_fixes is not None else build_caption_fixes({})

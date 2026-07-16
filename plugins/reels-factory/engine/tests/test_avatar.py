@@ -95,7 +95,7 @@ def test_generate_загружает_аудио_создаёт_видео_с_mot
     assert any("vid1" in g for g in http.gets)
 
 
-def test_дефолтный_motion_prompt_блогерша_в_камеру_и_expressiveness_medium(monkeypatch, tmp_path):
+def test_дефолтный_motion_prompt_ведущий_в_камеру_и_expressiveness_medium(monkeypatch, tmp_path):
     monkeypatch.delenv("HEYGEN_MOTION_PROMPT", raising=False)
     monkeypatch.delenv("HEYGEN_EXPRESSIVENESS", raising=False)
     http = _FakeHttp()

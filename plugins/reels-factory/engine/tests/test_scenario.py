@@ -161,6 +161,18 @@ def test_промпт_содержит_theme_spoken_и_cta(tmp_path):
     assert CTA in prompt
 
 
+def test_персона_и_манера_речи_в_промпте(tmp_path):
+    good = json.dumps(_ok_4blocks(), ensure_ascii=False)
+    runner = FakeRunner([good])
+    hyp = _hyp(persona={"description": "девушка-бариста, 25 лет, дружелюбная",
+                        "speech_style": "короткие фразы, прямота"})
+    generate_scenario(tmp_path, hyp, runner)
+    prompt = runner.prompts[0]
+    assert "девушка-бариста, 25 лет, дружелюбная" in prompt
+    assert "короткие фразы, прямота" in prompt
+    assert "блогерш" not in prompt.lower()
+
+
 def test_insight_и_facts_пробрасываются_в_промпт(tmp_path):
     good = json.dumps(_ok_4blocks(), ensure_ascii=False)
     runner = FakeRunner([good])

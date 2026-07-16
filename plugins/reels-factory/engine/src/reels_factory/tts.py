@@ -1,4 +1,4 @@
-"""Синтез голоса блогерши через ElevenLabs (eleven_v3).
+"""Синтез голоса ведущего через ElevenLabs (eleven_v3).
 
 synth_voice() шлёт текст в ElevenLabs TTS, получает mp3 и конвертирует в wav
 48kHz stereo через ffmpeg (render.run). Квадратно-скобочные эмоц-теги в тексте

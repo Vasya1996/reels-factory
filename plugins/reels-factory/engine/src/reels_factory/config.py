@@ -39,7 +39,7 @@ LUFS_TARGET = -14.0
 TP_TARGET = -1.5
 CAPTION_FONT = "Arial Black"
 
-FORMATS = ("split", "fullscreen")
+FORMATS = ("split", "fullscreen", "avatar")
 
 
 class ConfigError(Exception):
@@ -49,9 +49,9 @@ class ConfigError(Exception):
 def load_config(path=None) -> dict:
     """Прочитать и провалидировать factory/config.yaml.
 
-    Обязательные поля: theme, format (split|fullscreen), voice_id,
-    product.name, product.cta_phrase; для split дополнительно
-    avatar.heygen_asset_id. Ошибки — понятным текстом на русском.
+    Обязательные поля: theme, format (split|fullscreen|avatar), voice_id,
+    persona.description, product.name, product.cta_phrase; для split и avatar
+    дополнительно avatar.heygen_asset_id. Ошибки — понятным текстом на русском.
     """
     path = Path(path) if path else CONFIG_PATH
     if not path.exists():
@@ -73,6 +73,13 @@ def load_config(path=None) -> dict:
     if not str(cfg.get("voice_id") or "").strip():
         raise ConfigError("Поле voice_id (голос ElevenLabs) обязательно в config.yaml.")
 
+    persona = cfg.get("persona") or {}
+    if not str(persona.get("description") or "").strip():
+        raise ConfigError(
+            "Поле persona.description (кто ведёт ролик — описание персонажа) "
+            "обязательно в config.yaml."
+        )
+
     product = cfg.get("product") or {}
     if not str(product.get("name") or "").strip():
         raise ConfigError("Поле product.name (имя продукта) обязательно в config.yaml.")
@@ -81,11 +88,11 @@ def load_config(path=None) -> dict:
             "Поле product.cta_phrase (дословная фраза призыва) обязательно в config.yaml."
         )
 
-    if fmt == "split":
+    if fmt in ("split", "avatar"):
         avatar = cfg.get("avatar") or {}
         if not str(avatar.get("heygen_asset_id") or "").strip():
             raise ConfigError(
-                "Для формата split обязателен avatar.heygen_asset_id "
+                f"Для формата {fmt} обязателен avatar.heygen_asset_id "
                 "(id фото-ассета аватара в HeyGen)."
             )
     return cfg

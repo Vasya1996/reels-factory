@@ -50,7 +50,7 @@ def test_verify_с_scenario_timed_работает(monkeypatch, tmp_path, capsys
     (wd / "scenario.timed.json").write_text(json.dumps(scenario, ensure_ascii=False),
                                              encoding="utf-8")
 
-    def fake_verify(mp4, timed, words=None, hypothesis=None):
+    def fake_verify(mp4, timed, words=None, hypothesis=None, format="split"):
         return {"all_pass": True, "gates": {}}
 
     monkeypatch.setattr("reels_factory.verify.verify_reel", fake_verify)

@@ -65,6 +65,8 @@ def _fakes(monkeypatch, tmp_path, calls, captured=None):
 
     def fake_verify(mp4, scenario, **kw):
         calls.append(("verify", str(mp4), kw.get("words")))
+        if captured is not None:
+            captured["verify_format"] = kw.get("format")
         return {"all_pass": True, "gates": {}}
 
     monkeypatch.setattr(pipeline, "verify_reel", fake_verify)
@@ -113,6 +115,45 @@ def test_fullscreen_без_аватара(monkeypatch, tmp_path):
     assert assemble_call[1] == "fullscreen" and assemble_call[2] == 0 and assemble_call[3] == 4
     # голос синтезируется с voice_id из конфига
     assert all(c[2] == "v1" for c in calls if c[0] == "synth")
+
+
+def test_avatar_с_аватаром_без_broll(monkeypatch, tmp_path):
+    calls = []
+    captured = {}
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+
+    # broll_source=None: для avatar видеоряд опционален (нет вставок)
+    res = pipeline.run_make(_cfg("avatar"), None, 0.0, wd,
+                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi, assemble_fn=fa)
+
+    assert res["ok"] is True and res["qa_pass"] is True
+    # ingest пропущен (нет источника видеоряда)
+    assert not any(c[0] == "ingest" for c in calls)
+    # аватар генерируется на каждый блок (как split)
+    assert len(avatar.calls) == 4
+    assemble_call = next(c for c in calls if c[0] == "assemble")
+    assert assemble_call[1] == "avatar" and assemble_call[2] == 4 and assemble_call[3] == 0
+    # verify получает format=avatar
+    assert captured["verify_format"] == "avatar"
+
+
+def test_avatar_со_вставками_ingest_вызывается(monkeypatch, tmp_path):
+    calls = []
+    captured = {}
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+    broll_plan = {"segments": [{"role": "development", "offset": 30.0, "insert": True}],
+                  "facts": {}}
+
+    res = pipeline.run_make(_cfg("avatar"), "broll.mp4", 0.0, wd, broll_plan=broll_plan,
+                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi, assemble_fn=fa)
+
+    assert res["ok"] is True
+    assert any(c[0] == "ingest" for c in calls)  # источник вставок скачивается
+    assert captured["broll_segments"] == broll_plan["segments"]
 
 
 def test_провал_ingest_даёт_stage_ingest(monkeypatch, tmp_path):

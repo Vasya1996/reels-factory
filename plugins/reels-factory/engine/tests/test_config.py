@@ -18,6 +18,7 @@ def test_work_root_имя_work():
 
 def _base_cfg():
     return {"theme": "кофе дома", "format": "fullscreen", "voice_id": "v1",
+            "persona": {"description": "девушка-бариста, 25 лет, дружелюбная"},
             "product": {"name": "Гайд", "cta_phrase": "пиши кофе в комменты"}}
 
 
@@ -69,3 +70,22 @@ def test_без_voice_id_ошибка(tmp_path):
     with pytest.raises(ConfigError) as e:
         load_config(_write(tmp_path, cfg))
     assert "voice_id" in str(e.value)
+
+
+def test_без_persona_description_ошибка(tmp_path):
+    cfg = _base_cfg(); cfg.pop("persona")
+    with pytest.raises(ConfigError) as e:
+        load_config(_write(tmp_path, cfg))
+    assert "persona" in str(e.value).lower()
+
+
+def test_avatar_требует_heygen_asset(tmp_path):
+    cfg = _base_cfg(); cfg["format"] = "avatar"  # без avatar.heygen_asset_id
+    with pytest.raises(ConfigError) as e:
+        load_config(_write(tmp_path, cfg))
+    assert "heygen" in str(e.value).lower()
+
+
+def test_avatar_с_heygen_asset_ок(tmp_path):
+    cfg = _base_cfg(); cfg["format"] = "avatar"; cfg["avatar"] = {"heygen_asset_id": "a1"}
+    assert load_config(_write(tmp_path, cfg))["format"] == "avatar"
