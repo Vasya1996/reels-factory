@@ -307,9 +307,13 @@ def plan_avatar_inserts(timed_scenario: dict, insert_segments: list, src_dur: fl
     На каждый блок ретаймленного сценария, чья роль есть в insert_segments,
     создаётся вставка: окно [start, end] блока в ТАЙМЛАЙНЕ РИЛСА, кусок исходника
     от offset длиной с окно (src_dur=screen). Гард: кусок не должен вылезать за
-    конец исходника — RuntimeError с ролью. Возвращает список в порядке блоков:
-    {"role","start","end","offset","src_dur"}."""
+    конец исходника — RuntimeError с ролью. Вставка на роли hook запрещена
+    (закрывает лицо персонажа в момент, когда аватар обязателен) — RuntimeError.
+    Возвращает список в порядке блоков: {"role","start","end","offset","src_dur"}."""
     seg_by_role = {s["role"]: s for s in insert_segments if s.get("insert")}
+    if "hook" in seg_by_role:
+        raise RuntimeError(
+            "вставка на хуке закрывает лицо персонажа — хук должен держать аватар")
     inserts = []
     for b in timed_scenario["blocks"]:
         role = b.get("role")

@@ -280,9 +280,9 @@ def test_plan_avatar_inserts_окно_из_блока_и_offset():
 
 def test_plan_avatar_inserts_несколько_в_порядке_блоков():
     segs = [{"role": "payoff", "offset": 200.0, "insert": True},
-            {"role": "hook", "offset": 10.0, "insert": True}]
+            {"role": "development", "offset": 10.0, "insert": True}]
     inserts = plan_avatar_inserts(_timed_avatar(), segs, src_dur=1000.0)
-    assert [i["role"] for i in inserts] == ["hook", "payoff"]  # порядок блоков, не сегментов
+    assert [i["role"] for i in inserts] == ["development", "payoff"]  # порядок блоков, не сегментов
 
 
 def test_plan_avatar_inserts_гард_выхода_за_конец():
@@ -297,6 +297,15 @@ def test_plan_avatar_inserts_гард_выхода_за_конец():
 def test_plan_avatar_inserts_без_insert_сегментов_пусто():
     segs = [{"role": "development", "offset": 100.0}]  # insert не задан
     assert plan_avatar_inserts(_timed_avatar(), segs, src_dur=1000.0) == []
+
+
+def test_plan_avatar_inserts_запрет_вставки_на_hook():
+    segs = [{"role": "hook", "offset": 10.0, "insert": True}]
+    try:
+        plan_avatar_inserts(_timed_avatar(), segs, src_dur=1000.0)
+        assert False, "должен был поднять RuntimeError"
+    except RuntimeError as e:
+        assert "хук" in str(e)
 
 
 def test_atempo_chain_в_диапазоне():

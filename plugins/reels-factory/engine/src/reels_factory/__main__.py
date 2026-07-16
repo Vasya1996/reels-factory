@@ -56,10 +56,17 @@ def _cmd_script(args, cfg):
 def _cmd_make(args, cfg):
     from reels_factory.pipeline import run_make
 
+    fmt = cfg.get("format", "split")
+    if fmt != "avatar" and not args.broll:
+        print(json.dumps(
+            {"ok": False, "error": f"нужен --broll: формат {fmt!r} требует "
+             "непрерывный видеоряд (обязателен для split/fullscreen)"},
+            ensure_ascii=False))
+        sys.exit(1)
+
     broll_plan = None
     if args.broll_plan:
         broll_plan = json.loads(Path(args.broll_plan).read_text(encoding="utf-8"))
-    fmt = cfg.get("format", "split")
     offset = args.offset
     if offset is None:
         # avatar собирается и без низового видеоряда (вставки — по broll-plan);

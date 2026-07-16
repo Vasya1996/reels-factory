@@ -40,6 +40,48 @@ def test_make_help_упоминает_punch(monkeypatch, capsys):
     assert "punch" in out
 
 
+def test_make_без_broll_для_fullscreen_чистая_ошибка(capsys):
+    args = SimpleNamespace(workdir="demo", broll=None, offset=None, broll_plan=None)
+
+    with pytest.raises(SystemExit) as exc:
+        cli._cmd_make(args, {"format": "fullscreen"})
+
+    assert exc.value.code == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is False
+    assert "--broll" in out["error"]
+
+
+def test_make_без_broll_для_split_чистая_ошибка(capsys):
+    args = SimpleNamespace(workdir="demo", broll=None, offset=None, broll_plan=None)
+
+    with pytest.raises(SystemExit) as exc:
+        cli._cmd_make(args, {"format": "split"})
+
+    assert exc.value.code == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is False
+    assert "--broll" in out["error"]
+
+
+def test_make_avatar_без_broll_допустимо(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(cli, "WORK_ROOT", tmp_path)
+
+    def fake_run_make(cfg, broll, offset, wd, broll_plan=None):
+        return {"ok": True, "workdir": str(wd), "mp4": "reel.mp4", "qa_pass": True,
+                "gates": {}, "stage": None, "error": None}
+
+    monkeypatch.setattr("reels_factory.pipeline.run_make", fake_run_make)
+    args = SimpleNamespace(workdir="demo", broll=None, offset=None, broll_plan=None)
+
+    with pytest.raises(SystemExit) as exc:
+        cli._cmd_make(args, {"format": "avatar"})
+
+    assert exc.value.code == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is True
+
+
 def test_verify_с_scenario_timed_работает(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(cli, "WORK_ROOT", tmp_path)
     wd = tmp_path / "demo"
