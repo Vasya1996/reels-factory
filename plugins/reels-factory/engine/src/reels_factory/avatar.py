@@ -17,7 +17,16 @@ render_covered_block() — не HeyGen: для блоков формата avata
 
 api_key/avatar_id/motion_prompt/expressiveness — из аргументов или env
 (HEYGEN_API_KEY, HEYGEN_AVATAR_ID, HEYGEN_MOTION_PROMPT, HEYGEN_EXPRESSIVENESS,
-дефолт expressiveness "medium"). http/sleep — DI для тестов.
+дефолт expressiveness "low" — как и дефолт самого HeyGen; официальный
+troubleshooting-гайд HeyGen советует именно понижать expressiveness при
+галлюцинациях/лишних деталях в кадре). http/sleep — DI для тестов.
+
+v3-запрос дополнительно закрепляет сцену вместо того, чтобы отдавать её на
+волю генерации: `background` = то же фото аватара (мотив держится в кадре,
+модель не "дорисовывает" случайный фон/людей) и `aspect_ratio: "9:16"` (поле
+dimension в v3 игнорируется сервером — размер раньше действительно задавало
+исходное фото, но актуальная схема API даёт явный контроль через
+aspect_ratio, и раз плагин целиком про вертикальные рилсы — фиксируем 9:16).
 """
 import hashlib
 import os
@@ -41,7 +50,7 @@ DEFAULT_MOTION_PROMPT = (
     "steady eye contact with the camera, calm and confident"
 )
 
-DEFAULT_EXPRESSIVENESS = "medium"
+DEFAULT_EXPRESSIVENESS = "low"
 
 POLL_INTERVAL_S = 10
 POLL_MAX_ITERATIONS = 60  # 60 * 10с = 600с (10 мин)
@@ -125,8 +134,12 @@ class HeyGenClient:
             "audio_asset_id": audio_asset_id,
             "motion_prompt": self.motion_prompt,
             "expressiveness": self.expressiveness,
-            # dimension сервер не принимает — размер задаёт исходное фото,
-            # финальный кроп 1080x672 делает наш ffmpeg
+            # закрепляем сцену тем же фото — иначе модель вольна дорисовать
+            # случайный фон (вплоть до посторонних людей в кадре)
+            "background": {"type": "image", "asset_id": self.avatar_id},
+            # dimension сервер не принимает; размер раньше задавало исходное
+            # фото — теперь фиксируем явно, плагин целиком про 9:16-рилсы
+            "aspect_ratio": "9:16",
         }
         resp = self.http.post(CREATE_V3_URL, json=body, headers=headers, timeout=30)
         status_code = getattr(resp, "status_code", 200)
