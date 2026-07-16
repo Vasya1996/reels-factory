@@ -1,8 +1,8 @@
 # reels_factory — движок фабрики рилсов
 
 Generic-порт движка `reels-saas` без игровой/Vael-специфики. Собирает вертикальный
-рилс 1080×1920@30 из голоса блогерши (ElevenLabs) и видеоряда пользователя:
-сценарий → TTS → (split: аватар HeyGen) → сборка → 7 QA-гейтов.
+рилс 1080×1920@30 из голоса ведущего (ElevenLabs) и видеоряда пользователя:
+сценарий → TTS → (split/avatar: аватар HeyGen) → сборка → 7 QA-гейтов.
 
 ## Установка
 
@@ -17,8 +17,9 @@ python -m venv .venv
 ## Конфиг
 
 Читается из `factory/config.yaml` рабочей папки проекта (см. `load_config`).
-Обязательные поля: `theme`, `format` (`split`|`fullscreen`), `voice_id`,
-`product.name`, `product.cta_phrase`; для `split` — ещё `avatar.heygen_asset_id`.
+Обязательные поля: `theme`, `format` (`split`|`fullscreen`|`avatar`),
+`voice_id`, `persona.description`, `product.name`, `product.cta_phrase`; для
+`split` и `avatar` — ещё `avatar.heygen_asset_id`.
 
 ## CLI
 
@@ -33,10 +34,13 @@ python -m reels_factory verify --workdir demo1            # перепровер
 
 ## Форматы
 
-- **split** — аватар-блогерша от HeyGen сверху (1080×672) + видеоряд снизу
+- **split** — аватар-ведущий от HeyGen сверху (1080×672) + видеоряд снизу
   (1080×1248), голос вшит в аватар.
-- **fullscreen** — видеоряд на весь кадр, голос блогерши за кадром (только TTS,
+- **fullscreen** — видеоряд на весь кадр, голос ведущего за кадром (только TTS,
   HeyGen не рендерится — вдвое дешевле).
+- **avatar** — аватар-ведущий от HeyGen на весь кадр (1080×1920), голос вшит;
+  видеоряд опционален — вставки поверх аватара (`broll_plan` сегменты с
+  `"insert": true`), либо вовсе без видеоряда.
 
 ## Тесты
 
