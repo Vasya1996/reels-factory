@@ -95,7 +95,19 @@ def test_generate_загружает_аудио_создаёт_видео_с_mot
     assert any("vid1" in g for g in http.gets)
 
 
-def test_дефолтный_motion_prompt_ведущий_в_камеру_и_expressiveness_medium(monkeypatch, tmp_path):
+def test_v3_закрепляет_background_тем_же_фото_и_aspect_ratio_9_16(tmp_path):
+    http = _FakeHttp()
+    c = HeyGenClient(api_key="k", avatar_id="a1", motion_prompt="m", http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "a.wav")
+
+    c.generate(audio, tmp_path / "out.mp4")
+
+    _, body, _, _ = http.posts[1]
+    assert body["background"] == {"type": "image", "asset_id": "a1"}
+    assert body["aspect_ratio"] == "9:16"
+
+
+def test_дефолтный_motion_prompt_ведущий_в_камеру_и_expressiveness_low(monkeypatch, tmp_path):
     monkeypatch.delenv("HEYGEN_MOTION_PROMPT", raising=False)
     monkeypatch.delenv("HEYGEN_EXPRESSIVENESS", raising=False)
     http = _FakeHttp()
@@ -103,12 +115,12 @@ def test_дефолтный_motion_prompt_ведущий_в_камеру_и_expr
 
     assert c.motion_prompt == DEFAULT_MOTION_PROMPT
     assert "camera" in DEFAULT_MOTION_PROMPT
-    assert c.expressiveness == "medium"
+    assert c.expressiveness == "low"
 
     audio = _wav(tmp_path / "a.wav")
     c.generate(audio, tmp_path / "out.mp4")
     _, body, _, _ = http.posts[1]
-    assert body["expressiveness"] == "medium"
+    assert body["expressiveness"] == "low"
     assert body["motion_prompt"] == DEFAULT_MOTION_PROMPT
 
 
