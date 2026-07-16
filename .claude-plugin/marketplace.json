@@ -9,7 +9,7 @@
       "name": "reels-factory",
       "source": "./plugins/reels-factory",
       "description": "Коробочная фабрика рилсов: AI-блогер + видеоряд по теме и продуктовый цикл анализ → гипотезы → сценарий → рилс → playbook.",
-      "version": "0.2.2"
+      "version": "0.2.3"
     }
   ]
 }
