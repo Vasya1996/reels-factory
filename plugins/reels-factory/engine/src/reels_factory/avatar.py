@@ -11,6 +11,10 @@ cached_generate() переиспользует уже сгенерированн
 между рилсами по sha1-ключу от (sha1 файла аудио + avatar_id + motion_prompt +
 expressiveness).
 
+render_covered_block() — не HeyGen: для блоков формата avatar, полностью
+закрытых вставкой видеоряда (see pipeline.run_make), рендерит голос поверх
+чёрного кадра локально через ffmpeg — платить HeyGen за невидимый кадр незачем.
+
 api_key/avatar_id/motion_prompt/expressiveness — из аргументов или env
 (HEYGEN_API_KEY, HEYGEN_AVATAR_ID, HEYGEN_MOTION_PROMPT, HEYGEN_EXPRESSIVENESS,
 дефолт expressiveness "medium"). http/sleep — DI для тестов.
@@ -172,6 +176,32 @@ class HeyGenClient:
             f"HeyGen video generation timed out after {POLL_MAX_ITERATIONS} poll attempts "
             f"(video_id={video_id})"
         )
+
+
+def render_covered_block(audio_wav: Path, out_mp4: Path, width: int = 1080, height: int = 1920) -> Path:
+    """Замена HeyGen-рендера для блока формата avatar, который на 100% закрыт
+    вставкой видеоряда (plan_avatar_inserts берёт вставку строго на весь
+    [start,end] блока — под ней в принципе ничего не видно). Голос из
+    audio_wav вшивается в чёрный кадр той же длительности одним локальным
+    ffmpeg-проходом — без HeyGen, без сети, без затрат.
+    """
+    from reels_factory.config import FFMPEG
+    from reels_factory.render import run, media_dur
+
+    audio_wav = Path(audio_wav)
+    out_mp4 = Path(out_mp4)
+    dur = media_dur(str(audio_wav))
+    cmd = [
+        FFMPEG, "-y",
+        "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:d={dur}",
+        "-i", str(audio_wav),
+        "-c:v", "libx264", "-crf", "20", "-preset", "medium", "-pix_fmt", "yuv420p",
+        "-video_track_timescale", "30000",
+        "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+        "-shortest", str(out_mp4),
+    ]
+    run(cmd)
+    return out_mp4
 
 
 def cached_generate(client: HeyGenClient, audio_wav: Path, cache_dir: Path) -> Path:

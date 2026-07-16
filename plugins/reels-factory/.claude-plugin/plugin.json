@@ -1,7 +1,7 @@
 {
   "name": "reels-factory",
   "displayName": "Фабрика рилсов",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "AI-блогер и видеоряд по теме пользователя: продуктовый цикл анализ → гипотезы → сценарий → сборка рилса → playbook на своих ключах HeyGen и ElevenLabs.",
   "author": {
     "name": "Vasya"
