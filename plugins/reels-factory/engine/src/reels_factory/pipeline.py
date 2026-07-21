@@ -100,11 +100,12 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
             if fmt in ("split", "avatar"):
                 role = b.get("role")
                 if role == "cta":
-                    mp4 = cached_generate(avatar_client, wav, cache_dir)
+                    mp4 = cached_generate(avatar_client, wav, cache_dir, role=role)
                 elif role in insert_roles:
                     mp4 = covered_block_fn(wav, wd / f"avatar_{i}.mp4")
                 else:
-                    mp4 = avatar_client.generate(wav, wd / f"avatar_{i}.mp4")
+                    # role задаёт пластику: хук энергичный, payoff спокойный
+                    mp4 = avatar_client.generate(wav, wd / f"avatar_{i}.mp4", role=role)
                 avatar_mp4s.append(mp4)
             else:
                 voice_wavs.append(wav)

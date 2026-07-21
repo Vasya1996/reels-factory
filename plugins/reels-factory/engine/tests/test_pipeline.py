@@ -44,8 +44,9 @@ class _FakeAvatar:
         self.look_id = None; self.engine = "avatar_v"; self.resolution = "1080p"
         self.calls = []
 
-    def generate(self, audio_wav, out_mp4):
+    def generate(self, audio_wav, out_mp4, role=None):
         self.calls.append(("generate", str(audio_wav), str(out_mp4)))
+        self.roles = getattr(self, "roles", []) + [role]
         out_mp4 = Path(out_mp4)
         out_mp4.parent.mkdir(parents=True, exist_ok=True)
         out_mp4.write_bytes(b"")
