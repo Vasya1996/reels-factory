@@ -1,5 +1,18 @@
-"""Клиент HeyGen для аватара-ведущего (v3 Avatar IV: image+audio asset,
-motion_prompt/expressiveness; фолбэк на старый v2 video/generate).
+"""Клиент HeyGen для аватара-ведущего.
+
+Два пути, выбор автоматический:
+
+1. **Digital Twin + Avatar V** (предпочтительный, включается, когда задан
+   look_id) — аватар обучен на видео человека, поэтому модель не выдумывает
+   зубы, мимику и пластику, а воспроизводит настоящие. Тело запроса:
+   `type: "avatar"` + `avatar_id` (look id двойника) + `engine.type: "avatar_v"`.
+   `expressiveness` в этом пути НЕ шлётся: параметр существует только у
+   Avatar IV. Разнообразие роликов даёт motion_prompt (+ ротация луков).
+2. **Photo Avatar (Avatar IV)** — старый путь по одному фото (`type: "image"`),
+   остаётся фолбэком, когда двойника ещё нет. Слабое место: рот на фото закрыт,
+   зубы модель домысливает.
+
+Плюс фолбэк на старый v2 video/generate для ключей без доступа к v3.
 
 generate() гонит НАШЕ аудио (ElevenLabs) в HeyGen: (1) загружает wav как
 audio-ассет и (2) создаёт видео — весь v3-путь (upload + create + poll)
@@ -8,18 +21,21 @@ audio-ассет и (2) создаёт видео — весь v3-путь (uplo
 (3) поллит статус, скачивает готовый mp4.
 
 cached_generate() переиспользует уже сгенерированный фрагмент (например CTA)
-между рилсами по sha1-ключу от (sha1 файла аудио + avatar_id + motion_prompt +
-expressiveness).
+между рилсами по sha1-ключу от (sha1 файла аудио + avatar_id + look_id +
+engine + resolution + motion_prompt + expressiveness).
 
 render_covered_block() — не HeyGen: для блоков формата avatar, полностью
 закрытых вставкой видеоряда (see pipeline.run_make), рендерит голос поверх
 чёрного кадра локально через ffmpeg — платить HeyGen за невидимый кадр незачем.
 
-api_key/avatar_id/motion_prompt/expressiveness — из аргументов или env
-(HEYGEN_API_KEY, HEYGEN_AVATAR_ID, HEYGEN_MOTION_PROMPT, HEYGEN_EXPRESSIVENESS,
+api_key/avatar_id/look_id/motion_prompt/expressiveness/engine/resolution — из
+аргументов или env (HEYGEN_API_KEY, HEYGEN_AVATAR_ID, HEYGEN_LOOK_ID,
+HEYGEN_MOTION_PROMPT, HEYGEN_EXPRESSIVENESS, HEYGEN_ENGINE, HEYGEN_RESOLUTION;
 дефолт expressiveness "low" — как и дефолт самого HeyGen; официальный
 troubleshooting-гайд HeyGen советует именно понижать expressiveness при
 галлюцинациях/лишних деталях в кадре). http/sleep — DI для тестов.
+
+Двойник создаётся один раз на человека — см. модуль twin.py.
 
 v3-запрос дополнительно закрепляет сцену вместо того, чтобы отдавать её на
 волю генерации: `background` = то же фото аватара (мотив держится в кадре,
@@ -52,6 +68,14 @@ DEFAULT_MOTION_PROMPT = (
 
 DEFAULT_EXPRESSIVENESS = "low"
 
+# Движок рендера для двойника. avatar_v — высшая точность идентичности
+# (лицо/зубы/пластика взяты из реального видео, а не предсказаны по кадру).
+DEFAULT_ENGINE = "avatar_v"
+DEFAULT_RESOLUTION = "1080p"
+
+# expressiveness принимает только Avatar IV — с V его слать нельзя.
+_ENGINES_WITH_EXPRESSIVENESS = ("avatar_iv",)
+
 POLL_INTERVAL_S = 10
 POLL_MAX_ITERATIONS = 60  # 60 * 10с = 600с (10 мин)
 
@@ -64,13 +88,19 @@ class _Unavailable(Exception):
 
 class HeyGenClient:
     def __init__(self, api_key=None, avatar_id=None, motion_prompt=None,
-                 http=None, sleep=None, expressiveness=None):
+                 http=None, sleep=None, expressiveness=None, look_id=None,
+                 engine=None, resolution=None):
         self.api_key = api_key or os.environ.get("HEYGEN_API_KEY")
         self.avatar_id = avatar_id or os.environ.get("HEYGEN_AVATAR_ID")
+        # look_id задан → идём путём Digital Twin (Avatar V), иначе — по фото
+        self.look_id = look_id or os.environ.get("HEYGEN_LOOK_ID")
         self.motion_prompt = motion_prompt or os.environ.get(
             "HEYGEN_MOTION_PROMPT", DEFAULT_MOTION_PROMPT)
         self.expressiveness = expressiveness or os.environ.get(
             "HEYGEN_EXPRESSIVENESS", DEFAULT_EXPRESSIVENESS)
+        self.engine = engine or os.environ.get("HEYGEN_ENGINE", DEFAULT_ENGINE)
+        self.resolution = resolution or os.environ.get(
+            "HEYGEN_RESOLUTION", DEFAULT_RESOLUTION)
 
         if http is None:
             import requests
@@ -97,6 +127,15 @@ class HeyGenClient:
             audio_asset_id = self._upload_audio_v3(audio_wav, headers)
             video_url = self._generate_v3(audio_asset_id, headers, width, height)
         except _Unavailable:
+            if self.look_id:
+                # v2 умеет только talking_photo — двойника там не существует,
+                # молча деградировать до фото-аватара нельзя: это ровно то
+                # качество, ради ухода от которого двойник и заводился
+                raise RuntimeError(
+                    "Digital Twin требует HeyGen v3, но ключ его не отдаёт "
+                    "(403/404). Проверь доступ к v3 или убери look_id, чтобы "
+                    "осознанно вернуться на фото-аватар."
+                )
             audio_asset_id = self._upload_audio_v2(audio_wav, headers)
             video_url = self._generate_v2_legacy(audio_asset_id, headers, width, height)
 
@@ -128,7 +167,35 @@ class HeyGenClient:
         return resp.json()["data"]["asset_id"]
 
     def _generate_v3(self, audio_asset_id: str, headers: dict, width: int, height: int) -> str:
+        body = (self._body_twin(audio_asset_id) if self.look_id
+                else self._body_photo(audio_asset_id))
+        resp = self.http.post(CREATE_V3_URL, json=body, headers=headers, timeout=30)
+        status_code = getattr(resp, "status_code", 200)
+        if status_code in _FALLBACK_STATUSES:
+            raise _Unavailable(f"v3 недоступен: {status_code}")
+        resp.raise_for_status()
+        video_id = resp.json()["data"]["video_id"]
+        return self._poll(headers, video_id, self._fetch_status_v3)
+
+    def _body_twin(self, audio_asset_id: str) -> dict:
+        """Digital Twin: идентичность держит сам аватар, сцену закреплять нечем
+        и незачем (background от фото тут не нужен — фон уже снят на видео)."""
         body = {
+            "type": "avatar",
+            "avatar_id": self.look_id,
+            "audio_asset_id": audio_asset_id,
+            "engine": {"type": self.engine},
+            "motion_prompt": self.motion_prompt,
+            "aspect_ratio": "9:16",
+            "resolution": self.resolution,
+        }
+        # expressiveness есть только у Avatar IV; с avatar_v его слать нельзя
+        if self.engine in _ENGINES_WITH_EXPRESSIVENESS:
+            body["expressiveness"] = self.expressiveness
+        return body
+
+    def _body_photo(self, audio_asset_id: str) -> dict:
+        return {
             "type": "image",
             "image": {"type": "asset_id", "asset_id": self.avatar_id},
             "audio_asset_id": audio_asset_id,
@@ -141,13 +208,6 @@ class HeyGenClient:
             # фото — теперь фиксируем явно, плагин целиком про 9:16-рилсы
             "aspect_ratio": "9:16",
         }
-        resp = self.http.post(CREATE_V3_URL, json=body, headers=headers, timeout=30)
-        status_code = getattr(resp, "status_code", 200)
-        if status_code in _FALLBACK_STATUSES:
-            raise _Unavailable(f"v3 недоступен: {status_code}")
-        resp.raise_for_status()
-        video_id = resp.json()["data"]["video_id"]
-        return self._poll(headers, video_id, self._fetch_status_v3)
 
     def _generate_v2_legacy(self, audio_asset_id: str, headers: dict, width: int, height: int) -> str:
         body = {
@@ -222,8 +282,11 @@ def cached_generate(client: HeyGenClient, audio_wav: Path, cache_dir: Path) -> P
     cache_dir.mkdir(parents=True, exist_ok=True)
     audio_wav = Path(audio_wav)
     audio_sha1 = hashlib.sha1(audio_wav.read_bytes()).hexdigest()
+    # getattr — чтобы ключ считался и для облегчённых дублей клиента в тестах
     key = hashlib.sha1(
-        f"{audio_sha1}|{client.avatar_id}|{client.motion_prompt}|{client.expressiveness}"
+        f"{audio_sha1}|{client.avatar_id}|{getattr(client, 'look_id', None)}"
+        f"|{getattr(client, 'engine', None)}|{getattr(client, 'resolution', None)}"
+        f"|{client.motion_prompt}|{client.expressiveness}"
         .encode("utf-8")
     ).hexdigest()[:16]
     out_mp4 = cache_dir / f"{key}.mp4"

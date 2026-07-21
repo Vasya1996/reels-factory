@@ -90,9 +90,12 @@ def load_config(path=None) -> dict:
 
     if fmt in ("split", "avatar"):
         avatar = cfg.get("avatar") or {}
-        if not str(avatar.get("heygen_asset_id") or "").strip():
+        has_look = str(avatar.get("heygen_look_id") or "").strip()
+        has_photo = str(avatar.get("heygen_asset_id") or "").strip()
+        if not (has_look or has_photo):
             raise ConfigError(
-                f"Для формата {fmt} обязателен avatar.heygen_asset_id "
-                "(id фото-ассета аватара в HeyGen)."
+                f"Для формата {fmt} нужен avatar.heygen_look_id "
+                "(id лука Digital Twin — предпочтительно, качество выше) "
+                "или avatar.heygen_asset_id (id фото-ассета аватара)."
             )
     return cfg

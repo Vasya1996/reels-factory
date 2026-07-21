@@ -41,6 +41,7 @@ def _fake_covered_block(calls_out=None):
 class _FakeAvatar:
     def __init__(self):
         self.avatar_id = "a1"; self.motion_prompt = "m"; self.expressiveness = "medium"
+        self.look_id = None; self.engine = "avatar_v"; self.resolution = "1080p"
         self.calls = []
 
     def generate(self, audio_wav, out_mp4):

@@ -74,8 +74,11 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
     if fmt in ("split", "avatar") and avatar_client is None:
         avatar_client = HeyGenClient(
             avatar_id=avatar_cfg.get("heygen_asset_id"),
+            look_id=avatar_cfg.get("heygen_look_id"),
             motion_prompt=avatar_cfg.get("motion_prompt"),
             expressiveness=avatar_cfg.get("expressiveness"),
+            engine=avatar_cfg.get("engine"),
+            resolution=avatar_cfg.get("resolution"),
         )
 
     # avatar: роли, чей блок целиком уходит под вставку видеоряда — HeyGen для
