@@ -414,8 +414,27 @@ def build_punch_filter(in_label: str, punch_windows: list) -> tuple:
     return parts, cur
 
 
+# Финишный слой картинки. Грейд сводит аватар и вставки в один цвет — иначе
+# видно, что куски из разных источников. Зерно возвращает «снятость»:
+# генеративное видео стерильно чистое, и именно эта чистота выдаёт ИИ.
+GRADE_FILTER = "eq=contrast=1.05:saturation=1.06:gamma=1.02"
+GRAIN_FILTER = "noise=alls=6:allf=t+u"
+
+
+def build_finish_filter(grade: bool = False, grain: bool = False) -> str:
+    """Цепочка финишных фильтров одной строкой (пустая, если всё выключено).
+    Порядок обязателен: сначала цвет, зерно — последним, поверх грейда."""
+    parts = []
+    if grade:
+        parts.append(GRADE_FILTER)
+    if grain:
+        parts.append(GRAIN_FILTER)
+    return ",".join(parts)
+
+
 def build_video_filter(fmt: str, punch_windows: list | None = None,
-                       insert_windows: list | None = None) -> str:
+                       insert_windows: list | None = None,
+                       grade: bool = False, grain: bool = False) -> str:
     """Видео-часть filter_complex.
 
     split: [0:v]=аватар-верх (scale/crop 1080x672) + [1:v]=видеоряд (scale/crop
@@ -456,7 +475,8 @@ def build_video_filter(fmt: str, punch_windows: list | None = None,
     if punch_windows:
         punch_parts, cur = build_punch_filter(cur, punch_windows)
         parts.extend(punch_parts)
-    parts.append(f"[{cur}]null[v]")
+    finish = build_finish_filter(grade, grain)
+    parts.append(f"[{cur}]{finish}[v]" if finish else f"[{cur}]null[v]")
     return ";".join(parts)
 
 
@@ -544,10 +564,11 @@ def _concat_voice(rdir: Path, voice_wavs: list, holds: list) -> Path:
 
 
 def _build_video(rdir: Path, fmt: str, top: Path | None, broll: Path, offset: float,
-                 T: float, punch_windows: list | None = None) -> Path:
+                 T: float, punch_windows: list | None = None,
+                 grade: bool = False, grain: bool = False) -> Path:
     """Немой видеослой 1080x1920 (split vstack | fullscreen broll + панч-ины)."""
     stacked = rdir / "stacked.mp4"
-    fc = build_video_filter(fmt, punch_windows)
+    fc = build_video_filter(fmt, punch_windows, grade=grade, grain=grain)
     cmd = [FFMPEG, "-y"]
     if fmt == "split":
         cmd += ["-i", str(top)]  # [0:v] = аватар-верх
@@ -579,13 +600,15 @@ def _mix_audio(rdir: Path, voice_src: Path, broll: Path, offset: float, T: float
 
 
 def _build_video_avatar(rdir: Path, top: Path, broll_mp4, inserts: list, T: float,
-                        punch_windows: list | None = None) -> Path:
+                        punch_windows: list | None = None,
+                        grade: bool = False, grain: bool = False) -> Path:
     """Немой видеослой 1080x1920 для avatar: [0]=аватар-фуллскрин, поверх — вставки
     видеоряда в окнах своих блоков (см. build_video_filter avatar). Каждая вставка
     — вход исходника с -ss offset -t src_dur (кадр 0 = start окна после setpts)."""
     stacked = rdir / "stacked.mp4"
     insert_windows = [(c["start"], c["end"]) for c in inserts]
-    fc = build_video_filter("avatar", punch_windows, insert_windows)
+    fc = build_video_filter("avatar", punch_windows, insert_windows,
+                            grade=grade, grain=grain)
     cmd = [FFMPEG, "-y", "-i", str(top)]  # [0] = аватар-фуллскрин
     for c in inserts:
         cmd += ["-ss", f"{c['offset']}", "-t", f"{c['src_dur']}", "-i", str(broll_mp4)]
@@ -626,7 +649,8 @@ def assemble(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out_mp4, *,
              format: str = "split", avatar_mp4s: list | None = None,
              voice_wavs: list | None = None, transcribe_fn=None,
              broll_segments: list | None = None, punch_windows: list | None = None,
-             whoosh_at: list | None = None, caption_fixes: dict | None = None) -> dict:
+             whoosh_at: list | None = None, caption_fixes: dict | None = None,
+             grade: bool = False, grain: bool = False) -> dict:
     """Полный конвейер сборки рилса. Возвращает {"mp4","dur","lufs",
     "timed_scenario","words_fixed"}; пишет scenario.timed.json и words.fixed.json.
 
@@ -701,7 +725,8 @@ def assemble(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out_mp4, *,
             whoosh_at = sorted(set(pts))
 
         # 1) немой видеослой + 2) аудио (микс со вставками / голос на субтитры)
-        stacked = _build_video_avatar(rdir, voice_src, broll_mp4, inserts, T, punch_windows)
+        stacked = _build_video_avatar(rdir, voice_src, broll_mp4, inserts, T,
+                                      punch_windows, grade=grade, grain=grain)
         mix_wav = _mix_audio_avatar(rdir, voice_src, broll_mp4, inserts, T,
                                     rdir / "mix.wav", include_bed=True,
                                     whoosh_at=whoosh_at, whoosh_wav=whoosh_wav)

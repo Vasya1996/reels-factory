@@ -1,4 +1,4 @@
-"""CLI движка: python -m reels_factory script|make|verify.
+"""CLI движка: python -m reels_factory script|make|verify|edit.
 
 Весь вывод — JSON (ensure_ascii=False). exit-код 2 = провал QA-гейта (make/verify).
 Тема/продукт/формат/ключи берутся из factory/config.yaml (load_config).
@@ -107,6 +107,36 @@ def _cmd_verify(args, cfg):
     sys.exit(0 if qa["all_pass"] else 2)
 
 
+def _cmd_edit(args):
+    """Монтажные шаги на произвольном ролике — чтобы оценить их на своём
+    материале до включения в конвейере. Конфиг не нужен."""
+    from reels_factory.edit import apply_finish, jump_cut, EditError
+
+    src = Path(args.input)
+    out = Path(args.output)
+    steps = []
+    try:
+        cur = src
+        if args.jump_cuts:
+            cur = jump_cut(cur, out.with_name(out.stem + "_cut.mp4"),
+                           threshold=args.threshold, margin_s=args.margin)
+            steps.append("jump_cuts")
+        if args.grade or args.grain:
+            cur = apply_finish(cur, out, grade=args.grade, grain=args.grain)
+            steps += [s for s, on in (("grade", args.grade), ("grain", args.grain)) if on]
+        elif cur != src:
+            cur = cur.replace(out)
+        if not steps:
+            print(json.dumps({"ok": False, "error": "нечего делать: включи "
+                              "--jump-cuts и/или --grade/--grain"}, ensure_ascii=False))
+            sys.exit(1)
+    except EditError as e:
+        print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
+        sys.exit(1)
+    print(json.dumps({"ok": True, "input": str(src), "output": str(cur),
+                      "steps": steps}, ensure_ascii=False))
+
+
 def main():
     ap = argparse.ArgumentParser(prog="reels_factory")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -131,11 +161,29 @@ def main():
                      help="JSON {segments:[{role,offset,slow?}], punch:[[start,dur],...], ...} "
                           "— мультисегментный низ + панч-окна (наезд на килл/пик-моментах)")
 
+    p_e = sub.add_parser("edit", help="монтажные шаги на готовом ролике (без конфига)")
+    p_e.add_argument("--input", required=True, help="исходный mp4")
+    p_e.add_argument("--output", required=True, help="куда положить результат")
+    p_e.add_argument("--jump-cuts", action="store_true", dest="jump_cuts",
+                     help="вырезать паузы (нужен auto-editor)")
+    p_e.add_argument("--grade", action="store_true", help="единый цвет")
+    p_e.add_argument("--grain", action="store_true", help="микро-зерно")
+    p_e.add_argument("--threshold", type=float, default=0.04,
+                     help="порог тишины, доля от пика (по умолчанию 0.04)")
+    p_e.add_argument("--margin", type=float, default=0.15,
+                     help="запас вокруг речи в секундах (по умолчанию 0.15)")
+
     p_v = sub.add_parser("verify", help="перепроверить готовый рилс (7 QA-гейтов)")
     p_v.add_argument("--workdir", required=True)
     p_v.add_argument("--mp4", default=None, help="путь к mp4 (по умолчанию <workdir>/reel.mp4)")
 
     args = ap.parse_args()
+
+    # edit работает на произвольном файле — factory/config.yaml ему не нужен
+    if args.cmd == "edit":
+        _cmd_edit(args)
+        return
+
     try:
         cfg = load_config()
     except ConfigError as e:

@@ -16,6 +16,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest"]
+# монтажный слой: нужен только при edit.jump_cuts — базовая установка без него
+edit = ["auto-editor"]
 
 [project.scripts]
 reels-factory = "reels_factory.__main__:main"

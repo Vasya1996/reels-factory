@@ -272,3 +272,90 @@ def test_без_broll_plan_punch_windows_none(monkeypatch, tmp_path):
 
     assert res["ok"] is True
     assert captured["punch_windows"] is None
+
+
+def test_джамп_каты_выключены_по_умолчанию(monkeypatch, tmp_path):
+    calls = []
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+    cut_calls = []
+
+    def fake_cut(frags, rdir, **kw):
+        cut_calls.append(list(frags))
+        return frags
+
+    res = pipeline.run_make(_cfg("avatar"), None, 0.0, wd, avatar_client=avatar,
+                            synth_fn=fs, ingest_fn=fi, assemble_fn=fa,
+                            jump_cut_fn=fake_cut)
+
+    assert res["ok"] is True
+    assert cut_calls == []  # флага нет — стадия не запускалась
+
+
+def test_флаг_включает_джамп_каты_до_сборки(monkeypatch, tmp_path):
+    calls = []
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+    cut_calls = []
+
+    def fake_cut(frags, rdir, **kw):
+        cut_calls.append(list(frags))
+        return [Path(str(f).replace(".mp4", "_cut.mp4")) for f in frags]
+
+    cfg = _cfg("avatar")
+    cfg["edit"] = {"jump_cuts": True}
+
+    res = pipeline.run_make(cfg, None, 0.0, wd, avatar_client=avatar,
+                            synth_fn=fs, ingest_fn=fi, assemble_fn=fa,
+                            jump_cut_fn=fake_cut)
+
+    assert res["ok"] is True
+    assert len(cut_calls) == 1 and len(cut_calls[0]) == 4
+    # стадия отработала ДО assemble — сборка получила подрезанные фрагменты
+    assert [c[0] for c in calls].index("assemble") >= 0
+
+
+def test_падение_джамп_катов_не_роняет_молча(monkeypatch, tmp_path):
+    calls = []
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+
+    def broken_cut(frags, rdir, **kw):
+        raise RuntimeError("auto-editor не найден")
+
+    cfg = _cfg("avatar")
+    cfg["edit"] = {"jump_cuts": True}
+
+    res = pipeline.run_make(cfg, None, 0.0, wd, avatar_client=avatar,
+                            synth_fn=fs, ingest_fn=fi, assemble_fn=fa,
+                            jump_cut_fn=broken_cut)
+
+    assert res["ok"] is False
+    assert res["stage"] == "jump_cuts"
+    assert "auto-editor" in res["error"]
+
+
+def test_грейд_и_зерно_прокидываются_в_сборку(monkeypatch, tmp_path):
+    calls = []
+    captured = {}
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+
+    seen = {}
+
+    def fa2(rdir, scenario, broll_mp4, offset, out_mp4, **kw):
+        seen["grade"] = kw.get("grade")
+        seen["grain"] = kw.get("grain")
+        return fa(rdir, scenario, broll_mp4, offset, out_mp4, **kw)
+
+    cfg = _cfg("avatar")
+    cfg["edit"] = {"grade": True, "grain": True}
+
+    pipeline.run_make(cfg, None, 0.0, wd, avatar_client=avatar,
+                      synth_fn=fs, ingest_fn=fi, assemble_fn=fa2)
+
+    assert seen == {"grade": True, "grain": True}

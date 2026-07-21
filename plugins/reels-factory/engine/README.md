@@ -59,6 +59,27 @@ look_id = TwinClient().create_from_video("Имя", "training.mp4", "consent.mp4"
 угаданные). Consent-видео: человек произносит формулу HeyGen из
 `twin.CONSENT_STATEMENT` — без согласия рендер не стартует.
 
+## Монтажный слой (edit)
+
+Всё выключено по умолчанию — включается флагом в `config.yaml`, откатывается им же:
+
+```yaml
+edit:
+  jump_cuts: true   # вырезать паузы внутри фрагментов (нужен auto-editor)
+  grade: true       # единый цвет на аватар и вставки
+  grain: true       # микро-зерно: снимает стерильность генерации
+```
+
+Джамп-каты применяются к фрагментам ДО сборки, поэтому `retime_scenario`
+считает сетку уже по подрезанным длительностям, и субтитры со вставками встают
+на новые времена сами. Резать умеет `auto-editor` (`pip install auto-editor`).
+
+Проверить шаги на своём ролике, без конфига и без HeyGen:
+
+```bash
+python -m reels_factory edit --input мой.mp4 --output out.mp4 --jump-cuts --grade --grain
+```
+
 ## CLI
 
 ```bash

@@ -41,6 +41,23 @@ CAPTION_FONT = "Arial Black"
 
 FORMATS = ("split", "fullscreen", "avatar")
 
+# Монтажный слой (edit.* в config.yaml). Всё выключено по умолчанию: включается
+# флагом на конкретном проекте, откатывается тем же флагом — без правки кода.
+EDIT_DEFAULTS = {
+    "jump_cuts": False,   # вырезать паузы внутри фрагментов (нужен auto-editor)
+    "grade": False,       # единый цвет на весь ролик
+    "grain": False,       # микро-зерно: снимает стерильность генерации
+    "keep_raw": True,     # рядом с out.mp4 класть out_raw.mp4 — сравнить до/после
+}
+
+
+def edit_settings(cfg: dict) -> dict:
+    """Флаги монтажа с дефолтами. Неизвестные ключи игнорируются молча —
+    конфиг пользователя не должен падать из-за опечатки в необязательной секции.
+    """
+    user = (cfg or {}).get("edit") or {}
+    return {k: user.get(k, v) for k, v in EDIT_DEFAULTS.items()}
+
 
 class ConfigError(Exception):
     pass
