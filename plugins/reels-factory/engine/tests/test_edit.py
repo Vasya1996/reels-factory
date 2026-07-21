@@ -86,3 +86,61 @@ def test_флаги_читаются_из_конфига_а_опечатки_и�
     assert cfg["jump_cuts"] is True
     assert cfg["grade"] is False
     assert "непонятный_ключ" not in cfg
+
+
+def test_музыка_идёт_с_дакингом_под_голосом():
+    from reels_factory.edit import build_music_filter
+
+    f = build_music_filter()
+    # без сайдчейна музыка либо забивает речь, либо не слышна вовсе
+    assert "sidechaincompress" in f
+    assert "alimiter" in f
+
+
+def test_план_собирается_одним_проходом_ffmpeg(tmp_path):
+    from reels_factory.edit import apply_plan
+
+    cmds = []
+
+    def fake_run(cmd):
+        cmds.append(cmd)
+        out = Path(cmd[-1])
+        out.write_bytes(b"rendered")
+
+    from pathlib import Path
+    src = tmp_path / "in.mp4"
+    src.write_bytes(b"mp4")
+    plan = {"duration": 10.0, "punch": [(2.0, 0.6), (5.0, 0.6)], "whoosh": []}
+
+    out = apply_plan(src, tmp_path / "out.mp4", plan, grade=True, grain=True,
+                     run=fake_run)
+
+    assert out.read_bytes() == b"rendered"
+    assert len(cmds) == 1  # каждый лишний проход — ещё одна перекодировка
+    fc = cmds[0][cmds[0].index("-filter_complex") + 1]
+    assert "crop=iw/" in fc          # наезды
+    assert "eq=contrast" in fc       # цвет
+    assert "noise=alls" in fc        # зерно
+
+
+def test_свуши_подмешиваются_на_времена_плана(tmp_path):
+    from pathlib import Path
+
+    from reels_factory.edit import apply_plan
+
+    cmds = []
+
+    def fake_run(cmd):
+        cmds.append(cmd)
+        Path(cmd[-1]).write_bytes(b"r")
+
+    src = tmp_path / "in.mp4"
+    src.write_bytes(b"mp4")
+    whoosh = tmp_path / "whoosh.wav"
+    whoosh.write_bytes(b"wav")
+    plan = {"duration": 10.0, "punch": [(2.0, 0.6)], "whoosh": [2.0]}
+
+    apply_plan(src, tmp_path / "out.mp4", plan, whoosh_wav=whoosh, run=fake_run)
+
+    fc = cmds[0][cmds[0].index("-filter_complex") + 1]
+    assert "adelay=2000|2000" in fc

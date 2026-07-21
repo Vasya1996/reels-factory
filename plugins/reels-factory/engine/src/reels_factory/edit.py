@@ -30,6 +30,10 @@ DEFAULT_MARGIN_S = 0.15
 # а не провисание.
 DEFAULT_MIN_SILENCE_S = 0.35
 
+# Музыка под голосом: тише речи и с дакингом, иначе съедает разборчивость.
+MUSIC_VOLUME = 0.18
+WHOOSH_VOLUME = 0.5
+
 
 class EditError(RuntimeError):
     pass
@@ -106,6 +110,75 @@ def apply_finish(src: Path, out: Path, *, grade: bool = False, grain: bool = Fal
            "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p",
            "-c:a", "copy", str(out)]
     (run or _run)(cmd)
+    return out
+
+
+def build_music_filter(music_volume: float = MUSIC_VOLUME) -> str:
+    """Музыка под голосом с дакингом: сайдчейн-компрессор просаживает трек ровно
+    там, где идёт речь, и отпускает в паузах. Без дакинга музыка либо забивает
+    голос, либо звучит так тихо, что её незачем было класть."""
+    return (
+        f"[1:a]volume={music_volume},aloop=loop=-1:size=2e9[music];"
+        f"[music][0:a]sidechaincompress=threshold=0.05:ratio=8:attack=5:release=300[ducked];"
+        f"[0:a][ducked]amix=inputs=2:duration=first:dropout_transition=0,"
+        f"alimiter=limit=0.95[aout]"
+    )
+
+
+def apply_plan(src: Path, out: Path, plan: dict, *, grade: bool = False,
+               grain: bool = False, whoosh_wav: Path | None = None,
+               music: Path | None = None, music_volume: float = MUSIC_VOLUME,
+               run=None) -> Path:
+    """Собрать ролик по плану монтажа: наезды, свуши, цвет, зерно, музыка.
+
+    Один проход ffmpeg на всё — каждый лишний проход это ещё одна перекодировка
+    и потеря качества.
+    """
+    from reels_factory.compose import build_finish_filter, build_punch_filter
+    from reels_factory.config import FFMPEG
+
+    src, out = Path(src), Path(out)
+    if not src.exists():
+        raise EditError(f"нет исходного файла: {src}")
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    punch = [(float(s), float(d)) for s, d in (plan.get("punch") or [])]
+    whoosh_at = [float(t) for t in (plan.get("whoosh") or [])] if whoosh_wav else []
+
+    parts = ["[0:v]null[base]"]
+    cur = "base"
+    if punch:
+        punch_parts, cur = build_punch_filter(cur, punch)
+        parts.extend(punch_parts)
+    finish = build_finish_filter(grade, grain)
+    parts.append(f"[{cur}]{finish}[v]" if finish else f"[{cur}]null[v]")
+
+    cmd = [FFMPEG, "-y", "-i", str(src)]
+    audio_map = "0:a"
+    if music:
+        cmd += ["-stream_loop", "-1", "-i", str(music)]
+        parts.append(build_music_filter(music_volume).replace("[1:a]", "[1:a]", 1))
+        audio_map = "[aout]"
+    if whoosh_at:
+        idx = 2 if music else 1
+        delays = []
+        for i, t in enumerate(whoosh_at):
+            cmd += ["-i", str(whoosh_wav)]
+            ms = int(t * 1000)
+            parts.append(f"[{idx + i}:a]adelay={ms}|{ms},volume={WHOOSH_VOLUME}[w{i}]")
+            delays.append(f"[w{i}]")
+        mixed_in = "[aout]" if music else "[0:a]"
+        parts.append(f"{mixed_in}{''.join(delays)}"
+                     f"amix=inputs={len(delays) + 1}:duration=first:dropout_transition=0,"
+                     f"alimiter=limit=0.95[amixed]")
+        audio_map = "[amixed]"
+
+    cmd += ["-filter_complex", ";".join(parts), "-map", "[v]", "-map", audio_map,
+            "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k", "-shortest", str(out)]
+    (run or _run)(cmd)
+    if not out.exists():
+        raise EditError(f"ffmpeg не создал файл: {out}")
     return out
 
 

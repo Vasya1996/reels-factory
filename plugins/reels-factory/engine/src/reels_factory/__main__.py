@@ -107,16 +107,43 @@ def _cmd_verify(args, cfg):
     sys.exit(0 if qa["all_pass"] else 2)
 
 
+def _ensure_whoosh_asset():
+    from reels_factory.compose import ensure_whoosh
+    w = ensure_whoosh()
+    return w if w.exists() else None
+
+
 def _cmd_edit(args):
     """Монтажные шаги на произвольном ролике — чтобы оценить их на своём
     материале до включения в конвейере. Конфиг не нужен."""
-    from reels_factory.edit import apply_finish, jump_cut, EditError
+    from reels_factory.edit import apply_finish, apply_plan, jump_cut, EditError
+    from reels_factory.editplan import detect_silences, plan_edit, validate_plan
+    from reels_factory.render import media_dur
 
     src = Path(args.input)
     out = Path(args.output)
     steps = []
+    plan = qa = None
     try:
         cur = src
+        if args.auto:
+            # полный монтаж по правилам ритма: паузы -> план -> гейты -> рендер
+            cur = jump_cut(cur, out.with_name(out.stem + "_cut.mp4"),
+                           threshold=args.threshold, margin_s=args.margin)
+            steps.append("jump_cuts")
+            dur = media_dur(str(cur))
+            plan = plan_edit(dur, detect_silences(cur))
+            qa = validate_plan(plan)
+            whoosh = _ensure_whoosh_asset()
+            cur = apply_plan(cur, out, plan, grade=True, grain=True,
+                             whoosh_wav=whoosh, music=Path(args.music) if args.music else None)
+            steps += ["punch", "whoosh", "grade", "grain"]
+            if args.music:
+                steps.append("music")
+            print(json.dumps({"ok": True, "input": str(src), "output": str(cur),
+                              "steps": steps, "plan": plan, "qa": qa},
+                             ensure_ascii=False))
+            return
         if args.jump_cuts:
             cur = jump_cut(cur, out.with_name(out.stem + "_cut.mp4"),
                            threshold=args.threshold, margin_s=args.margin)
@@ -168,6 +195,10 @@ def main():
                      help="вырезать паузы (нужен auto-editor)")
     p_e.add_argument("--grade", action="store_true", help="единый цвет")
     p_e.add_argument("--grain", action="store_true", help="микро-зерно")
+    p_e.add_argument("--auto", action="store_true",
+                     help="полный монтаж по правилам ритма: джамп-каты, наезды "
+                          "по акцентам, свуши, цвет, зерно")
+    p_e.add_argument("--music", default=None, help="фоновый трек (с дакингом)")
     p_e.add_argument("--threshold", type=float, default=0.04,
                      help="порог тишины, доля от пика (по умолчанию 0.04)")
     p_e.add_argument("--margin", type=float, default=0.15,
