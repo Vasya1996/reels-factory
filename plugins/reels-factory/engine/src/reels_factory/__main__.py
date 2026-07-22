@@ -113,11 +113,45 @@ def _ensure_whoosh_asset():
     return w if w.exists() else None
 
 
+def _burn_captions(src: Path, out: Path, language: str) -> Path:
+    """Распознать речь ролика и прожечь караоке-субтитры (стиль конвейера:
+    капс, 1-3 слова, pop-in, подсветка текущего слова). Кладёт caps.ass рядом."""
+    from reels_factory.captions import build_ass
+    from reels_factory.config import FFMPEG, CAPTION_FONT
+    from reels_factory.render import load_words_file, probe_wh
+    from reels_factory.transcribe import transcribe_file
+    import subprocess
+
+    rdir = out.parent
+    transcribe_file(str(src), str(rdir), model_size="small", language=language)
+    words = load_words_file(str(rdir / "words.json"))
+    w, h = probe_wh(str(src))
+    build_ass(words, str(rdir / "caps.ass"), font=CAPTION_FONT,
+              play_w=w, play_h=h, pos=(int(w * 0.5), int(h * 0.78)))
+    p = subprocess.run(
+        [FFMPEG, "-y", "-i", str(src), "-vf", "ass=caps.ass",
+         "-c:v", "libx264", "-crf", "19", "-preset", "medium", "-pix_fmt", "yuv420p",
+         "-c:a", "copy", str(out)],
+        cwd=str(rdir), capture_output=True, text=True, encoding="utf-8",
+        errors="replace")
+    if p.returncode != 0 or not out.exists():
+        raise RuntimeError(f"прожиг субтитров упал: {(p.stderr or '')[:500]}")
+    return out
+
+
+# Вспышка-переход ставится на старте фразы, но не чаще раза в FLASH_MIN_GAP_S:
+# смена мысли — переход, каждая фраза — уже стробоскоп.
+FLASH_MIN_GAP_S = 6.0
+
+
 def _cmd_edit(args):
     """Монтажные шаги на произвольном ролике — чтобы оценить их на своём
     материале до включения в конвейере. Конфиг не нужен."""
     from reels_factory.edit import apply_finish, apply_plan, jump_cut, EditError
-    from reels_factory.editplan import detect_silences, plan_edit, validate_plan
+    from reels_factory.editplan import (
+        detect_silences, plan_edit, validate_plan, speech_segments,
+        fill_static_gaps,
+    )
     from reels_factory.render import media_dur
 
     src = Path(args.input)
@@ -127,19 +161,53 @@ def _cmd_edit(args):
     try:
         cur = src
         if args.auto:
-            # полный монтаж по правилам ритма: паузы -> план -> гейты -> рендер
+            # полный монтаж «как у монтажёра»: джамп-каты -> зумы по фразам ->
+            # вспышки на сменах мысли -> ритм-добивка -> цвет/зерно -> субтитры
+            from reels_factory.zoom import plan_zoom_segments, render_zoom
+
             cur = jump_cut(cur, out.with_name(out.stem + "_cut.mp4"),
                            threshold=args.threshold, margin_s=args.margin)
             steps.append("jump_cuts")
             dur = media_dur(str(cur))
-            plan = plan_edit(dur, detect_silences(cur))
-            qa = validate_plan(plan)
+            silences = detect_silences(cur)
+            segs = speech_segments(dur, silences)
+
+            # зумы по фразам (push/punch/pulse с наведением на лицо)
+            zsegs = plan_zoom_segments(segs)
+            if zsegs:
+                cur = render_zoom(cur, out.with_name(out.stem + "_zoom.mp4"),
+                                  zsegs, duration=dur)
+                steps.append("zoom")
+
+            # вспышки-переходы: старты фраз, не чаще FLASH_MIN_GAP_S
+            flash = []
+            for s, _e in segs[1:]:
+                if not flash or s - flash[-1] >= FLASH_MIN_GAP_S:
+                    if 1.0 < s < dur - 1.0:
+                        flash.append(round(s, 3))
+
+            # ритм-добивка: статичные дыры длиннее 3с закрываются панчами
+            covered = [(zs, ze) for zs, ze, _k, _st in zsegs]
+            covered += [(t - 0.15, t + 0.15) for t in flash]
+            punch = fill_static_gaps(covered, dur)
+
+            plan = {"duration": round(dur, 3), "punch": punch,
+                    "whoosh": flash, "flash": flash}
+            # гейты ритма считают ВСЕ события: зумы, панчи, вспышки
+            events = sorted([zs for zs, _e, _k, _st in zsegs] +
+                            [t for t, _d in punch] + flash)
+            qa = validate_plan({"duration": dur,
+                                "punch": [(t, 0.3) for t in events]})
             whoosh = _ensure_whoosh_asset()
-            cur = apply_plan(cur, out, plan, grade=True, grain=True,
+            final = out.with_name(out.stem + "_nocap.mp4") if args.captions else out
+            cur = apply_plan(cur, final, plan, grade=True, grain=True,
                              whoosh_wav=whoosh, music=Path(args.music) if args.music else None)
-            steps += ["punch", "whoosh", "grade", "grain"]
+            steps += ["punch", "flash", "whoosh", "grade", "grain"]
             if args.music:
                 steps.append("music")
+            if args.captions:
+                cur = _burn_captions(cur, out, args.language)
+                steps.append("captions")
             print(json.dumps({"ok": True, "input": str(src), "output": str(cur),
                               "steps": steps, "plan": plan, "qa": qa},
                              ensure_ascii=False))
@@ -196,8 +264,12 @@ def main():
     p_e.add_argument("--grade", action="store_true", help="единый цвет")
     p_e.add_argument("--grain", action="store_true", help="микро-зерно")
     p_e.add_argument("--auto", action="store_true",
-                     help="полный монтаж по правилам ритма: джамп-каты, наезды "
-                          "по акцентам, свуши, цвет, зерно")
+                     help="полный монтаж по правилам ритма: джамп-каты, зумы по "
+                          "фразам, вспышки-переходы, свуши, цвет, зерно, субтитры")
+    p_e.add_argument("--no-captions", action="store_false", dest="captions",
+                     help="в --auto не распознавать речь и не жечь субтитры")
+    p_e.add_argument("--language", default="ru",
+                     help="язык распознавания для субтитров (по умолчанию ru)")
     p_e.add_argument("--music", default=None, help="фоновый трек (с дакингом)")
     p_e.add_argument("--threshold", type=float, default=0.04,
                      help="порог тишины, доля от пика (по умолчанию 0.04)")

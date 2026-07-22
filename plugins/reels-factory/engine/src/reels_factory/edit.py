@@ -144,6 +144,7 @@ def apply_plan(src: Path, out: Path, plan: dict, *, grade: bool = False,
 
     punch = [(float(s), float(d)) for s, d in (plan.get("punch") or [])]
     whoosh_at = [float(t) for t in (plan.get("whoosh") or [])] if whoosh_wav else []
+    flash_times = [float(t) for t in (plan.get("flash") or [])]
 
     parts = ["[0:v]null[base]"]
     cur = "base"
@@ -157,6 +158,11 @@ def apply_plan(src: Path, out: Path, plan: dict, *, grade: bool = False,
             w = h = None
         punch_parts, cur = build_punch_filter(cur, punch, w, h)
         parts.extend(punch_parts)
+    if flash_times:
+        # световой переход: вспышка яркости на смене мысли (см. transitions.py)
+        from reels_factory.transitions import build_flash_filter
+        parts.append(f"[{cur}]{build_flash_filter(flash_times)}[flsh]")
+        cur = "flsh"
     finish = build_finish_filter(grade, grain)
     parts.append(f"[{cur}]{finish}[v]" if finish else f"[{cur}]null[v]")
 
