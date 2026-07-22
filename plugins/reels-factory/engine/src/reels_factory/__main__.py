@@ -167,6 +167,17 @@ def _cmd_ideas(args, cfg):
     print(json.dumps(res, ensure_ascii=False))
 
 
+def _cmd_clone_voice(args, cfg):
+    from reels_factory.tts import create_voice_clone
+
+    try:
+        vid = create_voice_clone(args.audio, args.name)
+    except Exception as e:
+        print(json.dumps({"ok": False, "error": str(e)[:500]}, ensure_ascii=False))
+        sys.exit(1)
+    print(json.dumps({"ok": True, "voice_id": vid}, ensure_ascii=False))
+
+
 def main():
     ap = argparse.ArgumentParser(prog="reels_factory")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -214,7 +225,15 @@ def main():
     gi.add_argument("--source-file", dest="source_file", help="файл с текстом-сырьём")
     gi.add_argument("--audio", help="аудио/видео сырьё (локальная расшифровка)")
 
+    p_cv = sub.add_parser("clone-voice",
+                          help="клонировать голос пользователя в ElevenLabs -> voice_id")
+    p_cv.add_argument("--audio", required=True, help="запись голоса (1-2 мин чистой речи)")
+    p_cv.add_argument("--name", required=True, help="имя голоса в ElevenLabs")
+
     args = ap.parse_args()
+    if args.cmd == "clone-voice":
+        _cmd_clone_voice(args, None)
+        return
     try:
         cfg = load_config()
     except ConfigError as e:
