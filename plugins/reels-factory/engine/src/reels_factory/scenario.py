@@ -53,35 +53,29 @@ def _theme_root(word: str) -> str:
 def _mentions_theme(text: str, *candidates) -> bool:
     """Упоминается ли тема в тексте — пословный матч по корню.
 
-    Для каждого кандидата берём самое длинное буквенное слово (числа-слова
-    игнорируются), считаем его корень (_theme_root) и ищем его как подстроку
-    текста, регистронезависимо.
-
-    Кандидат в алфавите, которого нет в тексте, — несопоставим:
-    не считаем его провалом (баг: латинская тема при русском тексте).
+    Слова кандидата, чьего алфавита нет в тексте, несопоставимы и
+    пропускаются (латинская тема при русском тексте — не провал).
+    Если сопоставимых кандидатов не осталось вообще — не валим (True).
     """
     low = (text or "").lower()
-    text_has_cyr = bool(re.search(r"[а-яё]", low))
     comparable = 0
     for g in candidates:
         g = str(g or "").strip()
         if not g:
             continue
         words = _WORD_RE.findall(g)
-        if not words:
-            continue
-        longest = max(words, key=len).lower()
-        # кандидат в алфавите, которого нет в тексте, — несопоставим:
-        # не считаем его провалом (баг: латинская тема при русском тексте)
-        cand_is_cyr = bool(re.search(r"[а-яё]", longest))
-        if cand_is_cyr != text_has_cyr and not re.search(
-                r"[a-z]" if not cand_is_cyr else r"[а-яё]", low):
+        matchable = [
+            w for w in words
+            if re.search(r"[а-яё]" if re.search(r"[а-яё]", w.lower()) else r"[a-z]", low)
+        ]
+        if not matchable:
             continue
         comparable += 1
+        longest = max(matchable, key=len).lower()
         root = _theme_root(longest)
         if len(root) >= 2 and root in low:
             return True
-    return comparable == 0  # нечего было проверять — не валим
+    return comparable == 0
 
 
 def _read_style_excerpt(max_chars: int = 1500) -> str:

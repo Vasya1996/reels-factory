@@ -170,6 +170,16 @@ def test_mentions_theme_still_fails_when_absent():
     assert _mentions_theme("текст про другое", "маркетинг", "маркетинга") is False
 
 
+def test_mentions_theme_mixed_candidate_uses_comparable_word():
+    # «Vael бот»: Vael несопоставим с кириллицей, но «бот» — сопоставим и найден
+    assert _mentions_theme("запускаем бота на сервере", "Vael бот") is True
+
+
+def test_mentions_theme_mixed_candidate_can_fail():
+    # «бот» сопоставим, в тексте отсутствует — честный провал, не пропуск
+    assert _mentions_theme("текст про другое", "Vael бот") is False
+
+
 def test_промпт_содержит_theme_spoken_и_cta(tmp_path):
     good = json.dumps(_ok_4blocks(), ensure_ascii=False)
     runner = FakeRunner([good])
