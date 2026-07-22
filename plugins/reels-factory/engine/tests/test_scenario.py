@@ -323,3 +323,35 @@ def test_run_verbatim_path_full_flow(tmp_path):
     # задание фонетики получило текст одним блоком (разбивка — после)
     task = json.loads(runner.calls[0][1].read_text(encoding="utf-8"))
     assert task["mode"] == "phonetics"
+
+
+def test_script_text_passes_language_to_transcribe(monkeypatch, tmp_path):
+    import reels_factory.__main__ as cli
+
+    seen = {}
+
+    def fake_transcribe_file(src, workdir, model_size="large-v3",
+                             language="ru", device="auto"):
+        seen["language"] = language
+        out = Path(workdir) / "words.json"
+        out.write_text(json.dumps({"words": [
+            {"id": 0, "start": 0.0, "end": 1.0, "text": "сәлем", "prob": 1.0}]},
+            ensure_ascii=False), encoding="utf-8")
+        return {"ok": True, "out": str(out)}
+
+    import reels_factory.transcribe as tr
+    monkeypatch.setattr(tr, "transcribe_file", fake_transcribe_file)
+
+    class Args:
+        workdir = str(tmp_path)
+        text_file = None
+        audio = "fake.wav"
+
+    import reels_factory.llm as llm
+    monkeypatch.setattr(llm, "ClaudeSkillRunner",
+                        lambda: FakeSkillRunner([json.dumps(
+                            {"blocks": [{"role": "hook", "speech": "сәлем"}]},
+                            ensure_ascii=False)]))
+
+    cli._cmd_script_text(Args, {"language": "kk"})
+    assert seen["language"] == "kk"
