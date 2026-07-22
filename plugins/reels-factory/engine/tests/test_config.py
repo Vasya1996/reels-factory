@@ -58,8 +58,6 @@ def test_split_с_heygen_asset_ок(tmp_path):
     assert load_config(_write(tmp_path, cfg))["format"] == "split"
 
 
-
-
 def test_без_voice_id_ошибка(tmp_path):
     cfg = _base_cfg(); cfg.pop("voice_id")
     with pytest.raises(ConfigError) as e:

@@ -54,7 +54,7 @@ def load_config(path=None) -> dict:
     """Прочитать и провалидировать factory/config.yaml.
 
     Обязательные поля: theme, format (split|fullscreen|avatar), voice_id,
-    persona.description, product.name, product.cta_phrase; для split и avatar
+    persona.description, product.name; для split и avatar
     дополнительно avatar.heygen_asset_id. Ошибки — понятным текстом на русском.
     """
     path = Path(path) if path else CONFIG_PATH

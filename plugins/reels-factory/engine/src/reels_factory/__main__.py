@@ -108,22 +108,22 @@ def _cmd_verify(args, cfg):
 
 
 def _cmd_script_text(args, cfg):
-    from reels_factory.scenario import run_verbatim_path, ScenarioError
+    from reels_factory.scenario import run_verbatim_path
     from reels_factory.llm import ClaudeSkillRunner
 
     wd = _resolve_workdir(args.workdir)
     wd.mkdir(parents=True, exist_ok=True)
-    if args.text_file:
-        text = Path(args.text_file).read_text(encoding="utf-8")
-    else:
-        from reels_factory.transcribe import transcribe_file
-        meta = transcribe_file(args.audio, wd, language=cfg.get("language", "ru"))
-        words = json.loads(Path(meta["out"]).read_text(encoding="utf-8"))["words"]
-        text = " ".join(w["text"] for w in words)
     try:
+        if args.text_file:
+            text = Path(args.text_file).read_text(encoding="utf-8")
+        else:
+            from reels_factory.transcribe import transcribe_file
+            meta = transcribe_file(args.audio, wd, language=cfg.get("language", "ru"))
+            words = json.loads(Path(meta["out"]).read_text(encoding="utf-8"))["words"]
+            text = " ".join(w["text"] for w in words)
         res = run_verbatim_path(wd, text, ClaudeSkillRunner(),
                                 language=cfg.get("language", "ru"))
-    except (ScenarioError, Exception) as e:
+    except Exception as e:
         print(json.dumps({"ok": False, "error": str(e)[:500]}, ensure_ascii=False))
         sys.exit(1)
     print(json.dumps(res, ensure_ascii=False))
@@ -135,8 +135,8 @@ def _cmd_script_idea(args, cfg):
 
     wd = _resolve_workdir(args.workdir)
     wd.mkdir(parents=True, exist_ok=True)
-    idea = json.loads(Path(args.idea_file).read_text(encoding="utf-8"))
     try:
+        idea = json.loads(Path(args.idea_file).read_text(encoding="utf-8"))
         res = run_generated_path(wd, idea, ClaudeSkillRunner(),
                                  language=cfg.get("language", "ru"))
     except Exception as e:
@@ -152,14 +152,14 @@ def _cmd_ideas(args, cfg):
 
     wd = _resolve_workdir(args.workdir)
     wd.mkdir(parents=True, exist_ok=True)
-    if args.source_file:
-        text = Path(args.source_file).read_text(encoding="utf-8")
-    else:
-        from reels_factory.transcribe import transcribe_file
-        meta = transcribe_file(args.audio, wd, language=cfg.get("language", "ru"))
-        words = json.loads(Path(meta["out"]).read_text(encoding="utf-8"))["words"]
-        text = " ".join(w["text"] for w in words)
     try:
+        if args.source_file:
+            text = Path(args.source_file).read_text(encoding="utf-8")
+        else:
+            from reels_factory.transcribe import transcribe_file
+            meta = transcribe_file(args.audio, wd, language=cfg.get("language", "ru"))
+            words = json.loads(Path(meta["out"]).read_text(encoding="utf-8"))["words"]
+            text = " ".join(w["text"] for w in words)
         res = run_ideas(wd, text, ClaudeSkillRunner(), cfg.get("language", "ru"))
     except Exception as e:
         print(json.dumps({"ok": False, "error": str(e)[:500]}, ensure_ascii=False))

@@ -460,3 +460,34 @@ def test_run_ideas_rejects_wrong_shape(tmp_path):
     import pytest as _pytest
     with _pytest.raises(Exception):
         run_ideas(tmp_path, "т", runner, "ru")
+
+
+def test_script_text_missing_file_json_error(capsys, tmp_path):
+    import reels_factory.__main__ as cli
+
+    class Args:
+        workdir = str(tmp_path)
+        text_file = str(tmp_path / "нет-такого.txt")
+        audio = None
+
+    import pytest as _pytest
+    with _pytest.raises(SystemExit) as exc:
+        cli._cmd_script_text(Args, {"language": "ru"})
+    assert exc.value.code == 1
+    out = json.loads(capsys.readouterr().out.strip())
+    assert out["ok"] is False
+
+
+def test_script_idea_missing_file_json_error(capsys, tmp_path):
+    import reels_factory.__main__ as cli
+
+    class Args:
+        workdir = str(tmp_path)
+        idea_file = str(tmp_path / "нет.json")
+
+    import pytest as _pytest
+    with _pytest.raises(SystemExit) as exc:
+        cli._cmd_script_idea(Args, {"language": "ru"})
+    assert exc.value.code == 1
+    out = json.loads(capsys.readouterr().out.strip())
+    assert out["ok"] is False
