@@ -33,4 +33,6 @@ def build_flash_filter(times: list, dur: float = FLASH_DUR_S,
     if not times:
         return ""
     expr = build_flash_expr(times, dur, strength)
-    return f"eq=brightness='{expr}'"
+    # eval=frame ОБЯЗАТЕЛЕН: по умолчанию eq считает выражение один раз при
+    # инициализации (t=0 -> ноль), и вспышек просто не видно
+    return f"eq=brightness='{expr}':eval=frame"
