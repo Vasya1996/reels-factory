@@ -385,3 +385,22 @@ def validate_integrity(sc: dict) -> list[str]:
             errs.append(f"блок {i}: start ({start}) != end предыдущего ({prev_end})")
         prev_end = end
     return errs
+
+
+def run_verbatim_path(workdir, text: str, skill_runner, language: str) -> dict:
+    """Путь «дословно»: фонетика (единственная правка) -> scenario.json."""
+    from reels_factory.humanize import humanize_scenario
+
+    workdir = Path(workdir)
+    draft = {"mode": "verbatim", "blocks": split_verbatim(text)}
+    final = humanize_scenario(skill_runner, workdir, draft,
+                              mode="phonetics", language=language)
+    errs = validate_integrity(final)
+    if errs:
+        raise ScenarioError(f"целостность: {errs}")
+    (workdir / "scenario.json").write_text(
+        json.dumps(final, ensure_ascii=False, indent=1), encoding="utf-8")
+    n_words = sum(_wordcount(b["speech"]) for b in final["blocks"])
+    return {"ok": True, "scenario": final,
+            "info": {"words": n_words,
+                     "est_seconds": round(n_words / WORDS_PER_SEC)}}

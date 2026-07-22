@@ -107,6 +107,28 @@ def _cmd_verify(args, cfg):
     sys.exit(0 if qa["all_pass"] else 2)
 
 
+def _cmd_script_text(args, cfg):
+    from reels_factory.scenario import run_verbatim_path, ScenarioError
+    from reels_factory.llm import ClaudeSkillRunner
+
+    wd = _resolve_workdir(args.workdir)
+    wd.mkdir(parents=True, exist_ok=True)
+    if args.text_file:
+        text = Path(args.text_file).read_text(encoding="utf-8")
+    else:
+        from reels_factory.transcribe import transcribe_file
+        meta = transcribe_file(args.audio, wd, language=cfg.get("language", "ru"))
+        words = json.loads(Path(meta["out"]).read_text(encoding="utf-8"))["words"]
+        text = " ".join(w["text"] for w in words)
+    try:
+        res = run_verbatim_path(wd, text, ClaudeSkillRunner(),
+                                language=cfg.get("language", "ru"))
+    except (ScenarioError, Exception) as e:
+        print(json.dumps({"ok": False, "error": str(e)[:500]}, ensure_ascii=False))
+        sys.exit(1)
+    print(json.dumps(res, ensure_ascii=False))
+
+
 def main():
     ap = argparse.ArgumentParser(prog="reels_factory")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -135,6 +157,13 @@ def main():
     p_v.add_argument("--workdir", required=True)
     p_v.add_argument("--mp4", default=None, help="путь к mp4 (по умолчанию <workdir>/reel.mp4)")
 
+    p_st = sub.add_parser("script-text",
+                          help="путь «дословно»: текст/аудио пользователя -> scenario.json без правок")
+    p_st.add_argument("--workdir", required=True)
+    g = p_st.add_mutually_exclusive_group(required=True)
+    g.add_argument("--text-file", dest="text_file", help="файл с готовым текстом")
+    g.add_argument("--audio", help="аудио/видео с речью (локальная расшифровка)")
+
     args = ap.parse_args()
     try:
         cfg = load_config()
@@ -148,6 +177,8 @@ def main():
         _cmd_make(args, cfg)
     elif args.cmd == "verify":
         _cmd_verify(args, cfg)
+    elif args.cmd == "script-text":
+        _cmd_script_text(args, cfg)
 
 
 if __name__ == "__main__":

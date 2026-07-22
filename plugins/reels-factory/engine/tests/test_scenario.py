@@ -293,3 +293,33 @@ def test_validate_integrity_no_quality_rules():
     long_speech = "слово " * 200 + "Microsoft"
     sc = {"blocks": [{"role": "hook", "start": 0.0, "end": 80.0, "speech": long_speech}]}
     assert validate_integrity(sc) == []
+
+
+# ---------------------------------------------------------------------------
+# Task 6: Tests for run_verbatim_path
+
+from reels_factory.llm import FakeSkillRunner
+from reels_factory.scenario import run_verbatim_path
+
+
+def test_run_verbatim_path_full_flow(tmp_path):
+    text = "Мы внедрили Microsoft. Продажи выросли в два раза. Клиенты довольны."
+    phonetics_reply = json.dumps({"blocks": [
+        {"role": "hook", "speech": "Мы внедрили Майкрософт."},
+        {"role": "development", "speech": "Продажи выросли в два раза."},
+        {"role": "payoff", "speech": "Клиенты довольны."},
+    ]}, ensure_ascii=False)
+    runner = FakeSkillRunner([phonetics_reply])
+
+    res = run_verbatim_path(tmp_path, text, runner, language="ru")
+
+    assert res["ok"] is True
+    sc = res["scenario"]
+    assert sc["mode"] == "verbatim"
+    assert "Майкрософт" in sc["blocks"][0]["speech"]
+    assert (tmp_path / "scenario.json").exists()
+    assert res["info"]["words"] > 0
+    assert res["info"]["est_seconds"] > 0
+    # задание фонетики получило текст одним блоком (разбивка — после)
+    task = json.loads(runner.calls[0][1].read_text(encoding="utf-8"))
+    assert task["mode"] == "phonetics"
