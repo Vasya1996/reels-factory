@@ -28,14 +28,14 @@
 
 ---
 
-### Task 1: Конфиг — cta_phrase опционален, новые поля language и heygen_price_per_s
+### Task 1: Конфиг — cta_phrase опционален, новое поле language
 
 **Files:**
 - Modify: `plugins/reels-factory/engine/src/reels_factory/config.py:83-89`
 - Test: `plugins/reels-factory/engine/tests/test_config.py` (создать)
 
 **Interfaces:**
-- Produces: `load_config()` больше не требует `product.cta_phrase`; возвращает опциональные `cfg["language"]` (по умолчанию "ru") и `cfg["heygen_price_per_s"]` (None если нет).
+- Produces: `load_config()` больше не требует `product.cta_phrase`; возвращает `cfg["language"]` (по умолчанию "ru"). (Поле цены HeyGen сознательно НЕ вводится — стоимость отложена до подтверждения прайса Юлей, см. Task 11 шаг 4.)
 
 - [ ] **Step 1: Write the failing tests**
 
