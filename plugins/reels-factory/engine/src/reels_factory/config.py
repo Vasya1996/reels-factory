@@ -32,6 +32,10 @@ WORK_ROOT = Path.cwd() / "work"
 FACTORY_DIR = Path.cwd() / "factory"
 CONFIG_PATH = FACTORY_DIR / "config.yaml"
 
+# Корень плагина (skills/, .claude-plugin/) — для вызова скиллов движком
+# через `claude -p --plugin-dir`. engine/src/reels_factory/ -> вверх 3 уровня.
+PLUGIN_DIR = Path(__file__).resolve().parents[3]
+
 # Константы рендера — не менять без причины.
 OUT_W, OUT_H = 1080, 1920
 FPS = 30
