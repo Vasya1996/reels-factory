@@ -130,7 +130,7 @@ def _cmd_script_text(args, cfg):
 
 
 def _cmd_script_idea(args, cfg):
-    from reels_factory.scenario import run_generated_path, ScenarioError
+    from reels_factory.scenario import run_generated_path
     from reels_factory.llm import ClaudeSkillRunner
 
     wd = _resolve_workdir(args.workdir)
@@ -139,7 +139,7 @@ def _cmd_script_idea(args, cfg):
     try:
         res = run_generated_path(wd, idea, ClaudeSkillRunner(),
                                  language=cfg.get("language", "ru"))
-    except ScenarioError as e:
+    except Exception as e:
         print(json.dumps({"ok": False, "error": str(e)[:500]}, ensure_ascii=False))
         sys.exit(1)
     print(json.dumps(res, ensure_ascii=False))

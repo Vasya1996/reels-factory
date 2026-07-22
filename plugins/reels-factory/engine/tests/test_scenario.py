@@ -402,3 +402,31 @@ def test_run_generated_path_bad_blocks_raises(tmp_path):
     import pytest as _pytest
     with _pytest.raises(Exception):
         run_generated_path(tmp_path, IDEA, runner, language="ru")
+
+
+def test_run_generated_path_error_surfaces_as_json(monkeypatch, tmp_path, capsys):
+    import reels_factory.__main__ as cli
+    import reels_factory.llm as llm
+    from reels_factory.humanize import HumanizeError
+
+    idea_path = tmp_path / "idea.json"
+    idea_path.write_text('{"idea": "и", "length_s": 20, "quotes": []}', encoding="utf-8")
+
+    def boom(workdir, idea, runner, language):
+        raise HumanizeError("судья вернул не-JSON")
+
+    import reels_factory.scenario as sc_mod
+    monkeypatch.setattr(sc_mod, "run_generated_path", boom)
+    monkeypatch.setattr(llm, "ClaudeSkillRunner", lambda: object())
+
+    class Args:
+        workdir = str(tmp_path)
+        idea_file = str(idea_path)
+
+    import pytest as _pytest
+    with _pytest.raises(SystemExit) as exc:
+        cli._cmd_script_idea(Args, {"language": "ru"})
+    assert exc.value.code == 1
+    import json as _json
+    out = _json.loads(capsys.readouterr().out.strip())
+    assert out["ok"] is False and "не-JSON" in out["error"]
