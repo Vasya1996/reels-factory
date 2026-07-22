@@ -355,3 +355,50 @@ def test_script_text_passes_language_to_transcribe(monkeypatch, tmp_path):
 
     cli._cmd_script_text(Args, {"language": "kk"})
     assert seen["language"] == "kk"
+
+
+# ---------------------------------------------------------------------------
+# Task 9: Tests for run_generated_path
+
+from reels_factory.scenario import run_generated_path
+
+IDEA = {"idea": "скидка всем убивала средний чек", "length_s": 20,
+        "quotes": ["средний чек вырос вдвое"], "persona": "владелец бизнеса"}
+
+
+def _gen_reply():
+    return json.dumps({"title": "Скидка-убийца", "blocks": [
+        {"role": "hook", "start": 0.0, "end": 3.0, "speech": "Минус триста тысяч."},
+        {"role": "development", "start": 3.0, "end": 12.0, "speech": "Скидка была всем."},
+        {"role": "payoff", "start": 12.0, "end": 17.0, "speech": "Чек вырос вдвое."},
+        {"role": "cta", "start": 17.0, "end": 20.0, "speech": "Сохрани."},
+    ]}, ensure_ascii=False)
+
+
+def _polish_pass_replies():
+    blocks = json.loads(_gen_reply())["blocks"]
+    polish = json.dumps({"blocks": [{"role": b["role"], "speech": b["speech"]}
+                                    for b in blocks]}, ensure_ascii=False)
+    verdict = json.dumps({"pass": True, "scores": {}, "issues": []})
+    return [polish, verdict]
+
+
+def test_run_generated_path_full_flow(tmp_path):
+    runner = FakeSkillRunner([_gen_reply(), *_polish_pass_replies()])
+    res = run_generated_path(tmp_path, IDEA, runner, language="ru")
+    assert res["ok"] is True
+    assert res["verdict"]["pass"] is True
+    assert (tmp_path / "scenario.json").exists()
+    # порядок вызовов: генерация -> полировка -> судья
+    assert [c[0] for c in runner.calls] == [
+        "writing-scenario", "humanizing-speech", "judging-script"]
+    gen_task = json.loads(runner.calls[0][1].read_text(encoding="utf-8"))
+    assert gen_task["length_s"] == 20
+    assert gen_task["language"] == "ru"
+
+
+def test_run_generated_path_bad_blocks_raises(tmp_path):
+    runner = FakeSkillRunner([json.dumps({"title": "x", "blocks": []})])
+    import pytest as _pytest
+    with _pytest.raises(Exception):
+        run_generated_path(tmp_path, IDEA, runner, language="ru")

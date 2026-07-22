@@ -404,3 +404,38 @@ def run_verbatim_path(workdir, text: str, skill_runner, language: str) -> dict:
     return {"ok": True, "scenario": final,
             "info": {"words": n_words,
                      "est_seconds": round(n_words / WORDS_PER_SEC)}}
+
+
+# ---------------------------------------------------------------------------
+# Путь «из сырья»: задание-идея -> генерация скиллом -> хуманизация+судья.
+
+def run_generated_path(workdir, idea: dict, skill_runner, language: str) -> dict:
+    """Путь «из сырья»: скилл-генерация -> полировка+судья -> scenario.json."""
+    from reels_factory.humanize import refine_loop
+
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    task = {"language": language,
+            "idea": idea.get("idea"),
+            "length_s": idea.get("length_s"),
+            "quotes": idea.get("quotes") or [],
+            "persona": idea.get("persona")}
+    payload = workdir / "idea.json"
+    payload.write_text(json.dumps(task, ensure_ascii=False, indent=1),
+                       encoding="utf-8")
+
+    reply = skill_runner.run_skill("writing-scenario", payload)
+    draft = _extract_json(reply)
+    errs = validate_integrity(draft)
+    if errs:
+        raise ScenarioError(f"черновик генерации: {errs}")
+
+    final, verdict = refine_loop(skill_runner, workdir, draft,
+                                 {k: task[k] for k in ("idea", "length_s", "quotes")},
+                                 language)
+    errs = validate_integrity(final)
+    if errs:
+        raise ScenarioError(f"целостность после полировки: {errs}")
+    (workdir / "scenario.json").write_text(
+        json.dumps(final, ensure_ascii=False, indent=1), encoding="utf-8")
+    return {"ok": True, "scenario": final, "verdict": verdict}

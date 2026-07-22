@@ -129,6 +129,23 @@ def _cmd_script_text(args, cfg):
     print(json.dumps(res, ensure_ascii=False))
 
 
+def _cmd_script_idea(args, cfg):
+    from reels_factory.scenario import run_generated_path, ScenarioError
+    from reels_factory.llm import ClaudeSkillRunner
+
+    wd = _resolve_workdir(args.workdir)
+    wd.mkdir(parents=True, exist_ok=True)
+    idea = json.loads(Path(args.idea_file).read_text(encoding="utf-8"))
+    try:
+        res = run_generated_path(wd, idea, ClaudeSkillRunner(),
+                                 language=cfg.get("language", "ru"))
+    except ScenarioError as e:
+        print(json.dumps({"ok": False, "error": str(e)[:500]}, ensure_ascii=False))
+        sys.exit(1)
+    print(json.dumps(res, ensure_ascii=False))
+    sys.exit(0 if res["verdict"]["pass"] else 2)
+
+
 def main():
     ap = argparse.ArgumentParser(prog="reels_factory")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -164,6 +181,12 @@ def main():
     g.add_argument("--text-file", dest="text_file", help="файл с готовым текстом")
     g.add_argument("--audio", help="аудио/видео с речью (локальная расшифровка)")
 
+    p_si = sub.add_parser("script-idea",
+                          help="путь «из сырья»: задание-идея -> генерация+хуманизация+судья")
+    p_si.add_argument("--workdir", required=True)
+    p_si.add_argument("--idea-file", required=True, dest="idea_file",
+                      help="JSON: {idea, length_s, quotes[], persona?}")
+
     args = ap.parse_args()
     try:
         cfg = load_config()
@@ -179,6 +202,8 @@ def main():
         _cmd_verify(args, cfg)
     elif args.cmd == "script-text":
         _cmd_script_text(args, cfg)
+    elif args.cmd == "script-idea":
+        _cmd_script_idea(args, cfg)
 
 
 if __name__ == "__main__":
