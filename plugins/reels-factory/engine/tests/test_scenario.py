@@ -212,8 +212,18 @@ def test_split_preserves_text_verbatim():
 
 def test_split_roles_and_order():
     blocks = split_verbatim(TEXT)
-    assert 1 <= len(blocks) <= 4
+    assert len(blocks) == 4
     assert [b["role"] for b in blocks] == ROLES_4[:len(blocks)]
+
+
+def test_split_block_count_matches_sentences():
+    # ровно min(4, n_предложений) блоков — роли не теряются
+    for n in range(1, 8):
+        text = " ".join(f"Предложение номер {i} тут." for i in range(n))
+        blocks = split_verbatim(text)
+        assert len(blocks) == min(4, n), f"n={n}: {[b['role'] for b in blocks]}"
+        joined = " ".join(b["speech"] for b in blocks)
+        assert joined.split() == text.split()
 
 
 def test_split_timings_monotonic():

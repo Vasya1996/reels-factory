@@ -322,17 +322,22 @@ def split_verbatim(text: str) -> list[dict]:
     sents = [s for s in _SENT_RE.split(text) if s.strip()]
     n_blocks = min(4, len(sents))
     total_words = sum(len(s.split()) for s in sents)
-    target = total_words / n_blocks
 
-    groups, cur, cur_words = [], [], 0
-    for s in sents:
-        cur.append(s)
-        cur_words += len(s.split())
-        if cur_words >= target and len(groups) < n_blocks - 1:
-            groups.append(" ".join(cur))
-            cur, cur_words = [], 0
-    if cur:
+    groups = []
+    i = 0
+    remaining_words = total_words
+    for g in range(n_blocks):
+        remaining_groups = n_blocks - g
+        # оставить хотя бы по одному предложению каждой следующей группе
+        max_take = len(sents) - i - (remaining_groups - 1)
+        target = remaining_words / remaining_groups
+        cur, cur_words = [], 0
+        while len(cur) < max_take and (not cur or cur_words < target):
+            cur.append(sents[i])
+            cur_words += len(sents[i].split())
+            i += 1
         groups.append(" ".join(cur))
+        remaining_words -= cur_words
 
     blocks, t = [], 0.0
     for role, chunk in zip(ROLES_4, groups):
