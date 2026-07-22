@@ -1,0 +1,22 @@
+[
+  {
+    "name": "phonetics_only_transliterates",
+    "prompt": "/reels-factory:humanizing-speech {\"mode\":\"phonetics\",\"language\":\"ru\",\"blocks\":[{\"role\":\"hook\",\"speech\":\"Мы внедрили Microsoft CRM за 2 недели.\"}]} (задание передано инлайн вместо файла для eval)",
+    "assertions": [
+      "output is JSON with key blocks",
+      "no Latin characters remain in any speech",
+      "the word order and all non-brand words are unchanged",
+      "digits are spelled out in words"
+    ]
+  },
+  {
+    "name": "polish_removes_ai_cliches",
+    "prompt": "/reels-factory:humanizing-speech {\"mode\":\"polish\",\"language\":\"ru\",\"blocks\":[{\"role\":\"hook\",\"speech\":\"Важно понимать, что в современном мире внедрение данной системы является ключевым фактором роста, позволившим осуществить увеличение конверсии на 40 процентов.\"}]} (задание инлайн для eval)",
+    "assertions": [
+      "output is JSON with key blocks and same single role hook",
+      "no banned phrases from speech-bans-ru.md remain",
+      "the number 40 (сорок процентов) is preserved",
+      "sentences are at most ~12 words each"
+    ]
+  }
+]
