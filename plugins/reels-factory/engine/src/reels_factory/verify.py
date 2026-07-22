@@ -1,6 +1,6 @@
 """QA-гейты готового рилса (стиль "D<N>_<name>" -> "PASS(...)"/"FAIL(...)").
 
-D1 duration   — длительность 14-40с и в пределах ±2с от total РЕТАЙМЛЕННОГО сценария.
+D1 duration   — длительность mp4 в пределах ±2с от total РЕТАЙМЛЕННОГО сценария.
 D2 resolution — 1080x1920 @ 30fps.
 D3 loudness   — LUFS -14 ± 1.5.
 D4 captions   — caps.ass лежит рядом с mp4.
@@ -115,9 +115,11 @@ def verify_reel(mp4: Path, scenario: dict, dur_fn=None, wh_fn=None, lufs_fn=None
 
     total = scenario.get("total", scenario["blocks"][-1]["end"])
     dur = dur_fn(str(mp4))
-    d1_ok = (14 <= dur <= 40) and abs(dur - total) <= 2
-    gates["D1_duration"] = (f"PASS({dur:.2f}/{total:.2f})" if d1_ok
-                            else f"FAIL({dur:.2f}/{total:.2f})")
+    d1_ok = abs(dur - total) <= 2.0
+    gates["D1_duration"] = (
+        f"PASS({dur:.2f}/{total:.2f})" if d1_ok
+        else f"FAIL(длительность mp4 ({dur:.2f} с) расходится с сценарием "
+             f"({total:.2f} с) больше чем на 2 с)")
 
     w, h = wh_fn(str(mp4))
     fps = fps_fn(str(mp4))

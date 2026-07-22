@@ -47,6 +47,28 @@ def test_провал_по_длительности(tmp_path):
     assert report["gates"]["D1_duration"].startswith("FAIL")
 
 
+def test_60s_ролик_с_60s_сценарием_проходит_гейт_длительности(tmp_path):
+    # раньше окно 14-40с валило бы это даже при точном совпадении со сценарием
+    mp4 = _prep(tmp_path)
+    report = verify_reel(
+        mp4, _scenario(60.0),
+        dur_fn=lambda f: 60.0, wh_fn=lambda f: (1080, 1920),
+        lufs_fn=lambda f: -14.2, fps_fn=lambda f: 30.0, volume_fn=_vol_ok,
+    )
+    assert report["gates"]["D1_duration"].startswith("PASS")
+
+
+def test_60s_ролик_с_30s_сценарием_валит_гейт_длительности(tmp_path):
+    mp4 = _prep(tmp_path)
+    report = verify_reel(
+        mp4, _scenario(30.0),
+        dur_fn=lambda f: 60.0, wh_fn=lambda f: (1080, 1920),
+        lufs_fn=lambda f: -14.2, fps_fn=lambda f: 30.0, volume_fn=_vol_ok,
+    )
+    assert report["gates"]["D1_duration"].startswith("FAIL")
+    assert "расходится с сценарием" in report["gates"]["D1_duration"]
+
+
 def test_провал_по_тишине_голоса(tmp_path):
     mp4 = _prep(tmp_path)
 
