@@ -409,8 +409,28 @@ def run_verbatim_path(workdir, text: str, skill_runner, language: str) -> dict:
 # ---------------------------------------------------------------------------
 # Путь «из сырья»: задание-идея -> генерация скиллом -> хуманизация+судья.
 
+def _n_fails(verdict: dict) -> int:
+    scores = (verdict or {}).get("scores") or {}
+    return sum(1 for v in scores.values() if v is False)
+
+
+def _pick_variant2(attempts: list, best_scenario: dict):
+    """Следующий по качеству ОТЛИЧАЮЩИЙСЯ от best сценарий (или None)."""
+    ranked = sorted(enumerate(attempts),
+                    key=lambda t: (_n_fails(t[1].get("verdict")), -t[0]))
+    for _, a in ranked[1:]:
+        if a.get("scenario", {}).get("blocks") != best_scenario.get("blocks"):
+            return a["scenario"]
+    return None
+
+
 def run_generated_path(workdir, idea: dict, skill_runner, language: str) -> dict:
-    """Путь «из сырья»: скилл-генерация -> полировка+судья -> scenario.json."""
+    """Путь «из сырья»: скилл-генерация -> полировка+судья -> scenario.json.
+
+    При браке (verdict.pass=False) вместо претензий судьи пользователю
+    предлагается второй вариант реплик (scenario.variant2.json), если он
+    отличается от лучшего — внутренняя кухня судей в scenario.json не
+    попадает."""
     from reels_factory.humanize import refine_loop
 
     workdir = Path(workdir)
@@ -438,7 +458,18 @@ def run_generated_path(workdir, idea: dict, skill_runner, language: str) -> dict
         raise ScenarioError(f"целостность после полировки: {errs}")
     (workdir / "scenario.json").write_text(
         json.dumps(final, ensure_ascii=False, indent=1), encoding="utf-8")
-    return {"ok": True, "scenario": final, "verdict": verdict}
+
+    result = {"ok": True, "scenario": final, "verdict": verdict}
+    if not verdict["pass"]:
+        log_path = workdir / "judge_log.json"
+        if log_path.exists():
+            attempts = json.loads(log_path.read_text(encoding="utf-8")).get("attempts", [])
+            variant2 = _pick_variant2(attempts, final)
+            if variant2 is not None:
+                (workdir / "scenario.variant2.json").write_text(
+                    json.dumps(variant2, ensure_ascii=False, indent=1), encoding="utf-8")
+                result["variants"] = 2
+    return result
 
 
 # ---------------------------------------------------------------------------

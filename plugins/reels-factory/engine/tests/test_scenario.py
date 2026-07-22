@@ -397,6 +397,34 @@ def test_run_generated_path_full_flow(tmp_path):
     assert gen_task["language"] == "ru"
 
 
+def test_run_generated_path_fail_returns_variants(tmp_path):
+    gen_blocks = json.loads(_gen_reply())["blocks"]
+    polish1 = json.dumps({"blocks": [{"role": b["role"], "speech": b["speech"] + " A"}
+                                     for b in gen_blocks]}, ensure_ascii=False)
+    verdict1 = json.dumps({"pass": False,
+                           "scores": {"hook": False, "speakable": False}, "issues": []},
+                          ensure_ascii=False)
+    polish2 = json.dumps({"blocks": [{"role": b["role"], "speech": b["speech"] + " B"}
+                                     for b in gen_blocks]}, ensure_ascii=False)
+    verdict2 = json.dumps({"pass": False, "scores": {"hook": False}, "issues": []},
+                          ensure_ascii=False)
+    runner = FakeSkillRunner([_gen_reply(), polish1, verdict1, polish2, verdict2])
+
+    res = run_generated_path(tmp_path, IDEA, runner, language="ru")
+
+    assert res["ok"] is True
+    assert res["verdict"]["pass"] is False
+    assert res["variants"] == 2
+    on_disk = json.loads((tmp_path / "scenario.json").read_text(encoding="utf-8"))
+    assert on_disk["blocks"] == res["scenario"]["blocks"]
+    assert on_disk["blocks"][0]["speech"].endswith(" B")  # меньше провалов
+    variant2_path = tmp_path / "scenario.variant2.json"
+    assert variant2_path.exists()
+    variant2 = json.loads(variant2_path.read_text(encoding="utf-8"))
+    assert variant2["blocks"][0]["speech"].endswith(" A")
+    assert variant2["blocks"] != res["scenario"]["blocks"]
+
+
 def test_run_generated_path_bad_blocks_raises(tmp_path):
     runner = FakeSkillRunner([json.dumps({"title": "x", "blocks": []})])
     import pytest as _pytest
@@ -476,6 +504,32 @@ def test_script_text_missing_file_json_error(capsys, tmp_path):
     assert exc.value.code == 1
     out = json.loads(capsys.readouterr().out.strip())
     assert out["ok"] is False
+
+
+def test_script_idea_failing_verdict_exits_0_with_variants(monkeypatch, tmp_path, capsys):
+    import reels_factory.__main__ as cli
+    import reels_factory.llm as llm
+    import reels_factory.scenario as sc_mod
+
+    idea_path = tmp_path / "idea.json"
+    idea_path.write_text(json.dumps({"idea": "и", "length_s": 20, "quotes": []}),
+                         encoding="utf-8")
+
+    def fake_run(workdir, idea, runner, language):
+        return {"ok": True, "scenario": {"blocks": []},
+                "verdict": {"pass": False}, "variants": 2}
+
+    monkeypatch.setattr(sc_mod, "run_generated_path", fake_run)
+    monkeypatch.setattr(llm, "ClaudeSkillRunner", lambda: object())
+
+    class Args:
+        workdir = str(tmp_path)
+        idea_file = str(idea_path)
+
+    cli._cmd_script_idea(Args, {"language": "ru"})  # не должен бросить SystemExit
+    out = json.loads(capsys.readouterr().out.strip())
+    assert out["variants"] == 2
+    assert out["verdict"]["pass"] is False
 
 
 def test_script_idea_missing_file_json_error(capsys, tmp_path):

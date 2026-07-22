@@ -143,7 +143,6 @@ def _cmd_script_idea(args, cfg):
         print(json.dumps({"ok": False, "error": str(e)[:500]}, ensure_ascii=False))
         sys.exit(1)
     print(json.dumps(res, ensure_ascii=False))
-    sys.exit(0 if res["verdict"]["pass"] else 2)
 
 
 def _cmd_ideas(args, cfg):

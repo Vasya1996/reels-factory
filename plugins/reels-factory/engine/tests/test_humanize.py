@@ -94,3 +94,22 @@ def test_refine_loop_returns_last_on_exhaust(tmp_path):
     final, verdict = refine_loop(runner, tmp_path, sc, TASK, "ru", max_rounds=2)
     assert verdict["pass"] is False
     assert final["blocks"][0]["speech"] == "v2"
+
+
+def test_refine_loop_exhaust_picks_attempt_with_fewer_fails(tmp_path):
+    sc = {"blocks": [{"role": "hook", "start": 0.0, "end": 2.0, "speech": "а"}]}
+    v1 = json.dumps({"pass": False, "scores": {"hook": False, "speakable": False},
+                     "issues": []}, ensure_ascii=False)
+    v2 = json.dumps({"pass": False, "scores": {"hook": False}, "issues": []},
+                    ensure_ascii=False)
+    runner = FakeSkillRunner([
+        json.dumps({"blocks": [{"role": "hook", "speech": "v1"}]}), v1,
+        json.dumps({"blocks": [{"role": "hook", "speech": "v2"}]}), v2,
+    ])
+    final, verdict = refine_loop(runner, tmp_path, sc, TASK, "ru", max_rounds=2)
+    assert final["blocks"][0]["speech"] == "v2"  # v2 has fewer False scores
+    assert verdict["scores"] == {"hook": False}
+    log = json.loads((tmp_path / "judge_log.json").read_text(encoding="utf-8"))
+    assert len(log["attempts"]) == 2
+    assert log["attempts"][0]["scenario"]["blocks"][0]["speech"] == "v1"
+    assert log["attempts"][1]["scenario"]["blocks"][0]["speech"] == "v2"

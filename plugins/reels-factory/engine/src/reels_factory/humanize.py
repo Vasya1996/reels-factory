@@ -85,12 +85,23 @@ def judge_scenario(runner, workdir, sc: dict, task: dict, language: str) -> dict
     return v
 
 
+def _n_fails(verdict: dict) -> int:
+    scores = (verdict or {}).get("scores") or {}
+    return sum(1 for v in scores.values() if v is False)
+
+
 def refine_loop(runner, workdir, sc: dict, task: dict, language: str,
                 max_rounds: int = 2):
     """polish -> judge; брак -> polish с претензиями -> judge. Возвращает
-    (лучший из имеющихся сценарий, последний вердикт)."""
+    (лучший из имеющихся сценарий, последний вердикт).
+
+    При исчерпании раундов без pass пишет workdir/judge_log.json со всеми
+    попытками (лог для авторов, не для пользователя) и возвращает лучшую из
+    них — с наименьшим числом False в verdict["scores"] (при равенстве —
+    более позднюю попытку)."""
     current, verdict = sc, None
     issues = []
+    attempts = []
     for _ in range(max_rounds):
         round_task = dict(task)
         if issues:
@@ -102,7 +113,19 @@ def refine_loop(runner, workdir, sc: dict, task: dict, language: str,
         if issues:
             judge_task["prior_issues"] = issues
         verdict = judge_scenario(runner, workdir, current, judge_task, language)
+        attempts.append({"scenario": current, "verdict": verdict})
         if verdict["pass"]:
             return current, verdict
         issues = verdict.get("issues") or []
-    return current, verdict
+
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    (workdir / "judge_log.json").write_text(
+        json.dumps({"attempts": attempts}, ensure_ascii=False, indent=1),
+        encoding="utf-8")
+
+    best = attempts[0]
+    for a in attempts[1:]:
+        if _n_fails(a["verdict"]) <= _n_fails(best["verdict"]):
+            best = a
+    return best["scenario"], best["verdict"]
