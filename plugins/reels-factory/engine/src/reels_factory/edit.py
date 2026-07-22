@@ -77,6 +77,60 @@ def jump_cut(src: Path, out: Path, *,
     return out
 
 
+def jump_cut_ffmpeg(src: Path, out: Path, *, noise_db: int = -30,
+                    min_silence_s: float = DEFAULT_MIN_SILENCE_S,
+                    margin_s: float = DEFAULT_MARGIN_S, run=None) -> Path:
+    """Джамп-каты чистым ffmpeg: тишина ищется silencedetect'ом, куски речи
+    (с запасом margin_s) режутся trim/atrim и склеиваются concat'ом.
+
+    Появился как замена auto-editor: тот на реальном HeyGen-материале отдал
+    полностью чёрное видео (звук порезал верно, картинку потерял). Здесь весь
+    путь — один проход ffmpeg, ломаться нечему.
+    """
+    from reels_factory.config import FFMPEG
+    from reels_factory.editplan import detect_silences, speech_segments
+    from reels_factory.render import media_dur
+
+    src, out = Path(src), Path(out)
+    if not src.exists():
+        raise EditError(f"нет исходного фрагмента: {src}")
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    dur = media_dur(str(src))
+    silences = detect_silences(src, noise_db=noise_db, min_dur_s=min_silence_s)
+    segs = speech_segments(dur, silences)
+
+    # запас вокруг речи + слить пересечения — не рубить согласные на стыках
+    keep = []
+    for s, e in segs:
+        s, e = max(0.0, s - margin_s), min(dur, e + margin_s)
+        if keep and s <= keep[-1][1]:
+            keep[-1] = (keep[-1][0], max(keep[-1][1], e))
+        else:
+            keep.append((s, e))
+
+    # вырезать нечего — отдать копию, чтобы дальше конвейер шёл одинаково
+    if not keep or sum(e - s for s, e in keep) >= dur - 0.05:
+        shutil.copyfile(src, out)
+        return out
+
+    parts, maps = [], []
+    for i, (s, e) in enumerate(keep):
+        parts.append(f"[0:v]trim={s:.3f}:{e:.3f},setpts=PTS-STARTPTS[v{i}]")
+        parts.append(f"[0:a]atrim={s:.3f}:{e:.3f},asetpts=PTS-STARTPTS[a{i}]")
+        maps.append(f"[v{i}][a{i}]")
+    fc = ";".join(parts) + ";" + "".join(maps) + \
+        f"concat=n={len(keep)}:v=1:a=1[v][a]"
+    cmd = [FFMPEG, "-y", "-i", str(src), "-filter_complex", fc,
+           "-map", "[v]", "-map", "[a]",
+           "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p",
+           "-c:a", "aac", "-b:a", "192k", str(out)]
+    (run or _run)(cmd)
+    if not out.exists():
+        raise EditError(f"ffmpeg не создал файл: {out}")
+    return out
+
+
 def jump_cut_fragments(frags: list, rdir: Path, **kw) -> list:
     """Прогнать джамп-каты по всем фрагментам блока. Порядок сохраняется.
 

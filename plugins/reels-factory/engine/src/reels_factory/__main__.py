@@ -163,10 +163,13 @@ def _cmd_edit(args):
         if args.auto:
             # полный монтаж «как у монтажёра»: джамп-каты -> зумы по фразам ->
             # вспышки на сменах мысли -> ритм-добивка -> цвет/зерно -> субтитры
+            from reels_factory.edit import jump_cut_ffmpeg
             from reels_factory.zoom import plan_zoom_segments, render_zoom
 
-            cur = jump_cut(cur, out.with_name(out.stem + "_cut.mp4"),
-                           threshold=args.threshold, margin_s=args.margin)
+            # ffmpeg-джамп-каты: auto-editor на HeyGen-материале отдавал
+            # чёрное видео, поэтому в auto-режиме режем сами
+            cur = jump_cut_ffmpeg(cur, out.with_name(out.stem + "_cut.mp4"),
+                                  margin_s=args.margin)
             steps.append("jump_cuts")
             dur = media_dur(str(cur))
             silences = detect_silences(cur)

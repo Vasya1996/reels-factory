@@ -1,0 +1,20 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\Asus\Documents\personal_ai\projects\reels-factory\plugins\reels-factory\engine\src\reels_factory\__main__.py", line 305, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\Asus\Documents\personal_ai\projects\reels-factory\plugins\reels-factory\engine\src\reels_factory\__main__.py", line 287, in main
+    _cmd_edit(args)
+    ~~~~~~~~~^^^^^^
+  File "C:\Users\Asus\Documents\personal_ai\projects\reels-factory\plugins\reels-factory\engine\src\reels_factory\__main__.py", line 209, in _cmd_edit
+    cur = _burn_captions(cur, out, args.language)
+  File "C:\Users\Asus\Documents\personal_ai\projects\reels-factory\plugins\reels-factory\engine\src\reels_factory\__main__.py", line 126, in _burn_captions
+    transcribe_file(str(src), str(rdir), model_size="small", language=language)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Asus\Documents\personal_ai\projects\reels-factory\plugins\reels-factory\engine\src\reels_factory\transcribe.py", line 104, in transcribe_file
+    words, dev, lang = transcribe(str(wav), model_size, language, device)
+                       ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Asus\Documents\personal_ai\projects\reels-factory\plugins\reels-factory\engine\src\reels_factory\transcribe.py", line 38, in transcribe
+    from faster_whisper import WhisperModel
+ModuleNotFoundError: No module named 'faster_whisper'

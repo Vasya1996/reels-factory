@@ -144,3 +144,35 @@ def test_свуши_подмешиваются_на_времена_плана(tm
 
     fc = cmds[0][cmds[0].index("-filter_complex") + 1]
     assert "adelay=2000|2000" in fc
+
+
+@pytest.mark.slow
+def test_jump_cut_ffmpeg_режет_тишину_и_не_теряет_картинку(tmp_path):
+    """Регресс: auto-editor на реальном материале отдавал чёрное видео.
+    ffmpeg-путь обязан и укоротить ролик, и сохранить яркость кадра."""
+    import subprocess
+    from reels_factory.config import FFMPEG
+    from reels_factory.edit import jump_cut_ffmpeg
+    from reels_factory.render import media_dur
+
+    src = tmp_path / "src.mp4"
+    # 2с тона + 2с тишины + 2с тона на белом testsrc — есть что вырезать
+    subprocess.run([
+        FFMPEG, "-y",
+        "-f", "lavfi", "-i", "testsrc=size=320x640:rate=30:duration=6",
+        "-f", "lavfi", "-i",
+        "aevalsrc='if(between(t,2,4),0,0.8*sin(880*2*PI*t))':d=6",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest",
+        str(src)], check=True, capture_output=True)
+
+    out = jump_cut_ffmpeg(src, tmp_path / "out.mp4")
+
+    assert media_dur(str(out)) < 5.5  # тишина вырезана (с учётом margin)
+    stats = subprocess.run(
+        [FFMPEG, "-i", str(out), "-vf",
+         "select='eq(n\,30)',signalstats,metadata=print:key=lavfi.signalstats.YAVG",
+         "-f", "null", "-"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace").stderr
+    import re as _re
+    m = _re.search(r"YAVG=(\d+(?:\.\d+)?)", stats)
+    assert m and float(m.group(1)) > 10, "кадр чёрный — картинка потеряна"
