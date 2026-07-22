@@ -56,8 +56,13 @@ def _mentions_theme(text: str, *candidates) -> bool:
     Для каждого кандидата берём самое длинное буквенное слово (числа-слова
     игнорируются), считаем его корень (_theme_root) и ищем его как подстроку
     текста, регистронезависимо.
+
+    Кандидат в алфавите, которого нет в тексте, — несопоставим:
+    не считаем его провалом (баг: латинская тема при русском тексте).
     """
     low = (text or "").lower()
+    text_has_cyr = bool(re.search(r"[а-яё]", low))
+    comparable = 0
     for g in candidates:
         g = str(g or "").strip()
         if not g:
@@ -66,10 +71,17 @@ def _mentions_theme(text: str, *candidates) -> bool:
         if not words:
             continue
         longest = max(words, key=len).lower()
+        # кандидат в алфавите, которого нет в тексте, — несопоставим:
+        # не считаем его провалом (баг: латинская тема при русском тексте)
+        cand_is_cyr = bool(re.search(r"[а-яё]", longest))
+        if cand_is_cyr != text_has_cyr and not re.search(
+                r"[a-z]" if not cand_is_cyr else r"[а-яё]", low):
+            continue
+        comparable += 1
         root = _theme_root(longest)
         if len(root) >= 2 and root in low:
             return True
-    return False
+    return comparable == 0  # нечего было проверять — не валим
 
 
 def _read_style_excerpt(max_chars: int = 1500) -> str:

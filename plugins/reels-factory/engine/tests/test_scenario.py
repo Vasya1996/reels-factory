@@ -154,6 +154,22 @@ def test_mentions_theme_падежная_форма_матчится():
     assert _mentions_theme("Почему в ПАБГе бегут в Покровку?", None, "ПАБГ") is True
 
 
+def test_mentions_theme_latin_theme_cyrillic_text():
+    # Баг: тема "Vael" при русском тексте валила сценарий,
+    # хотя theme_spoken («ваэль») в тексте есть.
+    assert _mentions_theme("расскажу про ваэль и её фишки", "Vael", "ваэль") is True
+
+
+def test_mentions_theme_skips_incomparable_alphabet():
+    # Латинский кандидат без кириллического дубля не должен давать False,
+    # если в тексте вообще нет латиницы — алфавиты несопоставимы.
+    assert _mentions_theme("текст только кириллицей", "Vael") is True
+
+
+def test_mentions_theme_still_fails_when_absent():
+    assert _mentions_theme("текст про другое", "маркетинг", "маркетинга") is False
+
+
 def test_промпт_содержит_theme_spoken_и_cta(tmp_path):
     good = json.dumps(_ok_4blocks(), ensure_ascii=False)
     runner = FakeRunner([good])
