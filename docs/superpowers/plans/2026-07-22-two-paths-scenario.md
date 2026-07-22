@@ -1770,6 +1770,163 @@ git commit -m "feat(skill): script — два пути (свой текст / и
 
 ---
 
+### Task 11a: Клонирование голоса пользователя в ElevenLabs
+
+**Files:**
+- Modify: `plugins/reels-factory/engine/src/reels_factory/tts.py` (добавить `create_voice_clone`)
+- Modify: `plugins/reels-factory/engine/src/reels_factory/__main__.py` (команда `clone-voice`)
+- Modify: `plugins/reels-factory/skills/setup/SKILL.md` (шаг приёма записи голоса)
+- Test: `plugins/reels-factory/engine/tests/test_tts.py` (дополнить)
+
+**Interfaces:**
+- Consumes: env `ELEVENLABS_API_KEY` (как в `synth_voice`).
+- Produces:
+  - `tts.create_voice_clone(audio_path, name: str, http=None) -> str` — POST
+    `https://api.elevenlabs.io/v1/voices/add` (multipart: `name`, `files`),
+    возвращает `voice_id`.
+  - CLI: `python -m reels_factory clone-voice --audio F --name N` — печатает
+    `{"ok": true, "voice_id": "..."}`; ошибки API — `{"ok": false, "error"}`,
+    exit 1. Команду выполняет Клод в setup, не пользователь.
+
+- [ ] **Step 1: Write the failing test**
+
+Дописать в `tests/test_tts.py`:
+
+```python
+from reels_factory.tts import create_voice_clone
+
+
+def test_create_voice_clone_posts_and_returns_id(tmp_path, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "k")
+    audio = tmp_path / "voice.mp3"
+    audio.write_bytes(b"fake")
+    captured = {}
+
+    class Resp:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"voice_id": "v123"}
+
+    class Http:
+        def post(self, url, **kw):
+            captured["url"] = url
+            captured["data"] = kw.get("data")
+            captured["files"] = kw.get("files")
+            captured["headers"] = kw.get("headers")
+            return Resp()
+
+    vid = create_voice_clone(audio, "Серик", http=Http())
+    assert vid == "v123"
+    assert captured["url"].endswith("/v1/voices/add")
+    assert captured["data"]["name"] == "Серик"
+    assert captured["headers"]["xi-api-key"] == "k"
+    assert captured["files"]  # запись приложена
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python -m pytest tests/test_tts.py -k clone -v` → FAIL (ImportError).
+
+- [ ] **Step 3: Implement in tts.py**
+
+```python
+VOICES_ADD_URL = "https://api.elevenlabs.io/v1/voices/add"
+
+
+def create_voice_clone(audio_path, name: str, http=None) -> str:
+    """Мгновенный клон голоса (IVC): запись 1–2 мин чистой речи -> voice_id.
+
+    Требует тариф ElevenLabs с клонированием (Starter+). Ключ — env
+    ELEVENLABS_API_KEY.
+    """
+    api_key = os.environ.get("ELEVENLABS_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "ElevenLabs API key не задан: установите env ELEVENLABS_API_KEY")
+    if http is None:
+        import requests
+        http = requests
+    audio_path = Path(audio_path)
+    with open(audio_path, "rb") as f:
+        resp = http.post(
+            VOICES_ADD_URL,
+            data={"name": name},
+            files={"files": (audio_path.name, f)},
+            headers={"xi-api-key": api_key},
+            timeout=120,
+        )
+    resp.raise_for_status()
+    voice_id = resp.json().get("voice_id")
+    if not voice_id:
+        raise RuntimeError(f"ElevenLabs не вернул voice_id: {resp.json()!r}")
+    return voice_id
+```
+
+- [ ] **Step 4: CLI command in __main__.py**
+
+```python
+def _cmd_clone_voice(args, cfg):
+    from reels_factory.tts import create_voice_clone
+
+    try:
+        vid = create_voice_clone(args.audio, args.name)
+    except Exception as e:
+        print(json.dumps({"ok": False, "error": str(e)[:500]}, ensure_ascii=False))
+        sys.exit(1)
+    print(json.dumps({"ok": True, "voice_id": vid}, ensure_ascii=False))
+```
+
+Парсер:
+
+```python
+    p_cv = sub.add_parser("clone-voice",
+                          help="клонировать голос пользователя в ElevenLabs -> voice_id")
+    p_cv.add_argument("--audio", required=True, help="запись голоса (1-2 мин чистой речи)")
+    p_cv.add_argument("--name", required=True, help="имя голоса в ElevenLabs")
+```
+
+и ветка `elif args.cmd == "clone-voice": _cmd_clone_voice(args, cfg)`.
+ВАЖНО: `clone-voice` должен работать и БЕЗ валидного config.yaml (setup ещё
+не завершён) — в `main()` для этой команды пропустить `load_config()`:
+
+```python
+    args = ap.parse_args()
+    if args.cmd == "clone-voice":
+        _cmd_clone_voice(args, None)
+        return
+```
+
+(вставить ДО вызова `load_config()`).
+
+- [ ] **Step 5: Setup skill — шаг приёма записи**
+
+В `plugins/reels-factory/skills/setup/SKILL.md`, в месте, где заполняется
+`voice_id` конфига, заменить текущую логику на:
+
+````markdown
+### Голос пользователя (клон ElevenLabs)
+
+1. Спроси: «Озвучивать твоим голосом или готовым?» Если своим:
+2. Попроси запись голоса 1–2 минуты: чистая речь без музыки и шума, обычный
+   разговорный темп (можно голосовым сообщением; форматы mp3/wav/m4a).
+3. Запусти сам: `... -m reels_factory clone-voice --audio <файл> --name "<имя пользователя>"`
+4. `voice_id` из ответа запиши в `factory/config.yaml` -> `voice_id`.
+5. Если API вернул ошибку доступа — объясни: клонирование доступно с тарифа
+   ElevenLabs Starter и выше, пусть проверит подписку; до тех пор можно
+   выбрать готовый голос из библиотеки ElevenLabs.
+````
+
+- [ ] **Step 6: Run tests, validate, commit**
+
+Run: `python -m pytest` → PASS. `claude plugin validate ./plugins/reels-factory --strict` → OK.
+
+```bash
+git add plugins/reels-factory/engine/src/reels_factory/tts.py plugins/reels-factory/engine/src/reels_factory/__main__.py plugins/reels-factory/engine/tests/test_tts.py plugins/reels-factory/skills/setup/SKILL.md
+git commit -m "feat(voice): клонирование голоса пользователя в ElevenLabs (clone-voice + setup)"
+```
+
+---
+
 ### Task 12: Сквозная проверка и финал
 
 **Files:**
