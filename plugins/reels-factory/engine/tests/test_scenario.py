@@ -430,3 +430,33 @@ def test_run_generated_path_error_surfaces_as_json(monkeypatch, tmp_path, capsys
     import json as _json
     out = _json.loads(capsys.readouterr().out.strip())
     assert out["ok"] is False and "не-JSON" in out["error"]
+
+
+# ---------------------------------------------------------------------------
+# Task 10: Tests for run_ideas
+
+from reels_factory.scenario import run_ideas
+
+IDEAS_REPLY = json.dumps({"ideas": [
+    {"idea": "и1", "emotion": "удивление", "draft_hook": "х1",
+     "quotes": ["ц1"], "length_s": 30, "why": "спорное мнение"},
+    {"idea": "и2", "emotion": "злость", "draft_hook": "х2",
+     "quotes": ["ц2"], "length_s": 60, "why": "история"},
+]}, ensure_ascii=False)
+
+
+def test_run_ideas_flow(tmp_path):
+    runner = FakeSkillRunner([IDEAS_REPLY])
+    res = run_ideas(tmp_path, "длинный транскрипт встречи", runner, "ru")
+    assert res["ok"] is True
+    assert len(res["ideas"]) == 2
+    assert (tmp_path / "ideas.json").exists()
+    task = json.loads(runner.calls[0][1].read_text(encoding="utf-8"))
+    assert task["transcript"] == "длинный транскрипт встречи"
+
+
+def test_run_ideas_rejects_wrong_shape(tmp_path):
+    runner = FakeSkillRunner([json.dumps({"ideas": []})])
+    import pytest as _pytest
+    with _pytest.raises(Exception):
+        run_ideas(tmp_path, "т", runner, "ru")

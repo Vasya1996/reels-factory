@@ -439,3 +439,27 @@ def run_generated_path(workdir, idea: dict, skill_runner, language: str) -> dict
     (workdir / "scenario.json").write_text(
         json.dumps(final, ensure_ascii=False, indent=1), encoding="utf-8")
     return {"ok": True, "scenario": final, "verdict": verdict}
+
+
+# ---------------------------------------------------------------------------
+# Task 10: извлечение 2-3 идей рилсов из сырого транскрипта/заметок.
+
+def run_ideas(workdir, source_text: str, skill_runner, language: str) -> dict:
+    """Скилл-извлечение идей: сырьё -> ideas_task.json -> extracting-ideas -> ideas.json."""
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    payload = workdir / "ideas_task.json"
+    payload.write_text(json.dumps({"language": language, "transcript": source_text},
+                                  ensure_ascii=False, indent=1), encoding="utf-8")
+    reply = skill_runner.run_skill("extracting-ideas", payload)
+    data = _extract_json(reply)
+    ideas = data.get("ideas")
+    if not isinstance(ideas, list) or not (2 <= len(ideas) <= 3):
+        raise ScenarioError(f"ожидалось 2–3 идеи, получено: {ideas!r}")
+    for i, idea in enumerate(ideas):
+        for key in ("idea", "draft_hook", "quotes", "length_s"):
+            if not idea.get(key):
+                raise ScenarioError(f"идея {i}: нет поля {key}")
+    (workdir / "ideas.json").write_text(
+        json.dumps({"ideas": ideas}, ensure_ascii=False, indent=1), encoding="utf-8")
+    return {"ok": True, "ideas": ideas}

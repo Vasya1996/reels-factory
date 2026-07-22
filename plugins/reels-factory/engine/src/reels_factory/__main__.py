@@ -146,6 +146,27 @@ def _cmd_script_idea(args, cfg):
     sys.exit(0 if res["verdict"]["pass"] else 2)
 
 
+def _cmd_ideas(args, cfg):
+    from reels_factory.scenario import run_ideas
+    from reels_factory.llm import ClaudeSkillRunner
+
+    wd = _resolve_workdir(args.workdir)
+    wd.mkdir(parents=True, exist_ok=True)
+    if args.source_file:
+        text = Path(args.source_file).read_text(encoding="utf-8")
+    else:
+        from reels_factory.transcribe import transcribe_file
+        meta = transcribe_file(args.audio, wd, language=cfg.get("language", "ru"))
+        words = json.loads(Path(meta["out"]).read_text(encoding="utf-8"))["words"]
+        text = " ".join(w["text"] for w in words)
+    try:
+        res = run_ideas(wd, text, ClaudeSkillRunner(), cfg.get("language", "ru"))
+    except Exception as e:
+        print(json.dumps({"ok": False, "error": str(e)[:500]}, ensure_ascii=False))
+        sys.exit(1)
+    print(json.dumps(res, ensure_ascii=False))
+
+
 def main():
     ap = argparse.ArgumentParser(prog="reels_factory")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -187,6 +208,12 @@ def main():
     p_si.add_argument("--idea-file", required=True, dest="idea_file",
                       help="JSON: {idea, length_s, quotes[], persona?}")
 
+    p_i = sub.add_parser("ideas", help="извлечь 2-3 идеи рилсов из сырья (текст/аудио)")
+    p_i.add_argument("--workdir", required=True)
+    gi = p_i.add_mutually_exclusive_group(required=True)
+    gi.add_argument("--source-file", dest="source_file", help="файл с текстом-сырьём")
+    gi.add_argument("--audio", help="аудио/видео сырьё (локальная расшифровка)")
+
     args = ap.parse_args()
     try:
         cfg = load_config()
@@ -204,6 +231,8 @@ def main():
         _cmd_script_text(args, cfg)
     elif args.cmd == "script-idea":
         _cmd_script_idea(args, cfg)
+    elif args.cmd == "ideas":
+        _cmd_ideas(args, cfg)
 
 
 if __name__ == "__main__":
