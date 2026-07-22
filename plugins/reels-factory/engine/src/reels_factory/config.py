@@ -83,10 +83,15 @@ def load_config(path=None) -> dict:
     product = cfg.get("product") or {}
     if not str(product.get("name") or "").strip():
         raise ConfigError("Поле product.name (имя продукта) обязательно в config.yaml.")
-    if not str(product.get("cta_phrase") or "").strip():
+    # cta_phrase опционален: CTA в пути генерации пишется под каждый ролик,
+    # в пути «дословно» не добавляется вовсе (см. spec 2026-07-21).
+
+    lang = str(cfg.get("language") or "ru").strip().lower()
+    if not (len(lang) == 2 and lang.isalpha()):
         raise ConfigError(
-            "Поле product.cta_phrase (дословная фраза призыва) обязательно в config.yaml."
+            f"Поле language должно быть двухбуквенным кодом языка ('ru', 'kk'), сейчас: {cfg.get('language')!r}."
         )
+    cfg["language"] = lang
 
     if fmt in ("split", "avatar"):
         avatar = cfg.get("avatar") or {}
