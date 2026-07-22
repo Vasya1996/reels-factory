@@ -1,4 +1,6 @@
 import json
+import re
+from pathlib import Path
 
 from reels_factory.llm import FakeRunner
 from reels_factory.scenario import generate_scenario, validate_scenario, ScenarioError, _mentions_theme
@@ -183,3 +185,75 @@ def test_insight_и_facts_пробрасываются_в_промпт(tmp_path)
     assert "мелкий помол даёт переэкстракцию" in prompt
     assert "чашка кислого кофе" in prompt
     assert "ровный вкус" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Task 2: Tests for split_verbatim, scenario_from_text, validate_integrity
+
+from reels_factory.scenario import (
+    split_verbatim, scenario_from_text, validate_integrity, ROLES_4,
+)
+
+
+def _norm(s):
+    return re.sub(r"\s+", " ", s).strip()
+
+
+TEXT = ("Мы запустили продукт в марте. Первый месяц не было ни одной продажи. "
+        "Потом мы поменяли оффер. Продажи пошли на третий день. "
+        "Сейчас у нас двадцать клиентов.")
+
+
+def test_split_preserves_text_verbatim():
+    blocks = split_verbatim(TEXT)
+    joined = " ".join(b["speech"] for b in blocks)
+    assert _norm(joined) == _norm(TEXT)
+
+
+def test_split_roles_and_order():
+    blocks = split_verbatim(TEXT)
+    assert 1 <= len(blocks) <= 4
+    assert [b["role"] for b in blocks] == ROLES_4[:len(blocks)]
+
+
+def test_split_timings_monotonic():
+    blocks = split_verbatim(TEXT)
+    assert blocks[0]["start"] == 0.0
+    for prev, cur in zip(blocks, blocks[1:]):
+        assert cur["start"] == prev["end"]
+        assert cur["end"] > cur["start"]
+
+
+def test_split_short_text_single_block():
+    blocks = split_verbatim("Одна фраза.")
+    assert len(blocks) == 1
+    assert blocks[0]["speech"] == "Одна фраза."
+
+
+def test_scenario_from_text_writes_file(tmp_path):
+    sc = scenario_from_text(tmp_path, TEXT)
+    on_disk = json.loads((tmp_path / "scenario.json").read_text(encoding="utf-8"))
+    assert on_disk == sc
+    assert sc["mode"] == "verbatim"
+    assert validate_integrity(sc) == []
+
+
+def test_validate_integrity_catches_empty_speech():
+    sc = {"blocks": [{"role": "hook", "start": 0.0, "end": 2.0, "speech": ""}]}
+    errs = validate_integrity(sc)
+    assert any("speech" in e for e in errs)
+
+
+def test_validate_integrity_catches_gap():
+    sc = {"blocks": [
+        {"role": "hook", "start": 0.0, "end": 2.0, "speech": "а"},
+        {"role": "development", "start": 3.0, "end": 5.0, "speech": "б"},
+    ]}
+    assert validate_integrity(sc) != []
+
+
+def test_validate_integrity_no_quality_rules():
+    # 200 слов, нет CTA, латиница — целостность ДОЛЖНА пройти (качество не её дело)
+    long_speech = "слово " * 200 + "Microsoft"
+    sc = {"blocks": [{"role": "hook", "start": 0.0, "end": 80.0, "speech": long_speech}]}
+    assert validate_integrity(sc) == []

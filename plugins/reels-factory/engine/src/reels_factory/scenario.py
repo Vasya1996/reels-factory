@@ -303,3 +303,74 @@ def generate_scenario(workdir: Path, hypothesis: dict, runner: LLMRunner, retrie
         last_errors = errors
 
     raise ScenarioError(f"исчерпаны ретраи ({retries}): {last_errors}")
+
+
+# ---------------------------------------------------------------------------
+# Путь «дословно»: текст пользователя без правок (spec 2026-07-21).
+# Блоки — только формат передачи сборке/Юле: границы по предложениям,
+# роли позиционные, тайминги — черновая оценка по счёту слов.
+
+WORDS_PER_SEC = 2.5
+
+_SENT_RE = re.compile(r"(?<=[.!?…])\s+")
+
+
+def split_verbatim(text: str) -> list[dict]:
+    text = str(text or "").strip()
+    if not text:
+        raise ScenarioError("пустой текст")
+    sents = [s for s in _SENT_RE.split(text) if s.strip()]
+    n_blocks = min(4, len(sents))
+    total_words = sum(len(s.split()) for s in sents)
+    target = total_words / n_blocks
+
+    groups, cur, cur_words = [], [], 0
+    for s in sents:
+        cur.append(s)
+        cur_words += len(s.split())
+        if cur_words >= target and len(groups) < n_blocks - 1:
+            groups.append(" ".join(cur))
+            cur, cur_words = [], 0
+    if cur:
+        groups.append(" ".join(cur))
+
+    blocks, t = [], 0.0
+    for role, chunk in zip(ROLES_4, groups):
+        dur = round(len(chunk.split()) / WORDS_PER_SEC, 1)
+        blocks.append({"role": role, "start": round(t, 1),
+                       "end": round(t + dur, 1), "speech": chunk})
+        t += dur
+    return blocks
+
+
+def scenario_from_text(workdir: Path, text: str) -> dict:
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    sc = {"mode": "verbatim", "blocks": split_verbatim(text)}
+    (workdir / "scenario.json").write_text(
+        json.dumps(sc, ensure_ascii=False, indent=1), encoding="utf-8")
+    return sc
+
+
+def validate_integrity(sc: dict) -> list[str]:
+    """Только механика (файл годен для сборки). Качество — судья, не код."""
+    errs = []
+    blocks = sc.get("blocks")
+    if not isinstance(blocks, list) or not blocks:
+        return ["blocks: отсутствует или пуст"]
+    prev_end = None
+    for i, b in enumerate(blocks):
+        if not isinstance(b, dict):
+            errs.append(f"блок {i}: не объект")
+            continue
+        if not str(b.get("speech") or "").strip():
+            errs.append(f"блок {i} ({b.get('role')}): пустой speech")
+        start, end = b.get("start"), b.get("end")
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                   for v in (start, end)):
+            errs.append(f"блок {i}: start/end не числа")
+            continue
+        if prev_end is not None and start != prev_end:
+            errs.append(f"блок {i}: start ({start}) != end предыдущего ({prev_end})")
+        prev_end = end
+    return errs
