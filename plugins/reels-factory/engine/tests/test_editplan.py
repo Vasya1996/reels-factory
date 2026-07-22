@@ -101,3 +101,37 @@ def test_паттерн_прерывание_не_реже_пятнадцати_
 
     assert qa["gates"]["pattern_break"]["pass"] is True
     assert qa["gates"]["pattern_break"]["limit"] == PATTERN_BREAK_S
+
+
+# --- ритм-добивка: панчи в статические дыры ---
+
+def test_fill_static_gaps_пустое_покрытие_панч_каждые_три_секунды():
+    from reels_factory.editplan import fill_static_gaps
+
+    punches = fill_static_gaps([], 10.0)
+    times = [t for t, _ in punches]
+    assert times[0] == 3.0
+    assert all(b - a <= 3.7 for a, b in zip(times, times[1:]))  # шаг max_gap+dur
+
+
+def test_fill_static_gaps_закрытые_интервалы_не_добиваются():
+    from reels_factory.editplan import fill_static_gaps
+
+    # движение есть всё время — добивать нечего
+    assert fill_static_gaps([(0.0, 10.0)], 10.0) == []
+
+
+def test_fill_static_gaps_панч_только_в_дыре():
+    from reels_factory.editplan import fill_static_gaps
+
+    punches = fill_static_gaps([(0.0, 4.0), (12.0, 20.0)], 20.0)
+    times = [t for t, _ in punches]
+    assert times  # дыра 4..12 длиннее 3с — добита
+    assert all(4.0 < t < 12.0 for t in times)
+
+
+def test_fill_static_gaps_пересекающиеся_интервалы_сливаются():
+    from reels_factory.editplan import fill_static_gaps
+
+    # два куска покрывают 0..9 без дыр — панчей нет (ролик 9с)
+    assert fill_static_gaps([(0.0, 5.0), (4.0, 9.0)], 9.0) == []

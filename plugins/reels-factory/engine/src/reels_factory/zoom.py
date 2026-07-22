@@ -63,7 +63,11 @@ def detect_face_anchor(src, *, sample_fps: float = 2.0, run_probe=None,
     if detect is not None:
         centers = detect(src, sample_fps)
     else:
-        centers = _detect_faces_opencv(src, sample_fps)
+        try:
+            centers = _detect_faces_opencv(src, sample_fps)
+        except Exception:
+            # нет OpenCV / не читается файл — дефолтный якорь лучше, чем падение
+            centers = []
     if not centers:
         return (0.5, 0.42)
     xs = sorted(c[0] for c in centers)

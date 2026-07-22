@@ -123,6 +123,35 @@ def _fill_gaps(events: list, duration: float) -> list:
     return sorted(out)
 
 
+def fill_static_gaps(covered: list, duration: float, *, max_gap: float = 3.0,
+                     punch_dur: float = PUNCH_DUR_S) -> list:
+    """Панч-окна там, где дольше max_gap ничего не происходит.
+
+    covered — интервалы [(start, end), ...], где движение уже есть: зумы по
+    фразам, окна вставок, вспышки переходов, готовые панчи. Всё, что между ними
+    длиннее max_gap, — статика (зона оттока), туда добиваются короткие панчи с
+    шагом max_gap. Возвращает ТОЛЬКО добавленные окна [(t, punch_dur), ...] —
+    вызывающий сам сливает их с существующими.
+    """
+    ivs = sorted((max(0.0, float(s)), min(duration, float(e)))
+                 for s, e in covered if float(e) > float(s))
+    merged = []
+    for s, e in ivs:
+        if merged and s <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+        else:
+            merged.append((s, e))
+
+    punches = []
+    edges = [(0.0, 0.0)] + merged + [(duration, duration)]
+    for (_, a), (b, _) in zip(edges, edges[1:]):
+        t = a + max_gap
+        while t + punch_dur <= min(b, duration):
+            punches.append((round(t, 3), punch_dur))
+            t += max_gap + punch_dur
+    return punches
+
+
 def validate_plan(plan: dict, *, insert_windows: list | None = None) -> dict:
     """Гейты плана — до рендера. Возвращает {"all_pass", "gates": {...}}."""
     duration = float(plan.get("duration") or 0)

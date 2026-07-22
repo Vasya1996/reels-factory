@@ -144,7 +144,8 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
                           voice_wavs=voice_wavs or None,
                           broll_segments=broll_segments, punch_windows=punch_windows,
                           caption_fixes=caption_fixes,
-                          grade=edit_cfg["grade"], grain=edit_cfg["grain"])
+                          grade=edit_cfg["grade"], grain=edit_cfg["grain"],
+                          zoom=edit_cfg["zoom"], flash=edit_cfg["flash"])
         mp4 = res["mp4"]
         timed = res["timed_scenario"]
         words = res.get("words_fixed")

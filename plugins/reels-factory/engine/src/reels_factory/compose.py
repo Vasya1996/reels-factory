@@ -44,6 +44,9 @@ from reels_factory.render import (
 )
 from reels_factory.captions import build_ass
 from reels_factory.transcribe import transcribe_file
+from reels_factory.transitions import build_flash_filter
+from reels_factory.editplan import fill_static_gaps
+from reels_factory.broll import FADE_S as INSERT_FADE_S, FULL as INSERT_FULL, insert_motion
 
 TOP_H = 672
 BOT_H = 1248
@@ -397,18 +400,35 @@ def _concat_broll(rdir: Path, broll_mp4: Path, cuts: list) -> Path:
     return out
 
 
-def build_punch_filter(in_label: str, punch_windows: list) -> tuple:
+def build_punch_filter(in_label: str, punch_windows: list,
+                       out_w: int | None = None, out_h: int | None = None) -> tuple:
     """Ветка панч-инов (чистая функция). На каждом окне (start,dur) — лёгкий
-    наезд PUNCH_ZOOM: split -> crop(iw/zoom,ih/zoom)+scale обратно -> overlay с
-    enable на окно. Возвращает (список filter-частей, метка выхода)."""
+    наезд PUNCH_ZOOM: split -> crop(iw/zoom,ih/zoom) от ЦЕНТРА -> scale обратно
+    к размеру кадра -> overlay с enable на окно.
+
+    out_w/out_h — размер кадра, к которому возвращается наезд. По умолчанию
+    берётся из самого потока (`iw*zoom`), а не из констант проекта: жёсткие
+    1080x1920 растягивали кадр ролика другого размера, он переставал влезать в
+    базу, и overlay показывал его левый верхний угол вместо центра.
+    Явные out_w/out_h нужны там, где размер заведомо известен (конвейер).
+    """
     parts = []
     cur = in_label
+    if out_w and out_h:
+        back = f"scale={out_w}:{out_h}"
+    else:
+        # crop уменьшил кадр в zoom раз — обратный scale возвращает исходный
+        # размер каким бы он ни был; trunc(.../2)*2 держит чётность для yuv420p
+        back = (f"scale=w=trunc(iw*{PUNCH_ZOOM}/2)*2:"
+                f"h=trunc(ih*{PUNCH_ZOOM}/2)*2")
     for i, (s, d) in enumerate(punch_windows):
         s, d = float(s), float(d)
         parts.append(f"[{cur}]split=2[pb{i}][pz{i}]")
         parts.append(f"[pz{i}]crop=iw/{PUNCH_ZOOM}:ih/{PUNCH_ZOOM},"
-                     f"scale={OUT_W}:{OUT_H},setsar=1[pzs{i}]")
-        parts.append(f"[pb{i}][pzs{i}]overlay=0:0:"
+                     f"{back},setsar=1[pzs{i}]")
+        # центрируем наезд: (W-w)/2 — если после округления кадр на пиксель
+        # больше базы, он останется по центру, а не съедет в угол
+        parts.append(f"[pb{i}][pzs{i}]overlay=(W-w)/2:(H-h)/2:"
                      f"enable='between(t,{s},{s + d})'[pw{i}]")
         cur = f"pw{i}"
     return parts, cur
@@ -434,7 +454,8 @@ def build_finish_filter(grade: bool = False, grain: bool = False) -> str:
 
 def build_video_filter(fmt: str, punch_windows: list | None = None,
                        insert_windows: list | None = None,
-                       grade: bool = False, grain: bool = False) -> str:
+                       grade: bool = False, grain: bool = False,
+                       flash_times: list | None = None) -> str:
     """Видео-часть filter_complex.
 
     split: [0:v]=аватар-верх (scale/crop 1080x672) + [1:v]=видеоряд (scale/crop
@@ -460,11 +481,18 @@ def build_video_filter(fmt: str, punch_windows: list | None = None,
         cur = "base"
         for i, (s, e) in enumerate(insert_windows or []):
             s, e = float(s), float(e)
+            # вставка ЗАЕЗЖАЕТ с правого края и УХОДИТ за левый (insert_motion),
+            # плюс альфа-кроссфейд — появление читается как монтаж, а не как сбой
+            fade = (f"fade=t=in:st={s:.3f}:d={INSERT_FADE_S}:alpha=1,"
+                    f"fade=t=out:st={max(s, e - INSERT_FADE_S):.3f}:d={INSERT_FADE_S}:alpha=1")
             parts.append(
                 f"[{i + 1}:v]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
-                f"crop={OUT_W}:{OUT_H},setsar=1,fps={FPS},setpts=PTS+{s:.3f}/TB[ins{i}]")
+                f"crop={OUT_W}:{OUT_H},setsar=1,fps={FPS},format=yuva420p,"
+                f"setpts=PTS+{s:.3f}/TB,{fade}[ins{i}]")
+            mx, my = insert_motion(INSERT_FULL, s, e, OUT_H)
             parts.append(
-                f"[{cur}][ins{i}]overlay=0:0:enable='between(t,{s:.3f},{e:.3f})'[ov{i}]")
+                f"[{cur}][ins{i}]overlay=x='{mx}':y='{my}':"
+                f"enable='between(t,{s:.3f},{e:.3f})'[ov{i}]")
             cur = f"ov{i}"
     else:  # fullscreen
         parts = [
@@ -473,8 +501,12 @@ def build_video_filter(fmt: str, punch_windows: list | None = None,
         ]
         cur = "base"
     if punch_windows:
-        punch_parts, cur = build_punch_filter(cur, punch_windows)
+        punch_parts, cur = build_punch_filter(cur, punch_windows, OUT_W, OUT_H)
         parts.extend(punch_parts)
+    if flash_times:
+        # световой переход на границах блоков: вспышка яркости поверх всего слоя
+        parts.append(f"[{cur}]{build_flash_filter(flash_times)}[fl]")
+        cur = "fl"
     finish = build_finish_filter(grade, grain)
     parts.append(f"[{cur}]{finish}[v]" if finish else f"[{cur}]null[v]")
     return ";".join(parts)
@@ -565,10 +597,12 @@ def _concat_voice(rdir: Path, voice_wavs: list, holds: list) -> Path:
 
 def _build_video(rdir: Path, fmt: str, top: Path | None, broll: Path, offset: float,
                  T: float, punch_windows: list | None = None,
-                 grade: bool = False, grain: bool = False) -> Path:
+                 grade: bool = False, grain: bool = False,
+                 flash_times: list | None = None) -> Path:
     """Немой видеослой 1080x1920 (split vstack | fullscreen broll + панч-ины)."""
     stacked = rdir / "stacked.mp4"
-    fc = build_video_filter(fmt, punch_windows, grade=grade, grain=grain)
+    fc = build_video_filter(fmt, punch_windows, grade=grade, grain=grain,
+                            flash_times=flash_times)
     cmd = [FFMPEG, "-y"]
     if fmt == "split":
         cmd += ["-i", str(top)]  # [0:v] = аватар-верх
@@ -601,14 +635,15 @@ def _mix_audio(rdir: Path, voice_src: Path, broll: Path, offset: float, T: float
 
 def _build_video_avatar(rdir: Path, top: Path, broll_mp4, inserts: list, T: float,
                         punch_windows: list | None = None,
-                        grade: bool = False, grain: bool = False) -> Path:
+                        grade: bool = False, grain: bool = False,
+                        flash_times: list | None = None) -> Path:
     """Немой видеослой 1080x1920 для avatar: [0]=аватар-фуллскрин, поверх — вставки
     видеоряда в окнах своих блоков (см. build_video_filter avatar). Каждая вставка
     — вход исходника с -ss offset -t src_dur (кадр 0 = start окна после setpts)."""
     stacked = rdir / "stacked.mp4"
     insert_windows = [(c["start"], c["end"]) for c in inserts]
     fc = build_video_filter("avatar", punch_windows, insert_windows,
-                            grade=grade, grain=grain)
+                            grade=grade, grain=grain, flash_times=flash_times)
     cmd = [FFMPEG, "-y", "-i", str(top)]  # [0] = аватар-фуллскрин
     for c in inserts:
         cmd += ["-ss", f"{c['offset']}", "-t", f"{c['src_dur']}", "-i", str(broll_mp4)]
@@ -640,6 +675,37 @@ def _mix_audio_avatar(rdir: Path, voice_src: Path, broll_mp4, inserts: list, T: 
     return out_wav
 
 
+def _apply_zoom_layer(rdir: Path, src: Path, T: float,
+                      name: str = "avatar_zoom.mp4") -> tuple:
+    """Наезды по фразам на слое говорящей головы (zoom.py: push/punch/pulse с
+    easing и наведением на лицо). Фразы берутся из пауз в звуке самого слоя.
+
+    Возвращает (путь к результату, сегменты зума). Сегменты нужны ритм-добивке:
+    их интервалы уже закрыты движением, панчи туда не ставятся. Нет фраз — файл
+    возвращается как есть."""
+    from reels_factory.editplan import detect_silences, speech_segments
+    from reels_factory.zoom import plan_zoom_segments, render_zoom
+
+    segs = speech_segments(T, detect_silences(src))
+    zsegs = plan_zoom_segments(segs)
+    if not zsegs:
+        return src, []
+    out = rdir / name
+    render_zoom(src, out, zsegs, duration=T)
+    return out, zsegs
+
+
+def _rhythm_fill(punch_windows: list | None, covered: list, T: float) -> list | None:
+    """Добить панчами статические дыры длиннее 3с (см. fill_static_gaps).
+    Возвращает объединённый отсортированный список панч-окон (или исходный,
+    если добивать нечего)."""
+    extra = fill_static_gaps(covered, T)
+    if not extra:
+        return punch_windows
+    merged = [(float(s), float(d)) for s, d in (punch_windows or [])] + extra
+    return sorted(merged)
+
+
 def _default_transcribe(voice_wav: Path, rdir: Path) -> list:
     transcribe_file(str(voice_wav), str(rdir), model_size="small", language="ru")
     return load_words_file(str(rdir / "words.json"))
@@ -650,7 +716,8 @@ def assemble(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out_mp4, *,
              voice_wavs: list | None = None, transcribe_fn=None,
              broll_segments: list | None = None, punch_windows: list | None = None,
              whoosh_at: list | None = None, caption_fixes: dict | None = None,
-             grade: bool = False, grain: bool = False) -> dict:
+             grade: bool = False, grain: bool = False,
+             zoom: bool = False, flash: bool = False) -> dict:
     """Полный конвейер сборки рилса. Возвращает {"mp4","dur","lufs",
     "timed_scenario","words_fixed"}; пишет scenario.timed.json и words.fixed.json.
 
@@ -665,6 +732,12 @@ def assemble(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out_mp4, *,
     либо вставки (plan_avatar_inserts, avatar); иначе один offset. caption_fixes
     — карта apply_caption_fixes (см. build_caption_fixes); None -> дефолт (без
     бренда/темы). transcribe_fn(voice_wav, rdir)->words — DI для тестов.
+
+    zoom=True — наезды по фразам на слое говорящей головы (push/punch/pulse с
+    наведением на лицо, см. zoom.py) + ритм-добивка: статические дыры длиннее 3с
+    закрываются короткими панчами, чтобы каждые ~3с что-то происходило.
+    flash=True — световая вспышка на границах блоков (transitions.py); её времена
+    добавляются в whoosh_at — переход слышен и виден одновременно.
     """
     rdir = Path(rdir)
     rdir.mkdir(parents=True, exist_ok=True)
@@ -701,9 +774,15 @@ def assemble(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out_mp4, *,
     if not whoosh_wav.exists():
         whoosh_wav = None
 
+    flash_times = [float(b["start"]) for b in timed["blocks"][1:]] if flash else []
+
     if format == "avatar":
         # аватар-фуллскрин (голос вшит) + опциональные вставки видеоряда
         voice_src = _concat_avatars(rdir, avatar_mp4s, holds, height=OUT_H)
+        zoom_segs = []
+        if zoom:
+            # наезды рендерятся ДО наложения вставок: вставки не зумятся
+            voice_src, zoom_segs = _apply_zoom_layer(rdir, voice_src, T)
         insert_segs = [s for s in (broll_segments or []) if s.get("insert")]
         inserts = []
         if insert_segs:
@@ -715,18 +794,28 @@ def assemble(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out_mp4, *,
         (rdir / "scenario.timed.json").write_text(
             json.dumps(timed, ensure_ascii=False, indent=1), encoding="utf-8")
 
-        # свуши — на границах вставок (+ панчи)
+        # свуши — на границах вставок (+ панчи, + вспышки переходов)
         if whoosh_at is None:
             pts = []
             for c in inserts:
                 pts += [c["start"], c["end"]]
             if punch_windows:
                 pts += [float(s) for s, _ in punch_windows]
+            pts += flash_times
             whoosh_at = sorted(set(pts))
+
+        # ритм-добивка: свуши на неё НЕ ставятся (каждые 3с свуш — уже шум)
+        if zoom:
+            covered = [(zs, ze) for (zs, ze, _k, _st) in zoom_segs]
+            covered += [(c["start"], c["end"]) for c in inserts]
+            covered += [(float(s), float(s) + float(d)) for s, d in (punch_windows or [])]
+            covered += [(t - 0.15, t + 0.15) for t in flash_times]
+            punch_windows = _rhythm_fill(punch_windows, covered, T)
 
         # 1) немой видеослой + 2) аудио (микс со вставками / голос на субтитры)
         stacked = _build_video_avatar(rdir, voice_src, broll_mp4, inserts, T,
-                                      punch_windows, grade=grade, grain=grain)
+                                      punch_windows, grade=grade, grain=grain,
+                                      flash_times=flash_times)
         mix_wav = _mix_audio_avatar(rdir, voice_src, broll_mp4, inserts, T,
                                     rdir / "mix.wav", include_bed=True,
                                     whoosh_at=whoosh_at, whoosh_wav=whoosh_wav)
@@ -750,8 +839,13 @@ def assemble(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out_mp4, *,
             bottom_offset = 0.0
 
         # голосовой источник: split -> top(видео+голос), fullscreen -> voice_track(звук)
+        zoom_segs = []
         if format == "split":
             voice_src = _concat_avatars(rdir, avatar_mp4s, holds)
+            if zoom:
+                # наезды на верхнем слое (лицо); низ-видеоряд и так движется
+                voice_src, zoom_segs = _apply_zoom_layer(rdir, voice_src, T,
+                                                         name="top_zoom.mp4")
             top_for_video = voice_src
         else:
             voice_src = _concat_voice(rdir, voice_wavs, holds)
@@ -764,9 +858,19 @@ def assemble(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out_mp4, *,
                 pts += [float(s) for s, _ in punch_windows]
             whoosh_at = sorted(set(pts))
 
+        # ритм-добивка панчами (см. avatar-ветку); блочные границы считаются
+        # событиями — там уже вспышка/свуш
+        if zoom and format == "split":
+            covered = [(zs, ze) for (zs, ze, _k, _st) in zoom_segs]
+            covered += [(float(s), float(s) + float(d)) for s, d in (punch_windows or [])]
+            covered += [(float(b["start"]) - 0.15, float(b["start"]) + 0.15)
+                        for b in timed["blocks"][1:]]
+            punch_windows = _rhythm_fill(punch_windows, covered, T)
+
         # 1) немой видеослой
         stacked = _build_video(rdir, format, top_for_video, bottom_mp4, bottom_offset, T,
-                               punch_windows)
+                               punch_windows, grade=grade, grain=grain,
+                               flash_times=flash_times)
 
         # 2) аудио: полный микс (в ролик) и голос (на субтитры)
         mix_wav = _mix_audio(rdir, voice_src, bottom_mp4, bottom_offset, T,

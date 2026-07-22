@@ -13,6 +13,11 @@ MAX_WORDS = 3        # слов в одной подписи
 GAP_BREAK = 0.45     # пауза >0.45с — новая подпись
 MAX_CHARS = 18       # не переполнять строку
 
+# Pop-in подписи: появляется чуть меньше и за 90мс «допрыгивает» до 100% с
+# коротким альфа-фейдом. Статичная смена текста читается как титры из
+# телесуфлёра; пружинка — как субтитры, собранные монтажёром.
+POP_TAG = "{\\fscx82\\fscy82\\t(0,90,\\fscx100\\fscy100)\\fad(40,0)}"
+
 
 def _cs(t):
     return max(0, int(round(t * 100)))
@@ -89,7 +94,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             parts.append(f"{{\\kf{_cs(dur)}}}{txt} ")
             prev_end = w["end"]
         text = "".join(parts).strip()
-        lines.append(f"Dialogue: 0,{_ts(c_start)},{_ts(c_end)},Cap,,0,0,0,,{pos_tag}{text}")
+        lines.append(
+            f"Dialogue: 0,{_ts(c_start)},{_ts(c_end)},Cap,,0,0,0,,{pos_tag}{POP_TAG}{text}")
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))

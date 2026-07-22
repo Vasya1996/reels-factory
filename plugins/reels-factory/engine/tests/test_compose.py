@@ -78,7 +78,24 @@ def test_build_video_filter_avatar_вставка_pts_сдвиг_и_окно():
     fc = build_video_filter("avatar", insert_windows=[(3.0, 7.0)])
     assert "[1:v]scale=1080:1920:force_original_aspect_ratio=increase" in fc  # вставка — вход [1:v]
     assert "setpts=PTS+3.000/TB" in fc  # PTS-сдвиг на начало окна
-    assert "overlay=0:0:enable='between(t,3.000,7.000)'" in fc
+    assert "enable='between(t,3.000,7.000)'" in fc
+    assert fc.endswith("[v]")
+
+
+def test_build_video_filter_avatar_вставка_анимирована():
+    """Вставка заезжает/уезжает (overlay с покадровыми x/y) и кроссфейдится по
+    альфе — статичное появление читалось как сбой, а не монтаж."""
+    fc = build_video_filter("avatar", insert_windows=[(3.0, 7.0)])
+    assert "format=yuva420p" in fc
+    assert "fade=t=in:st=3.000" in fc and "alpha=1" in fc
+    assert "overlay=x='" in fc          # слайд по X: W*ease на входе/выходе
+    assert "pow(1-clip((t-3.000)" in fc  # кубический ease заезда
+
+
+def test_build_video_filter_вспышки_на_границах_блоков():
+    fc = build_video_filter("avatar", flash_times=[3.0, 15.0])
+    assert "eq=brightness='" in fc
+    assert "abs(t-3.000)" in fc and "abs(t-15.000)" in fc
     assert fc.endswith("[v]")
 
 
@@ -91,13 +108,29 @@ def test_build_video_filter_avatar_панч_поверх_вставки():
 
 
 def test_build_punch_filter_наезд_на_окне():
-    parts, out = build_punch_filter("base", [(5.0, 2.0)])
+    parts, out = build_punch_filter("base", [(5.0, 2.0)], 1080, 1920)
     fc = ";".join(parts)
     assert "split=2" in fc
     assert "crop=iw/1.12:ih/1.12" in fc
     assert "scale=1080:1920" in fc
     assert "between(t,5.0,7.0)" in fc
     assert out == "pw0"
+
+
+def test_наезд_центрируется_и_держит_размер_кадра():
+    """Без явного размера наезд возвращается к размеру САМОГО потока: жёсткие
+    1080x1920 растягивали кадр другого формата, он не влезал в базу и overlay
+    показывал левый верхний угол вместо центра."""
+    parts, _ = build_punch_filter("base", [(1.0, 0.6)])
+    fc = ";".join(parts)
+    assert "scale=1080:1920" not in fc
+    assert "scale=w=trunc(iw*1.12/2)*2" in fc
+    assert "overlay=(W-w)/2:(H-h)/2" in fc
+
+
+def test_явный_размер_кадра_имеет_приоритет():
+    parts, _ = build_punch_filter("base", [(1.0, 0.6)], 720, 1280)
+    assert "scale=720:1280" in ";".join(parts)
 
 
 def test_build_video_filter_панч_окно_прокинуто():
@@ -556,6 +589,31 @@ def test_assemble_avatar_без_вставок_без_broll(tmp_path):
     assert probe_wh(str(out)) == (1080, 1920)
     assert abs(media_dur(str(out)) - expected_total) < 0.3
     assert res["timed_scenario"]["inserts"] == []
+    hook_end = res["timed_scenario"]["blocks"][0]["end"]
+    voice_mv = _mean_volume(str(out), 0.2, hook_end - HOOK_PAUSE_S - 0.1)
+    assert voice_mv is not None and voice_mv >= -35.0, f"голос тихий: {voice_mv} dB"
+
+
+@pytest.mark.slow
+def test_assemble_avatar_с_зумом_и_вспышками(tmp_path):
+    """Полный монтажный путь: зумы по фразам (zoompan), ритм-добивка панчами,
+    вспышки на границах блоков, анимированная вставка."""
+    rdir = tmp_path / "rdir"; rdir.mkdir()
+    avatar_mp4s = _avatar_frags(tmp_path)
+    broll = tmp_path / "broll.mp4"
+    _lavfi_clip(broll, 15, size="1920x1080", freq=200)
+    segments = [{"role": "development", "offset": 2.0, "insert": True}]
+
+    out = tmp_path / "out.mp4"
+    res = assemble(rdir, _slow_scenario(), broll, 0.0, out, format="avatar",
+                   avatar_mp4s=avatar_mp4s, broll_segments=segments,
+                   transcribe_fn=lambda vw, rd: _FAKE_WORDS,
+                   zoom=True, flash=True)
+
+    expected_total = sum(_FRAG_DURS) + HOOK_PAUSE_S
+    assert probe_wh(str(out)) == (1080, 1920)
+    assert abs(media_dur(str(out)) - expected_total) < 0.3
+    # голос уцелел после зум-прохода (перекодировка aac)
     hook_end = res["timed_scenario"]["blocks"][0]["end"]
     voice_mv = _mean_volume(str(out), 0.2, hook_end - HOOK_PAUSE_S - 0.1)
     assert voice_mv is not None and voice_mv >= -35.0, f"голос тихий: {voice_mv} dB"

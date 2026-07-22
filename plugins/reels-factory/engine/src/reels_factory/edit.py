@@ -148,7 +148,14 @@ def apply_plan(src: Path, out: Path, plan: dict, *, grade: bool = False,
     parts = ["[0:v]null[base]"]
     cur = "base"
     if punch:
-        punch_parts, cur = build_punch_filter(cur, punch)
+        # размер берём у самого файла: edit работает на произвольном ролике,
+        # а не только на 1080x1920 конвейера
+        from reels_factory.render import probe_wh
+        try:
+            w, h = probe_wh(str(src))
+        except Exception:
+            w = h = None
+        punch_parts, cur = build_punch_filter(cur, punch, w, h)
         parts.extend(punch_parts)
     finish = build_finish_filter(grade, grain)
     parts.append(f"[{cur}]{finish}[v]" if finish else f"[{cur}]null[v]")
