@@ -29,7 +29,10 @@ WAIT_RAW = "wait_raw"        # ждём сырьё (мысли, отрывок, 
 CHOOSING_IDEA = "choosing_idea"
 REVIEW = "review"            # сценарий показан, ждём решения
 WAIT_EDIT = "wait_edit"      # ждём отредактированный текст
-APPROVED = "approved"
+CHOOSING_PHOTO = "choosing_photo"  # фото уже есть: прежнее или новое
+WAIT_PHOTO = "wait_photo"
+WAIT_VOICE = "wait_voice"
+READY = "ready"              # сценарий утверждён, фото и голос собраны
 
 ROLE_RU = {"hook": "хук", "context": "контекст", "development": "развитие",
            "payoff": "вывод", "cta": "призыв"}
@@ -55,10 +58,26 @@ ASK_EDIT = (
     "Пришлите свой вариант текста целиком — запомню его как итоговый и "
     "покажу, как он ляжет в блоки."
 )
-APPROVED_MSG = (
-    "Сценарий утверждён и сохранён.\n\nСледующий шаг — ваше фото и запись "
-    "голоса, чтобы ролик собрался с вашим лицом и вашим голосом. Он появится "
-    "в боте отдельно."
+APPROVED_MSG = "Сценарий утверждён и сохранён."
+ASK_PHOTO = (
+    "Теперь фото — с него сделаю говорящего ведущего.\n\n"
+    "Снимите или пришлите портрет: смотрите в камеру, лицо целиком, ровный "
+    "свет, без тёмных очков и без чужих лиц в кадре.\n\n"
+    "Важно: всё, что должно выглядеть настоящим, должно быть видно на фото. "
+    "Кисти рук — чтобы ногти были ваши, кольца, часы, одежда. Чего на фото "
+    "нет, то модель додумает по-своему."
+)
+ASK_VOICE = (
+    "Осталась запись голоса — её делаем один раз.\n\n"
+    "Наговорите 1–2 минуты в тихой комнате, обычным разговорным тоном: так, "
+    "как будете звучать в ролике. Не читайте по бумажке нараспев и не "
+    "торопитесь — ровный живой темп. Годится голосовое прямо в чат."
+)
+PHOTO_SAVED = "Фото принял."
+VOICE_SAVED = "Голос принял."
+READY_MSG = (
+    "Всё на месте: сценарий, фото и голос. Сборка ролика — следующий шаг, "
+    "включу её отдельно."
 )
 NOT_NOW = "Сначала выберите, с чего начать: /start"
 
@@ -135,6 +154,33 @@ def step_scenario(chat_id: int, idea: dict) -> dict:
     return res["scenario"]
 
 
+def step_photo(chat_id: int, photo: Path) -> str:
+    """Фото -> asset_id в HeyGen (бесплатно, платит только рендер)."""
+    from reels_factory.profile import upload_photo
+
+    return upload_photo(photo)
+
+
+def step_voice(chat_id: int, audio: Path) -> str:
+    """Запись -> клон голоса в ElevenLabs -> voice_id."""
+    from reels_factory.tts import create_voice_clone
+
+    return create_voice_clone(str(audio), f"tg-{chat_id}")
+
+
+def save_client_profile(chat_id: int, session: dict) -> None:
+    """Профиль клиента в реестре — с ним сборка идёт как `make --client <id>`."""
+    from reels_factory.clients import register_client
+
+    photos = session.get("photos") or []
+    if not (photos and session.get("voice_id")):
+        return
+    register_client(str(chat_id), load_config(), name=f"tg-{chat_id}",
+                    voice_id=session["voice_id"],
+                    asset_id=photos[session.get("photo", -1)]["asset_id"],
+                    overwrite=True)
+
+
 def transcribe(chat_id: int, media: Path) -> str:
     """Речь из записи в текст — локально, без сети и без денег."""
     from reels_factory.transcribe import transcribe_file
@@ -159,6 +205,14 @@ def _kb_ideas(n: int):
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton(str(i + 1), callback_data=f"idea:{i}")]
          for i in range(n)])
+
+
+def _kb_photo():
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Использовать загруженное фото", callback_data="photo:old")],
+        [InlineKeyboardButton("Загрузить новое фото", callback_data="photo:new")],
+    ])
 
 
 def _kb_review():
@@ -207,12 +261,44 @@ async def on_button(update, context):
         save_session(chat_id, s)
         await q.message.reply_text(ASK_EDIT)
     elif data == "ok":
-        s["step"] = APPROVED
-        save_session(chat_id, s)
         await q.message.reply_text(APPROVED_MSG)
+        await _photo_stage(q.message, chat_id, s)
+    elif data == "photo:old":
+        s["photo"] = len(s.get("photos") or []) - 1
+        save_session(chat_id, s)
+        await _voice_stage(q.message, chat_id, s)
+    elif data == "photo:new":
+        s["step"] = WAIT_PHOTO
+        save_session(chat_id, s)
+        await q.message.reply_text(ASK_PHOTO)
     elif data == "restart":
         save_session(chat_id, {"step": CHOOSING})
         await q.message.reply_text(HELLO, reply_markup=_kb_start())
+
+
+async def _photo_stage(msg, chat_id: int, s: dict):
+    """Фото обязательно: в первый раз просим, дальше — прежнее или новое."""
+    if s.get("photos"):
+        s["step"] = CHOOSING_PHOTO
+        save_session(chat_id, s)
+        await msg.reply_text("Снимаем по вашему фото. Какому?", reply_markup=_kb_photo())
+    else:
+        s["step"] = WAIT_PHOTO
+        save_session(chat_id, s)
+        await msg.reply_text(ASK_PHOTO)
+
+
+async def _voice_stage(msg, chat_id: int, s: dict):
+    """Голос — один раз на человека."""
+    if s.get("voice_id"):
+        s["step"] = READY
+        save_session(chat_id, s)
+        save_client_profile(chat_id, s)
+        await msg.reply_text(READY_MSG)
+    else:
+        s["step"] = WAIT_VOICE
+        save_session(chat_id, s)
+        await msg.reply_text(ASK_VOICE)
 
 
 async def on_message(update, context):
@@ -220,6 +306,40 @@ async def on_message(update, context):
     s = load_session(chat_id)
     step = s.get("step", CHOOSING)
     msg = update.message
+
+    if step == WAIT_PHOTO:
+        photo = (msg.photo[-1] if msg.photo else None) or msg.document
+        if photo is None:
+            await msg.reply_text("Жду фото — картинкой или файлом.")
+            return
+        try:
+            path = await _download(context, photo, chat_id)
+            asset_id = await asyncio.to_thread(step_photo, chat_id, path)
+        except Exception as e:
+            await msg.reply_text(f"Фото не принялось: {str(e)[:200]}")
+            return
+        s.setdefault("photos", []).append({"asset_id": asset_id, "file": str(path)})
+        s["photo"] = len(s["photos"]) - 1
+        save_session(chat_id, s)
+        await msg.reply_text(PHOTO_SAVED)
+        await _voice_stage(msg, chat_id, s)
+        return
+
+    if step == WAIT_VOICE:
+        rec = msg.voice or msg.audio or msg.document
+        if rec is None:
+            await msg.reply_text("Жду запись голоса — голосовым или файлом.")
+            return
+        try:
+            path = await _download(context, rec, chat_id)
+            s["voice_id"] = await asyncio.to_thread(step_voice, chat_id, path)
+        except Exception as e:
+            await msg.reply_text(f"Голос не принялся: {str(e)[:200]}")
+            return
+        save_session(chat_id, s)
+        await msg.reply_text(VOICE_SAVED)
+        await _voice_stage(msg, chat_id, s)
+        return
 
     text = (msg.text or msg.caption or "").strip()
     media = msg.voice or msg.audio or msg.video or msg.video_note or msg.document
