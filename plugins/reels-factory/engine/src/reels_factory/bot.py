@@ -106,6 +106,16 @@ def render_ideas(ideas: list) -> str:
     return "\n".join(out)
 
 
+# Копипаста приходит с «ёлочками» и пустыми строками между абзацами — в речь
+# это лезть не должно, иначе кавычка попадает в реплику, а абзац рвёт блок.
+_QUOTES = "«»„“”\"'"
+
+
+def clean_input(text: str) -> str:
+    lines = [ln.strip().strip(_QUOTES).strip() for ln in str(text or "").splitlines()]
+    return " ".join(ln for ln in lines if ln)
+
+
 def scenario_from_text(text: str) -> dict:
     """Правка пользователя — закон: слова его, движок только режет на блоки."""
     return {"mode": "verbatim", "blocks": split_verbatim(text)}
@@ -360,7 +370,7 @@ async def on_message(update, context):
     if step == WAIT_TEXT:
         await msg.reply_text(WORKING)
         try:
-            sc = await asyncio.to_thread(step_verbatim, chat_id, text)
+            sc = await asyncio.to_thread(step_verbatim, chat_id, clean_input(text))
         except (ScenarioError, RuntimeError) as e:
             await msg.reply_text(f"Не получилось разобрать текст: {e}")
             return
@@ -381,7 +391,7 @@ async def on_message(update, context):
 
     elif step == WAIT_EDIT:
         try:
-            sc = scenario_from_text(text)
+            sc = scenario_from_text(clean_input(text))
         except ScenarioError as e:
             await msg.reply_text(str(e))
             return

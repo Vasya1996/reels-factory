@@ -76,6 +76,11 @@ def test_правка_пользователя_не_переписывается
     assert sc["mode"] == "verbatim"
 
 
+def test_копипаста_чистится_от_кавычек_и_пустых_строк():
+    текст = '«Первая мысль. И вторая.»\n\n«Третья мысль.»'
+    assert bot.clean_input(текст) == "Первая мысль. И вторая. Третья мысль."
+
+
 def test_сессия_переживает_перезапуск(work):
     bot.save_session(7, {"step": bot.REVIEW, "scenario": SCENARIO})
     assert bot.load_session(7)["scenario"] == SCENARIO
