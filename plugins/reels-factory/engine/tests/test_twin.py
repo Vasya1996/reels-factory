@@ -102,3 +102,55 @@ def test_проваленное_обучение_падает_понятной_�
 def test_без_ключа_не_создаётся():
     with pytest.raises(TwinError, match="API key"):
         TwinClient(api_key="", http=object())
+
+
+class _RespConsent:
+    def __init__(self, payload=None, status_code=200):
+        self._p, self.status_code = payload, status_code
+
+    def json(self):
+        return self._p
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+def test_webcam_consent_уровня_1_возвращает_ссылку_на_запись():
+    seen = {}
+
+    class _H:
+        def post(self, url, json=None, headers=None, timeout=None, files=None):
+            seen["url"], seen["body"] = url, json
+            return _RespConsent({"data": {"url": "https://app.heygen.com/record?token=xyz"}})
+
+    c = TwinClient(api_key="k", http=_H(), sleep=lambda s: None)
+    link = c.request_webcam_consent("g1")
+
+    assert link == "https://app.heygen.com/record?token=xyz"
+    assert seen["url"].endswith("/g1/consent")
+    assert seen["body"] == {}  # уровень 1 — пустое тело
+
+
+def test_webcam_consent_прокидывает_reroute_url():
+    seen = {}
+
+    class _H:
+        def post(self, url, json=None, headers=None, timeout=None, files=None):
+            seen.update(json or {})
+            return _RespConsent({"data": {"url": "u"}})
+
+    c = TwinClient(api_key="k", http=_H(), sleep=lambda s: None)
+    c.request_webcam_consent("g1", reroute_url="https://me/back")
+
+    assert seen["reroute_url"] == "https://me/back"
+
+
+def test_pre_recorded_consent_на_self_serve_даёт_понятную_ошибку():
+    class _H:
+        def post(self, url, json=None, headers=None, timeout=None, files=None):
+            return _RespConsent({"error": {"code": "resource_access_denied"}}, status_code=403)
+
+    c = TwinClient(api_key="k", http=_H(), sleep=lambda s: None)
+    with pytest.raises(TwinError, match="enterprise"):
+        c.submit_consent("g1", "asset1")

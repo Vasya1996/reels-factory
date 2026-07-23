@@ -9,9 +9,12 @@
 1. `upload_asset()`   — заливаем обучающее видео → asset_id;
 2. `create_twin()`    — POST /v3/avatars {type: "digital_twin"} → look_id +
                         group_id + supported_api_engines;
-3. `submit_consent()` — POST /v3/avatars/{group_id}/consent: без согласия
-                        двойник не отрендерит ни одного видео. В consent-видео
-                        человек произносит дословно CONSENT_STATEMENT;
+3. согласие (POST /v3/avatars/{group_id}/consent) — без него двойник не
+                        отрендерит ни одного видео. Два уровня:
+                        `submit_consent()` — уровень 2, заранее записанное видео,
+                        только для enterprise (на self-serve → 403);
+                        `request_webcam_consent()` — уровень 1, self-serve: даёт
+                        ссылку, где человек записывает согласие на камеру;
 4. `wait_ready()`     — поллим GET /v3/avatars/looks/{look_id}, пока обучение
                         не закончится, и заодно проверяем, что в
                         supported_api_engines есть "avatar_v".
@@ -107,13 +110,38 @@ class TwinClient:
         }
 
     def submit_consent(self, group_id: str, consent_asset_id: str) -> None:
-        """Согласие уровня 2 (загруженное видео). Без него рендер не стартует."""
+        """Согласие уровня 2 — заранее записанное видео. Доступно ТОЛЬКО
+        enterprise-аккаунтам: на обычном (self-serve) ключе HeyGen отвечает 403.
+        В этом случае используй request_webcam_consent() (уровень 1)."""
         resp = self.http.post(
             f"{AVATARS_URL}/{group_id}/consent",
             json={"consent_video": {"type": "asset_id", "asset_id": consent_asset_id}},
             headers=self._headers, timeout=120,
         )
+        if getattr(resp, "status_code", 200) == 403:
+            raise TwinError(
+                "Загрузка заранее записанного consent-видео доступна только "
+                "enterprise-аккаунтам (HeyGen вернул 403). На self-serve ключе "
+                "вызови request_webcam_consent(group_id): вернётся ссылка, по "
+                "которой человек записывает согласие на камеру, затем wait_ready()."
+            )
         resp.raise_for_status()
+
+    def request_webcam_consent(self, group_id: str, reroute_url: str | None = None) -> str:
+        """Согласие уровня 1 (self-serve): POST с пустым телом возвращает URL
+        хостед-страницы HeyGen, где человек записывает согласие на камеру
+        (произносит код + держит мимику). reroute_url — куда вернуть его после
+        записи, для бесшовного онбординга в свой продукт. Возвращает этот URL —
+        его отправляют человеку; после записи двойник становится verified."""
+        body: dict = {}
+        if reroute_url:
+            body["reroute_url"] = reroute_url
+        resp = self.http.post(
+            f"{AVATARS_URL}/{group_id}/consent",
+            json=body, headers=self._headers, timeout=60,
+        )
+        resp.raise_for_status()
+        return (resp.json().get("data") or {}).get("url")
 
     def fetch_look(self, look_id: str) -> dict:
         resp = self.http.get(f"{LOOKS_URL}/{look_id}", headers=self._headers, timeout=30)

@@ -263,7 +263,7 @@ def test_кэш_различает_фото_путь_и_двойника(tmp_pat
     assert p1 != p2
 
 
-def test_фото_путь_шлёт_avatar_iv_и_resolution_явно(monkeypatch, tmp_path):
+def test_фото_путь_не_шлёт_engine_и_фиксирует_resolution(monkeypatch, tmp_path):
     monkeypatch.delenv("HEYGEN_ENGINE", raising=False)
     monkeypatch.delenv("HEYGEN_RESOLUTION", raising=False)
     http = _FakeHttp()
@@ -274,7 +274,9 @@ def test_фото_путь_шлёт_avatar_iv_и_resolution_явно(monkeypatch
     c.generate(audio, tmp_path / "out.mp4")
 
     _, body, _, _ = http.posts[1]
-    assert body["engine"] == {"type": "avatar_iv"}
+    # для type:image поле engine слать нельзя — HeyGen v3 отвечает 400
+    # (Extra inputs are not permitted, param: engine); Avatar IV и так дефолт
+    assert "engine" not in body
     assert body["resolution"] == "1080p"
     # фон по-прежнему закреплён тем же фото — сцена не уезжает
     assert body["background"] == {"type": "image", "asset_id": "a1"}

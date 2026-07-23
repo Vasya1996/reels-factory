@@ -240,8 +240,9 @@ class HeyGenClient:
             "type": "image",
             "image": {"type": "asset_id", "asset_id": self.avatar_id},
             "audio_asset_id": audio_asset_id,
-            # движок задаём явно: серверный дефолт может смениться на их стороне
-            "engine": {"type": self.engine},
+            # для type:image движок НЕ шлём: HeyGen v3 отвечает 400 "Extra inputs
+            # are not permitted" (param: engine). Avatar IV — серверный дефолт
+            # для image, отдельного поля engine схема тут не принимает.
             "resolution": self.resolution,
             "motion_prompt": motion_prompt,
             # закрепляем сцену тем же фото — иначе модель вольна дорисовать

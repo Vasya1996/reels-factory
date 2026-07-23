@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from reels_factory.config import WORK_ROOT, load_config, ConfigError
+from reels_factory.clients import load_client
 
 
 def _resolve_workdir(name: str) -> Path:
@@ -309,6 +310,30 @@ def _cmd_edit(args):
                       "steps": steps}, ensure_ascii=False))
 
 
+def _cmd_clients(args):
+    """Реестр клиентов: list — показать всех, add — завести/обновить профиль.
+    Свой конфиг клиента = factory/clients/<id>.yaml; make/script с --client <id>
+    берут его вместо дефолтного factory/config.yaml."""
+    from reels_factory.clients import list_clients, register_client
+    from reels_factory.config import CONFIG_PATH
+
+    if args.clients_cmd == "list":
+        print(json.dumps({"ok": True, "clients": list_clients()}, ensure_ascii=False))
+        return
+
+    # add: базовый конфиг (бренд/продукт/persona) + переопределение голоса и аватара
+    base_path = Path(args.base) if args.base else CONFIG_PATH
+    try:
+        base = load_config(base_path)
+        path = register_client(args.id, base, name=args.name, voice_id=args.voice_id,
+                               look_id=args.look_id, asset_id=args.asset_id,
+                               overwrite=args.overwrite)
+    except ConfigError as e:
+        print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
+        sys.exit(1)
+    print(json.dumps({"ok": True, "client": args.id, "path": str(path)}, ensure_ascii=False))
+
+
 def main():
     ap = argparse.ArgumentParser(prog="reels_factory")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -321,6 +346,8 @@ def main():
     p_s.add_argument("--hook-type", default=None, dest="hook_type")
     p_s.add_argument("--case", default=None, help="кейс/история ролика")
     p_s.add_argument("--insight", default=None, help="неочевидный факт")
+    p_s.add_argument("--client", default=None,
+                     help="id клиента: взять factory/clients/<id>.yaml вместо config.yaml")
 
     p_m = sub.add_parser("make", help="сборка рилса из scenario.json + QA-гейты")
     p_m.add_argument("--workdir", required=True)
@@ -332,6 +359,8 @@ def main():
     p_m.add_argument("--broll-plan", default=None, dest="broll_plan",
                      help="JSON {segments:[{role,offset,slow?}], punch:[[start,dur],...], ...} "
                           "— мультисегментный низ + панч-окна (наезд на килл/пик-моментах)")
+    p_m.add_argument("--client", default=None,
+                     help="id клиента: взять factory/clients/<id>.yaml вместо config.yaml")
 
     p_e = sub.add_parser("edit", help="монтажные шаги на готовом ролике (без конфига)")
     p_e.add_argument("--input", required=True, help="исходный mp4")
@@ -362,6 +391,24 @@ def main():
     p_v = sub.add_parser("verify", help="перепроверить готовый рилс (7 QA-гейтов)")
     p_v.add_argument("--workdir", required=True)
     p_v.add_argument("--mp4", default=None, help="путь к mp4 (по умолчанию <workdir>/reel.mp4)")
+    p_v.add_argument("--client", default=None,
+                     help="id клиента: взять factory/clients/<id>.yaml вместо config.yaml")
+
+    p_c = sub.add_parser("clients", help="реестр клиентов: несколько профилей config")
+    csub = p_c.add_subparsers(dest="clients_cmd", required=True)
+    csub.add_parser("list", help="показать всех клиентов реестра")
+    ca = csub.add_parser("add", help="завести/обновить профиль клиента")
+    ca.add_argument("id", help="идентификатор клиента (имя файла профиля)")
+    ca.add_argument("--name", default=None, help="человекочитаемое имя")
+    ca.add_argument("--voice-id", dest="voice_id", default=None,
+                    help="ElevenLabs voice_id клиента (его голос)")
+    ca.add_argument("--look-id", dest="look_id", default=None,
+                    help="HeyGen look_id Digital Twin -> режим video (Avatar V)")
+    ca.add_argument("--asset-id", dest="asset_id", default=None,
+                    help="HeyGen asset_id фото -> режим photo (Avatar IV)")
+    ca.add_argument("--from", dest="base", default=None,
+                    help="базовый config.yaml (по умолчанию factory/config.yaml)")
+    ca.add_argument("--overwrite", action="store_true", help="заменить существующий профиль")
 
     args = ap.parse_args()
 
@@ -370,8 +417,14 @@ def main():
         _cmd_edit(args)
         return
 
+    # clients управляет реестром профилей и не требует активного конфига
+    if args.cmd == "clients":
+        _cmd_clients(args)
+        return
+
     try:
-        cfg = load_config()
+        # --client <id> берёт профиль клиента вместо дефолтного factory/config.yaml
+        cfg = load_client(args.client) if getattr(args, "client", None) else load_config()
     except ConfigError as e:
         print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
         sys.exit(1)
