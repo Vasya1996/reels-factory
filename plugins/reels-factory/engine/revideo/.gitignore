@@ -1,0 +1,7 @@
+node_modules/
+output/
+dist/
+# runtime media (supplied by the pipeline)
+public/*.mp4
+public/*.mov
+public/_*.png

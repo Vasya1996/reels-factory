@@ -21,7 +21,10 @@ from reels_factory.config import WORK_ROOT, edit_settings
 from reels_factory.avatar import HeyGenClient, cached_generate, render_covered_block
 from reels_factory.tts import synth_voice as _synth_voice
 from reels_factory.ingest import ingest as _ingest
-from reels_factory.compose import assemble as _assemble, build_caption_fixes
+from reels_factory.compose import build_caption_fixes
+# Рендер-слой: Revideo (единственный рендерер). Совместим по контракту с
+# compose.assemble ({"mp4","timed_scenario","words_fixed"}).
+from reels_factory.revideo_render import assemble_revideo as _assemble
 from reels_factory.edit import jump_cut_fragments as _jump_cut_fragments
 from reels_factory.verify import verify_reel
 
@@ -145,7 +148,8 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
                           broll_segments=broll_segments, punch_windows=punch_windows,
                           caption_fixes=caption_fixes,
                           grade=edit_cfg["grade"], grain=edit_cfg["grain"],
-                          zoom=edit_cfg["zoom"], flash=edit_cfg["flash"])
+                          zoom=edit_cfg["zoom"], flash=edit_cfg["flash"],
+                          config=config)
         mp4 = res["mp4"]
         timed = res["timed_scenario"]
         words = res.get("words_fixed")
