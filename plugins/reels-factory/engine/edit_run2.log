@@ -1,0 +1,4 @@
+[transcribe] loading model=small device=cuda compute=int8
+[transcribe] FAIL cuda: CUDA failed with error CUDA driver version is insufficient for CUDA runtime version
+[transcribe] loading model=small device=cpu compute=int8
+[transcribe] OK device=cpu lang=ru words=89

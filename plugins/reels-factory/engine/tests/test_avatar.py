@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from reels_factory.avatar import DEFAULT_MOTION_PROMPT, HeyGenClient, cached_generate
+from reels_factory.avatar import (DEFAULT_MOTION_PROMPT, MOTION_PROMPT_BY_ROLE,
+                                  HeyGenClient, cached_generate)
 
 
 class _Resp:
@@ -184,3 +185,149 @@ def test_v3_403_на_аплоаде_переключает_на_v2_без_пов
     assert v2_create_calls[0][1]["video_inputs"][0]["voice"]["audio_asset_id"] == "aud2"
 
     assert any("video_status" in g for g in http.gets)
+
+
+def test_digital_twin_шлёт_avatar_v_без_expressiveness(tmp_path):
+    http = _FakeHttp()
+    c = HeyGenClient(api_key="k", look_id="look1", motion_prompt="m",
+                     http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "a.wav")
+
+    c.generate(audio, tmp_path / "out.mp4")
+
+    _, body, _, _ = http.posts[1]
+    assert body["type"] == "avatar"
+    assert body["avatar_id"] == "look1"
+    assert body["engine"] == {"type": "avatar_v"}
+    assert body["audio_asset_id"] == "aud1"
+    assert body["aspect_ratio"] == "9:16"
+    assert body["resolution"] == "1080p"
+    # expressiveness есть только у Avatar IV — с V его слать нельзя
+    assert "expressiveness" not in body
+    # фон двойника снят на видео, подменять его фото-ассетом не нужно
+    assert "background" not in body
+
+
+def test_без_look_id_остаётся_старый_фото_путь(tmp_path):
+    http = _FakeHttp()
+    c = HeyGenClient(api_key="k", avatar_id="a1", motion_prompt="m",
+                     http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "a.wav")
+
+    c.generate(audio, tmp_path / "out.mp4")
+
+    _, body, _, _ = http.posts[1]
+    assert body["type"] == "image"
+    assert body["expressiveness"] == "low"
+
+
+def test_avatar_iv_на_двойнике_сохраняет_expressiveness(tmp_path):
+    http = _FakeHttp()
+    c = HeyGenClient(api_key="k", look_id="look1", engine="avatar_iv",
+                     expressiveness="medium", http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "a.wav")
+
+    c.generate(audio, tmp_path / "out.mp4")
+
+    _, body, _, _ = http.posts[1]
+    assert body["engine"] == {"type": "avatar_iv"}
+    assert body["expressiveness"] == "medium"
+
+
+def test_двойник_не_деградирует_молча_до_v2_при_403(tmp_path):
+    import pytest
+
+    http = _FakeHttpV3Forbidden()
+    c = HeyGenClient(api_key="k", look_id="look1", http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "a.wav")
+
+    with pytest.raises(RuntimeError, match="Digital Twin"):
+        c.generate(audio, tmp_path / "out.mp4")
+
+    assert not [p for p in http.posts if "upload.heygen.com" in p[0]]
+
+
+def test_кэш_различает_фото_путь_и_двойника(tmp_path):
+    http = _FakeHttp()
+    audio = _wav(tmp_path / "cta.wav", b"ctawav3")
+    cache_dir = tmp_path / "cache"
+
+    photo = HeyGenClient(api_key="k", avatar_id="a1", motion_prompt="m",
+                         http=http, sleep=lambda s: None)
+    p1 = cached_generate(photo, audio, cache_dir)
+
+    twin = HeyGenClient(api_key="k", look_id="look1", motion_prompt="m",
+                        http=http, sleep=lambda s: None)
+    p2 = cached_generate(twin, audio, cache_dir)
+
+    assert p1 != p2
+
+
+def test_фото_путь_не_шлёт_engine_и_фиксирует_resolution(monkeypatch, tmp_path):
+    monkeypatch.delenv("HEYGEN_ENGINE", raising=False)
+    monkeypatch.delenv("HEYGEN_RESOLUTION", raising=False)
+    http = _FakeHttp()
+    c = HeyGenClient(api_key="k", avatar_id="a1", motion_prompt="m",
+                     http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "a.wav")
+
+    c.generate(audio, tmp_path / "out.mp4")
+
+    _, body, _, _ = http.posts[1]
+    # для type:image поле engine слать нельзя — HeyGen v3 отвечает 400
+    # (Extra inputs are not permitted, param: engine); Avatar IV и так дефолт
+    assert "engine" not in body
+    assert body["resolution"] == "1080p"
+    # фон по-прежнему закреплён тем же фото — сцена не уезжает
+    assert body["background"] == {"type": "image", "asset_id": "a1"}
+
+
+def test_роль_блока_задаёт_свой_motion_prompt(monkeypatch, tmp_path):
+    monkeypatch.delenv("HEYGEN_MOTION_PROMPT", raising=False)
+    http = _FakeHttp()
+    c = HeyGenClient(api_key="k", avatar_id="a1", http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "a.wav")
+
+    c.generate(audio, tmp_path / "hook.mp4", role="hook")
+    _, body_hook, _, _ = http.posts[1]
+
+    c.generate(audio, tmp_path / "cta.mp4", role="cta")
+    _, body_cta, _, _ = http.posts[3]
+
+    assert body_hook["motion_prompt"] == MOTION_PROMPT_BY_ROLE["hook"]
+    assert body_cta["motion_prompt"] == MOTION_PROMPT_BY_ROLE["cta"]
+    assert body_hook["motion_prompt"] != body_cta["motion_prompt"]
+
+
+def test_свой_motion_prompt_главнее_ролевого(tmp_path):
+    http = _FakeHttp()
+    c = HeyGenClient(api_key="k", avatar_id="a1", motion_prompt="моя пластика",
+                     http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "a.wav")
+
+    c.generate(audio, tmp_path / "out.mp4", role="hook")
+
+    _, body, _, _ = http.posts[1]
+    assert body["motion_prompt"] == "моя пластика"
+
+
+def test_неизвестная_роль_падает_на_дефолтный_промпт(monkeypatch, tmp_path):
+    monkeypatch.delenv("HEYGEN_MOTION_PROMPT", raising=False)
+    http = _FakeHttp()
+    c = HeyGenClient(api_key="k", avatar_id="a1", http=http, sleep=lambda s: None)
+
+    assert c.motion_prompt_for("непонятная_роль") == DEFAULT_MOTION_PROMPT
+    assert c.motion_prompt_for(None) == DEFAULT_MOTION_PROMPT
+
+
+def test_кэш_различает_роли(monkeypatch, tmp_path):
+    monkeypatch.delenv("HEYGEN_MOTION_PROMPT", raising=False)
+    http = _FakeHttp()
+    c = HeyGenClient(api_key="k", avatar_id="a1", http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "cta.wav", b"ctawav4")
+    cache_dir = tmp_path / "cache"
+
+    p_cta = cached_generate(c, audio, cache_dir, role="cta")
+    p_hook = cached_generate(c, audio, cache_dir, role="hook")
+
+    assert p_cta != p_hook

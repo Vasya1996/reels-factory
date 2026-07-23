@@ -17,11 +17,12 @@ import json
 import sys
 from pathlib import Path
 
-from reels_factory.config import WORK_ROOT
+from reels_factory.config import WORK_ROOT, edit_settings
 from reels_factory.avatar import HeyGenClient, cached_generate, render_covered_block
 from reels_factory.tts import synth_voice as _synth_voice
 from reels_factory.ingest import ingest as _ingest
 from reels_factory.compose import assemble as _assemble, build_caption_fixes
+from reels_factory.edit import jump_cut_fragments as _jump_cut_fragments
 from reels_factory.verify import verify_reel
 
 AVATAR_CACHE_DIRNAME = "avatar_cache"
@@ -44,7 +45,7 @@ def _fixes_hypothesis(config: dict) -> dict:
 def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
              broll_plan: dict | None = None, scenario: dict | None = None,
              avatar_client=None, synth_fn=None, ingest_fn=None, assemble_fn=None,
-             covered_block_fn=None) -> dict:
+             covered_block_fn=None, jump_cut_fn=None) -> dict:
     fmt = config.get("format", "split")
     wd = Path(workdir)
     wd.mkdir(parents=True, exist_ok=True)
@@ -53,6 +54,8 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
     ingest_fn = ingest_fn or _ingest
     assemble_fn = assemble_fn or _assemble
     covered_block_fn = covered_block_fn or render_covered_block
+    jump_cut_fn = jump_cut_fn or _jump_cut_fragments
+    edit_cfg = edit_settings(config)
 
     def fail(stage, e):
         return {"ok": False, "workdir": str(wd), "mp4": None, "qa_pass": False,
@@ -74,8 +77,11 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
     if fmt in ("split", "avatar") and avatar_client is None:
         avatar_client = HeyGenClient(
             avatar_id=avatar_cfg.get("heygen_asset_id"),
+            look_id=avatar_cfg.get("heygen_look_id"),
             motion_prompt=avatar_cfg.get("motion_prompt"),
             expressiveness=avatar_cfg.get("expressiveness"),
+            engine=avatar_cfg.get("engine"),
+            resolution=avatar_cfg.get("resolution"),
         )
 
     # avatar: роли, чей блок целиком уходит под вставку видеоряда — HeyGen для
@@ -97,16 +103,27 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
             if fmt in ("split", "avatar"):
                 role = b.get("role")
                 if role == "cta":
-                    mp4 = cached_generate(avatar_client, wav, cache_dir)
+                    mp4 = cached_generate(avatar_client, wav, cache_dir, role=role)
                 elif role in insert_roles:
                     mp4 = covered_block_fn(wav, wd / f"avatar_{i}.mp4")
                 else:
-                    mp4 = avatar_client.generate(wav, wd / f"avatar_{i}.mp4")
+                    # role задаёт пластику: хук энергичный, payoff спокойный
+                    mp4 = avatar_client.generate(wav, wd / f"avatar_{i}.mp4", role=role)
                 avatar_mp4s.append(mp4)
             else:
                 voice_wavs.append(wav)
     except Exception as e:
         return fail("voice", e)
+
+    if edit_cfg["jump_cuts"] and avatar_mp4s:
+        # режем паузы ДО assemble: media_dur померяет уже подрезанные фрагменты,
+        # retime_scenario построит сетку по ним, и субтитры со вставками сами
+        # встанут на новые времена
+        _log("jump_cuts")
+        try:
+            avatar_mp4s = jump_cut_fn(avatar_mp4s, wd)
+        except Exception as e:
+            return fail("jump_cuts", e)
 
     _log("ingest")
     try:
@@ -126,7 +143,9 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
                           format=fmt, avatar_mp4s=avatar_mp4s or None,
                           voice_wavs=voice_wavs or None,
                           broll_segments=broll_segments, punch_windows=punch_windows,
-                          caption_fixes=caption_fixes)
+                          caption_fixes=caption_fixes,
+                          grade=edit_cfg["grade"], grain=edit_cfg["grain"],
+                          zoom=edit_cfg["zoom"], flash=edit_cfg["flash"])
         mp4 = res["mp4"]
         timed = res["timed_scenario"]
         words = res.get("words_fixed")

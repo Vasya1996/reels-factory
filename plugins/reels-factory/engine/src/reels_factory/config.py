@@ -45,6 +45,28 @@ CAPTION_FONT = "Arial Black"
 
 FORMATS = ("split", "fullscreen", "avatar")
 
+# Монтажный слой (edit.* в config.yaml). Шаги с внешними зависимостями или
+# меняющие картинку целиком (jump_cuts, grade, grain) выключены по умолчанию.
+# Чисто ffmpeg-овые монтажные приёмы (zoom, flash) включены: без них ролик
+# читается как несмонтированный — статичная голова без движения и переходов;
+# откатываются тем же флагом без правки кода.
+EDIT_DEFAULTS = {
+    "jump_cuts": False,   # вырезать паузы внутри фрагментов (нужен auto-editor)
+    "grade": False,       # единый цвет на весь ролик
+    "grain": False,       # микро-зерно: снимает стерильность генерации
+    "keep_raw": True,     # рядом с out.mp4 класть out_raw.mp4 — сравнить до/после
+    "zoom": True,         # наезды по фразам (push/punch/pulse, лицо) + ритм-добивка
+    "flash": True,        # световой переход на границах блоков + свуш
+}
+
+
+def edit_settings(cfg: dict) -> dict:
+    """Флаги монтажа с дефолтами. Неизвестные ключи игнорируются молча —
+    конфиг пользователя не должен падать из-за опечатки в необязательной секции.
+    """
+    user = (cfg or {}).get("edit") or {}
+    return {k: user.get(k, v) for k, v in EDIT_DEFAULTS.items()}
+
 
 class ConfigError(Exception):
     pass
@@ -99,9 +121,12 @@ def load_config(path=None) -> dict:
 
     if fmt in ("split", "avatar"):
         avatar = cfg.get("avatar") or {}
-        if not str(avatar.get("heygen_asset_id") or "").strip():
+        has_look = str(avatar.get("heygen_look_id") or "").strip()
+        has_photo = str(avatar.get("heygen_asset_id") or "").strip()
+        if not (has_look or has_photo):
             raise ConfigError(
-                f"Для формата {fmt} обязателен avatar.heygen_asset_id "
-                "(id фото-ассета аватара в HeyGen)."
+                f"Для формата {fmt} нужен avatar.heygen_look_id "
+                "(id лука Digital Twin — предпочтительно, качество выше) "
+                "или avatar.heygen_asset_id (id фото-ассета аватара)."
             )
     return cfg

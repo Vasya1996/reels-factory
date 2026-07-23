@@ -19,7 +19,66 @@ python -m venv .venv
 Читается из `factory/config.yaml` рабочей папки проекта (см. `load_config`).
 Обязательные поля: `theme`, `format` (`split`|`fullscreen`|`avatar`),
 `voice_id`, `persona.description`, `product.name`, `product.cta_phrase`; для
-`split` и `avatar` — ещё `avatar.heygen_asset_id`.
+`split` и `avatar` — ещё аватар: либо `avatar.heygen_look_id` (Digital Twin,
+качество выше), либо `avatar.heygen_asset_id` (фото-аватар).
+
+Необязательные поля аватара: `avatar.motion_prompt` (движения и жесты словами;
+задан — перебивает ролевые промпты), `avatar.engine` (по умолчанию `avatar_iv`
+для фото и `avatar_v` для двойника; есть `avatar_iii`), `avatar.resolution`
+(`1080p` по умолчанию, можно `4k`), `avatar.expressiveness` (шлётся только с
+`avatar_iv`).
+
+### Пластика по ролям
+
+Без своего `motion_prompt` движок берёт промпт под роль блока
+(`MOTION_PROMPT_BY_ROLE`): хук — энергичное открытие с наклоном к камере,
+development — объясняющие жесты, payoff — спокойный вывод, cta — прямое
+обращение с открытой ладонью. Один промпт на весь ролик давал ровную
+«дикторскую» подачу.
+
+### Фото-аватар
+
+Качество упирается в исходное фото: вертикальный кадр 9:16, поясной план с
+руками, взгляд в объектив, мягкий фронтальный свет и **улыбка с открытыми
+зубами** — с закрытым ртом движок рисует чужие зубы. Фон остаётся тот же, что
+на фото (`background` закреплён тем же ассетом), сцена не уезжает.
+
+### Digital Twin вместо фото
+
+Фото-аватар не видел рта говорящего — зубы и артикуляцию он домысливает, и это
+читается как «дешёвый ИИ». Двойник обучается на видео, где человек говорит:
+
+```python
+from reels_factory.twin import TwinClient
+look_id = TwinClient().create_from_video("Имя", "training.mp4", "consent.mp4")
+```
+
+`look_id` кладём в `avatar.heygen_look_id` (или env `HEYGEN_LOOK_ID`) — дальше
+движок сам рендерит на Avatar V. Обучающее видео: от 2 минут, от 720p, одно
+чётко видимое лицо, человек говорит вслух и улыбается (иначе зубы снова
+угаданные). Consent-видео: человек произносит формулу HeyGen из
+`twin.CONSENT_STATEMENT` — без согласия рендер не стартует.
+
+## Монтажный слой (edit)
+
+Всё выключено по умолчанию — включается флагом в `config.yaml`, откатывается им же:
+
+```yaml
+edit:
+  jump_cuts: true   # вырезать паузы внутри фрагментов (нужен auto-editor)
+  grade: true       # единый цвет на аватар и вставки
+  grain: true       # микро-зерно: снимает стерильность генерации
+```
+
+Джамп-каты применяются к фрагментам ДО сборки, поэтому `retime_scenario`
+считает сетку уже по подрезанным длительностям, и субтитры со вставками встают
+на новые времена сами. Резать умеет `auto-editor` (`pip install auto-editor`).
+
+Проверить шаги на своём ролике, без конфига и без HeyGen:
+
+```bash
+python -m reels_factory edit --input мой.mp4 --output out.mp4 --jump-cuts --grade --grain
+```
 
 ## CLI
 
@@ -63,4 +122,4 @@ python -m reels_factory verify --workdir demo1            # перепровер
 ```
 
 Ключи (env, для реальных прогонов): `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`,
-`HEYGEN_API_KEY`, `HEYGEN_AVATAR_ID`.
+`HEYGEN_API_KEY`, `HEYGEN_LOOK_ID` (двойник) или `HEYGEN_AVATAR_ID` (фото).

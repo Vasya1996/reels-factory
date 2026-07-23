@@ -23,19 +23,32 @@ class _FakeHttp:
         return _Resp()
 
 
-def test_synth_voice_шлёт_текст_модель_v3_и_голос_в_url(tmp_path, monkeypatch):
+def test_synth_voice_шлёт_текст_дефолтную_модель_и_голос_в_url(tmp_path, monkeypatch):
     monkeypatch.setenv("ELEVENLABS_API_KEY", "k")
+    monkeypatch.delenv("ELEVENLABS_MODEL", raising=False)
     http = _FakeHttp()
 
-    out = synth_voice("Привет [excited]", tmp_path / "g.wav", voice_id="v1", http=http,
+    out = synth_voice("Привет", tmp_path / "g.wav", voice_id="v1", http=http,
                       run_cmd=lambda cmd: Path(cmd[-1]).write_bytes(b"wav"))
 
     assert out.exists()
     url, body, headers = http.posts[0]
     assert "v1" in url
-    assert body["text"] == "Привет [excited]"
-    assert body["model_id"] == MODEL_ID
+    assert body["text"] == "Привет"
+    # дефолт — рабочая для клон-голосов модель
+    assert body["model_id"] == MODEL_ID == "eleven_multilingual_v2"
     assert headers["xi-api-key"] == "k"
+
+
+def test_модель_переопределяется_через_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "k")
+    monkeypatch.setenv("ELEVENLABS_MODEL", "eleven_v3")
+    http = _FakeHttp()
+
+    synth_voice("x", tmp_path / "g.wav", voice_id="v1", http=http,
+                run_cmd=lambda cmd: Path(cmd[-1]).write_bytes(b"wav"))
+
+    assert http.posts[0][1]["model_id"] == "eleven_v3"
 
 
 def test_synth_voice_без_ключа_ошибка(tmp_path, monkeypatch):
