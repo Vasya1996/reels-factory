@@ -1,0 +1,21 @@
+[
+  {
+    "name": "grounded_no_invented_facts",
+    "prompt": "/reels-factory:writing-scenario {\"language\":\"ru\",\"idea\":\"убрали скидку и средний чек вырос\",\"length_s\":20,\"quotes\":[\"убрали скидку\",\"средний чек вырос вдвое\"],\"persona\":\"владелец кофейни\"} (задание инлайн для eval)",
+    "assertions": [
+      "output is strict JSON with title and blocks per schema",
+      "roles are hook development payoff cta in order",
+      "no numeric claims beyond those derivable from quotes",
+      "hook has no greeting and hooks within first 12 words",
+      "no Latin characters in any speech"
+    ]
+  },
+  {
+    "name": "cta_matches_meaning",
+    "prompt": "/reels-factory:writing-scenario {\"language\":\"ru\",\"idea\":\"личная история выгорания и восстановления\",\"length_s\":30,\"quotes\":[\"полгода не мог работать\",\"помог жёсткий режим сна\"],\"persona\":null} (задание инлайн для eval)",
+    "assertions": [
+      "cta block is not a sales/lead-gen call",
+      "cta is share/save/comment/subscribe style matching the story"
+    ]
+  }
+]

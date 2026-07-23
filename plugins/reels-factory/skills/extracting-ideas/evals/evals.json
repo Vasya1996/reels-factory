@@ -1,0 +1,12 @@
+[
+  {
+    "name": "extracts_self_contained_ideas",
+    "prompt": "/reels-factory:extracting-ideas {\"language\":\"ru\",\"transcript\":\"...мы потеряли триста тысяч на скидках, я вообще считаю что скидки это зло для малого бизнеса... потом обсуждали отчёт за март... кстати смешная история: клиент вернулся через год и извинился...\"} (задание инлайн для eval)",
+    "assertions": [
+      "output is strict JSON with 2-3 ideas",
+      "each idea has idea, emotion, draft_hook, quotes, length_s, why",
+      "quotes are verbatim substrings of the transcript",
+      "no idea requires knowing meeting context to understand"
+    ]
+  }
+]

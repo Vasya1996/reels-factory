@@ -1,0 +1,21 @@
+[
+  {
+    "name": "fails_greeting_hook",
+    "prompt": "/reels-factory:judging-script {\"language\":\"ru\",\"task\":{\"idea\":\"рост продаж\",\"length_s\":30},\"blocks\":[{\"role\":\"hook\",\"speech\":\"Привет, друзья, сегодня я расскажу вам про наш продукт и его историю.\"},{\"role\":\"cta\",\"speech\":\"Подпишись.\"}]} (задание инлайн для eval)",
+    "assertions": [
+      "output is strict JSON matching the verdict schema",
+      "pass is false",
+      "scores.hook is false",
+      "issues contains an entry with criterion hook and a concrete fix"
+    ]
+  },
+  {
+    "name": "passes_good_script",
+    "prompt": "/reels-factory:judging-script {\"language\":\"ru\",\"task\":{\"idea\":\"ошибка в оффере съедала продажи\",\"length_s\":20},\"blocks\":[{\"role\":\"hook\",\"speech\":\"Минус триста тысяч за месяц. Одна строка в оффере.\"},{\"role\":\"development\",\"speech\":\"Мы обещали скидку всем. Покупали только халявщики.\"},{\"role\":\"payoff\",\"speech\":\"Убрали скидку — средний чек вырос вдвое.\"},{\"role\":\"cta\",\"speech\":\"Сохрани, чтобы не повторить.\"}]} (задание инлайн для eval)",
+    "assertions": [
+      "output is strict JSON matching the verdict schema",
+      "pass is true",
+      "issues is an empty array"
+    ]
+  }
+]

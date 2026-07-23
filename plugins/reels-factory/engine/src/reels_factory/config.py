@@ -32,6 +32,10 @@ WORK_ROOT = Path.cwd() / "work"
 FACTORY_DIR = Path.cwd() / "factory"
 CONFIG_PATH = FACTORY_DIR / "config.yaml"
 
+# Корень плагина (skills/, .claude-plugin/) — для вызова скиллов движком
+# через `claude -p --plugin-dir`. engine/src/reels_factory/ -> вверх 3 уровня.
+PLUGIN_DIR = Path(__file__).resolve().parents[3]
+
 # Константы рендера — не менять без причины.
 OUT_W, OUT_H = 1080, 1920
 FPS = 30
@@ -50,7 +54,7 @@ def load_config(path=None) -> dict:
     """Прочитать и провалидировать factory/config.yaml.
 
     Обязательные поля: theme, format (split|fullscreen|avatar), voice_id,
-    persona.description, product.name, product.cta_phrase; для split и avatar
+    persona.description, product.name; для split и avatar
     дополнительно avatar.heygen_asset_id. Ошибки — понятным текстом на русском.
     """
     path = Path(path) if path else CONFIG_PATH
@@ -83,10 +87,15 @@ def load_config(path=None) -> dict:
     product = cfg.get("product") or {}
     if not str(product.get("name") or "").strip():
         raise ConfigError("Поле product.name (имя продукта) обязательно в config.yaml.")
-    if not str(product.get("cta_phrase") or "").strip():
+    # cta_phrase опционален: CTA в пути генерации пишется под каждый ролик,
+    # в пути «дословно» не добавляется вовсе (см. spec 2026-07-21).
+
+    lang = str(cfg.get("language") or "ru").strip().lower()
+    if not (len(lang) == 2 and lang.isalpha()):
         raise ConfigError(
-            "Поле product.cta_phrase (дословная фраза призыва) обязательно в config.yaml."
+            f"Поле language должно быть двухбуквенным кодом языка ('ru', 'kk'), сейчас: {cfg.get('language')!r}."
         )
+    cfg["language"] = lang
 
     if fmt in ("split", "avatar"):
         avatar = cfg.get("avatar") or {}

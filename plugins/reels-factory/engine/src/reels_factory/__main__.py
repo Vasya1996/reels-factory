@@ -107,6 +107,76 @@ def _cmd_verify(args, cfg):
     sys.exit(0 if qa["all_pass"] else 2)
 
 
+def _cmd_script_text(args, cfg):
+    from reels_factory.scenario import run_verbatim_path
+    from reels_factory.llm import ClaudeSkillRunner
+
+    wd = _resolve_workdir(args.workdir)
+    wd.mkdir(parents=True, exist_ok=True)
+    try:
+        if args.text_file:
+            text = Path(args.text_file).read_text(encoding="utf-8")
+        else:
+            from reels_factory.transcribe import transcribe_file
+            meta = transcribe_file(args.audio, wd, language=cfg.get("language", "ru"))
+            words = json.loads(Path(meta["out"]).read_text(encoding="utf-8"))["words"]
+            text = " ".join(w["text"] for w in words)
+        res = run_verbatim_path(wd, text, ClaudeSkillRunner(),
+                                language=cfg.get("language", "ru"))
+    except Exception as e:
+        print(json.dumps({"ok": False, "error": str(e)[:500]}, ensure_ascii=False))
+        sys.exit(1)
+    print(json.dumps(res, ensure_ascii=False))
+
+
+def _cmd_script_idea(args, cfg):
+    from reels_factory.scenario import run_generated_path
+    from reels_factory.llm import ClaudeSkillRunner
+
+    wd = _resolve_workdir(args.workdir)
+    wd.mkdir(parents=True, exist_ok=True)
+    try:
+        idea = json.loads(Path(args.idea_file).read_text(encoding="utf-8"))
+        res = run_generated_path(wd, idea, ClaudeSkillRunner(),
+                                 language=cfg.get("language", "ru"))
+    except Exception as e:
+        print(json.dumps({"ok": False, "error": str(e)[:500]}, ensure_ascii=False))
+        sys.exit(1)
+    print(json.dumps(res, ensure_ascii=False))
+
+
+def _cmd_ideas(args, cfg):
+    from reels_factory.scenario import run_ideas
+    from reels_factory.llm import ClaudeSkillRunner
+
+    wd = _resolve_workdir(args.workdir)
+    wd.mkdir(parents=True, exist_ok=True)
+    try:
+        if args.source_file:
+            text = Path(args.source_file).read_text(encoding="utf-8")
+        else:
+            from reels_factory.transcribe import transcribe_file
+            meta = transcribe_file(args.audio, wd, language=cfg.get("language", "ru"))
+            words = json.loads(Path(meta["out"]).read_text(encoding="utf-8"))["words"]
+            text = " ".join(w["text"] for w in words)
+        res = run_ideas(wd, text, ClaudeSkillRunner(), cfg.get("language", "ru"))
+    except Exception as e:
+        print(json.dumps({"ok": False, "error": str(e)[:500]}, ensure_ascii=False))
+        sys.exit(1)
+    print(json.dumps(res, ensure_ascii=False))
+
+
+def _cmd_clone_voice(args, cfg):
+    from reels_factory.tts import create_voice_clone
+
+    try:
+        vid = create_voice_clone(args.audio, args.name)
+    except Exception as e:
+        print(json.dumps({"ok": False, "error": str(e)[:500]}, ensure_ascii=False))
+        sys.exit(1)
+    print(json.dumps({"ok": True, "voice_id": vid}, ensure_ascii=False))
+
+
 def main():
     ap = argparse.ArgumentParser(prog="reels_factory")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -135,7 +205,34 @@ def main():
     p_v.add_argument("--workdir", required=True)
     p_v.add_argument("--mp4", default=None, help="путь к mp4 (по умолчанию <workdir>/reel.mp4)")
 
+    p_st = sub.add_parser("script-text",
+                          help="путь «дословно»: текст/аудио пользователя -> scenario.json без правок")
+    p_st.add_argument("--workdir", required=True)
+    g = p_st.add_mutually_exclusive_group(required=True)
+    g.add_argument("--text-file", dest="text_file", help="файл с готовым текстом")
+    g.add_argument("--audio", help="аудио/видео с речью (локальная расшифровка)")
+
+    p_si = sub.add_parser("script-idea",
+                          help="путь «из сырья»: задание-идея -> генерация+хуманизация+судья")
+    p_si.add_argument("--workdir", required=True)
+    p_si.add_argument("--idea-file", required=True, dest="idea_file",
+                      help="JSON: {idea, length_s, quotes[], persona?}")
+
+    p_i = sub.add_parser("ideas", help="извлечь 2-3 идеи рилсов из сырья (текст/аудио)")
+    p_i.add_argument("--workdir", required=True)
+    gi = p_i.add_mutually_exclusive_group(required=True)
+    gi.add_argument("--source-file", dest="source_file", help="файл с текстом-сырьём")
+    gi.add_argument("--audio", help="аудио/видео сырьё (локальная расшифровка)")
+
+    p_cv = sub.add_parser("clone-voice",
+                          help="клонировать голос пользователя в ElevenLabs -> voice_id")
+    p_cv.add_argument("--audio", required=True, help="запись голоса (1-2 мин чистой речи)")
+    p_cv.add_argument("--name", required=True, help="имя голоса в ElevenLabs")
+
     args = ap.parse_args()
+    if args.cmd == "clone-voice":
+        _cmd_clone_voice(args, None)
+        return
     try:
         cfg = load_config()
     except ConfigError as e:
@@ -148,6 +245,12 @@ def main():
         _cmd_make(args, cfg)
     elif args.cmd == "verify":
         _cmd_verify(args, cfg)
+    elif args.cmd == "script-text":
+        _cmd_script_text(args, cfg)
+    elif args.cmd == "script-idea":
+        _cmd_script_idea(args, cfg)
+    elif args.cmd == "ideas":
+        _cmd_ideas(args, cfg)
 
 
 if __name__ == "__main__":
