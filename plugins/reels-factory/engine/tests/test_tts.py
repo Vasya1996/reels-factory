@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from reels_factory.tts import synth_voice, MODEL_ID
+from reels_factory.tts import synth_voice, MODEL_ID, create_voice_clone
 
 
 class _Resp:
@@ -70,3 +70,30 @@ def test_synth_voice_реальный_синтез(tmp_path):
         pytest.skip("нет ключа/голоса ElevenLabs")
     out = synth_voice("проверка связи", tmp_path / "g.wav")
     assert out.stat().st_size > 1000
+
+
+def test_create_voice_clone_posts_and_returns_id(tmp_path, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "k")
+    audio = tmp_path / "voice.mp3"
+    audio.write_bytes(b"fake")
+    captured = {}
+
+    class Resp:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"voice_id": "v123"}
+
+    class Http:
+        def post(self, url, **kw):
+            captured["url"] = url
+            captured["data"] = kw.get("data")
+            captured["files"] = kw.get("files")
+            captured["headers"] = kw.get("headers")
+            return Resp()
+
+    vid = create_voice_clone(audio, "Серик", http=Http())
+    assert vid == "v123"
+    assert captured["url"].endswith("/v1/voices/add")
+    assert captured["data"]["name"] == "Серик"
+    assert captured["headers"]["xi-api-key"] == "k"
+    assert captured["files"]  # запись приложена

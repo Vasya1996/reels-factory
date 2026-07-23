@@ -91,6 +91,19 @@ python -m reels_factory verify --workdir demo1            # перепровер
 
 Весь вывод — JSON (`ensure_ascii=False`). Exit-код `2` = провал QA-гейта.
 
+## CLI: пути сценария
+
+- `script-text --workdir W (--text-file F | --audio F)` — путь «дословно»:
+  текст пользователя без правок (только фонетика для озвучки) -> scenario.json.
+- `ideas --workdir W (--source-file F | --audio F)` — 2-3 виральные идеи из
+  сырья -> ideas.json.
+- `script-idea --workdir W --idea-file F` — генерация по выбранной идее +
+  хуманизация + LLM-судья (exit 2 = судья не принял, см. verdict.issues).
+- `script ...` — классический research-цикл (без изменений).
+
+Язык всех шагов — `language` из factory/config.yaml (ru по умолчанию, kk
+поддержан насквозь: идеи, генерация, хуманизация, судья, расшифровка).
+
 ## Форматы
 
 - **split** — аватар-ведущий от HeyGen сверху (1080×672) + видеоряд снизу

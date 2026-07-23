@@ -218,27 +218,6 @@ $env:ELEVENLABS_API_KEY="<ключ>"; .venv\Scripts\python.exe -c "import os,req
 7 «Кто персонаж?») — не только женские голоса; если персонаж — мужчина,
 предлагай мужские.
 
-### Опция: клон своего голоса (ElevenLabs Instant Voice Clone)
-
-Если персонаж — сам пользователь (вариант «это я» на шаге 7) или он просто
-хочет свой голос, предложи клон голоса через ElevenLabs Instant Voice Clone
-(IVC доступен уже на тарифе Starter). Нужна запись голоса ~1 минута (чистая,
-без фонового шума и чужих голосов) — попроси прислать путь к аудиофайлу
-(wav/mp3). Создай клон и получи `voice_id`:
-
-```powershell
-$env:ELEVENLABS_API_KEY="<ключ>"; .venv\Scripts\python.exe -c "import os,requests; k=os.environ['ELEVENLABS_API_KEY']; p=r'<путь к записи голоса>'; r=requests.post('https://api.elevenlabs.io/v1/voices/add', headers={'xi-api-key':k}, data={'name':'<имя персонажа>'}, files=[('files',(os.path.basename(p),open(p,'rb'),'audio/mpeg'))], timeout=120); r.raise_for_status(); print(r.json()['voice_id'])"
-```
-
-(Эндпоинт `POST https://api.elevenlabs.io/v1/voices/add`, multipart:
-обязательны `name` и `files`; опционально `description`, `labels`,
-`remove_background_noise`. Ответ содержит `voice_id`. Если поля/эндпоинт
-кажутся устаревшими — сверься по актуальной документации
-`elevenlabs.io/docs`, не выдумывай.)
-
-`voice_id` из ответа и есть голос для конфига. Не хочет клон — бери голос из
-библиотеки (см. выше, под пол/тон персоны).
-
 Команда упала с `401` и телом вида `"missing_permissions"`/
 `"message": "...missing the permission voices_read..."` — ключ рабочий, но
 у него ограниченная область действия (ElevenLabs позволяет создавать ключи
@@ -248,7 +227,21 @@ $env:ELEVENLABS_API_KEY="<ключ>"; .venv\Scripts\python.exe -c "import os,req
 пользователю причину (ключ без права на листинг голосов) и попроси
 назвать `voice_id` напрямую (он виден в кабинете ElevenLabs у каждого
 голоса) — сам `voice_id` для TTS-запросов права `voices_read` не требует
-(проверится синтезом на шаге 9).
+(проверится синтезом на первом ролике).
+
+### Голос пользователя (клон ElevenLabs)
+
+1. Спроси: «Озвучивать твоим голосом или готовым?» Если своим:
+2. Попроси запись голоса 1–2 минуты: чистая речь без музыки и шума, обычный
+   разговорный темп (можно голосовым сообщением; форматы mp3/wav/m4a).
+3. Запусти сам: `$env:ELEVENLABS_API_KEY="<ключ>"; .venv\Scripts\python.exe -m reels_factory clone-voice --audio <файл> --name "<имя пользователя>"`
+4. `voice_id` из ответа запиши в `factory/config.yaml` -> `voice_id`.
+5. Про тарифы/лимиты ElevenLabs пользователю НЕ рассказывай — ключ наш
+   (авторов продукта), это не его забота. Ошибка доступа/лимитов — сообщи
+   пользователю нейтрально «настрою голос чуть позже, продолжаем» и передай
+   проблему нам (Вася/Юля).
+
+Не хочет клон — бери голос из библиотеки (см. выше, под пол/тон персоны).
 
 Критерий: у тебя есть конкретный `voice_id`, подтверждённый пользователем
 (через список ИЛИ названный им напрямую).
@@ -343,23 +336,10 @@ $env:PYTHONUTF8="1"; .venv\Scripts\python.exe -c "from reels_factory.config impo
 Критерий: печатается argparse-справка (`usage: reels_factory verify ...`),
 без трейсбека.
 
-Проверь, что ключ ElevenLabs реально рабочий — короткий TTS на 3 слова
-(это стоит копейки):
-
-```powershell
-New-Item -ItemType Directory -Force work | Out-Null
-$env:ELEVENLABS_API_KEY="<ключ>"; .venv\Scripts\python.exe -c "from reels_factory.tts import synth_voice; synth_voice('привет, это тест', 'work/_smoke.wav', voice_id='<voice_id>'); print('ok')"
-```
-
-Критерий: команда напечатала `ok` без исключения, и файл
-`work/_smoke.wav` существует и весит больше 0 байт:
-
-```powershell
-(Get-Item work/_smoke.wav).Length
-```
-
-Если 401/403 — ключ неверный, вернись к шагу 4. Удали `work/_smoke.wav`
-после проверки (это тестовый мусор, не часть продукта).
+Платный TTS-смоук здесь не гоняем — не тратим лимиты ElevenLabs; ключ и
+voice_id уже подтверждены на шаге 6 (клоном или выбором из библиотеки).
+Реальная проверка голоса произойдёт на первом ролике
+(`/reels-factory:make`).
 
 HeyGen на этом шаге отдельно не гоняем — `asset_id` уже подтверждён
 успешным ответом на шаге 5 (реальная генерация видео произойдёт на первом

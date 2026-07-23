@@ -53,23 +53,29 @@ def _theme_root(word: str) -> str:
 def _mentions_theme(text: str, *candidates) -> bool:
     """Упоминается ли тема в тексте — пословный матч по корню.
 
-    Для каждого кандидата берём самое длинное буквенное слово (числа-слова
-    игнорируются), считаем его корень (_theme_root) и ищем его как подстроку
-    текста, регистронезависимо.
+    Слова кандидата, чьего алфавита нет в тексте, несопоставимы и
+    пропускаются (латинская тема при русском тексте — не провал).
+    Если сопоставимых кандидатов не осталось вообще — не валим (True).
     """
     low = (text or "").lower()
+    comparable = 0
     for g in candidates:
         g = str(g or "").strip()
         if not g:
             continue
         words = _WORD_RE.findall(g)
-        if not words:
+        matchable = [
+            w for w in words
+            if re.search(r"[а-яё]" if re.search(r"[а-яё]", w.lower()) else r"[a-z]", low)
+        ]
+        if not matchable:
             continue
-        longest = max(words, key=len).lower()
+        comparable += 1
+        longest = max(matchable, key=len).lower()
         root = _theme_root(longest)
         if len(root) >= 2 and root in low:
             return True
-    return False
+    return comparable == 0
 
 
 def _read_style_excerpt(max_chars: int = 1500) -> str:
@@ -303,3 +309,188 @@ def generate_scenario(workdir: Path, hypothesis: dict, runner: LLMRunner, retrie
         last_errors = errors
 
     raise ScenarioError(f"исчерпаны ретраи ({retries}): {last_errors}")
+
+
+# ---------------------------------------------------------------------------
+# Путь «дословно»: текст пользователя без правок (spec 2026-07-21).
+# Блоки — только формат передачи сборке/Юле: границы по предложениям,
+# роли позиционные, тайминги — черновая оценка по счёту слов.
+
+WORDS_PER_SEC = 2.5
+
+_SENT_RE = re.compile(r"(?<=[.!?…])\s+")
+
+
+def split_verbatim(text: str) -> list[dict]:
+    text = str(text or "").strip()
+    if not text:
+        raise ScenarioError("пустой текст")
+    sents = [s for s in _SENT_RE.split(text) if s.strip()]
+    n_blocks = min(4, len(sents))
+    total_words = sum(len(s.split()) for s in sents)
+
+    groups = []
+    i = 0
+    remaining_words = total_words
+    for g in range(n_blocks):
+        remaining_groups = n_blocks - g
+        # оставить хотя бы по одному предложению каждой следующей группе
+        max_take = len(sents) - i - (remaining_groups - 1)
+        target = remaining_words / remaining_groups
+        cur, cur_words = [], 0
+        while len(cur) < max_take and (not cur or cur_words < target):
+            cur.append(sents[i])
+            cur_words += len(sents[i].split())
+            i += 1
+        groups.append(" ".join(cur))
+        remaining_words -= cur_words
+
+    blocks, t = [], 0.0
+    for role, chunk in zip(ROLES_4, groups):
+        dur = round(len(chunk.split()) / WORDS_PER_SEC, 1)
+        blocks.append({"role": role, "start": round(t, 1),
+                       "end": round(t + dur, 1), "speech": chunk})
+        t += dur
+    return blocks
+
+
+def scenario_from_text(workdir: Path, text: str) -> dict:
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    sc = {"mode": "verbatim", "blocks": split_verbatim(text)}
+    (workdir / "scenario.json").write_text(
+        json.dumps(sc, ensure_ascii=False, indent=1), encoding="utf-8")
+    return sc
+
+
+def validate_integrity(sc: dict) -> list[str]:
+    """Только механика (файл годен для сборки). Качество — судья, не код."""
+    errs = []
+    blocks = sc.get("blocks")
+    if not isinstance(blocks, list) or not blocks:
+        return ["blocks: отсутствует или пуст"]
+    prev_end = None
+    for i, b in enumerate(blocks):
+        if not isinstance(b, dict):
+            errs.append(f"блок {i}: не объект")
+            continue
+        if not str(b.get("speech") or "").strip():
+            errs.append(f"блок {i} ({b.get('role')}): пустой speech")
+        start, end = b.get("start"), b.get("end")
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                   for v in (start, end)):
+            errs.append(f"блок {i}: start/end не числа")
+            continue
+        if prev_end is not None and start != prev_end:
+            errs.append(f"блок {i}: start ({start}) != end предыдущего ({prev_end})")
+        prev_end = end
+    return errs
+
+
+def run_verbatim_path(workdir, text: str, skill_runner, language: str) -> dict:
+    """Путь «дословно»: фонетика (единственная правка) -> scenario.json."""
+    from reels_factory.humanize import humanize_scenario
+
+    workdir = Path(workdir)
+    draft = {"mode": "verbatim", "blocks": split_verbatim(text)}
+    final = humanize_scenario(skill_runner, workdir, draft,
+                              mode="phonetics", language=language)
+    errs = validate_integrity(final)
+    if errs:
+        raise ScenarioError(f"целостность: {errs}")
+    (workdir / "scenario.json").write_text(
+        json.dumps(final, ensure_ascii=False, indent=1), encoding="utf-8")
+    n_words = sum(_wordcount(b["speech"]) for b in final["blocks"])
+    return {"ok": True, "scenario": final,
+            "info": {"words": n_words,
+                     "est_seconds": round(n_words / WORDS_PER_SEC)}}
+
+
+# ---------------------------------------------------------------------------
+# Путь «из сырья»: задание-идея -> генерация скиллом -> хуманизация+судья.
+
+def _n_fails(verdict: dict) -> int:
+    scores = (verdict or {}).get("scores") or {}
+    return sum(1 for v in scores.values() if v is False)
+
+
+def _pick_variant2(attempts: list, best_scenario: dict):
+    """Следующий по качеству ОТЛИЧАЮЩИЙСЯ от best сценарий (или None)."""
+    ranked = sorted(enumerate(attempts),
+                    key=lambda t: (_n_fails(t[1].get("verdict")), -t[0]))
+    for _, a in ranked[1:]:
+        if a.get("scenario", {}).get("blocks") != best_scenario.get("blocks"):
+            return a["scenario"]
+    return None
+
+
+def run_generated_path(workdir, idea: dict, skill_runner, language: str) -> dict:
+    """Путь «из сырья»: скилл-генерация -> полировка+судья -> scenario.json.
+
+    При браке (verdict.pass=False) вместо претензий судьи пользователю
+    предлагается второй вариант реплик (scenario.variant2.json), если он
+    отличается от лучшего — внутренняя кухня судей в scenario.json не
+    попадает."""
+    from reels_factory.humanize import refine_loop
+
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    task = {"language": language,
+            "idea": idea.get("idea"),
+            "length_s": idea.get("length_s"),
+            "quotes": idea.get("quotes") or [],
+            "persona": idea.get("persona")}
+    payload = workdir / "idea.json"
+    payload.write_text(json.dumps(task, ensure_ascii=False, indent=1),
+                       encoding="utf-8")
+
+    reply = skill_runner.run_skill("writing-scenario", payload)
+    draft = _extract_json(reply)
+    errs = validate_integrity(draft)
+    if errs:
+        raise ScenarioError(f"черновик генерации: {errs}")
+
+    final, verdict = refine_loop(skill_runner, workdir, draft,
+                                 {k: task[k] for k in ("idea", "length_s", "quotes")},
+                                 language)
+    errs = validate_integrity(final)
+    if errs:
+        raise ScenarioError(f"целостность после полировки: {errs}")
+    (workdir / "scenario.json").write_text(
+        json.dumps(final, ensure_ascii=False, indent=1), encoding="utf-8")
+
+    result = {"ok": True, "scenario": final, "verdict": verdict}
+    if not verdict["pass"]:
+        log_path = workdir / "judge_log.json"
+        if log_path.exists():
+            attempts = json.loads(log_path.read_text(encoding="utf-8")).get("attempts", [])
+            variant2 = _pick_variant2(attempts, final)
+            if variant2 is not None:
+                (workdir / "scenario.variant2.json").write_text(
+                    json.dumps(variant2, ensure_ascii=False, indent=1), encoding="utf-8")
+                result["variants"] = 2
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Task 10: извлечение 2-3 идей рилсов из сырого транскрипта/заметок.
+
+def run_ideas(workdir, source_text: str, skill_runner, language: str) -> dict:
+    """Скилл-извлечение идей: сырьё -> ideas_task.json -> extracting-ideas -> ideas.json."""
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    payload = workdir / "ideas_task.json"
+    payload.write_text(json.dumps({"language": language, "transcript": source_text},
+                                  ensure_ascii=False, indent=1), encoding="utf-8")
+    reply = skill_runner.run_skill("extracting-ideas", payload)
+    data = _extract_json(reply)
+    ideas = data.get("ideas")
+    if not isinstance(ideas, list) or not (2 <= len(ideas) <= 3):
+        raise ScenarioError(f"ожидалось 2–3 идеи, получено: {ideas!r}")
+    for i, idea in enumerate(ideas):
+        for key in ("idea", "draft_hook", "quotes", "length_s"):
+            if not idea.get(key):
+                raise ScenarioError(f"идея {i}: нет поля {key}")
+    (workdir / "ideas.json").write_text(
+        json.dumps({"ideas": ideas}, ensure_ascii=False, indent=1), encoding="utf-8")
+    return {"ok": True, "ideas": ideas}
