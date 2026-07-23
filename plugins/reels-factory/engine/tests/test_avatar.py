@@ -1,7 +1,10 @@
 from pathlib import Path
 
+import pytest
+
 from reels_factory.avatar import (DEFAULT_MOTION_PROMPT, MOTION_PROMPT_BY_ROLE,
-                                  HeyGenClient, cached_generate)
+                                  UPLOAD_URL, HeyGenClient, cached_generate,
+                                  upload_photo_asset)
 
 
 class _Resp:
@@ -37,6 +40,71 @@ class _FakeHttp:
 def _wav(path: Path, data=b"wavdata") -> Path:
     path.write_bytes(data)
     return path
+
+
+# --- загрузка фото аватара (upload_photo_asset) ------------------------------
+
+class _FakeUpload:
+    """Только аплоад ассета: запоминает запрос, отдаёт заданный ответ."""
+
+    def __init__(self, payload=None, status=200):
+        self.payload = payload if payload is not None else {"data": {"asset_id": "img_123"}}
+        self.status, self.posts = status, []
+
+    def post(self, url, headers=None, files=None, timeout=None, **kw):
+        self.posts.append((url, headers, files, timeout))
+        return _RespWithStatus(self.payload, status_code=self.status)
+
+
+def _photo(tmp_path, data=b"jpegbytes") -> Path:
+    p = tmp_path / "face.jpg"
+    p.write_bytes(data)
+    return p
+
+
+def test_фото_уходит_в_v3_assets_и_возвращает_asset_id(tmp_path):
+    http = _FakeUpload()
+
+    got = upload_photo_asset(_photo(tmp_path), api_key="K1", http=http)
+
+    assert got == "img_123"
+    url, headers, files, _timeout = http.posts[0]
+    assert url == UPLOAD_URL
+    assert headers["X-Api-Key"] == "K1"
+    assert files["file"] == ("face.jpg", b"jpegbytes")
+
+
+def test_фото_без_ключа_не_грузится(tmp_path, monkeypatch):
+    monkeypatch.delenv("HEYGEN_API_KEY", raising=False)
+    http = _FakeUpload()
+
+    with pytest.raises(RuntimeError, match="HEYGEN_API_KEY"):
+        upload_photo_asset(_photo(tmp_path), http=http)
+
+    assert http.posts == []
+
+
+def test_нет_файла_фото_говорим_про_путь(tmp_path):
+    http = _FakeUpload()
+
+    with pytest.raises(RuntimeError, match="нет.jpg"):
+        upload_photo_asset(tmp_path / "нет.jpg", api_key="K1", http=http)
+
+    assert http.posts == []
+
+
+def test_ошибка_heygen_пробрасывается(tmp_path):
+    http = _FakeUpload(status=500)
+
+    with pytest.raises(RuntimeError, match="HTTP 500"):
+        upload_photo_asset(_photo(tmp_path), api_key="K1", http=http)
+
+
+def test_ответ_без_asset_id_понятная_ошибка(tmp_path):
+    http = _FakeUpload(payload={"data": {}})
+
+    with pytest.raises(RuntimeError, match="не вернул asset_id"):
+        upload_photo_asset(_photo(tmp_path), api_key="K1", http=http)
 
 
 class _RespWithStatus(_Resp):
