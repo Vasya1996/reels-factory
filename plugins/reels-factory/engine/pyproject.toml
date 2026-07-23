@@ -18,6 +18,8 @@ dependencies = [
 dev = ["pytest"]
 # монтажный слой: нужен только при edit.jump_cuts — базовая установка без него
 edit = ["auto-editor"]
+# телеграм-бот: нужен только при запуске python -m reels_factory.bot
+bot = ["python-telegram-bot>=21"]
 
 [project.scripts]
 reels-factory = "reels_factory.__main__:main"
