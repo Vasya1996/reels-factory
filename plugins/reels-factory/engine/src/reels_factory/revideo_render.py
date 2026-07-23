@@ -93,8 +93,8 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
         words = apply_caption_fixes(words, caption_fixes)
     words = _normalize_words(words)
 
-    # 4) tz.json из адаптера
-    tz = plan_to_tz(timed, broll_segments, config, base_video="base.mp4",
+    # 4) tz.json из адаптера (фразовая раскладка по словам)
+    tz = plan_to_tz(timed, broll_segments, config, words=words, base_video="base.mp4",
                     broll_file="broll.mp4", face=face)
 
     # 5) разложить вход в модуль и отрендерить
