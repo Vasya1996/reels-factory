@@ -68,17 +68,34 @@ node render.mjs        # -> output/reel_*.mp4  (1080x1920, 30fps, со звук�
 }
 ```
 
-## Стык с Python-движком (следующий шаг wiring)
+## Стык с Python-движком (ВСТРОЕНО)
 
-Их `editplan.py` и наш `tz.json` — одна и та же сущность (план монтажа). Нужен
-тонкий адаптер `editplan (dict) → tz.json`, дальше `node render.mjs`, дальше
-`verify.py` (QA-гейты остаются). Апстрим-модули (авто-раскладка из сценария и
-семантический подбор b-roll) описаны в `docs/TZ_pipeline_v6.md`.
+Revideo — единственный рендер-слой. Пайплайн (`pipeline.py`) вызывает его вместо
+ffmpeg-сборки:
 
 ```
-scenario → words.json → editplan(dict)
-        → [adapter] → tz.json → node render.mjs → reel.mp4 → verify.py
+scenario → voice(ElevenLabs) → avatar(HeyGen) → [assemble_revideo] → reel.mp4 → verify.py
 ```
 
-Движок рендера самодостаточен: его можно гонять отдельно от Python-пайплайна на
-готовых `tz.json` + `words.json` + `base.mp4`.
+Реализовано:
+- `reels_factory/revideo_adapter.py` — `plan_to_tz(timed, broll_segments, config)`:
+  ретаймленные блоки (роли hook/development/payoff/cta) → сегменты tz с эффектами
+  и ротацией зумов.
+- `reels_factory/revideo_render.py` — `assemble_revideo(...)`: drop-in замена
+  `compose.assemble` с тем же контрактом `{mp4, timed_scenario, words_fixed}`.
+  Переиспользует `_concat_avatars` (склейка аватара → `base.mp4`),
+  `retime_scenario`, `_default_transcribe`, `apply_caption_fixes`; кладёт
+  `tz.json`/`words.json`/`base.mp4` в модуль и зовёт `node render.mjs`.
+- `pipeline.py` — `assemble_fn` по умолчанию = `assemble_revideo`. Переключателя нет.
+- Выход рендера задаётся из Python через env `RF_OUTFILE`.
+
+Проверено: план пайплайна (ретаймленные блоки) → адаптер → tz → `node render.mjs`
+даёт корректный ролик 1080×1920@30 со звуком (лицо на dev-блоках с ротацией
+зумов, payoff = фуллскрин-видеоряд + аватар-пузырь, CTA-эндкард, accumulate-
+субтитры). Полный E2E с генерацией голоса/аватара требует ключей HeyGen/ElevenLabs.
+
+Апстрим-модули (авто-раскладка из сценария и семантический подбор b-roll) —
+`docs/TZ_pipeline_v6.md`.
+
+Движок самодостаточен: гоняется отдельно на готовых `tz.json` + `words.json` +
+`public/base.mp4` (`node render.mjs`).

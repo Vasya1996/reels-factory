@@ -10,11 +10,11 @@ import './global.css';
 
 const W = 1080, H = 1920;
 const YELLOW = '#FFE500';
-const FONT = (tz as any).brand.font;
+const FONT = (tz as any).brand?.font ?? 'Unbounded';
 const DURATION = (tz as any).meta.duration;
-const SEGMENTS = (tz as any).segments;
-const KEYWORDS: string[] = (tz as any).captions.keywords;
-const SFX = (tz as any).sfx;
+const SEGMENTS = (tz as any).segments ?? [];
+const KEYWORDS: string[] = (tz as any).captions?.keywords ?? [];
+const SFX = (tz as any).sfx ?? [];
 const CAP_Y = 560, CAP_TOP = -640;
 const CAP_40 = 195; // ~40% up from the bottom (0.4 * 1920 from bottom edge)
 
