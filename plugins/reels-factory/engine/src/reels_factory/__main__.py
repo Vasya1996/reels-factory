@@ -137,9 +137,11 @@ def _apply_brolls(src: Path, out: Path, brolls: list) -> Path:
 
 
 def _burn_captions(src: Path, out: Path, language: str,
-                   style: str = "karaoke", keywords: list | None = None) -> Path:
+                   style: str = "karaoke", keywords: list | None = None,
+                   stickers: list | None = None) -> Path:
     """Распознать речь ролика и прожечь субтитры выбранного пресета
-    (karaoke/popword/boxed, см. captions.py). Кладёт caps.ass рядом."""
+    (karaoke/popword/boxed) + стикеры из ТЗ одним проходом. Кладёт caps.ass
+    (и stickers.ass) рядом."""
     from reels_factory.captions import build_ass
     from reels_factory.config import FFMPEG, CAPTION_FONT
     from reels_factory.render import load_words_file, probe_wh
@@ -153,8 +155,14 @@ def _burn_captions(src: Path, out: Path, language: str,
     build_ass(words, str(rdir / "caps.ass"), font=CAPTION_FONT,
               play_w=w, play_h=h, pos=(int(w * 0.5), int(h * 0.78)),
               style=style, keywords=keywords)
+    vf = "ass=caps.ass"
+    if stickers:
+        from reels_factory.stickers import build_stickers_ass
+        build_stickers_ass(stickers, str(rdir / "stickers.ass"),
+                           font=CAPTION_FONT, play_w=w, play_h=h)
+        vf += ",ass=stickers.ass"
     p = subprocess.run(
-        [FFMPEG, "-y", "-i", str(src), "-vf", "ass=caps.ass",
+        [FFMPEG, "-y", "-i", str(src), "-vf", vf,
          "-c:v", "libx264", "-crf", "19", "-preset", "medium", "-pix_fmt", "yuv420p",
          "-c:a", "copy", str(out)],
         cwd=str(rdir), capture_output=True, text=True, encoding="utf-8",
@@ -207,25 +215,41 @@ def _cmd_edit(args):
             silences = detect_silences(cur)
             segs = speech_segments(dur, silences)
 
-            # зумы по фразам (push/punch/pulse с наведением на лицо)
-            zsegs = plan_zoom_segments(segs)
+            # зумы: лента приёмов из ТЗ (shots), иначе авто по фразам
+            shots = brief.get("shots") or []
+            if shots:
+                from reels_factory.zoom import PUSH, PUNCH, PULSE, ZOOM_OUT
+                kind_map = {"push": PUSH, "punch": PUNCH,
+                            "pulse": PULSE, "zoom_out": ZOOM_OUT}
+                zsegs = [
+                    (s["start"], s["end"], kind_map[s["type"]],
+                     float(s.get("strength",
+                                 0.10 if s["type"] in ("punch", "zoom_out") else 0.08)))
+                    for s in shots if s["type"] != "wide"]
+            else:
+                zsegs = plan_zoom_segments(segs)
             if zsegs:
                 cur = render_zoom(cur, out.with_name(out.stem + "_zoom.mp4"),
                                   zsegs, duration=dur)
                 steps.append("zoom")
 
-            # вспышки-переходы: старты фраз, не чаще FLASH_MIN_GAP_S
-            flash = []
-            for s, _e in segs[1:]:
-                if not flash or s - flash[-1] >= FLASH_MIN_GAP_S:
-                    if 1.0 < s < dur - 1.0:
-                        flash.append(round(s, 3))
+            # вспышки-переходы: из ТЗ, иначе старты фраз не чаще FLASH_MIN_GAP_S
+            if brief.get("transitions"):
+                flash = list(brief["transitions"])
+            else:
+                flash = []
+                for s, _e in segs[1:]:
+                    if not flash or s - flash[-1] >= FLASH_MIN_GAP_S:
+                        if 1.0 < s < dur - 1.0:
+                            flash.append(round(s, 3))
 
             # ритм-добивка: статичные дыры длиннее 3с закрываются панчами;
-            # окна вставок — тоже движение, панчи туда не ставим
+            # окна вставок и стикеров — тоже движение, панчи туда не ставим
+            stickers = brief.get("stickers") or []
             covered = [(zs, ze) for zs, ze, _k, _st in zsegs]
             covered += [(t - 0.15, t + 0.15) for t in flash]
             covered += [(b["start"], b["end"]) for b in brolls]
+            covered += [(s["start"], s["end"]) for s in stickers]
             punch = fill_static_gaps(covered, dur)
 
             # свуш и на входах вставок: появление б-ролла должно быть слышно
@@ -255,8 +279,10 @@ def _cmd_edit(args):
                 cur = _burn_captions(
                     cur, out, brief.get("language") or args.language,
                     style=caps.get("style") or args.caption_style,
-                    keywords=caps.get("keywords"))
+                    keywords=caps.get("keywords"), stickers=stickers)
                 steps.append("captions")
+                if stickers:
+                    steps.append("stickers")
             elif cur != out:
                 cur = Path(cur).replace(out) or out
             print(json.dumps({"ok": True, "input": str(src), "output": str(out),
