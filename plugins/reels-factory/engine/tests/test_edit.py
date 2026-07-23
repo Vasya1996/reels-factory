@@ -26,7 +26,17 @@ def _frag(tmp_path, name="avatar_0.mp4"):
     return p
 
 
-def test_jump_cut_зовёт_auto_editor_с_порогом_и_запасом(tmp_path):
+@pytest.fixture
+def fake_auto_editor(monkeypatch):
+    """auto-editor ставится отдельно (extra `edit`) — тесту нужен сам вызов,
+    а не установленный бинарь."""
+    import shutil
+    real = shutil.which
+    monkeypatch.setattr(shutil, "which", lambda n, *a, **kw:
+                        "/usr/bin/auto-editor" if n == "auto-editor" else real(n, *a, **kw))
+
+
+def test_jump_cut_зовёт_auto_editor_с_порогом_и_запасом(fake_auto_editor, tmp_path):
     run = _FakeRun()
     src = _frag(tmp_path)
 
@@ -46,7 +56,7 @@ def test_jump_cut_падает_если_исходника_нет(tmp_path):
         jump_cut(tmp_path / "нет.mp4", tmp_path / "out.mp4", run=_FakeRun())
 
 
-def test_фрагменты_режутся_по_порядку(tmp_path):
+def test_фрагменты_режутся_по_порядку(fake_auto_editor, tmp_path):
     run = _FakeRun()
     frags = [_frag(tmp_path, f"avatar_{i}.mp4") for i in range(3)]
 

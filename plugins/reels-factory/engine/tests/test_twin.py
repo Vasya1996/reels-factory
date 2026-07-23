@@ -99,7 +99,9 @@ def test_проваленное_обучение_падает_понятной_�
         c.create_from_video("Серик", train, consent)
 
 
-def test_без_ключа_не_создаётся():
+def test_без_ключа_не_создаётся(monkeypatch):
+    # на машине разработчика ключ может стоять в env — тест про его отсутствие
+    monkeypatch.delenv("HEYGEN_API_KEY", raising=False)
     with pytest.raises(TwinError, match="API key"):
         TwinClient(api_key="", http=object())
 
