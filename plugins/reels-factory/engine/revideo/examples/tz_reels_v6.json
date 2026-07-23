@@ -1,0 +1,113 @@
+{
+  "_generated_by": "Storyboard Compiler (Модуль A) — раскладка из сценария по правилам монтажа",
+  "meta": {"duration": 32.4, "fps": 30, "size": [1080, 1920], "language": "ru", "base_video": "photo_avatar_iv.mp4", "words": "words.json"},
+  "brand": {"keyword_color": "#FFE500", "font": "Unbounded", "captions_style": "accumulate", "progress_bar": true, "watermark": "@julia.agents", "watermark_from": 2.0},
+  "captions": {"base_style": "accumulate", "font_size": 46, "position_pct_from_bottom": 40, "keywords": ["устал", "один раз", "скилы", "напиши", "автоматизировать", "бесплатно", "подписывайся"]},
+
+  "rules_applied": {
+    "min_shot_sec": 1.2,
+    "zoom_each_once": true,
+    "no_adjacent_same_effect": true,
+    "caption_never_crosses_segment_boundary": true,
+    "backdrop_required_for_fullscreen_overlays": true,
+    "max_transition_types": 2
+  },
+
+  "segments": [
+    {
+      "id": 1, "start": 0.0, "end": 3.56, "phrase": "Если ты устал каждый раз писать нейросети одно и то же,",
+      "camera": {"type": "zoom_out"}, "transition_in": "none",
+      "effect": {"type": "none"}, "caption": "bottom",
+      "why": "Хук = боль. Держим лицо, zoom_out затягивает внимание. Подсветка 'устал'."
+    },
+    {
+      "id": 2, "start": 3.78, "end": 6.7, "phrase": "есть способ сделать это один раз и забыть,",
+      "camera": {"type": "punch"}, "transition_in": "whip",
+      "effect": {"type": "none"}, "caption": "bottom",
+      "why": "Обещание решения. Whip-переход + punch дают энергию на 'один раз'."
+    },
+    {
+      "id": 3, "start": 6.82, "end": 7.88, "phrase": "для этого есть скилы.",
+      "camera": {"type": "snap_zoom"}, "transition_in": "none",
+      "effect": {"type": "accent_pop", "emoji": "sparkles", "on_word": "скилы"}, "caption": "bottom",
+      "why": "Ввод ключевого термина. Snap-зум + искра ✨ на 'скилы' — точечный акцент (НОВОЕ vs v4)."
+    },
+    {
+      "id": 4, "start": 8.16, "end": 10.88, "phrase": "Это набор инструкций, который нейросеть запоминает один раз.",
+      "camera": {"type": "hold"}, "transition_in": "none",
+      "effect": {"type": "broll", "style": "pip",
+        "broll_query": "рукописный список инструкций в блокноте, чек-лист, заметки от руки",
+        "src": null, "offset": 0}, "caption": "top",
+      "why": "Объяснение понятия. PiP-карточка с блокнотом = 'набор инструкций'. Материал по смыслу."
+    },
+    {
+      "id": 5, "start": 11.0, "end": 13.36, "phrase": "Потом ты просто говоришь: напиши пост,",
+      "camera": {"type": "push"}, "transition_in": "none",
+      "effect": {"type": "broll", "style": "split",
+        "broll_query": "человек печатает сообщение на телефоне, набор текста, экран с чатом",
+        "src": null, "offset": 0}, "caption": "top",
+      "why": "Команда-пример. Сплит: сверху ты, снизу набор текста. Push-зум на аватар."
+    },
+    {
+      "id": 6, "start": 13.86, "end": 16.24, "phrase": "и она уже знает твой стиль, формат и аудиторию,",
+      "camera": {"type": "ken_burns"}, "transition_in": "none",
+      "effect": {"type": "emoji_pop_sequence", "items": [
+        {"word": "стиль", "img": "palette"}, {"word": "формат", "img": "ruler"}, {"word": "аудиторию", "img": "busts"}]},
+      "caption": "bottom",
+      "why": "Три атрибута → три Fluent-эмодзи по словам. Ken Burns добавляет мягкое движение."
+    },
+    {
+      "id": 7, "start": 16.58, "end": 18.48, "phrase": "и так можно автоматизировать почти всё.",
+      "camera": {"type": "hold"}, "transition_in": "zoom_blur",
+      "effect": {"type": "broll_bg_particles",
+        "broll_query": "абстрактный tech-фон, рабочий стол с приложениями, множество открытых окон",
+        "src": null, "offset": 0, "icons": ["robot", "sparkles", "brain", "gear", "bulb", "rocket"]},
+      "caption": "bottom", "backdrop": true,
+      "why": "Широкое обобщение 'всё'. Фон + летящие иконки ИИ. Zoom_blur-переход в блок. Начало полноэкранного блока → бэкплейт."
+    },
+    {
+      "id": 8, "start": 18.6, "end": 22.7, "phrase": "Ответы клиентам, письма, анализ документов, исследования и десятки других задач.",
+      "camera": {"type": "hold"}, "transition_in": "none",
+      "effect": {"type": "chart_bars", "title": "ЧТО МОЖНО ЗАКРЫТЬ", "items": [
+        {"t": 18.6, "label": "Ответы клиентам", "v": 0.7},
+        {"t": 19.5, "label": "Письма", "v": 0.55},
+        {"t": 20.04, "label": "Анализ документов", "v": 0.85},
+        {"t": 20.98, "label": "Исследования", "v": 0.75},
+        {"t": 21.74, "label": "+ десятки задач", "v": 1.0}]},
+      "caption": "hidden", "backdrop": true,
+      "why": "Явное перечисление → инфографика-бары. Подписи скрыты, тёмная подложка. Мостится с сегм.7 и 9 (флеш-кадры)."
+    },
+    {
+      "id": 9, "start": 23.14, "end": 26.02, "phrase": "Один раз настроил и больше не объясняешь одно и то же.",
+      "camera": {"type": "hold"}, "transition_in": "none",
+      "effect": {"type": "broll", "style": "fullscreen",
+        "broll_query": "готовые документы на столе, спокойное завершённое рабочее место, папка с бумагами",
+        "src": null, "offset": 0,
+        "bubble": {"shape": "circle", "position": "bottom_left", "face": {"cx": 531, "cy": 669, "h": 313}, "face_zoom": 3.1, "face_dy": 45}},
+      "caption": "top",
+      "why": "Личный вывод. Фуллскрин-b-roll + ты в кружке (вебка). Конец полноэкранного блока → снятие бэкплейта."
+    },
+    {
+      "id": 10, "start": 26.22, "end": 28.6, "phrase": "Если хочешь, покажу как создать такие скилы бесплатно.",
+      "camera": {"type": "shake_zoom", "on_word": "бесплатно"}, "transition_in": "whip",
+      "effect": {"type": "keyword_box", "word": "бесплатно"}, "caption": "bottom",
+      "why": "Оффер. Возврат к лицу, shake-зум + плашка 'бесплатно'. Whip-переход (тот же тип, что сегм.2)."
+    },
+    {
+      "id": 11, "start": 28.6, "end": 32.4, "phrase": "Подписывайся, здесь всё про ИИ-агентов и автоматизацию.",
+      "camera": {"type": "pulse"}, "transition_in": "none",
+      "effect": {"type": "cta_endcard", "button": "ПОДПИСАТЬСЯ", "accent": "sparkles"}, "caption": "bottom",
+      "why": "CTA. Кнопка + искры, pulse-зум. Последний неиспользованный тип зума."
+    }
+  ],
+
+  "broll_plan": {
+    "note": "src=null заполняет Модуль B семантическим подбором по broll_query; дедуп по ролику, порог 0.24, иначе фолбэк.",
+    "queries": [
+      {"segment": 4, "query": "рукописный список инструкций в блокноте"},
+      {"segment": 5, "query": "человек печатает сообщение на телефоне"},
+      {"segment": 7, "query": "абстрактный tech-фон с приложениями"},
+      {"segment": 9, "query": "готовые документы, завершённое рабочее место"}
+    ]
+  }
+}
