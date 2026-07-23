@@ -125,6 +125,14 @@ def scenario_from_text(text: str) -> dict:
     return {"mode": "verbatim", "blocks": split_verbatim(text)}
 
 
+# Фото и голос переживают «начать заново»: заново нужен сценарий, а не профиль.
+_PROFILE_KEYS = ("photos", "photo", "voice_id")
+
+
+def fresh_session(s: dict) -> dict:
+    return {"step": CHOOSING, **{k: s[k] for k in _PROFILE_KEYS if k in (s or {})}}
+
+
 def session_dir(chat_id: int) -> Path:
     return WORK_ROOT / "bot" / str(chat_id)
 
@@ -214,11 +222,18 @@ def _kb_start():
     ])
 
 
+def _kb_back():
+    """Шаг ожидания ввода — из него тоже должен быть выход назад."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([[InlineKeyboardButton("← Назад", callback_data="back")]])
+
+
 def _kb_ideas(n: int):
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton(str(i + 1), callback_data=f"idea:{i}")]
-         for i in range(n)])
+         for i in range(n)] +
+        [[InlineKeyboardButton("← Назад", callback_data="back")]])
 
 
 def _kb_photo():
@@ -226,6 +241,7 @@ def _kb_photo():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Использовать загруженное фото", callback_data="photo:old")],
         [InlineKeyboardButton("Загрузить новое фото", callback_data="photo:new")],
+        [InlineKeyboardButton("← Назад", callback_data="back")],
     ])
 
 
@@ -234,14 +250,63 @@ def _kb_review():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Утвердить", callback_data="ok")],
         [InlineKeyboardButton("Изменить текст", callback_data="edit")],
+        [InlineKeyboardButton("← Назад", callback_data="back")],
         [InlineKeyboardButton("Начать заново", callback_data="restart")],
     ])
 
 
+async def _show_start(msg, chat_id: int, s: dict):
+    save_session(chat_id, fresh_session(s))
+    await msg.reply_text(HELLO, reply_markup=_kb_start())
+
+
+async def _ask(msg, chat_id: int, s: dict, step: str, text: str):
+    """Экран ожидания ввода — с кнопкой «Назад»."""
+    s["step"] = step
+    save_session(chat_id, s)
+    await msg.reply_text(text, reply_markup=_kb_back())
+
+
+async def _show_ideas(msg, chat_id: int, s: dict):
+    s["step"] = CHOOSING_IDEA
+    save_session(chat_id, s)
+    ideas = s.get("ideas") or []
+    await msg.reply_text(render_ideas(ideas), reply_markup=_kb_ideas(len(ideas)))
+
+
+async def _show_review(msg, chat_id: int, s: dict):
+    if not s.get("scenario"):
+        await _show_start(msg, chat_id, s)
+        return
+    s["step"] = REVIEW
+    save_session(chat_id, s)
+    await msg.reply_text(render_scenario(s["scenario"]), reply_markup=_kb_review())
+
+
+async def _go_back(msg, chat_id: int, s: dict):
+    """Шаг назад — на предыдущий экран, ничего не теряя."""
+    step = s.get("step", CHOOSING)
+    if step == WAIT_EDIT:
+        await _show_review(msg, chat_id, s)
+    elif step == REVIEW:
+        # из сценария — туда, откуда он взялся: к идеям или к вводу текста
+        if s.get("ideas"):
+            await _show_ideas(msg, chat_id, s)
+        else:
+            await _ask(msg, chat_id, s, WAIT_TEXT, ASK_TEXT)
+    elif step == CHOOSING_IDEA:
+        await _ask(msg, chat_id, s, WAIT_RAW, ASK_RAW)
+    elif step in (WAIT_PHOTO, CHOOSING_PHOTO):
+        await _show_review(msg, chat_id, s)
+    elif step in (WAIT_VOICE, READY):
+        await _photo_stage(msg, chat_id, s)
+    else:  # WAIT_TEXT, WAIT_RAW, CHOOSING — дальше некуда, начало разговора
+        await _show_start(msg, chat_id, s)
+
+
 async def cmd_start(update, context):
     chat_id = update.effective_chat.id
-    save_session(chat_id, {"step": CHOOSING})
-    await update.message.reply_text(HELLO, reply_markup=_kb_start())
+    await _show_start(update.message, chat_id, load_session(chat_id))
 
 
 async def on_button(update, context):
@@ -252,13 +317,11 @@ async def on_button(update, context):
     data = q.data
 
     if data == "mode:text":
-        s["step"] = WAIT_TEXT
-        save_session(chat_id, s)
-        await q.message.reply_text(ASK_TEXT)
+        await _ask(q.message, chat_id, s, WAIT_TEXT, ASK_TEXT)
     elif data == "mode:raw":
-        s["step"] = WAIT_RAW
-        save_session(chat_id, s)
-        await q.message.reply_text(ASK_RAW)
+        await _ask(q.message, chat_id, s, WAIT_RAW, ASK_RAW)
+    elif data == "back":
+        await _go_back(q.message, chat_id, s)
     elif data.startswith("idea:"):
         idea = (s.get("ideas") or [])[int(data.split(":")[1])]
         await q.message.reply_text(WORKING)
@@ -267,13 +330,10 @@ async def on_button(update, context):
         except (ScenarioError, RuntimeError) as e:
             await q.message.reply_text(f"Не получилось собрать сценарий: {e}")
             return
-        s.update(step=REVIEW, scenario=sc)
-        save_session(chat_id, s)
-        await q.message.reply_text(render_scenario(sc), reply_markup=_kb_review())
+        s["scenario"] = sc
+        await _show_review(q.message, chat_id, s)
     elif data == "edit":
-        s["step"] = WAIT_EDIT
-        save_session(chat_id, s)
-        await q.message.reply_text(ASK_EDIT)
+        await _ask(q.message, chat_id, s, WAIT_EDIT, ASK_EDIT)
     elif data == "ok":
         await q.message.reply_text(APPROVED_MSG)
         await _photo_stage(q.message, chat_id, s)
@@ -282,12 +342,9 @@ async def on_button(update, context):
         save_session(chat_id, s)
         await _voice_stage(q.message, chat_id, s)
     elif data == "photo:new":
-        s["step"] = WAIT_PHOTO
-        save_session(chat_id, s)
-        await q.message.reply_text(ASK_PHOTO)
+        await _ask(q.message, chat_id, s, WAIT_PHOTO, ASK_PHOTO)
     elif data == "restart":
-        save_session(chat_id, {"step": CHOOSING})
-        await q.message.reply_text(HELLO, reply_markup=_kb_start())
+        await _show_start(q.message, chat_id, s)
 
 
 async def _photo_stage(msg, chat_id: int, s: dict):
@@ -297,9 +354,7 @@ async def _photo_stage(msg, chat_id: int, s: dict):
         save_session(chat_id, s)
         await msg.reply_text("Снимаем по вашему фото. Какому?", reply_markup=_kb_photo())
     else:
-        s["step"] = WAIT_PHOTO
-        save_session(chat_id, s)
-        await msg.reply_text(ASK_PHOTO)
+        await _ask(msg, chat_id, s, WAIT_PHOTO, ASK_PHOTO)
 
 
 async def _voice_stage(msg, chat_id: int, s: dict):
@@ -308,11 +363,9 @@ async def _voice_stage(msg, chat_id: int, s: dict):
         s["step"] = READY
         save_session(chat_id, s)
         save_client_profile(chat_id, s)
-        await msg.reply_text(READY_MSG)
+        await msg.reply_text(READY_MSG, reply_markup=_kb_back())
     else:
-        s["step"] = WAIT_VOICE
-        save_session(chat_id, s)
-        await msg.reply_text(ASK_VOICE)
+        await _ask(msg, chat_id, s, WAIT_VOICE, ASK_VOICE)
 
 
 async def on_message(update, context):
@@ -378,9 +431,8 @@ async def on_message(update, context):
         except (ScenarioError, RuntimeError) as e:
             await msg.reply_text(f"Не получилось разобрать текст: {e}")
             return
-        s.update(step=REVIEW, scenario=sc)
-        save_session(chat_id, s)
-        await msg.reply_text(render_scenario(sc), reply_markup=_kb_review())
+        s["scenario"] = sc
+        await _show_review(msg, chat_id, s)
 
     elif step == WAIT_RAW:
         await msg.reply_text(WORKING)
@@ -389,9 +441,8 @@ async def on_message(update, context):
         except (ScenarioError, RuntimeError) as e:
             await msg.reply_text(f"Не получилось вытащить идеи: {e}")
             return
-        s.update(step=CHOOSING_IDEA, ideas=ideas)
-        save_session(chat_id, s)
-        await msg.reply_text(render_ideas(ideas), reply_markup=_kb_ideas(len(ideas)))
+        s["ideas"] = ideas
+        await _show_ideas(msg, chat_id, s)
 
     elif step == WAIT_EDIT:
         try:
@@ -399,9 +450,8 @@ async def on_message(update, context):
         except ScenarioError as e:
             await msg.reply_text(str(e))
             return
-        s.update(step=REVIEW, scenario=sc)
-        save_session(chat_id, s)
-        await msg.reply_text(render_scenario(sc), reply_markup=_kb_review())
+        s["scenario"] = sc
+        await _show_review(msg, chat_id, s)
 
     else:
         await msg.reply_text(NOT_NOW)

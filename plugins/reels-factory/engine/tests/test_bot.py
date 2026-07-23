@@ -132,6 +132,69 @@ def test_правленый_текст_становится_итоговым(wor
     assert "Совсем другой текст." in json.dumps(s["scenario"], ensure_ascii=False)
 
 
+def test_назад_с_ввода_текста_возвращает_к_выбору_пути(work):
+    bot.save_session(7, {"step": bot.WAIT_TEXT})
+
+    msg = _Msg()
+    _press("back", msg)
+
+    assert bot.load_session(7)["step"] == bot.CHOOSING
+    assert msg.replies[-1] == bot.HELLO
+
+
+def test_назад_с_правки_возвращает_сценарий(work):
+    bot.save_session(7, {"step": bot.WAIT_EDIT, "scenario": SCENARIO})
+
+    msg = _Msg()
+    _press("back", msg)
+
+    assert bot.load_session(7)["step"] == bot.REVIEW
+    assert "[хук]" in msg.replies[-1]
+
+
+def test_назад_со_сценария_возвращает_к_идеям(work):
+    ideas = [{"idea": "Раз", "draft_hook": "Хук раз"}]
+    bot.save_session(7, {"step": bot.REVIEW, "scenario": SCENARIO, "ideas": ideas})
+
+    msg = _Msg()
+    _press("back", msg)
+
+    assert bot.load_session(7)["step"] == bot.CHOOSING_IDEA
+    assert "1. Раз" in msg.replies[-1]
+
+
+def test_назад_с_идей_возвращает_к_сырью(work):
+    bot.save_session(7, {"step": bot.CHOOSING_IDEA, "ideas": [{"idea": "Раз",
+                                                              "draft_hook": "Х"}]})
+
+    msg = _Msg()
+    _press("back", msg)
+
+    assert bot.load_session(7)["step"] == bot.WAIT_RAW
+    assert msg.replies[-1] == bot.ASK_RAW
+
+
+def test_назад_с_фото_возвращает_к_сценарию(work):
+    bot.save_session(7, {"step": bot.WAIT_PHOTO, "scenario": SCENARIO})
+
+    msg = _Msg()
+    _press("back", msg)
+
+    assert bot.load_session(7)["step"] == bot.REVIEW
+
+
+def test_начать_заново_не_теряет_фото_и_голос(work):
+    bot.save_session(7, {"step": bot.REVIEW, "scenario": SCENARIO,
+                         "photos": [{"asset_id": "a1"}], "photo": 0,
+                         "voice_id": "voice-1"})
+
+    _press("restart", _Msg())
+
+    s = bot.load_session(7)
+    assert s["step"] == bot.CHOOSING and "scenario" not in s
+    assert s["voice_id"] == "voice-1" and s["photos"] == [{"asset_id": "a1"}]
+
+
 @pytest.fixture
 def профиль(monkeypatch):
     """Внешние шаги профиля — без сети: HeyGen и ElevenLabs не зовём."""
