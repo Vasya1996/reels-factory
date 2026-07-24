@@ -7,18 +7,45 @@ index.html генерится на лету из данных фразы, зат
 замена встроенного chart_bars. Каркас общий: добавить блок = добавить проект +
 builder HTML + запись в BLOCKS.
 
-Рендер тяжёлый (headless-браузер + ffmpeg, ~40с) и требует Node/npx + сеть
-(шрифты). Поэтому вызывается опционально с graceful-фолбэком: если рендер не
-удался (нет node, сети, таймаут) — сегмент остаётся встроенным эффектом.
+Рендер тяжёлый (headless-браузер + ffmpeg, ~40с) и требует Node/npx (GSAP всё
+ещё с CDN; шрифты self-hosted через data-URI, см. _fonts_css). Вызывается
+опционально с graceful-фолбэком: если рендер не удался (нет node, таймаут) —
+сегмент остаётся встроенным эффектом.
 """
 from __future__ import annotations
 
+import base64
+import functools
 import html as _html
 import subprocess
 from pathlib import Path
 
 HF_DIR = Path(__file__).resolve().parents[2] / "hyperframes"
 _HF_VERSION = "0.7.70"
+
+# Self-hosted шрифты (Unbounded/Manrope, кириллица+латиница) — встраиваются в
+# каждый блок как @font-face data-URI, чтобы рендер не ходил в Google Fonts
+# (детерминизм + работа офлайн). Файлы в engine/hyperframes/_fonts/.
+_FONTS_DIR = HF_DIR / "_fonts"
+_FONT_RANGES = {
+    "latin": "U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+2074, U+20AC, U+2122, U+2212, U+2215",
+    "cyrillic": "U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
+}
+
+
+@functools.lru_cache(maxsize=1)
+def _fonts_css() -> str:
+    """@font-face с data-URI для всех woff2 в _fonts/ (имя family-weight-subset)."""
+    faces = []
+    for f in sorted(_FONTS_DIR.glob("*.woff2")):
+        fam, wght, subset = f.stem.rsplit("-", 2)
+        b64 = base64.b64encode(f.read_bytes()).decode("ascii")
+        faces.append(
+            f"@font-face{{font-family:'{fam.capitalize()}';font-style:normal;"
+            f"font-weight:{wght};font-display:block;"
+            f"src:url(data:font/woff2;base64,{b64}) format('woff2');"
+            f"unicode-range:{_FONT_RANGES.get(subset, '')};}}")
+    return "\n      ".join(faces)
 
 
 # ---------- task_list ----------
@@ -30,7 +57,7 @@ _TASK_LIST_TMPL = """<!doctype html>
     <meta name="viewport" content="width=1080, height=1920" />
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
     <style>
-      @import url("https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&family=Manrope:wght@500;700&display=swap");
+      __FONTS__
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body {
         width: 1080px; height: 1920px; overflow: hidden;
@@ -119,7 +146,8 @@ def build_task_list_html(title: str, items: list[str], duration: float) -> str:
             .replace("__DUR__", f"{dur}")
             .replace("__TITLE__", _html.escape(title.strip() or "СПИСОК"))
             .replace("__ROWS__", "\n".join(rows))
-            .replace("__STAGGER__", f"{round(stagger, 3)}"))
+            .replace("__STAGGER__", f"{round(stagger, 3)}")
+            .replace("__FONTS__", _fonts_css()))
 
 
 # ---------- stat_number ----------
@@ -131,7 +159,7 @@ _STAT_TMPL = """<!doctype html>
     <meta name="viewport" content="width=1080, height=1920" />
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
     <style>
-      @import url("https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&family=Manrope:wght@500;700&display=swap");
+      __FONTS__
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body { width: 1080px; height: 1920px; overflow: hidden;
         background: radial-gradient(120% 90% at 50% 40%, #191816 0%, #0b0b0a 58%, #060605 100%);
@@ -196,7 +224,8 @@ def build_stat_number_html(duration: float, value, prefix: str = "", suffix: str
             .replace("__PRE__", _html.escape(str(prefix)))
             .replace("__SUF__", _html.escape(str(suffix)))
             .replace("__TOP__", _html.escape(str(label_top).strip()))
-            .replace("__BOTTOM__", _html.escape(str(label_bottom).strip())))
+            .replace("__BOTTOM__", _html.escape(str(label_bottom).strip()))
+            .replace("__FONTS__", _fonts_css()))
 
 
 # ---------- before_after ----------
@@ -208,7 +237,7 @@ _BA_TMPL = """<!doctype html>
     <meta name="viewport" content="width=1080, height=1920" />
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
     <style>
-      @import url("https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&family=Manrope:wght@600;700&display=swap");
+      __FONTS__
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body { width: 1080px; height: 1920px; overflow: hidden;
         background: radial-gradient(120% 90% at 50% 42%, #191816 0%, #0b0b0a 58%, #060605 100%);
@@ -270,7 +299,8 @@ def build_before_after_html(duration: float, before_value: str, after_value: str
             .replace("__BLABEL__", _html.escape(str(before_label).strip() or "было"))
             .replace("__BVALUE__", _html.escape(str(before_value).strip() or "-"))
             .replace("__ALABEL__", _html.escape(str(after_label).strip() or "стало"))
-            .replace("__AVALUE__", _html.escape(str(after_value).strip() or "-")))
+            .replace("__AVALUE__", _html.escape(str(after_value).strip() or "-"))
+            .replace("__FONTS__", _fonts_css()))
 
 
 # ---------- рендер ----------
