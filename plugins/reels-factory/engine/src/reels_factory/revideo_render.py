@@ -25,6 +25,7 @@ from reels_factory.compose import (
 from reels_factory.revideo_adapter import plan_to_tz
 from reels_factory import broll_library as _broll_lib
 from reels_factory.broll_retrieval import resolve_broll
+from reels_factory.tz_validator import validate_tz
 
 # engine/revideo — самодостаточный Node-модуль рендера
 REVIDEO_DIR = Path(__file__).resolve().parents[2] / "revideo"
@@ -119,6 +120,14 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
     retr = resolve_broll(tz, library_dir=_broll_lib.LIBRARY_DIR)
     for line in retr.log:
         print(f"[broll] {line}")
+
+    # 4c) Валидатор-линтер: дублирует монтажные правила движка на уровне плана,
+    # чинит безопасное (длинное тире) и логирует риски перед рендером.
+    report = validate_tz(tz, index=_broll_lib.load_index(_broll_lib.LIBRARY_DIR))
+    for line in report.lines():
+        print(f"[lint] {line}")
+    if not report.ok:
+        print(f"[lint] tz с {len(report.errors)} ошибк(ами) — рендер может быть некорректным")
 
     # 5) разложить вход в модуль и отрендерить
     rev = REVIDEO_DIR
