@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from reels_factory.tts import synth_voice, MODEL_ID, create_voice_clone
+from reels_factory.tts import synth_voice, MODEL_ID, create_voice_clone, delete_voice
 
 
 class _Resp:
@@ -97,3 +97,27 @@ def test_create_voice_clone_posts_and_returns_id(tmp_path, monkeypatch):
     assert captured["data"]["name"] == "Серик"
     assert captured["headers"]["xi-api-key"] == "k"
     assert captured["files"]  # запись приложена
+
+
+def test_delete_voice_шлёт_delete_на_voice_id(monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "k")
+    captured = {}
+
+    class Resp:
+        def raise_for_status(self): pass
+
+    class Http:
+        def delete(self, url, **kw):
+            captured["url"] = url
+            captured["headers"] = kw.get("headers")
+            return Resp()
+
+    delete_voice("v123", http=Http())
+    assert captured["url"].endswith("/v1/voices/v123")
+    assert captured["headers"]["xi-api-key"] == "k"
+
+
+def test_delete_voice_без_ключа_ошибка(monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "")
+    with pytest.raises(RuntimeError):
+        delete_voice("v123", http=object())

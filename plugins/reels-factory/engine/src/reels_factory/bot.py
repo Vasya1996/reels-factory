@@ -1,11 +1,14 @@
 """Телеграм-бот фабрики: сырьё или готовый текст -> утверждённый сценарий.
 
-Разговор: /start -> выбор пути -> вход пользователя -> (для сырья: выбор идеи)
--> сценарий в чате -> правка текста руками или утверждение. Итоговый вариант
-запоминается в сессии чата — с ним дальше работает сборка.
+Разговор: /start -> выбор пути -> материал (прежний или новый) -> сценарий в
+чате -> правка текста руками или утверждение -> фото -> голос -> готовность.
+После «Создать ролик» — экран с кнопкой «Новый ролик» (или команда /new):
+разговор начинается заново на шаге выбора пути, но фото, голос и утверждённый
+сценарий остаются — цикл можно повторять без повторного онбординга.
 
 Сборка платная (HeyGen/ElevenLabs), поэтому в этом слое её нет: бот доводит до
-утверждённого текста и на этом останавливается.
+утверждённого текста и профиля клиента (фото + голос) и на этом останавливается
+— сама выдача ролика подключается отдельно.
 
 Состояние чата — json-файл в <workdir>/bot/<chat_id>/session.json: перезапуск
 бота не теряет разговор, а рядом лежат рабочие файлы движка этого же чата.
@@ -23,16 +26,19 @@ from reels_factory.scenario import (ScenarioError, run_generated_path, run_ideas
                                     run_verbatim_path, split_verbatim)
 
 # Шаги разговора.
-CHOOSING = "choosing"        # ждём выбора пути
-WAIT_TEXT = "wait_text"      # ждём готовый текст реплик
-WAIT_RAW = "wait_raw"        # ждём сырьё (мысли, отрывок, запись)
+CHOOSING = "choosing"                # ждём выбора пути
+CHOOSING_MATERIAL = "choosing_material"  # прежний материал или новый
+WAIT_TEXT = "wait_text"              # ждём готовый текст реплик
+WAIT_RAW = "wait_raw"                # ждём сырьё (мысли, отрывок, запись)
 CHOOSING_IDEA = "choosing_idea"
-REVIEW = "review"            # сценарий показан, ждём решения
-WAIT_EDIT = "wait_edit"      # ждём отредактированный текст
-CHOOSING_PHOTO = "choosing_photo"  # фото уже есть: прежнее или новое
+REVIEW = "review"                    # сценарий показан, ждём решения
+WAIT_EDIT = "wait_edit"              # ждём отредактированный текст
+CHOOSING_PHOTO = "choosing_photo"    # фото уже есть: прежнее или новое
 WAIT_PHOTO = "wait_photo"
+CHOOSING_VOICE = "choosing_voice"    # голос уже есть: прежний или новый
 WAIT_VOICE = "wait_voice"
-READY = "ready"              # сценарий утверждён, фото и голос собраны
+READY = "ready"                      # сценарий утверждён, фото и голос собраны
+DONE = "done"                        # ролик заказан, ждём новый цикл
 
 ROLE_RU = {"hook": "хук", "context": "контекст", "development": "развитие",
            "payoff": "вывод", "cta": "призыв"}
@@ -41,6 +47,7 @@ HELLO = (
     "Это фабрика рилсов. Сделаю вертикальный ролик, где вашим голосом и лицом "
     "говорят ваши мысли.\n\nС чего начнём?"
 )
+ASK_MATERIAL = "Что используем?"
 ASK_TEXT = (
     "Пришлите текст ролика — ровно те слова, которые должны прозвучать.\n\n"
     "Ничего переписывать не буду: разобью на блоки и расставлю ударения, "
@@ -79,9 +86,10 @@ ASK_VOICE = (
 )
 PHOTO_SAVED = "Фото принял."
 VOICE_SAVED = "Голос принял."
-READY_MSG = (
-    "Всё на месте: сценарий, фото и голос. Сборка ролика — следующий шаг, "
-    "включу её отдельно."
+READY_MSG = "Всё на месте: сценарий, фото и голос. Жмите «Создать ролик», когда готовы."
+DONE_MSG = (
+    "Ролик заказан. Когда будет что снять ещё — жмите «Новый ролик» или "
+    "пришлите /new."
 )
 NOT_NOW = "Сначала выберите, с чего начать: /start"
 
@@ -125,12 +133,19 @@ def scenario_from_text(text: str) -> dict:
     return {"mode": "verbatim", "blocks": split_verbatim(text)}
 
 
-# Фото и голос переживают «начать заново»: заново нужен сценарий, а не профиль.
-_PROFILE_KEYS = ("photos", "photo", "voice_id")
+# Фото, голос и утверждённый сценарий переживают новый цикл («Новый ролик»).
+_PROFILE_KEYS = ("photo", "voice_id")
+_LOOP_KEYS = _PROFILE_KEYS + ("scenario",)
 
 
 def fresh_session(s: dict) -> dict:
+    """/start: заново нужен сценарий, а фото и голос — нет."""
     return {"step": CHOOSING, **{k: s[k] for k in _PROFILE_KEYS if k in (s or {})}}
+
+
+def loop_session(s: dict) -> dict:
+    """Новый цикл после готового ролика: ничего не стирается, кроме шага."""
+    return {"step": CHOOSING, **{k: s[k] for k in _LOOP_KEYS if k in (s or {})}}
 
 
 def session_dir(chat_id: int) -> Path:
@@ -190,16 +205,22 @@ def step_voice(chat_id: int, audio: Path) -> str:
     return create_voice_clone(str(audio), f"tg-{chat_id}")
 
 
+def step_delete_voice(voice_id: str) -> None:
+    """Старый клон долой — на тарифе лимит числа голосов в ElevenLabs."""
+    from reels_factory.tts import delete_voice
+
+    delete_voice(voice_id)
+
+
 def save_client_profile(chat_id: int, session: dict) -> None:
     """Профиль клиента в реестре — с ним сборка идёт как `make --client <id>`."""
     from reels_factory.clients import register_client
 
-    photos = session.get("photos") or []
-    if not (photos and session.get("voice_id")):
+    photo = session.get("photo")
+    if not (photo and session.get("voice_id")):
         return
     register_client(str(chat_id), load_config(), name=f"tg-{chat_id}",
-                    voice_id=session["voice_id"],
-                    asset_id=photos[session.get("photo", -1)]["asset_id"],
+                    voice_id=session["voice_id"], asset_id=photo["asset_id"],
                     overwrite=True)
 
 
@@ -228,6 +249,18 @@ def _kb_back():
     return InlineKeyboardMarkup([[InlineKeyboardButton("← Назад", callback_data="back")]])
 
 
+def _kb_material(mode: str, has_material: bool):
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    send_label = "Прислать новый текст" if mode == "text" else "Прислать новое сырьё"
+    rows = []
+    if has_material:
+        rows.append([InlineKeyboardButton("Редактировать существующий",
+                                          callback_data="material:edit")])
+    rows.append([InlineKeyboardButton(send_label, callback_data="material:new")])
+    rows.append([InlineKeyboardButton("← Назад", callback_data="back")])
+    return InlineKeyboardMarkup(rows)
+
+
 def _kb_ideas(n: int):
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     return InlineKeyboardMarkup(
@@ -245,18 +278,39 @@ def _kb_photo():
     ])
 
 
+def _kb_voice():
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Использовать прежнюю запись", callback_data="voice:old")],
+        [InlineKeyboardButton("Записать заново", callback_data="voice:new")],
+        [InlineKeyboardButton("← Назад", callback_data="back")],
+    ])
+
+
 def _kb_review():
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Утвердить", callback_data="ok")],
         [InlineKeyboardButton("Изменить текст", callback_data="edit")],
         [InlineKeyboardButton("← Назад", callback_data="back")],
-        [InlineKeyboardButton("Начать заново", callback_data="restart")],
     ])
 
 
-async def _show_start(msg, chat_id: int, s: dict):
-    save_session(chat_id, fresh_session(s))
+def _kb_ready():
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Создать ролик", callback_data="build")],
+        [InlineKeyboardButton("← Назад", callback_data="back")],
+    ])
+
+
+def _kb_done():
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Новый ролик", callback_data="new_reel")]])
+
+
+async def _show_start(msg, chat_id: int, s: dict, session_builder=fresh_session):
+    save_session(chat_id, session_builder(s))
     await msg.reply_text(HELLO, reply_markup=_kb_start())
 
 
@@ -265,6 +319,15 @@ async def _ask(msg, chat_id: int, s: dict, step: str, text: str):
     s["step"] = step
     save_session(chat_id, s)
     await msg.reply_text(text, reply_markup=_kb_back())
+
+
+async def _show_material(msg, chat_id: int, s: dict, mode: str):
+    """Шаг 2: прежний материал уже есть — предлагаем взять его или прислать новый."""
+    s["step"] = CHOOSING_MATERIAL
+    s["material_mode"] = mode
+    save_session(chat_id, s)
+    has_material = bool(s.get("scenario"))
+    await msg.reply_text(ASK_MATERIAL, reply_markup=_kb_material(mode, has_material))
 
 
 async def _show_ideas(msg, chat_id: int, s: dict):
@@ -289,24 +352,36 @@ async def _go_back(msg, chat_id: int, s: dict):
     if step == WAIT_EDIT:
         await _show_review(msg, chat_id, s)
     elif step == REVIEW:
-        # из сценария — туда, откуда он взялся: к идеям или к вводу текста
+        # из сценария — туда, откуда он взялся: к идеям или к вводу материала
         if s.get("ideas"):
             await _show_ideas(msg, chat_id, s)
+        elif s.get("material_mode") == "raw":
+            await _ask(msg, chat_id, s, WAIT_RAW, ASK_RAW)
         else:
             await _ask(msg, chat_id, s, WAIT_TEXT, ASK_TEXT)
     elif step == CHOOSING_IDEA:
         await _ask(msg, chat_id, s, WAIT_RAW, ASK_RAW)
+    elif step in (WAIT_TEXT, WAIT_RAW):
+        await _show_material(msg, chat_id, s, s.get("material_mode", "text"))
+    elif step == CHOOSING_MATERIAL:
+        await _show_start(msg, chat_id, s)
     elif step in (WAIT_PHOTO, CHOOSING_PHOTO):
         await _show_review(msg, chat_id, s)
-    elif step in (WAIT_VOICE, READY):
+    elif step in (CHOOSING_VOICE, WAIT_VOICE, READY):
         await _photo_stage(msg, chat_id, s)
-    else:  # WAIT_TEXT, WAIT_RAW, CHOOSING — дальше некуда, начало разговора
+    else:  # CHOOSING — дальше некуда, начало разговора
         await _show_start(msg, chat_id, s)
 
 
 async def cmd_start(update, context):
     chat_id = update.effective_chat.id
     await _show_start(update.message, chat_id, load_session(chat_id))
+
+
+async def cmd_new(update, context):
+    """/new — то же, что кнопка «Новый ролик»: фото, голос и сценарий остаются."""
+    chat_id = update.effective_chat.id
+    await _show_start(update.message, chat_id, load_session(chat_id), loop_session)
 
 
 async def on_button(update, context):
@@ -317,11 +392,18 @@ async def on_button(update, context):
     data = q.data
 
     if data == "mode:text":
-        await _ask(q.message, chat_id, s, WAIT_TEXT, ASK_TEXT)
+        await _show_material(q.message, chat_id, s, "text")
     elif data == "mode:raw":
-        await _ask(q.message, chat_id, s, WAIT_RAW, ASK_RAW)
+        await _show_material(q.message, chat_id, s, "raw")
     elif data == "back":
         await _go_back(q.message, chat_id, s)
+    elif data == "material:edit":
+        await _show_review(q.message, chat_id, s)
+    elif data == "material:new":
+        if s.get("material_mode") == "raw":
+            await _ask(q.message, chat_id, s, WAIT_RAW, ASK_RAW)
+        else:
+            await _ask(q.message, chat_id, s, WAIT_TEXT, ASK_TEXT)
     elif data.startswith("idea:"):
         idea = (s.get("ideas") or [])[int(data.split(":")[1])]
         await q.message.reply_text(WORKING)
@@ -338,18 +420,32 @@ async def on_button(update, context):
         await q.message.reply_text(APPROVED_MSG)
         await _photo_stage(q.message, chat_id, s)
     elif data == "photo:old":
-        s["photo"] = len(s.get("photos") or []) - 1
-        save_session(chat_id, s)
         await _voice_stage(q.message, chat_id, s)
     elif data == "photo:new":
         await _ask(q.message, chat_id, s, WAIT_PHOTO, ASK_PHOTO)
-    elif data == "restart":
-        await _show_start(q.message, chat_id, s)
+    elif data == "voice:old":
+        await _finish_voice(q.message, chat_id, s)
+    elif data == "voice:new":
+        old_voice = s.pop("voice_id", None)
+        save_session(chat_id, s)
+        if old_voice:
+            try:
+                await asyncio.to_thread(step_delete_voice, old_voice)
+            except Exception:
+                pass  # лучше дать перезаписать голос, чем застрять на ошибке чистки
+        await _ask(q.message, chat_id, s, WAIT_VOICE, ASK_VOICE)
+    elif data == "build":
+        save_client_profile(chat_id, s)
+        s["step"] = DONE
+        save_session(chat_id, s)
+        await q.message.reply_text(DONE_MSG, reply_markup=_kb_done())
+    elif data == "new_reel":
+        await _show_start(q.message, chat_id, s, loop_session)
 
 
 async def _photo_stage(msg, chat_id: int, s: dict):
     """Фото обязательно: в первый раз просим, дальше — прежнее или новое."""
-    if s.get("photos"):
+    if s.get("photo"):
         s["step"] = CHOOSING_PHOTO
         save_session(chat_id, s)
         await msg.reply_text("Снимаем по вашему фото. Какому?", reply_markup=_kb_photo())
@@ -358,14 +454,21 @@ async def _photo_stage(msg, chat_id: int, s: dict):
 
 
 async def _voice_stage(msg, chat_id: int, s: dict):
-    """Голос — один раз на человека."""
+    """Голос уже есть — прежний или перезаписать; иначе просим впервые."""
     if s.get("voice_id"):
-        s["step"] = READY
+        s["step"] = CHOOSING_VOICE
         save_session(chat_id, s)
-        save_client_profile(chat_id, s)
-        await msg.reply_text(READY_MSG, reply_markup=_kb_back())
+        await msg.reply_text("Голос уже записан. Что делаем?", reply_markup=_kb_voice())
     else:
         await _ask(msg, chat_id, s, WAIT_VOICE, ASK_VOICE)
+
+
+async def _finish_voice(msg, chat_id: int, s: dict):
+    """Голос получен (прежний или новый) — сохраняем профиль и идём к готовности."""
+    s["step"] = READY
+    save_session(chat_id, s)
+    save_client_profile(chat_id, s)
+    await msg.reply_text(READY_MSG, reply_markup=_kb_ready())
 
 
 async def on_message(update, context):
@@ -385,8 +488,10 @@ async def on_message(update, context):
         except Exception as e:
             await msg.reply_text(f"Фото не принялось: {str(e)[:200]}")
             return
-        s.setdefault("photos", []).append({"asset_id": asset_id, "file": str(path)})
-        s["photo"] = len(s["photos"]) - 1
+        old = s.get("photo")
+        if old and old.get("file") and old["file"] != str(path):
+            Path(old["file"]).unlink(missing_ok=True)
+        s["photo"] = {"asset_id": asset_id, "file": str(path)}
         save_session(chat_id, s)
         await msg.reply_text(PHOTO_SAVED)
         await _voice_stage(msg, chat_id, s)
@@ -405,7 +510,7 @@ async def on_message(update, context):
             return
         save_session(chat_id, s)
         await msg.reply_text(VOICE_SAVED)
-        await _voice_stage(msg, chat_id, s)
+        await _finish_voice(msg, chat_id, s)
         return
 
     text = (msg.text or msg.caption or "").strip()
@@ -466,6 +571,13 @@ async def _download(context, media, chat_id: int) -> Path:
     return dest
 
 
+async def _post_init(app):
+    """Команда /new в меню бота — чтобы кнопка «Новый ролик» не терялась в переписке."""
+    from telegram import BotCommand
+
+    await app.bot.set_my_commands([BotCommand("new", "Новый ролик")])
+
+
 def main():
     from telegram.ext import (ApplicationBuilder, CallbackQueryHandler,
                               CommandHandler, MessageHandler, filters)
@@ -473,8 +585,9 @@ def main():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
         raise SystemExit("Нет TELEGRAM_BOT_TOKEN в окружении")
-    app = ApplicationBuilder().token(token).build()
+    app = ApplicationBuilder().token(token).post_init(_post_init).build()
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("new", cmd_new))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(MessageHandler(~filters.COMMAND, on_message))
     app.run_polling()
