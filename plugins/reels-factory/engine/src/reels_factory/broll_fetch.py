@@ -58,7 +58,11 @@ def search(query: str, key: str, per_query: int = 3,
         "query": query, "orientation": orientation,
         "per_page": per_query, "size": "medium",
     })
-    req = urllib.request.Request(f"{PEXELS_SEARCH}?{params}", headers={"Authorization": key})
+    # User-Agent обязателен — без него WAF Pexels отдаёт 403.
+    req = urllib.request.Request(
+        f"{PEXELS_SEARCH}?{params}",
+        headers={"Authorization": key, "User-Agent": "Mozilla/5.0 (reels-factory-broll)"},
+    )
     with urllib.request.urlopen(req, timeout=30) as r:
         data = json.loads(r.read().decode("utf-8"))
     return data.get("videos", [])

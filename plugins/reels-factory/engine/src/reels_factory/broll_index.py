@@ -75,6 +75,27 @@ def describe_from_sidecar(clip: Path, frames: list) -> dict:
     return describe_empty(clip, frames)
 
 
+def describe_from_filename(clip: Path, frames: list) -> dict:
+    """Достать грубое описание из имени файла (для стоковых клипов без sidecar).
+
+    `pexels_charts_graphs_analytics_36825184.mp4` → caption «charts graphs
+    analytics», tags [charts, graphs, analytics]. Эмбеддинг всё равно считается по
+    картинке — это лишь читаемость индекса и tag-фолбэк.
+    """
+    stem = re.sub(r"^pexels_", "", clip.stem)
+    stem = re.sub(r"_\d+$", "", stem)  # убрать хвостовой id
+    words = [w for w in stem.split("_") if len(w) > 1]
+    return {"caption": " ".join(words), "tags": words[:6]}
+
+
+def describe_best(clip: Path, frames: list) -> dict:
+    """Комбинатор: sidecar, при пустом caption — из имени файла."""
+    desc = describe_from_sidecar(clip, frames)
+    if not desc.get("caption"):
+        return describe_from_filename(clip, frames)
+    return desc
+
+
 def make_llm_describer(runner, lang: str = "ru") -> DescribeFn:
     """Прод-путь: описать клип через Claude по извлечённым кадрам.
 
@@ -182,7 +203,7 @@ def main(argv=None) -> int:
     ap.add_argument("--force", action="store_true", help="переиндексировать всё, а не только новое")
     args = ap.parse_args(argv)
 
-    idx = index_library(library_dir=args.library, describe_fn=describe_from_sidecar,
+    idx = index_library(library_dir=args.library, describe_fn=describe_best,
                         force=args.force, on_progress=lambda n, s: print(f"  {n}: {s}"))
     print(f"проиндексировано клипов: {len(idx)} → {lib.index_path(args.library)}")
     return 0
