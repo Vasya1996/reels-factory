@@ -124,6 +124,26 @@ def _chat_text(text: str) -> str:
     return text.split(",")[0][:20].lower()
 
 
+# Служебные слова, которые ничего не дают семантическому запросу b-roll.
+_QUERY_STOP = set((
+    "и в на что как это то он она они мы вы бы же ли за по из у о а но да не нет "
+    "для от до со во об про при или чтобы если когда уже ещё вот там тут так"
+).split())
+
+
+def _broll_query(text: str, hint: str = "") -> str:
+    """Из текста фразы собрать визуальный запрос для семантического подбора (Модуль B).
+
+    Это `broll_query` из docs/TZ_pipeline_v6.md: что показать под фразой. Берём
+    содержательные слова фразы (CLIP-энкодер осмысляет естественную фразу),
+    `hint` добавляет визуальный контекст под тип вставки (напр. «рабочий стол»).
+    """
+    toks = [t.strip(",.!?…:;«»\"'()-").lower() for t in text.split()]
+    kept = [t for t in toks if len(t) > 2 and t not in _QUERY_STOP]
+    query = " ".join(kept[:8]) or text.strip().lower()
+    return f"{query}, {hint}".strip(", ") if hint else query
+
+
 def plan_to_tz(timed: dict, broll_segments: list | None, config: dict,
                words: list | None = None, base_video: str = "base.mp4",
                broll_file: str = "broll.mp4", face: dict | None = None) -> dict:
@@ -245,8 +265,9 @@ def plan_to_tz(timed: dict, broll_segments: list | None, config: dict,
             while j + 1 < n and phrases[j + 1]["block"] == block:
                 j += 1
             emit(segments, ph["start"], phrases[j]["end"], role, {"type": "hold"}, "none",
-                 {"type": "broll", "style": "fullscreen", "src": broll_file,
-                  "offset": seg_off("payoff", 1.0), "bubble": bub}, "top")
+                 {"type": "broll", "style": "fullscreen",
+                  "broll_query": _broll_query(text, "крупный план, атмосфера"),
+                  "src": broll_file, "offset": seg_off("payoff", 1.0), "bubble": bub}, "top")
             i = j + 1
             continue
 
@@ -256,7 +277,9 @@ def plan_to_tz(timed: dict, broll_segments: list | None, config: dict,
             transition = "zoom_blur" if trans_used < 2 else "none"
             trans_used += 1 if transition != "none" else 0
             emit(segments, ph["start"], ph["end"], role, {"type": "hold"}, transition,
-                 {"type": "broll_bg_particles", "src": broll_file, "offset": seg_off(role, 0.5),
+                 {"type": "broll_bg_particles",
+                  "broll_query": _broll_query(text, "технологии, абстрактный фон"),
+                  "src": broll_file, "offset": seg_off(role, 0.5),
                   "icons": _PARTICLE_ICONS}, "bottom")
             i += 1
             continue
@@ -275,7 +298,9 @@ def plan_to_tz(timed: dict, broll_segments: list | None, config: dict,
             effect = {"type": "chat_bubble", "text": _chat_text(text)}
         elif not used["pip"] and has_any_broll and re.search(r"инструкц|набор|блокнот|список|заметк|шаг", low):
             used["pip"] = True
-            effect = {"type": "broll", "style": "pip", "src": broll_file, "offset": seg_off(role, 0.0)}
+            effect = {"type": "broll", "style": "pip",
+                      "broll_query": _broll_query(text, "рабочий стол, заметки"),
+                      "src": broll_file, "offset": seg_off(role, 0.0)}
             caption = "top"
 
         # зум из пула на «лицевые» сегменты (каждый <=1)

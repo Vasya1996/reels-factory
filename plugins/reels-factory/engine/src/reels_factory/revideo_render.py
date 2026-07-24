@@ -23,6 +23,8 @@ from reels_factory.compose import (
     apply_caption_fixes, _default_transcribe,
 )
 from reels_factory.revideo_adapter import plan_to_tz
+from reels_factory import broll_library as _broll_lib
+from reels_factory.broll_retrieval import resolve_broll
 
 # engine/revideo — самодостаточный Node-модуль рендера
 REVIDEO_DIR = Path(__file__).resolve().parents[2] / "revideo"
@@ -107,9 +109,16 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
         words = apply_caption_fixes(words, caption_fixes)
     words = _normalize_words(words)
 
-    # 4) tz.json из адаптера (фразовая раскладка по словам)
+    # 4) tz.json из адаптера (фразовая раскладка по словам, с broll_query)
     tz = plan_to_tz(timed, broll_segments, config, words=words, base_video="base.mp4",
                     broll_file="broll.mp4", face=face)
+
+    # 4b) Модуль B — семантический подбор b-roll: заполнить effect.src по
+    # broll_query из библиотеки. Если библиотека не проиндексирована, src
+    # остаётся дефолтным broll.mp4 (обратная совместимость, деградация мягкая).
+    retr = resolve_broll(tz, library_dir=_broll_lib.LIBRARY_DIR)
+    for line in retr.log:
+        print(f"[broll] {line}")
 
     # 5) разложить вход в модуль и отрендерить
     rev = REVIDEO_DIR
@@ -119,6 +128,12 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
     (rev / "src" / "words.json").write_text(
         json.dumps({"words": words}, ensure_ascii=False), encoding="utf-8")
     shutil.copy(str(base), str(rev / "public" / "base.mp4"))
+    # подобранные библиотечные клипы → public/ (движок читает src как /<file>)
+    for name in retr.used_clips:
+        src_clip = _broll_lib.LIBRARY_DIR / name
+        if src_clip.exists():
+            shutil.copy(str(src_clip), str(rev / "public" / name))
+    # дефолтный broll.mp4 — фолбэк для сегментов со слабым матчем
     if broll_mp4 is not None and Path(broll_mp4).exists():
         shutil.copy(str(broll_mp4), str(rev / "public" / "broll.mp4"))
 

@@ -1,0 +1,6 @@
+# Библиотека b-roll — медиа и производные артефакты локальны, в git не идут.
+# Наполнение: python -m reels_factory.broll_fetch  (или свои клипы), затем
+# python -m reels_factory.broll_index  → index.json.
+*
+!.gitignore
+!README.md

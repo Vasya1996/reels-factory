@@ -20,6 +20,9 @@ dev = ["pytest"]
 edit = ["auto-editor"]
 # телеграм-бот: нужен только при запуске python -m reels_factory.bot
 bot = ["python-telegram-bot>=21"]
+# семантический b-roll (Модуль B): CLIP-подбор клипов. Тяжёлый (torch), поэтому
+# опционально — pip install -e .[broll]. Мультиязычный CLIP тянет transformers.
+broll = ["open_clip_torch", "torch", "transformers", "pillow"]
 
 [project.scripts]
 reels-factory = "reels_factory.__main__:main"

@@ -172,4 +172,27 @@ Agent 6 PUBLISHER → публикация
 5. **Связать в Agent 5** — последовательный вызов A→B→валидатор→рендер (день).
 
 Итог: `сценарий → готовый reel.mp4` без ручной раскладки, с автоподбором b-roll под смысл фраз.
+
+---
+
+## Статус реализации (Модуль B — B-roll)
+
+- [x] **Схема** — `broll_query` пишет адаптер (`revideo_adapter._broll_query`), `src`
+  заполняет retrieval. Обратная совместимость: `src` дефолтит на `broll.mp4`.
+- [x] **Библиотека** — `broll_library/` (+ `.gitignore`/`README`), формат `index.json`.
+  Ядро: `broll_library.py` (кадры ffmpeg, CLIP, cosine, I/O).
+- [x] **Индексация** — `broll_index.py`: кадры → описание (`describe_fn`:
+  sidecar / VLM `make_llm_describer` / пусто) → CLIP-эмбеддинг → `index.json`.
+  Инкрементально. CLI: `python -m reels_factory.broll_index`.
+- [x] **Подбор** — `broll_retrieval.resolve_broll`: cosine + дедуп + окно по длине
+  + порог `0.18` (откалиброван под M-CLIP) + фолбэк/пометка `broll_weak_match`.
+  Тесты `test_broll_retrieval.py`.
+- [x] **Связка в рендер** — `revideo_render.assemble_revideo` вызывает `resolve_broll`
+  после `plan_to_tz` и копирует подобранные клипы в `public/`.
+- [x] **Наполнение** — `broll_fetch.py`: Pexels Video API (нужен `PEXELS_API_KEY`),
+  вертикаль + перекодировка 30fps/`+faststart`. CLI: `python -m reels_factory.broll_fetch`.
+- [ ] **Модель** — мультиязычный CLIP `xlm-roberta-base-ViT-B-32` (понимает русский;
+  англоязычный laion2b запросы почти не различал).
+- [ ] **Осталось**: набрать 30-50 клипов (нужен ключ Pexels или своя папка);
+  валидатор-линтер tz (отдельная задача); опц. авто-фолбэк-генерация (Runway/Kling).
 ```
