@@ -4,6 +4,7 @@ import json
 import pytest
 
 from reels_factory import bot
+from reels_factory import clients as clients_mod
 
 
 @pytest.fixture
@@ -24,9 +25,15 @@ class _Msg:
         self.audio = self.video = self.video_note = self.document = None
         self.replies = []
         self.markups = []
+        self.videos = []
 
     async def reply_text(self, text, reply_markup=None):
         self.replies.append(text)
+        self.markups.append(reply_markup)
+
+    async def reply_video(self, video, caption=None, reply_markup=None):
+        self.videos.append((video, caption, reply_markup))
+        self.replies.append(caption)
         self.markups.append(reply_markup)
 
 
@@ -501,9 +508,39 @@ def test_сбой_движка_не_роняет_разговор(work, monkeypa
 
 # --- шаг 7/8: готовность и повторный цикл --------------------------------------
 
-def test_создать_ролик_сохраняет_профиль_и_показывает_новый_ролик(work, monkeypatch):
+def _client_base_cfg(**over):
+    """Минимальный валидный конфиг-шаблон под profile-фикстуры (формат avatar)."""
+    b = {
+        "theme": "Тема", "format": "avatar", "voice_id": "voice-1",
+        "persona": {"description": "ведущий"},
+        "product": {"name": "Продукт", "cta_phrase": "подпишись"},
+        "avatar": {},
+    }
+    b.update(over)
+    return b
+
+
+@pytest.fixture
+def клиент(tmp_path, monkeypatch):
+    """Изолированный реестр клиентов + готовый профиль клиента чата 7.
+    save_client_profile сам по себе читает общий factory/config.yaml как базу —
+    в тестах его нет и не нужен, профиль уже зарегистрирован напрямую."""
+    monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
+    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
+    clients_mod.register_client("7", _client_base_cfg(), voice_id="voice-1",
+                                asset_id="asset-1")
+    return tmp_path
+
+
+def test_создать_ролик_сохраняет_профиль_и_показывает_новый_ролик(work, клиент, monkeypatch):
     вызовы = []
     monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: вызовы.append(chat_id))
+
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"video-bytes")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    monkeypatch.setattr(bot, "run_build", fake_run_build)
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
@@ -513,5 +550,174 @@ def test_создать_ролик_сохраняет_профиль_и_пока
     assert вызовы == [7]
     s = bot.load_session(7)
     assert s["step"] == bot.DONE
-    assert msg.replies[-1] == bot.DONE_MSG
-    assert "Новый ролик" in _labels(msg.markups[-1])
+    assert bot.BUILDING_MSG in msg.replies
+    video, caption, markup = msg.videos[-1]
+    assert caption == bot.DONE_MSG
+    assert "Новый ролик" in _labels(markup)
+
+
+# --- шаг 9: сборка ролика ------------------------------------------------------
+
+def test_run_build_зовёт_make_через_subprocess(tmp_path, monkeypatch):
+    вызовы = {}
+
+    class Completed:
+        stdout = json.dumps({"ok": True, "mp4": "x", "qa_pass": True})
+        stderr = ""
+
+    def fake_run(cmd, **kw):
+        вызовы["cmd"] = cmd
+        return Completed()
+
+    monkeypatch.setattr(bot.subprocess, "run", fake_run)
+    wd = tmp_path / "wd"
+
+    result = bot.run_build(7, wd)
+
+    assert вызовы["cmd"] == [bot.sys.executable, "-m", "reels_factory", "make",
+                             "--workdir", str(wd), "--client", "7"]
+    assert result == {"ok": True, "mp4": "x", "qa_pass": True}
+
+
+def test_run_build_невалидный_json_превращается_в_ошибку(tmp_path, monkeypatch):
+    class Completed:
+        stdout = "Traceback (most recent call last): ..."
+        stderr = "boom"
+
+    monkeypatch.setattr(bot.subprocess, "run", lambda cmd, **kw: Completed())
+
+    result = bot.run_build(7, tmp_path / "wd")
+
+    assert result["ok"] is False
+    assert "boom" in result["error"]
+
+
+def test_профиль_клиента_готов(tmp_path, monkeypatch):
+    monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
+    clients_mod.register_client("7", _client_base_cfg(), voice_id="voice-1", asset_id="asset-1")
+    assert bot.client_profile_ready(7) is True
+
+
+def test_профиль_клиента_без_файла_не_готов(tmp_path, monkeypatch):
+    monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
+    assert bot.client_profile_ready(7) is False
+
+
+def test_профиль_клиента_без_voice_id_не_готов(tmp_path, monkeypatch):
+    # ровно сценарий из спеки: голос не склонировался/удалён — clear_client_voice
+    # чистит voice_id, но профиль остаётся на диске
+    monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
+    clients_mod.register_client("7", _client_base_cfg(), voice_id="voice-1", asset_id="asset-1")
+    clients_mod.clear_client_voice("7")
+    assert bot.client_profile_ready(7) is False
+
+
+def test_нет_профиля_клиента_честно_говорит_и_не_запускает_сборку(work, tmp_path, monkeypatch):
+    monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
+    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
+    вызвано = []
+    monkeypatch.setattr(bot, "run_build", lambda chat_id, workdir: вызвано.append(1))
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+
+    msg = _Msg()
+    _press("build", msg)
+
+    assert msg.replies[-1] == bot.CLIENT_NOT_FOUND_MSG
+    assert вызвано == []
+    assert bot.load_session(7)["step"] != bot.DONE
+
+
+def test_повторное_нажатие_создать_ролик_пока_сборка_идёт(work, клиент):
+    bot._building.add(7)
+    try:
+        bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                             "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+        msg = _Msg()
+        _press("build", msg)
+        assert msg.replies == [bot.BUSY_MSG]
+        assert not msg.videos
+    finally:
+        bot._building.discard(7)
+
+
+def test_сценарий_пишется_в_workdir_с_привязкой_к_чату_и_времени(work, клиент, monkeypatch):
+    захвачено = {}
+
+    def fake_run_build(chat_id, workdir):
+        захвачено["workdir"] = workdir
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    monkeypatch.setattr(bot, "run_build", fake_run_build)
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+
+    _press("build", _Msg())
+
+    wd = захвачено["workdir"]
+    assert wd.name.startswith("bot-7-")
+    assert json.loads((wd / "scenario.json").read_text(encoding="utf-8")) == SCENARIO
+
+
+def test_сбой_сборки_сообщается_человеческим_текстом(work, клиент, monkeypatch):
+    monkeypatch.setattr(bot, "run_build",
+                        lambda chat_id, workdir: {"ok": False, "error": "HeyGen 500"})
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+
+    msg = _Msg()
+    _press("build", msg)
+
+    assert "HeyGen 500" in msg.replies[-1]
+    assert not msg.videos
+    assert bot.load_session(7)["step"] != bot.DONE
+
+
+def test_исключение_при_сборке_не_роняет_бота(work, клиент, monkeypatch):
+    def падаем(chat_id, workdir):
+        raise RuntimeError("subprocess не поднялся")
+
+    monkeypatch.setattr(bot, "run_build", падаем)
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+
+    msg = _Msg()
+    _press("build", msg)
+
+    assert "subprocess не поднялся" in msg.replies[-1]
+    assert 7 not in bot._building
+
+
+def test_ролик_собран_но_qa_не_пройден_шлётся_с_пометкой(work, клиент, monkeypatch):
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": False}
+
+    monkeypatch.setattr(bot, "run_build", fake_run_build)
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+
+    msg = _Msg()
+    _press("build", msg)
+
+    assert msg.videos[-1][1] == bot.QA_FAIL_MSG
+    assert bot.load_session(7)["step"] == bot.DONE
+
+
+def test_ролик_больше_50мб_не_отправляется(work, клиент, monkeypatch):
+    monkeypatch.setattr(bot, "MAX_TG_VIDEO_BYTES", 3)
+
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"1234567890")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    monkeypatch.setattr(bot, "run_build", fake_run_build)
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+
+    msg = _Msg()
+    _press("build", msg)
+
+    assert "50 МБ" in msg.replies[-1]
+    assert not msg.videos

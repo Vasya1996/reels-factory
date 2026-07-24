@@ -6,9 +6,9 @@
 разговор начинается заново на шаге выбора пути, но фото, голос и утверждённый
 сценарий остаются — цикл можно повторять без повторного онбординга.
 
-Сборка платная (HeyGen/ElevenLabs), поэтому в этом слое её нет: бот доводит до
-утверждённого текста и профиля клиента (фото + голос) и на этом останавливается
-— сама выдача ролика подключается отдельно.
+По кнопке «Создать ролик» бот зовёт сборку (движок Юли — чёрный ящик, только
+через subprocess `python -m reels_factory make`) в отдельном потоке и присылает
+готовый mp4 в чат.
 
 Состояние чата — json-файл в <workdir>/bot/<chat_id>/session.json: перезапуск
 бота не теряет разговор, а рядом лежат рабочие файлы движка этого же чата.
@@ -18,6 +18,9 @@
 import asyncio
 import json
 import os
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 from reels_factory.config import WORK_ROOT, load_config
@@ -93,6 +96,20 @@ DONE_MSG = (
 )
 NOT_NOW = "Сначала выберите, с чего начать: /start"
 
+BUILDING_MSG = "Собираю ролик, это займёт несколько минут…"
+BUSY_MSG = "Уже собираю ролик — дождитесь, пришлю, как будет готово."
+CLIENT_NOT_FOUND_MSG = (
+    "Не нашёл ваш профиль для сборки — похоже, что-то не сохранилось (например, "
+    "не удалось склонировать голос). Пройдите шаги фото и голоса заново."
+)
+QA_FAIL_MSG = (
+    "Ролик собран, но проверка качества не пройдена — посмотрите внимательно.\n\n"
+    "Когда будет что снять ещё — жмите «Новый ролик» или пришлите /new."
+)
+MISSING_FILE_MSG = "Сборка отчиталась об успехе, но файла ролика не нашлось — гляньте руками."
+
+MAX_TG_VIDEO_BYTES = 50 * 1024 * 1024  # лимит Bot API на видео/документ
+
 
 def render_scenario(sc: dict) -> str:
     """Сценарий человеку: заголовок, блоки по ролям, оценка длительности."""
@@ -153,6 +170,10 @@ def _keep_all(s: dict) -> dict:
     в отличие от /start (fresh_session) это не новый заход, а просто просмотр
     экрана выбора пути."""
     return {**(s or {}), "step": CHOOSING}
+
+
+# Чаты, для которых сборка сейчас идёт — не даём запустить вторую поверх.
+_building: set[int] = set()
 
 
 def session_dir(chat_id: int) -> Path:
@@ -238,6 +259,52 @@ def save_client_profile(chat_id: int, session: dict) -> None:
     register_client(str(chat_id), load_config(), name=f"tg-{chat_id}",
                     voice_id=session["voice_id"], asset_id=photo["asset_id"],
                     overwrite=True)
+
+
+def client_profile_ready(chat_id: int) -> bool:
+    """Профиль клиента есть и полон (voice_id + heygen_asset_id) — иначе честно
+    «клиент не найден». Общий config.yaml НЕ подставляем: в нём заведомо
+    неверная заглушка heygen_asset_id именно на случай такой ошибки."""
+    import yaml
+    from reels_factory.clients import client_path
+
+    path = client_path(str(chat_id))
+    if not path.exists():
+        return False
+    try:
+        cfg = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError:
+        return False
+    if not isinstance(cfg, dict):
+        return False
+    avatar = cfg.get("avatar") or {}
+    return bool(cfg.get("voice_id")) and bool(avatar.get("heygen_asset_id"))
+
+
+def _new_build_dir(chat_id: int) -> Path:
+    return WORK_ROOT / f"bot-{chat_id}-{int(time.time())}"
+
+
+def _write_scenario(workdir: Path, scenario: dict) -> None:
+    workdir.mkdir(parents=True, exist_ok=True)
+    (workdir / "scenario.json").write_text(
+        json.dumps(scenario, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def run_build(chat_id: int, workdir: Path) -> dict:
+    """Сборка ролика — чёрный ящик Юли: `python -m reels_factory make` тем же
+    питоном, что и бот, cwd не задаём — наследуем cwd бота (корень рабочей
+    площадки), как и требует движок. Разбираем JSON из stdout; если разобрать
+    не вышло (сбой на середине без валидного ответа) — честная ошибка из
+    stderr/stdout."""
+    p = subprocess.run(
+        [sys.executable, "-m", "reels_factory", "make",
+         "--workdir", str(workdir), "--client", str(chat_id)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace")
+    try:
+        return json.loads(p.stdout)
+    except (json.JSONDecodeError, TypeError):
+        return {"ok": False, "error": (p.stderr or p.stdout or "пустой ответ движка")[:500]}
 
 
 def transcribe(chat_id: int, media: Path) -> str:
@@ -452,10 +519,14 @@ async def on_button(update, context):
                 pass  # лучше дать перезаписать голос, чем застрять на ошибке чистки
         await _ask(q.message, chat_id, s, WAIT_VOICE, ASK_VOICE)
     elif data == "build":
+        if chat_id in _building:
+            await q.message.reply_text(BUSY_MSG)
+            return
         save_client_profile(chat_id, s)
-        s["step"] = DONE
-        save_session(chat_id, s)
-        await q.message.reply_text(DONE_MSG, reply_markup=_kb_done())
+        if not client_profile_ready(chat_id):
+            await q.message.reply_text(CLIENT_NOT_FOUND_MSG)
+            return
+        await _build_and_send(q.message, chat_id, s)
     elif data == "new_reel":
         await _show_start(q.message, chat_id, s, loop_session)
 
@@ -486,6 +557,41 @@ async def _finish_voice(msg, chat_id: int, s: dict):
     save_session(chat_id, s)
     save_client_profile(chat_id, s)
     await msg.reply_text(READY_MSG, reply_markup=_kb_ready())
+
+
+async def _build_and_send(msg, chat_id: int, s: dict):
+    """Сборка минутами — движок синхронный, зовём через поток, бот тем временем
+    отвечает другим чатам. По готовности шлём mp4 в чат и показываем DONE."""
+    _building.add(chat_id)
+    await msg.reply_text(BUILDING_MSG)
+    try:
+        workdir = _new_build_dir(chat_id)
+        _write_scenario(workdir, s["scenario"])
+        result = await asyncio.to_thread(run_build, chat_id, workdir)
+    except Exception as e:
+        await msg.reply_text(f"Сборка сорвалась: {str(e)[:200]}")
+        return
+    finally:
+        _building.discard(chat_id)
+
+    if not result.get("ok"):
+        await msg.reply_text(f"Не получилось собрать ролик: {result.get('error') or 'неизвестная ошибка'}")
+        return
+
+    mp4 = Path(result.get("mp4") or (workdir / "reel.mp4"))
+    if not mp4.exists():
+        await msg.reply_text(MISSING_FILE_MSG)
+        return
+    if mp4.stat().st_size > MAX_TG_VIDEO_BYTES:
+        await msg.reply_text(f"Ролик собрался, но весит больше 50 МБ — Telegram такое "
+                             f"не примет. Файл здесь: {mp4}")
+        return
+
+    caption = DONE_MSG if result.get("qa_pass") else QA_FAIL_MSG
+    with mp4.open("rb") as f:
+        await msg.reply_video(video=f, caption=caption, reply_markup=_kb_done())
+    s["step"] = DONE
+    save_session(chat_id, s)
 
 
 async def on_message(update, context):
