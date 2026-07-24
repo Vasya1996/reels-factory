@@ -23,7 +23,10 @@ from dataclasses import dataclass, field
 
 # Синхронно с project.tsx.
 MIN_SHOT = 1.2                      # с — короче между двумя другими = флеш-кадр
-_COVER_TYPES = {"broll_bg_particles", "chart_bars"}   # полноэкранные оверлеи
+_COVER_TYPES = {"broll_bg_particles", "chart_bars"}   # полноэкранные оверлеи (для бэкплейта)
+# Эффекты с видео-источником (нужен src-клип). chart_bars — cover, но это
+# инфографика (items), а не видео, поэтому src ему НЕ требуется.
+_VIDEO_SRC_TYPES = {"broll", "broll_bg_particles"}
 _ZOOMS = {"zoom_out", "punch", "push", "snap_zoom", "ken_burns", "pulse", "shake_zoom"}
 # Минимальная длина сегмента, где ещё влезает подпись (короче — текст не прочитать).
 _MIN_CAPTION_SHOT = 0.6
@@ -170,8 +173,8 @@ def validate_tz(tz: dict, *, index: dict | None = None,
             rep.add(WARN, "caption-bounds", sid,
                     f"подпись в шоте {window:.2f}с — не успеет прочитаться")
 
-        # ---- b-roll: src, длина, повторы ----
-        if etype in _COVER_TYPES or etype == "broll":
+        # ---- b-roll: src, длина, повторы (только видео-эффекты) ----
+        if etype in _VIDEO_SRC_TYPES:
             src = eff.get("src")
             weak = eff.get("broll_weak_match")
             if not src:
