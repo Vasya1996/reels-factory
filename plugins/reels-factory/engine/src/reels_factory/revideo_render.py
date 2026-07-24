@@ -42,7 +42,8 @@ def _normalize_loudness(mp4: Path) -> None:
     subprocess.run(
         [FFMPEG, "-y", "-i", str(mp4),
          "-af", f"loudnorm=I={LUFS_TARGET}:TP=-1.5:LRA=11",
-         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", str(tmp)],
+         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+         "-movflags", "+faststart", str(tmp)],
         check=True,
     )
     tmp.replace(mp4)
