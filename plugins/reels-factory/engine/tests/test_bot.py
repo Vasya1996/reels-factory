@@ -33,8 +33,10 @@ class _Msg:
         self.replies.append(text)
         self.markups.append(reply_markup)
 
-    async def reply_video(self, video, caption=None, reply_markup=None):
+    async def reply_video(self, video, caption=None, reply_markup=None,
+                          width=None, height=None):
         self.videos.append((video, caption, reply_markup))
+        self.video_sizes = (width, height)
         self.replies.append(caption)
         self.markups.append(reply_markup)
 
@@ -754,6 +756,24 @@ def test_повторное_нажатие_создать_ролик_пока_с
         assert not msg.videos
     finally:
         bot._building.discard(7)
+
+
+def test_ролик_шлётся_с_явными_размерами_кадра(work, клиент, monkeypatch):
+    """Без width/height телеграм-плеер не знает размеров до полной загрузки
+    и показывает вертикальный ролик квадратом (реальный кейс первого прогона)."""
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    monkeypatch.setattr(bot, "run_build", fake_run_build)
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    msg = _Msg()
+
+    _press("build", msg)
+
+    assert msg.videos
+    assert msg.video_sizes == (bot.OUT_W, bot.OUT_H)
 
 
 def test_сценарий_пишется_в_workdir_с_привязкой_к_чату_и_времени(work, клиент, monkeypatch):
