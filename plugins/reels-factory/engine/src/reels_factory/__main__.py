@@ -393,6 +393,39 @@ def _cmd_ideas(args, cfg):
     print(json.dumps(res, ensure_ascii=False))
 
 
+def _cmd_upload_photo(args):
+    """Фото ведущего -> HeyGen asset_id -> профиль клиента (photo-режим).
+
+    Один вызов на одно фото: загрузка ассета бесплатна, генерации тут нет.
+    Существующий профиль обновляется только с --overwrite, при этом его голос,
+    persona и product сохраняются — меняется одно фото."""
+    import yaml
+    from reels_factory.avatar import upload_photo_asset
+    from reels_factory.clients import client_path, register_client
+    from reels_factory.config import CONFIG_PATH
+
+    try:
+        path = client_path(args.client)  # заодно проверяет допустимость id
+        if path.exists() and not args.overwrite:
+            raise ConfigError(f"клиент {args.client!r} уже есть — передай "
+                              "--overwrite, чтобы заменить фото")
+        if path.exists():
+            # база — сам профиль, читаем сырым yaml: старый профиль мог стать
+            # невалидным, а мы всего лишь меняем в нём фото
+            base = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        else:
+            base = load_config(Path(args.base) if args.base else CONFIG_PATH)
+        asset_id = upload_photo_asset(args.image)
+        out = register_client(args.client, base, name=args.name,
+                              voice_id=args.voice_id, asset_id=asset_id,
+                              overwrite=True)
+    except Exception as e:
+        print(json.dumps({"ok": False, "error": str(e)[:500]}, ensure_ascii=False))
+        sys.exit(1)
+    print(json.dumps({"ok": True, "client": args.client, "asset_id": asset_id,
+                      "mode": "photo", "path": str(out)}, ensure_ascii=False))
+
+
 def _cmd_clone_voice(args, cfg):
     from reels_factory.tts import create_voice_clone
 
@@ -499,6 +532,18 @@ def main():
     gi.add_argument("--source-file", dest="source_file", help="файл с текстом-сырьём")
     gi.add_argument("--audio", help="аудио/видео сырьё (локальная расшифровка)")
 
+    p_up = sub.add_parser("upload-photo",
+                          help="фото ведущего -> HeyGen asset_id -> профиль клиента")
+    p_up.add_argument("--image", required=True, help="файл фото (jpg/png)")
+    p_up.add_argument("--client", required=True, help="id клиента (имя файла профиля)")
+    p_up.add_argument("--name", default=None, help="человекочитаемое имя")
+    p_up.add_argument("--voice-id", dest="voice_id", default=None,
+                      help="ElevenLabs voice_id клиента")
+    p_up.add_argument("--from", dest="base", default=None,
+                      help="базовый config.yaml (по умолчанию factory/config.yaml)")
+    p_up.add_argument("--overwrite", action="store_true",
+                      help="заменить фото у существующего профиля")
+
     p_cv = sub.add_parser("clone-voice",
                           help="клонировать голос пользователя в ElevenLabs -> voice_id")
     p_cv.add_argument("--audio", required=True, help="запись голоса (1-2 мин чистой речи)")
@@ -514,6 +559,11 @@ def main():
     # clients управляет реестром профилей и не требует активного конфига
     if args.cmd == "clients":
         _cmd_clients(args)
+        return
+
+    # upload-photo сам решает, какой конфиг брать за базу профиля
+    if args.cmd == "upload-photo":
+        _cmd_upload_photo(args)
         return
 
     # clone-voice не требует активного конфига

@@ -114,6 +114,37 @@ class _Unavailable(Exception):
     pass
 
 
+def upload_photo_asset(image_path, api_key=None, http=None) -> str:
+    """Залить фото аватара в HeyGen /v3/assets, вернуть asset_id.
+
+    Загрузка ассета бесплатна — платит только генерация видео. Нужна там, где
+    фото приходит из кода (телеграм-бот), а не руками через мастер setup.
+    """
+    image_path = Path(image_path)
+    if not image_path.exists():
+        raise RuntimeError(f"файл фото не найден: {image_path}")
+    api_key = api_key or os.environ.get("HEYGEN_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "HeyGen API key не задан: передайте api_key или "
+            "установите env HEYGEN_API_KEY"
+        )
+    if http is None:
+        import requests
+        http = requests
+
+    resp = http.post(
+        UPLOAD_URL, headers={"X-Api-Key": api_key},
+        files={"file": (image_path.name, image_path.read_bytes())},
+        timeout=120,
+    )
+    resp.raise_for_status()
+    asset_id = ((resp.json() or {}).get("data") or {}).get("asset_id")
+    if not asset_id:
+        raise RuntimeError(f"HeyGen не вернул asset_id: {str(resp.json())[:200]}")
+    return asset_id
+
+
 class HeyGenClient:
     def __init__(self, api_key=None, avatar_id=None, motion_prompt=None,
                  http=None, sleep=None, expressiveness=None, look_id=None,
