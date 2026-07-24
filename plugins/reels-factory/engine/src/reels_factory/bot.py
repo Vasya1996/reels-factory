@@ -24,7 +24,7 @@ import sys
 import time
 from pathlib import Path
 
-from reels_factory.config import WORK_ROOT, load_config
+from reels_factory.config import OUT_H, OUT_W, WORK_ROOT, load_config
 from reels_factory.llm import ClaudeSkillRunner
 from reels_factory.scenario import (ScenarioError, run_generated_path, run_ideas,
                                     run_verbatim_path, split_verbatim)
@@ -619,7 +619,10 @@ async def _build_and_send(msg, chat_id: int, s: dict):
 
     caption = DONE_MSG if result.get("qa_pass") else QA_FAIL_MSG
     with mp4.open("rb") as f:
-        await msg.reply_video(video=f, caption=caption, reply_markup=_kb_done())
+        # width/height обязательны: без них телеграм-плеер не знает размеров
+        # до полной загрузки и показывает вертикальный ролик квадратом
+        await msg.reply_video(video=f, caption=caption, reply_markup=_kb_done(),
+                              width=OUT_W, height=OUT_H)
     s["step"] = DONE
     save_session(chat_id, s)
 

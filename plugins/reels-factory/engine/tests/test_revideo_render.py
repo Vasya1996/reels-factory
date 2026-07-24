@@ -26,6 +26,9 @@ def test_normalize_loudness_вызывает_ffmpeg_с_loudnorm_и_lufs_target(t
     assert f"loudnorm=I={LUFS_TARGET}:TP=-1.5:LRA=11" in cmd
     assert "-c:v" in cmd and cmd[cmd.index("-c:v") + 1] == "copy"
     assert "-c:a" in cmd and cmd[cmd.index("-c:a") + 1] == "aac"
+    # faststart: moov в начало файла, иначе телеграм-плеер не знает размеров
+    # видео до полной загрузки и показывает вертикальный ролик квадратом
+    assert "-movflags" in cmd and cmd[cmd.index("-movflags") + 1] == "+faststart"
     assert kwargs.get("check") is True
     # out_mp4 заменён нормализованным результатом (tmp -> out через Path.replace)
     assert mp4.read_bytes() == b"normalized"
