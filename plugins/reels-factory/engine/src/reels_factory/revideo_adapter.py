@@ -15,16 +15,10 @@ from __future__ import annotations
 
 import re
 
-_ZOOM_POOL = ["punch", "snap_zoom", "push", "ken_burns", "shake_zoom"]
-
-# лексикон «слово-стем -> Fluent-иконка» для эмодзи-последовательности
-_EMOJI_LEX = [
-    ("стил", "palette"), ("формат", "ruler"), ("аудитор", "busts"),
-    ("иде", "bulb"), ("нейросет", "robot"), ("робот", "robot"), ("бот", "robot"),
-    ("мозг", "brain"), ("дума", "brain"), ("настро", "gear"), ("механ", "gear"),
-    ("запуск", "rocket"), ("старт", "rocket"),
-]
-_PARTICLE_ICONS = ["robot", "sparkles", "brain", "gear", "bulb", "rocket"]
+# Правило Юлии: НИКАКИХ резких зумов (snap/shake/pulse/punch) — они мельтешат.
+# Движение на «лицевых» сегментах даёт только медленный кинематографичный дрейф
+# ken_burns (плавный push, сбрасывается в 1.0 каждый шот). payoff — статикой.
+DRIFT_CAMERA = "ken_burns"
 _CMD_VERBS = ("напиш", "спрос", "попрос")
 
 
@@ -83,18 +77,18 @@ def _split_phrases(words: list, blocks: list) -> list:
     return out
 
 
-def _emoji_items(text: str) -> list:
-    """Найти в фразе слова из лексикона -> [{word,img}] (до 3)."""
-    items = []
-    for w in text.split():
-        core = _norm(w)
-        for stem, img in _EMOJI_LEX:
-            if core.startswith(stem):
-                items.append({"word": w.strip(",.!?…"), "img": img})
-                break
-        if len(items) >= 3:
-            break
-    return items
+# Минимальная длительность любого биролла (правило Юлии: короче — мельтешит).
+MIN_BROLL_S = 3.0
+
+
+def _extend_to_min(phrases, i, block, min_len):
+    """Индекс последней фразы блока так, чтобы окно [i..j] было не короче min_len.
+    Возвращает j (>= i), не выходя за границу блока."""
+    j = i
+    while (phrases[j]["end"] - phrases[i]["start"]) < min_len \
+            and j + 1 < len(phrases) and phrases[j + 1]["block"] == block:
+        j += 1
+    return j
 
 
 def _chart_items(ph: dict) -> list:
@@ -172,9 +166,7 @@ def plan_to_tz(timed: dict, broll_segments: list | None, config: dict,
     captions = {"base_style": "accumulate", "font_size": 46,
                 "position_pct_from_bottom": 40, "keywords": _keywords_from_config(config)}
 
-    zoom_pool = list(_ZOOM_POOL)
-    used = {"chart": False, "emoji": False, "particles": False, "chat": False,
-            "pip": False, "bubble": False}
+    used = {"chart": False, "particles": False, "pip": False, "bubble": False}
     trans_used = 0
     seg_off = lambda role, d: float(seg_by_role.get(role, {}).get("offset", d))
 
@@ -225,40 +217,24 @@ def plan_to_tz(timed: dict, broll_segments: list | None, config: dict,
             j = i
             while j + 1 < n and phrases[j + 1]["block"] == block:
                 j += 1
-            emit(segments, ph["start"], phrases[j]["end"], role, {"type": "pulse"}, "none",
+            emit(segments, ph["start"], phrases[j]["end"], role, {"type": DRIFT_CAMERA}, "none",
                  {"type": "cta_endcard", "button": product.get("cta_button") or "ПОДПИСАТЬСЯ"}, "bottom")
             i = j + 1
             continue
 
-        # Эмодзи-последовательность: собрать лексиконные слова из подряд идущих
-        # фраз блока (нарезка может разбить «стиль/формат/аудитория» на 2 фразы).
-        if not used["emoji"] and _emoji_items(text):
-            ei, j = [], i
-            while j < n and phrases[j]["block"] == block and _emoji_items(phrases[j]["text"]):
-                ei += _emoji_items(phrases[j]["text"])
-                j += 1
-            seen, ei2 = set(), []
-            for it in ei:
-                if it["img"] not in seen:
-                    seen.add(it["img"])
-                    ei2.append(it)
-            if len(ei2) >= 2:
-                used["emoji"] = True
-                emit(segments, ph["start"], phrases[j - 1]["end"], role, {"type": "ken_burns"},
-                     "none", {"type": "emoji_pop_sequence", "items": ei2[:3]}, "bottom")
-                i = j
-                continue
+        # Эмодзи-последовательности УБРАНЫ (правило Юлии: эмодзи в монтаже
+        # выглядят дёшево). Слова «стиль/формат/аудитория» и т.п. теперь
+        # уходят под биролл или остаются лицом с keyword-pop.
 
         # Перечисление -> график. Смотрим вперёд по фразам блока, собираем регион
         # с запятыми, режем на пункты по запятым/«и», берём короткие (<=3 слов).
-        # Стоп на фразе с эмодзи-словом (её отдаём эмодзи, не графику).
         if not used["chart"] and ("," in text) and role in ("development", "payoff"):
             def _has_cmd(t):
                 return any(_norm(x).startswith(_CMD_VERBS) for x in t.split())
             j = i
             region = []
             while j < n and phrases[j]["block"] == block and ("," in phrases[j]["text"]) \
-                    and not _emoji_items(phrases[j]["text"]) and not _has_cmd(phrases[j]["text"]):
+                    and not _has_cmd(phrases[j]["text"]):
                 region.append(phrases[j])
                 j += 1
             combined = " ".join(p["text"] for p in region)
@@ -296,46 +272,40 @@ def plan_to_tz(timed: dict, broll_segments: list | None, config: dict,
             i = j + 1
             continue
 
-        # «автоматизировать всё» -> фон + частицы
-        if not used["particles"] and has_any_broll and re.search(r"автоматизир|везде|многое", low):
+        # «автоматизировать всё» -> полноэкранный биролл (частицы-иконки убраны как
+        # эмодзи-подобные; zoom_blur убран как зум). Whip-переход, окно >= MIN_BROLL_S.
+        if not used["particles"] and has_any_broll and i > 0 and \
+                re.search(r"автоматизир|везде|многое", low):
             used["particles"] = True
-            transition = "zoom_blur" if trans_used < 2 else "none"
-            trans_used += 1 if transition != "none" else 0
-            emit(segments, ph["start"], ph["end"], role, {"type": "hold"}, transition,
-                 {"type": "broll_bg_particles",
+            j = _extend_to_min(phrases, i, block, MIN_BROLL_S)
+            emit(segments, ph["start"], phrases[j]["end"], role, {"type": "hold"}, "whip",
+                 {"type": "broll", "style": "fullscreen",
                   "broll_query": _broll_query(text, "технологии, абстрактный фон"),
-                  "src": broll_file, "offset": seg_off(role, 0.5),
-                  "icons": _PARTICLE_ICONS}, "bottom")
-            i += 1
+                  "src": broll_file, "offset": seg_off(role, 0.0)}, "bottom")
+            i = j + 1
             continue
 
         # ==== ФРАЗОВЫЕ (лёгкие) эффекты ====
         caption, transition, camera, effect = "bottom", "none", {"type": "hold"}, {"type": "none"}
-        emoji_items = _emoji_items(text)
-        if role == "hook":
-            camera = {"type": "zoom_out"}
-        elif len(emoji_items) >= 2 and not used["emoji"]:
-            used["emoji"] = True
-            camera = {"type": "ken_burns"}
-            effect = {"type": "emoji_pop_sequence", "items": emoji_items}
-        # chat_bubble убран намеренно: мелкий текстовый пузырь дублирует субтитры и
-        # налезает на них. Текстовые оверлеи допустимы только как инфографика
-        # (chart_bars), анимация (emoji) или полноэкранное видео (broll).
-        elif not used["pip"] and has_any_broll and re.search(r"инструкц|набор|блокнот|список|заметк|шаг", low):
+        # Биролл на «инструкц/набор/список...» — ПОЛНОЭКРАННЫЙ (не pip/половина),
+        # окно >= MIN_BROLL_S, whip-переход. НЕ на первой фразе (i > 0): хук
+        # открывается лицом.
+        if not used["pip"] and has_any_broll and i > 0 and \
+                re.search(r"инструкц|набор|блокнот|список|заметк|шаг", low):
             used["pip"] = True
-            effect = {"type": "broll", "style": "pip",
-                      "broll_query": _broll_query(text, "рабочий стол, заметки"),
-                      "src": broll_file, "offset": seg_off(role, 0.0)}
-            caption = "top"
+            j = _extend_to_min(phrases, i, block, MIN_BROLL_S)
+            emit(segments, ph["start"], phrases[j]["end"], role, {"type": "hold"}, "whip",
+                 {"type": "broll", "style": "fullscreen",
+                  "broll_query": _broll_query(text, "рабочий стол, заметки"),
+                  "src": broll_file, "offset": seg_off(role, 0.0)}, "bottom")
+            i = j + 1
+            continue
 
-        # зум из пула на «лицевые» сегменты (каждый <=1)
-        if camera["type"] == "hold" and effect["type"] == "none" and role != "payoff" and zoom_pool:
-            camera = {"type": zoom_pool.pop(0)}
-        # whip после хука (один раз)
-        if role == "development" and transition == "none" and trans_used < 2 and \
-                segments and segments[-1]["beat"] == "hook":
-            transition = "whip"
-            trans_used += 1
+        # Камера: медленный дрейф ken_burns на «лицевых» сегментах (движение без
+        # резких зумов). payoff — статикой (hold) для контраста. Первая фраза
+        # тоже получает дрейф, чтобы хук не был мёртвым.
+        if role != "payoff":
+            camera = {"type": DRIFT_CAMERA}
 
         emit(segments, ph["start"], ph["end"], role, camera, transition, effect, caption)
         i += 1

@@ -28,6 +28,10 @@ _COVER_TYPES = {"broll_bg_particles", "chart_bars"}   # полноэкранны
 # инфографика (items), а не видео, поэтому src ему НЕ требуется.
 _VIDEO_SRC_TYPES = {"broll", "broll_bg_particles"}
 _ZOOMS = {"zoom_out", "punch", "push", "snap_zoom", "ken_burns", "pulse", "shake_zoom"}
+# Резкие/мельтешащие зумы (правило Юлии: не использовать; движение — дрейфом).
+_HARSH_ZOOMS = {"snap_zoom", "shake_zoom", "pulse", "punch"}
+# Минимальная длительность любого биролла (короче — мельтешит).
+MIN_BROLL_S = 3.0
 # Минимальная длина сегмента, где ещё влезает подпись (короче — текст не прочитать).
 _MIN_CAPTION_SHOT = 0.6
 _LONG_DASHES = ("—", "–")          # длинное/среднее тире — правило стиля: не использовать
@@ -182,6 +186,29 @@ def validate_tz(tz: dict, *, index: dict | None = None,
         if seg.get("caption") not in (None, "hidden") and 0 < window < _MIN_CAPTION_SHOT:
             rep.add(WARN, "caption-bounds", sid,
                     f"подпись в шоте {window:.2f}с — не успеет прочитаться")
+
+        # ---- эмодзи запрещены (правило стиля: смотрятся дёшево) ----
+        if etype == "emoji_pop_sequence":
+            if autofix:
+                seg["effect"] = {"type": "none"}
+                etype = "none"
+                rep.add(FIXED, "emoji-banned", sid, "эмодзи убраны (правило стиля) → effect none")
+            else:
+                rep.add(ERROR, "emoji-banned", sid, "эмодзи в монтаже не используются")
+
+        # ---- резкие зумы запрещены (движение только дрейфом ken_burns) ----
+        if ztype in _HARSH_ZOOMS:
+            rep.add(WARN, "harsh-zoom", sid,
+                    f"резкий зум '{ztype}' — заменить на дрейф ken_burns/hold")
+
+        # ---- биролл: минимум MIN_BROLL_S и не в хуке (первую фразу открываем лицом) ----
+        if etype in _VIDEO_SRC_TYPES:
+            if 0 < window < MIN_BROLL_S:
+                rep.add(WARN, "broll-min-len", sid,
+                        f"биролл {window:.1f}с < {MIN_BROLL_S:.0f}с — мельтешит, удлини окно")
+            if seg.get("beat") == "hook":
+                rep.add(WARN, "broll-first-phrase", sid,
+                        "биролл в хуке — первую фразу открываем лицом, без биролла")
 
         # ---- инфографика не должна делить экран с субтитрами ----
         # chart_bars — структурированная панель по центру (y≈-40..+160), субтитры

@@ -14,8 +14,9 @@ def _tz(segs, duration=30.0, watermark="@julia.agents", captions=None):
 
 
 def test_чистый_tz_без_ошибок():
-    # duration = реальный конец сегментов, иначе сработает ритм-правило broll-rhythm
-    tz = _tz([_seg(1, 0.0, 3.0), _seg(2, 3.0, 6.0, camera={"type": "punch"})],
+    # duration = реальный конец сегментов, иначе сработает ритм-правило broll-rhythm.
+    # ken_burns — разрешённый мягкий дрейф (не резкий зум).
+    tz = _tz([_seg(1, 0.0, 3.0), _seg(2, 3.0, 6.0, camera={"type": "ken_burns"})],
              duration=6.0)
     rep = validate_tz(tz)
     assert rep.ok
@@ -36,8 +37,10 @@ def test_повтор_зума():
 
 
 def test_соседние_одинаковые_эффекты():
-    e = {"type": "emoji_pop_sequence"}
-    tz = _tz([_seg(1, 0.0, 3.0, effect=dict(e)), _seg(2, 3.0, 6.0, effect=dict(e))])
+    # два одинаковых broll fullscreen подряд (разные клипы) — приёмы не чередуются
+    e1 = {"type": "broll", "style": "fullscreen", "src": "a.mp4"}
+    e2 = {"type": "broll", "style": "fullscreen", "src": "b.mp4"}
+    tz = _tz([_seg(1, 0.0, 3.0, effect=e1), _seg(2, 3.0, 6.0, effect=e2)])
     rep = validate_tz(tz)
     assert any(i.rule == "effect-adjacent" for i in rep.warns)
 
@@ -182,3 +185,33 @@ def test_ритм_ок_когда_broll_каждые_10с():
               _fs(4, 19.0, 22.0)], duration=22.0)
     rep = validate_tz(tz)
     assert not any(i.rule == "broll-rhythm" for i in rep.warns)
+
+
+# ---- новые монтаж-правила: эмодзи, резкие зумы, биролл ≥3с, биролл в хуке ----
+
+def test_эмодзи_запрещены_автофикс():
+    tz = _tz([_seg(1, 0.0, 3.0, effect={"type": "emoji_pop_sequence", "items": []})])
+    rep = validate_tz(tz, autofix=True)
+    assert tz["segments"][0]["effect"]["type"] == "none"
+    assert any(i.rule == "emoji-banned" and i.level == FIXED for i in rep.issues)
+
+
+def test_резкий_зум_ворнинг():
+    tz = _tz([_seg(1, 0.0, 3.0, camera={"type": "snap_zoom"})], duration=3.0)
+    rep = validate_tz(tz)
+    assert any(i.rule == "harsh-zoom" for i in rep.warns)
+
+
+def test_биролл_короче_3с_ворнинг():
+    tz = _tz([_seg(1, 0.0, 2.0, effect={"type": "broll", "style": "fullscreen", "src": "a.mp4"})],
+             duration=2.0)
+    rep = validate_tz(tz)
+    assert any(i.rule == "broll-min-len" for i in rep.warns)
+
+
+def test_биролл_в_хуке_ворнинг():
+    seg = _seg(1, 0.0, 4.0, effect={"type": "broll", "style": "fullscreen", "src": "a.mp4"})
+    seg["beat"] = "hook"
+    tz = _tz([seg], duration=4.0)
+    rep = validate_tz(tz)
+    assert any(i.rule == "broll-first-phrase" for i in rep.warns)
