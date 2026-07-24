@@ -359,3 +359,108 @@ def test_грейд_и_зерно_прокидываются_в_сборку(mon
                       synth_fn=fs, ingest_fn=fi, assemble_fn=fa2)
 
     assert seen == {"grade": True, "grain": True}
+
+
+def test_precut_план_строится_и_экономит_heygen(monkeypatch, tmp_path):
+    """format=avatar без broll_plan: precut_fn покрывает development ->
+    HeyGen для него не вызывается, план сохраняется в segment_plan.json."""
+    calls = []
+    captured = {}
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+    covered_calls = []
+
+    def fake_precut(scenario, config):
+        return {"segments": [{"role": "development", "insert": True, "offset": 0.0,
+                              "clip": "lib.mp4", "query": "молол мелко"}],
+                "est": {"covered_s": 12.0, "total_s": 25.0}, "log": ["ок"]}
+
+    res = pipeline.run_make(_cfg("avatar"), None, 0.0, wd,
+                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi,
+                            assemble_fn=fa, precut_fn=fake_precut,
+                            covered_block_fn=_fake_covered_block(covered_calls))
+
+    assert res["ok"] is True
+    # development не ходил в HeyGen: 3 генерации вместо 4 + 1 дешёвый локальный
+    assert len(avatar.calls) == 3
+    assert len(covered_calls) == 1 and "voice_1.wav" in covered_calls[0]
+    # план дошёл до сборки и сохранён для прозрачности
+    assert captured["broll_segments"][0]["role"] == "development"
+    assert (wd / "segment_plan.json").exists()
+
+
+def test_precut_пустой_план_пайплайн_как_раньше(monkeypatch, tmp_path):
+    calls = []
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+
+    def fake_precut(scenario, config):
+        return {"segments": [], "est": {"covered_s": 0.0, "total_s": 25.0}, "log": []}
+
+    res = pipeline.run_make(_cfg("avatar"), None, 0.0, wd,
+                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi,
+                            assemble_fn=fa, precut_fn=fake_precut)
+
+    assert res["ok"] is True
+    assert len(avatar.calls) == 4  # все блоки аватарные
+
+
+def test_явный_broll_plan_отключает_авто_precut(monkeypatch, tmp_path):
+    calls = []
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+    precut_calls = []
+
+    def fake_precut(scenario, config):
+        precut_calls.append(1)
+        return {"segments": [], "log": []}
+
+    broll_plan = {"segments": [{"role": "development", "offset": 30.0, "insert": True}],
+                  "facts": {}}
+    res = pipeline.run_make(_cfg("avatar"), "broll.mp4", 0.0, wd, broll_plan=broll_plan,
+                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi,
+                            assemble_fn=fa, precut_fn=fake_precut,
+                            covered_block_fn=_fake_covered_block())
+
+    assert res["ok"] is True
+    assert precut_calls == []  # ручной план главнее
+
+
+def test_precut_не_запускается_для_split(monkeypatch, tmp_path):
+    """split: аватар всегда виден в верхней половине — покрытие неприменимо."""
+    calls = []
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+    precut_calls = []
+
+    def fake_precut(scenario, config):
+        precut_calls.append(1)
+        return {"segments": [], "log": []}
+
+    res = pipeline.run_make(_cfg("split"), "broll.mp4", 30.0, wd,
+                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi,
+                            assemble_fn=fa, precut_fn=fake_precut)
+
+    assert res["ok"] is True
+    assert precut_calls == []
+
+
+def test_падение_precut_даёт_stage_plan(monkeypatch, tmp_path):
+    calls = []
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+
+    def broken_precut(scenario, config):
+        raise RuntimeError("индекс битый")
+
+    res = pipeline.run_make(_cfg("avatar"), None, 0.0, wd,
+                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi,
+                            assemble_fn=fa, precut_fn=broken_precut)
+
+    assert res["ok"] is False and res["stage"] == "plan"
+    assert "индекс" in res["error"]

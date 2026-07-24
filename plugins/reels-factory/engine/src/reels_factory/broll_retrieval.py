@@ -95,6 +95,25 @@ def resolve_broll(tz: dict, *, library_dir: Path | str | None = None,
     broll_segs = [s for s in tz.get("segments", []) if _needs_broll(s.get("effect"))]
     if not broll_segs:
         return result
+
+    # src, закреплённый планировщиком (precut): клип уже проверен на матч и
+    # длину — не переподбираем, но бронируем (дедуп) и копируем в public/.
+    locked, to_resolve = [], []
+    for s in broll_segs:
+        if s["effect"].get("src_locked") and s["effect"].get("src"):
+            locked.append(s)
+        else:
+            to_resolve.append(s)
+    for s in locked:
+        name = s["effect"]["src"]
+        used.add(name)
+        if name not in result.used_clips:
+            result.used_clips.append(name)
+        result.log.append(f"seg#{s.get('id')}: src закреплён precut-планом → {name}")
+    broll_segs = to_resolve
+    if not broll_segs:
+        return result
+
     if not index:
         result.log.append("index.json пуст — b-roll не подобран (нужна индексация)")
         for s in broll_segs:

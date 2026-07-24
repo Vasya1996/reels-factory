@@ -151,6 +151,9 @@ def plan_to_tz(timed: dict, broll_segments: list | None, config: dict,
     total = float(timed.get("total") or (blocks[-1]["end"] if blocks else 0))
     seg_by_role = {s["role"]: s for s in (broll_segments or [])}
     has_any_broll = bool(seg_by_role)
+    # precut-покрытие: блоки с insert=true не генерились аватаром (base там
+    # чёрный) — их обязательно закрывает один fullscreen-сегмент на весь блок
+    covered_roles = {s["role"] for s in (broll_segments or []) if s.get("insert")}
     product = config.get("product") or {}
 
     # фразовая нарезка; без слов — фолбэк на блоки
@@ -195,6 +198,28 @@ def plan_to_tz(timed: dict, broll_segments: list | None, config: dict,
         block = ph["block"]
 
         # ==== БЛОЧНЫЕ (поглощающие) эффекты: занимают область, а не одну фразу ====
+        # Precut-покрытый блок: аватар не генерился, base здесь чёрный кадр —
+        # ровно один fullscreen b-roll на ВЕСЬ блок (по границам блока, не фраз:
+        # тайминги слов начинаются позже границы, зазор показал бы черноту).
+        # Никаких bubble/pip внутри: они рисуют base. src закреплён
+        # планировщиком (клип проверен на матч и длину) — retrieval его не трогает.
+        if role in covered_roles:
+            j = i
+            while j + 1 < n and phrases[j + 1]["block"] == block:
+                j += 1
+            blk = blocks[block]
+            seg = seg_by_role.get(role) or {}
+            eff = {"type": "broll", "style": "fullscreen",
+                   "broll_query": seg.get("query") or _broll_query(text),
+                   "src": seg.get("clip") or broll_file,
+                   "offset": float(seg.get("offset") or 0.0)}
+            if seg.get("clip"):
+                eff["src_locked"] = True
+            emit(segments, float(blk["start"]), float(blk["end"]), role,
+                 {"type": "hold"}, "none", eff, "bottom")
+            i = j + 1
+            continue
+
         # CTA: одна кнопка на весь cta-блок
         if role == "cta":
             j = i
@@ -293,9 +318,9 @@ def plan_to_tz(timed: dict, broll_segments: list | None, config: dict,
             used["emoji"] = True
             camera = {"type": "ken_burns"}
             effect = {"type": "emoji_pop_sequence", "items": emoji_items}
-        elif any(_norm(t).startswith(_CMD_VERBS) for t in text.split()) and not used["chat"]:
-            used["chat"] = True
-            effect = {"type": "chat_bubble", "text": _chat_text(text)}
+        # chat_bubble убран намеренно: мелкий текстовый пузырь дублирует субтитры и
+        # налезает на них. Текстовые оверлеи допустимы только как инфографика
+        # (chart_bars), анимация (emoji) или полноэкранное видео (broll).
         elif not used["pip"] and has_any_broll and re.search(r"инструкц|набор|блокнот|список|заметк|шаг", low):
             used["pip"] = True
             effect = {"type": "broll", "style": "pip",

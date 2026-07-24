@@ -14,7 +14,9 @@ def _tz(segs, duration=30.0, watermark="@julia.agents", captions=None):
 
 
 def test_чистый_tz_без_ошибок():
-    tz = _tz([_seg(1, 0.0, 3.0), _seg(2, 3.0, 6.0, camera={"type": "punch"})])
+    # duration = реальный конец сегментов, иначе сработает ритм-правило broll-rhythm
+    tz = _tz([_seg(1, 0.0, 3.0), _seg(2, 3.0, 6.0, camera={"type": "punch"})],
+             duration=6.0)
     rep = validate_tz(tz)
     assert rep.ok
     assert not rep.warns
@@ -117,3 +119,66 @@ def test_сегмент_за_пределами_ролика():
     tz = _tz([_seg(1, 0.0, 35.0)], duration=30.0)
     rep = validate_tz(tz)
     assert any(i.rule == "timeline" and i.level == ERROR for i in rep.issues)
+
+
+def test_chat_bubble_убирается_автофиксом():
+    tz = _tz([_seg(1, 0.0, 3.0, effect={"type": "chat_bubble", "text": "напиши пост"})])
+    rep = validate_tz(tz, autofix=True)
+    assert tz["segments"][0]["effect"]["type"] == "none"
+    assert any(i.rule == "text-overlay" and i.level == FIXED for i in rep.issues)
+
+
+# ---- precut-покрытие (covered_ranges) и ритм ----
+
+def _fs(sid, start, end, src="clip.mp4"):
+    return _seg(sid, start, end,
+                effect={"type": "broll", "style": "fullscreen", "src": src})
+
+
+def test_precut_блок_полностью_покрыт_ок():
+    tz = _tz([_seg(1, 0.0, 3.0), _fs(2, 3.0, 15.0), _seg(3, 15.0, 22.0)],
+             duration=22.0)
+    rep = validate_tz(tz, covered_ranges=[(3.0, 15.0)])
+    assert not any(i.rule.startswith("covered-") for i in rep.issues)
+
+
+def test_precut_зазор_в_покрытии_это_ошибка():
+    tz = _tz([_seg(1, 0.0, 3.0), _fs(2, 5.0, 15.0)], duration=22.0)
+    rep = validate_tz(tz, covered_ranges=[(3.0, 15.0)])
+    assert any(i.rule == "covered-gap" and i.level == ERROR for i in rep.issues)
+    assert not rep.ok
+
+
+def test_precut_непокрытый_хвост_это_ошибка():
+    tz = _tz([_fs(1, 3.0, 12.0)], duration=22.0)
+    rep = validate_tz(tz, covered_ranges=[(3.0, 15.0)])
+    assert any(i.rule == "covered-gap" and "хвост" in i.message for i in rep.errors)
+
+
+def test_precut_bubble_внутри_покрытия_это_ошибка():
+    eff = {"type": "broll", "style": "fullscreen", "src": "a.mp4",
+           "bubble": {"shape": "circle"}}
+    tz = _tz([_seg(1, 3.0, 15.0, effect=eff)], duration=22.0)
+    rep = validate_tz(tz, covered_ranges=[(3.0, 15.0)])
+    assert any(i.rule == "covered-base" for i in rep.errors)
+
+
+def test_precut_pip_внутри_покрытия_это_ошибка():
+    tz = _tz([_fs(1, 3.0, 15.0),
+              _seg(2, 5.0, 8.0, effect={"type": "broll", "style": "pip", "src": "b.mp4"})],
+             duration=22.0)
+    rep = validate_tz(tz, covered_ranges=[(3.0, 15.0)])
+    assert any(i.rule == "covered-base" for i in rep.errors)
+
+
+def test_ритм_ворнинг_дольше_10с_без_broll():
+    tz = _tz([_seg(1, 0.0, 12.0), _fs(2, 12.0, 15.0)], duration=15.0)
+    rep = validate_tz(tz)
+    assert any(i.rule == "broll-rhythm" for i in rep.warns)
+
+
+def test_ритм_ок_когда_broll_каждые_10с():
+    tz = _tz([_seg(1, 0.0, 8.0), _fs(2, 8.0, 11.0), _seg(3, 11.0, 19.0),
+              _fs(4, 19.0, 22.0)], duration=22.0)
+    rep = validate_tz(tz)
+    assert not any(i.rule == "broll-rhythm" for i in rep.warns)

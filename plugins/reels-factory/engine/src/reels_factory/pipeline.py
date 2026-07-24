@@ -26,6 +26,7 @@ from reels_factory.compose import build_caption_fixes
 # compose.assemble ({"mp4","timed_scenario","words_fixed"}).
 from reels_factory.revideo_render import assemble_revideo as _assemble
 from reels_factory.edit import jump_cut_fragments as _jump_cut_fragments
+from reels_factory.segment_plan import plan_precut as _plan_precut, save_plan
 from reels_factory.verify import verify_reel
 
 AVATAR_CACHE_DIRNAME = "avatar_cache"
@@ -48,7 +49,7 @@ def _fixes_hypothesis(config: dict) -> dict:
 def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
              broll_plan: dict | None = None, scenario: dict | None = None,
              avatar_client=None, synth_fn=None, ingest_fn=None, assemble_fn=None,
-             covered_block_fn=None, jump_cut_fn=None) -> dict:
+             covered_block_fn=None, jump_cut_fn=None, precut_fn=None) -> dict:
     fmt = config.get("format", "split")
     wd = Path(workdir)
     wd.mkdir(parents=True, exist_ok=True)
@@ -76,6 +77,21 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
     caption_fixes = build_caption_fixes(_fixes_hypothesis(config))
     broll_segments = broll_plan.get("segments") if broll_plan else None
     punch_windows = broll_plan.get("punch") if broll_plan else None
+
+    # precut: без явного broll_plan строим план вставок ДО TTS/HeyGen — блоки,
+    # целиком закрытые фуллскрин-бироллом, не тратят кредиты HeyGen.
+    if fmt == "avatar" and broll_plan is None:
+        _log("plan")
+        try:
+            precut_fn = precut_fn or _plan_precut
+            plan = precut_fn(scenario, config)
+            save_plan(plan, wd)
+            for line in plan.get("log") or []:
+                print(f"[plan] {line}", file=sys.stderr)
+            if plan.get("segments"):
+                broll_segments = plan["segments"]
+        except Exception as e:
+            return fail("plan", e)
 
     if fmt in ("split", "avatar") and avatar_client is None:
         avatar_client = HeyGenClient(

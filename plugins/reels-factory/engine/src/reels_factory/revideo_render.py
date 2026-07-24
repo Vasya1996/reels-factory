@@ -123,11 +123,21 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
 
     # 4c) Валидатор-линтер: дублирует монтажные правила движка на уровне плана,
     # чинит безопасное (длинное тире) и логирует риски перед рендером.
-    report = validate_tz(tz, index=_broll_lib.load_index(_broll_lib.LIBRARY_DIR))
+    # covered_ranges — precut-блоки (аватар не генерился, base чёрный).
+    covered_roles = {s["role"] for s in (broll_segments or []) if s.get("insert")}
+    covered_ranges = [(float(b["start"]), float(b["end"]))
+                      for b in timed["blocks"] if b.get("role") in covered_roles]
+    report = validate_tz(tz, index=_broll_lib.load_index(_broll_lib.LIBRARY_DIR),
+                         covered_ranges=covered_ranges)
     for line in report.lines():
         print(f"[lint] {line}")
     if not report.ok:
         print(f"[lint] tz с {len(report.errors)} ошибк(ами) — рендер может быть некорректным")
+    # covered-ошибки = гарантированный чёрный экран в ролике — падаем, а не рендерим
+    fatal = [i for i in report.errors if i.rule.startswith("covered-")]
+    if fatal:
+        raise RuntimeError("precut-покрытие сломано: " +
+                           "; ".join(i.message for i in fatal[:3]))
 
     # 5) разложить вход в модуль и отрендерить
     rev = REVIDEO_DIR

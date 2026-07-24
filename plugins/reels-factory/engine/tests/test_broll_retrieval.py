@@ -96,3 +96,48 @@ def test_сегменты_без_broll_игнорируются():
     res = resolve_broll(tz, index=_index())
     assert res.picks == []
     assert res.used_clips == []
+
+
+# ---- precut: src закреплён планировщиком (src_locked) ----
+
+def test_locked_src_не_переподбирается_и_бронируется():
+    locked = _seg(1, "клавиатура", 0.0, 3.0, style="fullscreen")
+    locked["effect"]["src"] = "precut_clip.mp4"
+    locked["effect"]["src_locked"] = True
+    other = _seg(2, "клавиатура", 4.0, 7.0)
+    tz = {"segments": [locked, other]}
+
+    res = resolve_broll(tz, index=_index())
+
+    # закреплённый не тронут, но попал в used_clips (копирование в public/)
+    assert tz["segments"][0]["effect"]["src"] == "precut_clip.mp4"
+    assert "precut_clip.mp4" in res.used_clips
+    # обычный сегмент подобрался как раньше
+    assert tz["segments"][1]["effect"]["src"] == "keyboard.mp4"
+
+
+def test_locked_клип_из_библиотеки_не_отдаётся_другому_сегменту():
+    locked = _seg(1, "клавиатура", 0.0, 3.0, style="fullscreen")
+    locked["effect"]["src"] = "keyboard.mp4"
+    locked["effect"]["src_locked"] = True
+    other = _seg(2, "клавиатура", 4.0, 7.0)
+    tz = {"segments": [locked, other]}
+
+    res = resolve_broll(tz, index=_index())
+
+    # дедуп: keyboard.mp4 забронирован precut-планом, второму не достаётся
+    assert tz["segments"][1]["effect"]["src"] != "keyboard.mp4"
+    assert res.used_clips.count("keyboard.mp4") == 1
+
+
+def test_locked_src_живёт_и_при_пустом_индексе():
+    locked = _seg(1, "клавиатура", 0.0, 3.0, style="fullscreen")
+    locked["effect"]["src"] = "precut_clip.mp4"
+    locked["effect"]["src_locked"] = True
+    tz = {"segments": [locked]}
+
+    res = resolve_broll(tz, index={})
+
+    assert tz["segments"][0]["effect"]["src"] == "precut_clip.mp4"
+    assert "broll_weak_match" not in tz["segments"][0]["effect"]
+    assert res.used_clips == ["precut_clip.mp4"]
