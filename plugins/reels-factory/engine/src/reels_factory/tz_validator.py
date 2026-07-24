@@ -173,6 +173,20 @@ def validate_tz(tz: dict, *, index: dict | None = None,
             rep.add(WARN, "caption-bounds", sid,
                     f"подпись в шоте {window:.2f}с — не успеет прочитаться")
 
+        # ---- инфографика не должна делить экран с субтитрами ----
+        # chart_bars — структурированная панель по центру (y≈-40..+160), субтитры
+        # на y≈+195 (CAP_40). При caption != hidden субтитры (accumulate по words)
+        # ложатся прямо на нижние бары. Полноэкранное видео (broll fullscreen/
+        # particles) субтитры поверх допускает — там графики в центре нет.
+        if etype == "chart_bars" and seg.get("caption") not in (None, "hidden"):
+            if autofix:
+                seg["caption"] = "hidden"
+                rep.add(FIXED, "caption-overlay", sid,
+                        "chart_bars + субтитры → наложение на бары; caption→hidden")
+            else:
+                rep.add(WARN, "caption-overlay", sid,
+                        "chart_bars с видимой подписью — субтитры наложатся на инфографику")
+
         # ---- b-roll: src, длина, повторы (только видео-эффекты) ----
         if etype in _VIDEO_SRC_TYPES:
             src = eff.get("src")

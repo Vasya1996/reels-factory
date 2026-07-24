@@ -84,6 +84,29 @@ def test_автофикс_длинного_тире():
     assert any(i.level == FIXED for i in rep.issues)
 
 
+def test_chart_bars_с_подписью_автофикс_на_hidden():
+    tz = _tz([_seg(1, 0.0, 4.0,
+                   effect={"type": "chart_bars", "title": "T", "items": []}, caption="bottom")])
+    rep = validate_tz(tz, autofix=True)
+    assert tz["segments"][0]["caption"] == "hidden"
+    assert any(i.rule == "caption-overlay" and i.level == FIXED for i in rep.issues)
+
+
+def test_chart_bars_hidden_без_претензий():
+    tz = _tz([_seg(1, 0.0, 4.0,
+                   effect={"type": "chart_bars", "title": "T", "items": []}, caption="hidden")])
+    rep = validate_tz(tz)
+    assert not any(i.rule == "caption-overlay" for i in rep.issues)
+
+
+def test_broll_fullscreen_с_подписью_допустим():
+    # полноэкранное видео субтитры поверх допускает — правило только для chart_bars
+    tz = _tz([_seg(1, 0.0, 4.0,
+                   effect={"type": "broll", "style": "fullscreen", "src": "x.mp4"}, caption="top")])
+    rep = validate_tz(tz)
+    assert not any(i.rule == "caption-overlay" for i in rep.issues)
+
+
 def test_пустой_watermark_ворнинг():
     tz = _tz([_seg(1, 0.0, 3.0)], watermark="")
     rep = validate_tz(tz)
