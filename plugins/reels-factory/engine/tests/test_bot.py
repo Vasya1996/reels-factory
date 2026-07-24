@@ -721,3 +721,30 @@ def test_ролик_больше_50мб_не_отправляется(work, кл
 
     assert "50 МБ" in msg.replies[-1]
     assert not msg.videos
+
+
+def test_сбой_отправки_сообщения_о_начале_сборки_не_держит_chat_id_в_building(
+        work, клиент, monkeypatch):
+    """Critical из ревью: reply_text(BUILDING_MSG) стоял вне try/finally —
+    если он падает (RetryAfter/таймаут Telegram), chat_id навсегда застревал
+    в _building и чат до рестарта бота получал BUSY_MSG на каждое нажатие.
+    После фикса сбой ловится тем же except, что и остальные, и chat_id
+    освобождается в finally."""
+
+    class FlakyMsg(_Msg):
+        async def reply_text(self, text, reply_markup=None):
+            if text == bot.BUILDING_MSG:
+                raise RuntimeError("Telegram недоступен")
+            await super().reply_text(text, reply_markup)
+
+    вызвано = []
+    monkeypatch.setattr(bot, "run_build", lambda chat_id, workdir: вызвано.append(1))
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+
+    msg = FlakyMsg()
+    asyncio.run(bot._build_and_send(msg, 7, bot.load_session(7)))
+
+    assert 7 not in bot._building  # не застрял — иначе следующее нажатие получит BUSY_MSG навсегда
+    assert вызвано == []  # до сборки дело не дошло
+    assert "Telegram недоступен" in msg.replies[-1]

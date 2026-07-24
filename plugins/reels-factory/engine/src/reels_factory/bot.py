@@ -563,8 +563,8 @@ async def _build_and_send(msg, chat_id: int, s: dict):
     """Сборка минутами — движок синхронный, зовём через поток, бот тем временем
     отвечает другим чатам. По готовности шлём mp4 в чат и показываем DONE."""
     _building.add(chat_id)
-    await msg.reply_text(BUILDING_MSG)
     try:
+        await msg.reply_text(BUILDING_MSG)
         workdir = _new_build_dir(chat_id)
         _write_scenario(workdir, s["scenario"])
         result = await asyncio.to_thread(run_build, chat_id, workdir)
