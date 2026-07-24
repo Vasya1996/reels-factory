@@ -315,10 +315,16 @@ def run_build(chat_id: int, workdir: Path) -> dict:
         [sys.executable, "-m", "reels_factory", "make",
          "--workdir", str(workdir), "--client", str(chat_id)],
         capture_output=True, text=True, encoding="utf-8", errors="replace")
-    try:
-        return json.loads(p.stdout)
-    except (json.JSONDecodeError, TypeError):
-        return {"ok": False, "error": (p.stderr or p.stdout or "пустой ответ движка")[:500]}
+    # node-рендер (vite) пишет свой прогресс в stdout движка, поэтому JSON-ответ
+    # make — не весь stdout, а последняя разбираемая строка-объект
+    for line in reversed((p.stdout or "").splitlines()):
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError:
+                continue
+    return {"ok": False, "error": (p.stderr or p.stdout or "пустой ответ движка")[:500]}
 
 
 def transcribe(chat_id: int, media: Path) -> str:

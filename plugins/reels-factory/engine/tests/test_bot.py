@@ -641,6 +641,22 @@ def test_run_build_невалидный_json_превращается_в_оши�
     assert "boom" in result["error"]
 
 
+def test_run_build_разбирает_json_среди_шума_рендера(tmp_path, monkeypatch):
+    """node/vite-рендер пишет свой вывод в stdout движка ДО финального JSON —
+    реальный кейс первого платного прогона: успешная сборка выглядела провалом."""
+    class Completed:
+        stdout = ("Render progress, worker 0: 99%\n"
+                  "Rendered video to C:\\work\\reel.mp4\n"
+                  + json.dumps({"ok": True, "mp4": "x", "qa_pass": True}) + "\n")
+        stderr = "[make] assemble"
+
+    monkeypatch.setattr(bot.subprocess, "run", lambda cmd, **kw: Completed())
+
+    result = bot.run_build(7, tmp_path / "wd")
+
+    assert result == {"ok": True, "mp4": "x", "qa_pass": True}
+
+
 def test_профиль_клиента_готов(tmp_path, monkeypatch):
     monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
     clients_mod.register_client("7", _client_base_cfg(), voice_id="voice-1", asset_id="asset-1")
