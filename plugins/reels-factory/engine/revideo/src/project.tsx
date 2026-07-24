@@ -50,7 +50,7 @@ function* camera(v: Reference<Video>) {
       case 'punch': v().scale(c.from ?? 1.12); yield* v().scale(c.to ?? 1.06, D, easeOutCubic); break;
       case 'push': yield* v().scale(c.to ?? 1.09, D, easeInOutSine); break;
       case 'snap_zoom': v().scale(1.0); yield* v().scale(c.to ?? 1.14, 0.18, easeOutBack); yield* waitFor(D - 0.18); break;
-      case 'ken_burns': v().scale(1.0).position([0, 0]); yield* all(v().scale(1.09, D), v().position([-40, -30], D)); v().position([0, 0]); break;
+      case 'ken_burns': v().scale(1.0).position([0, 0]); yield* v().scale(1.09, D, easeInOutSine); break;
       case 'pulse': {
         const n = Math.max(1, Math.round(D / 0.85)), per = D / n;
         for (let i = 0; i < n; i++) {yield* v().scale(1.06, per * 0.35, easeOutQuad); yield* v().scale(1.0, per * 0.65, easeInOutSine);}
@@ -335,15 +335,15 @@ function* effects(fx: Reference<Layout>, base: Reference<Video>, flash: Referenc
       case 'cta_endcard': {
         const btn = createRef<Layout>(); const finger = createRef<Layout>();
         fx().add(
-          <Layout ref={btn} y={-40} scale={0} zIndex={40}>
+          <Layout ref={btn} y={520} scale={0} zIndex={40}>
             <Rect layout fill={goldGrad()} radius={30} padding={[26, 54]} shadowColor={'rgba(0,0,0,0.5)'} shadowBlur={40} shadowOffset={[0, 16]}>
               <Txt fontFamily={FONT} fontWeight={900} fontSize={72} fill={'#161616'}>ПОДПИСАТЬСЯ</Txt>
             </Rect>
           </Layout>);
         yield* btn().scale(1.1, 0.3, easeOutBack); yield* btn().scale(1.0, 0.12); used += 0.42;
         const spL = createRef<Layout>(); const spR = createRef<Layout>();
-        fx().add(<Layout ref={spL} x={-300} y={-140} scale={0} zIndex={41}><Img src={'/emoji/sparkles.png'} size={120} /></Layout>);
-        fx().add(<Layout ref={spR} x={300} y={60} scale={0} zIndex={41}><Img src={'/emoji/sparkles.png'} size={90} /></Layout>);
+        fx().add(<Layout ref={spL} x={-300} y={420} scale={0} zIndex={41}><Img src={'/emoji/sparkles.png'} size={120} /></Layout>);
+        fx().add(<Layout ref={spR} x={300} y={620} scale={0} zIndex={41}><Img src={'/emoji/sparkles.png'} size={90} /></Layout>);
         yield* all(spL().scale(1, 0.3, easeOutBack), spR().scale(1, 0.3, easeOutBack)); used += 0.3;
         const pulses = Math.max(1, Math.floor((D - used) / 0.6));
         for (let i = 0; i < pulses; i++) {
