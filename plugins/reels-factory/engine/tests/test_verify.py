@@ -36,6 +36,20 @@ def test_все_гейты_проходят(tmp_path):
     assert report["gates"]["D4_captions"] == "PASS"
 
 
+def test_d4_без_caps_ass_skip_а_не_fail(tmp_path):
+    # Revideo вшивает субтитры в картинку и не создаёт caps.ass —
+    # отсутствие файла больше не должно валить D4 (проверка вшитых сабов — D7)
+    mp4 = tmp_path / "reel.mp4"
+    mp4.write_bytes(b"")  # caps.ass рядом намеренно не создаём
+    report = verify_reel(
+        mp4, _scenario(25.0),
+        dur_fn=lambda f: 24.5, wh_fn=lambda f: (1080, 1920),
+        lufs_fn=lambda f: -14.2, fps_fn=lambda f: 30.0, volume_fn=_vol_ok,
+    )
+    assert report["gates"]["D4_captions"].startswith("SKIP")
+    assert report["all_pass"] is True  # SKIP не проваливает набор
+
+
 def test_провал_по_длительности(tmp_path):
     mp4 = _prep(tmp_path)
     report = verify_reel(

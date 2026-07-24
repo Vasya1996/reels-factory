@@ -3,7 +3,9 @@
 D1 duration   — длительность mp4 в пределах ±2с от total РЕТАЙМЛЕННОГО сценария.
 D2 resolution — 1080x1920 @ 30fps.
 D3 loudness   — LUFS -14 ± 1.5.
-D4 captions   — caps.ass лежит рядом с mp4.
+D4 captions   — caps.ass лежит рядом с mp4. SKIP, если файла нет (Revideo
+                вшивает субтитры в картинку и caps.ass не создаёт — проверка
+                вшитых сабов — D7).
 D5 voice      — голос ведущего слышен: mean_volume в окне первой реплики
                 [hook_start+0.3, hook_speech_end-0.3] >= -35 dB.
 D6 broll_bed  — слой видеоряда: в окне паузы после хука (иначе весь ролик)
@@ -132,8 +134,9 @@ def verify_reel(mp4: Path, scenario: dict, dur_fn=None, wh_fn=None, lufs_fn=None
     gates["D3_loudness"] = f"PASS({lufs})" if d3_ok else f"FAIL({lufs})"
 
     caps_path = mp4.parent / "caps.ass"
-    d4_ok = caps_path.exists()
-    gates["D4_captions"] = "PASS" if d4_ok else f"FAIL({caps_path} не найден)"
+    gates["D4_captions"] = (
+        "PASS" if caps_path.exists()
+        else "SKIP(субтитры вшиты рендером; проверка — D7)")
 
     # D5: слышен ли голос ведущего в окне первой реплики
     fs, fe = _first_speech_window(scenario)
