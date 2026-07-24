@@ -1,10 +1,12 @@
 import asyncio
 import json
+import logging
 
 import pytest
 
 from reels_factory import bot
 from reels_factory import clients as clients_mod
+from reels_factory.config import ConfigError
 
 
 @pytest.fixture
@@ -100,6 +102,39 @@ def test_сессия_переживает_перезапуск(work):
     assert bot.load_session(7)["scenario"] == SCENARIO
     # чужой чат не видит соседа
     assert bot.load_session(8) == {"step": bot.CHOOSING}
+
+
+# --- миграция сессий старого формата (photos: [...] + photo: int) -------------
+
+def test_load_session_мигрирует_старый_формат_с_индексом(work):
+    old = {"step": bot.READY,
+           "photos": [{"asset_id": "a0", "file": "ф0.jpg"},
+                      {"asset_id": "a1", "file": "ф1.jpg"}],
+           "photo": 1}
+    d = bot.session_dir(7)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "session.json").write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
+
+    s = bot.load_session(7)
+
+    assert s["photo"] == {"asset_id": "a1", "file": "ф1.jpg"}
+    assert "photos" not in s
+
+
+def test_load_session_мигрирует_старый_формат_с_индексом_ноль(work):
+    # ключевой баг ревью: photo=0 в старом формате — это индекс первого
+    # фото, а не «фото нет»
+    old = {"step": bot.READY,
+           "photos": [{"asset_id": "a0", "file": "ф0.jpg"}],
+           "photo": 0}
+    d = bot.session_dir(7)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "session.json").write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
+
+    s = bot.load_session(7)
+
+    assert s["photo"] == {"asset_id": "a0", "file": "ф0.jpg"}
+    assert "photos" not in s
 
 
 def test_новый_чат_ведёт_к_выбору_пути(work):
@@ -492,6 +527,20 @@ def test_ошибка_удаления_старого_голоса_не_блок
     assert bot.load_session(7)["step"] == bot.WAIT_VOICE
 
 
+def test_ошибка_удаления_старого_голоса_логируется(work, monkeypatch, caplog):
+    def падаем(vid):
+        raise RuntimeError("сеть упала")
+
+    monkeypatch.setattr(bot, "step_delete_voice", падаем)
+    bot.save_session(7, {"step": bot.CHOOSING_VOICE, "voice_id": "voice-старый"})
+
+    with caplog.at_level(logging.WARNING):
+        _press("voice:new", _Msg())
+
+    assert "voice-старый" in caplog.text
+    assert "сеть упала" in caplog.text
+
+
 def test_сбой_движка_не_роняет_разговор(work, monkeypatch):
     def падаем(chat_id, text):
         raise RuntimeError("claude -p упал")
@@ -626,6 +675,56 @@ def test_нет_профиля_клиента_честно_говорит_и_н�
     assert msg.replies[-1] == bot.CLIENT_NOT_FOUND_MSG
     assert вызвано == []
     assert bot.load_session(7)["step"] != bot.DONE
+
+
+def test_устаревшая_кнопка_создать_ролик_на_шаге_done_не_запускает_сборку(
+        work, клиент, monkeypatch):
+    # инлайн-кнопки живут в истории чата вечно: тап по старому READY-сообщению
+    # после DONE не должен зазывать платную сборку заново
+    вызвано = []
+    monkeypatch.setattr(bot, "run_build", lambda chat_id, workdir: вызвано.append(1))
+    bot.save_session(7, {"step": bot.DONE, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+
+    msg = _Msg()
+    _press("build", msg)
+
+    assert вызвано == []
+    assert msg.replies == [bot.NOT_NOW]
+
+
+def test_устаревшая_кнопка_создать_ролик_на_шаге_choosing_не_запускает_сборку(
+        work, клиент, monkeypatch):
+    вызвано = []
+    monkeypatch.setattr(bot, "run_build", lambda chat_id, workdir: вызвано.append(1))
+    bot.save_session(7, {"step": bot.CHOOSING})
+
+    msg = _Msg()
+    _press("build", msg)
+
+    assert вызвано == []
+    assert msg.replies == [bot.NOT_NOW]
+
+
+def test_сбой_save_client_profile_не_роняет_бота(work, tmp_path, monkeypatch):
+    # битый/отсутствующий factory/config.yaml — save_client_profile может
+    # бросить ConfigError, пользователь должен получить честный ответ, а не тишину
+    monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
+
+    def падаем(chat_id, s):
+        raise ConfigError("битый config.yaml")
+
+    monkeypatch.setattr(bot, "save_client_profile", падаем)
+    вызвано = []
+    monkeypatch.setattr(bot, "run_build", lambda chat_id, workdir: вызвано.append(1))
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+
+    msg = _Msg()
+    _press("build", msg)
+
+    assert msg.replies[-1] == bot.CLIENT_NOT_FOUND_MSG
+    assert вызвано == []
 
 
 def test_повторное_нажатие_создать_ролик_пока_сборка_идёт(work, клиент):

@@ -17,6 +17,7 @@
 """
 import asyncio
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -27,6 +28,8 @@ from reels_factory.config import WORK_ROOT, load_config
 from reels_factory.llm import ClaudeSkillRunner
 from reels_factory.scenario import (ScenarioError, run_generated_path, run_ideas,
                                     run_verbatim_path, split_verbatim)
+
+log = logging.getLogger(__name__)
 
 # Шаги разговора.
 CHOOSING = "choosing"                # ждём выбора пути
@@ -184,7 +187,18 @@ def load_session(chat_id: int) -> dict:
     p = session_dir(chat_id) / "session.json"
     if not p.exists():
         return {"step": CHOOSING}
-    return json.loads(p.read_text(encoding="utf-8"))
+    data = json.loads(p.read_text(encoding="utf-8"))
+    if "photos" in data:
+        # старый формат: photos — список, photo — int-индекс в него.
+        # Новый код ждёт словарь в photo.
+        photos = data.pop("photos") or []
+        idx = data.get("photo")
+        idx = idx if isinstance(idx, int) else -1
+        try:
+            data["photo"] = photos[idx]
+        except IndexError:
+            data.pop("photo", None)
+    return data
 
 
 def save_session(chat_id: int, data: dict) -> None:
@@ -515,14 +529,24 @@ async def on_button(update, context):
             clear_client_voice_profile(chat_id)  # профиль не должен ссылаться на удалённый голос
             try:
                 await asyncio.to_thread(step_delete_voice, old_voice)
-            except Exception:
-                pass  # лучше дать перезаписать голос, чем застрять на ошибке чистки
+            except Exception as e:
+                # лучше дать перезаписать голос, чем застрять на ошибке чистки
+                log.warning("не удалось удалить старый клон голоса %s: %s", old_voice, e)
         await _ask(q.message, chat_id, s, WAIT_VOICE, ASK_VOICE)
     elif data == "build":
+        # инлайн-кнопки живут в истории чата вечно: тап по старому сообщению
+        # READY после DONE не должен зазывать платную сборку заново
+        if s.get("step") != READY:
+            await q.message.reply_text(NOT_NOW)
+            return
         if chat_id in _building:
             await q.message.reply_text(BUSY_MSG)
             return
-        save_client_profile(chat_id, s)
+        try:
+            save_client_profile(chat_id, s)
+        except Exception:
+            await q.message.reply_text(CLIENT_NOT_FOUND_MSG)
+            return
         if not client_profile_ready(chat_id):
             await q.message.reply_text(CLIENT_NOT_FOUND_MSG)
             return
