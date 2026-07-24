@@ -16,7 +16,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from reels_factory.config import OUT_H
+from reels_factory.config import FFMPEG, OUT_H, LUFS_TARGET
 from reels_factory.render import media_dur
 from reels_factory.compose import (
     _concat_avatars, retime_scenario, _pause_after,
@@ -32,6 +32,20 @@ def _ensure_deps(rev: Path) -> None:
     """Разовая установка node_modules (в setup обычно уже сделана)."""
     if not (rev / "node_modules").exists():
         subprocess.run("npm install", cwd=str(rev), shell=True, check=True)
+
+
+def _normalize_loudness(mp4: Path) -> None:
+    """Привести аудио mp4 к LUFS_TARGET (однопроходный loudnorm), видео без
+    перекодирования (Revideo не нормализует звук сам)."""
+    mp4 = Path(mp4)
+    tmp = mp4.with_name(mp4.stem + ".loudnorm.tmp.mp4")
+    subprocess.run(
+        [FFMPEG, "-y", "-i", str(mp4),
+         "-af", f"loudnorm=I={LUFS_TARGET}:TP=-1.5:LRA=11",
+         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", str(tmp)],
+        check=True,
+    )
+    tmp.replace(mp4)
 
 
 def _normalize_words(words: list) -> list:
@@ -110,6 +124,9 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
 
     env = {**os.environ, "RF_OUTFILE": str(out_mp4.resolve())}
     subprocess.run("node render.mjs", cwd=str(rev), shell=True, check=True, env=env)
+
+    # Revideo не нормализует звук сам — приводим к LUFS_TARGET после рендера
+    _normalize_loudness(out_mp4)
 
     (rdir / "scenario.timed.json").write_text(
         json.dumps(timed, ensure_ascii=False, indent=2), encoding="utf-8")
