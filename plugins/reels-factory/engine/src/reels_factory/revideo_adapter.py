@@ -248,8 +248,13 @@ def plan_to_tz(timed: dict, broll_segments: list | None, config: dict,
                 items = [{"t": round(rstart + span * k / len(items_raw[:5]), 2),
                           "label": l.capitalize()[:22], "v": [0.7, 0.55, 0.85, 0.75, 1.0][k % 5]}
                          for k, l in enumerate(items_raw[:5])]
+                # chart_bars — фолбэк; при доступном HyperFrames рендерится блок
+                # task_list (анимированный список) и подставляется как fullscreen.
                 emit(segments, rstart, rend, role, {"type": "hold"}, "none",
-                     {"type": "chart_bars", "title": "ЧТО МОЖНО ЗАКРЫТЬ", "items": items}, "hidden")
+                     {"type": "chart_bars", "title": "ЧТО МОЖНО ЗАКРЫТЬ", "items": items,
+                      "hyperframes": {"block": "task_list",
+                                      "variables": {"title": "ЧТО МОЖНО ЗАКРЫТЬ",
+                                                    "items": [it["label"] for it in items]}}}, "hidden")
                 i = j
                 continue
 

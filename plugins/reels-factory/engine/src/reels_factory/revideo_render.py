@@ -24,6 +24,7 @@ from reels_factory.compose import (
 )
 from reels_factory.revideo_adapter import plan_to_tz
 from reels_factory import broll_library as _broll_lib
+from reels_factory import hyperframes_blocks as _hf
 from reels_factory.broll_retrieval import resolve_broll
 from reels_factory.tz_validator import validate_tz
 
@@ -52,6 +53,27 @@ def _normalize_loudness(mp4: Path) -> None:
     tmp.replace(mp4)
 
 
+def _resolve_hyperframes_segment(seg: dict, public_dir: Path, *, hf_render=None) -> None:
+    """Сегмент с effect.hyperframes -> отрендерить блок в public_dir и заменить
+    эффект на fullscreen-биролл (src=клип, caption hidden). На ошибке сегмент
+    не трогаем — встроенный эффект (chart_bars) остаётся как фолбэк."""
+    eff = seg.get("effect") or {}
+    hf = eff.get("hyperframes")
+    if not hf:
+        return
+    render = hf_render or _hf.render_block
+    window = float(seg.get("end", 0)) - float(seg.get("start", 0))
+    clip = Path(public_dir) / f"hf_{seg.get('id')}.mp4"
+    try:
+        render(hf["block"], hf.get("variables") or {}, window, clip)
+        seg["effect"] = {"type": "broll", "style": "fullscreen", "src": clip.name, "offset": 0.0}
+        seg["caption"] = "hidden"
+        print(f"[hyperframes] seg#{seg.get('id')}: блок {hf['block']} → {clip.name}")
+    except Exception as e:
+        print(f"[hyperframes] seg#{seg.get('id')}: рендер блока не удался "
+              f"({str(e)[:120]}) — фолбэк на {eff.get('type')}")
+
+
 def _normalize_words(words: list) -> list:
     """Привести к форме, которую читает project.tsx: [{start,end,text}]."""
     out = []
@@ -71,7 +93,8 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
                      whoosh_at: list | None = None, caption_fixes: dict | None = None,
                      grade: bool = False, grain: bool = False,
                      zoom: bool = False, flash: bool = False,
-                     config: dict | None = None, face: dict | None = None) -> dict:
+                     config: dict | None = None, face: dict | None = None,
+                     hf_render=None) -> dict:
     rdir = Path(rdir)
     rdir.mkdir(parents=True, exist_ok=True)
     out_mp4 = Path(out_mp4)
@@ -121,6 +144,12 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
     retr = resolve_broll(tz, library_dir=_broll_lib.LIBRARY_DIR)
     for line in retr.log:
         print(f"[broll] {line}")
+
+    # 4b') HyperFrames-блоки: сегмент с effect.hyperframes рендерится в клип
+    # (моушн-графика на HTML/GSAP) и подставляется как fullscreen-биролл. На
+    # ошибке рендера сегмент остаётся встроенным эффектом (мягкий фолбэк).
+    for seg in tz.get("segments", []):
+        _resolve_hyperframes_segment(seg, REVIDEO_DIR / "public", hf_render=hf_render)
 
     # 4c) Валидатор-линтер: дублирует монтажные правила движка на уровне плана,
     # чинит безопасное (длинное тире) и логирует риски перед рендером.
