@@ -5,3 +5,4 @@ dist/
 public/*.mp4
 public/*.mov
 public/_*.png
+package-lock.json
