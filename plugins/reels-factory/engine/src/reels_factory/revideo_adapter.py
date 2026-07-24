@@ -21,6 +21,38 @@ import re
 DRIFT_CAMERA = "ken_burns"
 _CMD_VERBS = ("напиш", "спрос", "попрос")
 
+# Триггеры HyperFrames-блоков (консервативные: только явные сигналы).
+_NUM_RE = re.compile(r"(?<![\d.,])(\d{1,4})(?![\d.,])")
+_BEFORE_MARK = re.compile(r"\b(был[оаи]?|раньше|прежде|обычно)\b", re.IGNORECASE)
+_AFTER_MARK = re.compile(r"\b(ста(?:л[оаи]?|нет|ло)|теперь|сейчас)\b", re.IGNORECASE)
+
+
+def _stat_from_phrase(text: str) -> dict | None:
+    """Цифра во фразе -> данные блока stat_number, иначе None (числа словами
+    не ловим — консервативно)."""
+    m = _NUM_RE.search(text)
+    if not m:
+        return None
+    value = int(m.group(1))
+    before, after = text[:m.start()], text[m.end():]
+    suffix = "%" if after.lstrip()[:1] == "%" else ""
+    prefix = "×" if ("×" in before[-2:] or "x" == before.strip()[-1:].lower()) else ""
+    return {"value": value, "prefix": prefix, "suffix": suffix,
+            "label_top": " ".join(before.split()[-2:]),
+            "label_bottom": " ".join(after.strip(" %").split()[:4])}
+
+
+def _before_after_from_text(text: str) -> dict | None:
+    """«было X ... стало Y» -> данные блока before_after, иначе None."""
+    mb, ma = _BEFORE_MARK.search(text), _AFTER_MARK.search(text)
+    if not (mb and ma and mb.start() < ma.start()):
+        return None
+    bv = " ".join(text[mb.end():ma.start()].strip(" ,.:;-—").split()[:5])
+    av = " ".join(text[ma.end():].strip(" ,.:;-—").split()[:5])
+    if not bv or not av:
+        return None
+    return {"before_value": bv, "after_value": av}
+
 
 def _norm(s: str) -> str:
     return re.sub(r"[^a-zа-яё]", "", s.lower())
@@ -166,7 +198,8 @@ def plan_to_tz(timed: dict, broll_segments: list | None, config: dict,
     captions = {"base_style": "accumulate", "font_size": 46,
                 "position_pct_from_bottom": 40, "keywords": _keywords_from_config(config)}
 
-    used = {"chart": False, "particles": False, "pip": False, "bubble": False}
+    used = {"chart": False, "particles": False, "pip": False, "bubble": False,
+            "stat": False, "before_after": False}
     trans_used = 0
     seg_off = lambda role, d: float(seg_by_role.get(role, {}).get("offset", d))
 
@@ -225,6 +258,33 @@ def plan_to_tz(timed: dict, broll_segments: list | None, config: dict,
         # Эмодзи-последовательности УБРАНЫ (правило Юлии: эмодзи в монтаже
         # выглядят дёшево). Слова «стиль/формат/аудитория» и т.п. теперь
         # уходят под биролл или остаются лицом с keyword-pop.
+
+        # «было X -> стало Y» -> HyperFrames-блок before_after (fullscreen).
+        # Фолбэк-эффект none (лицо+субтитры), если HF не отрендерится. Не в
+        # первой фразе/хуке. Смотрим объединённый текст блока.
+        if not used["before_after"] and i > 0 and role in ("development", "payoff", "context"):
+            j = i
+            while j + 1 < n and phrases[j + 1]["block"] == block:
+                j += 1
+            ba = _before_after_from_text(" ".join(phrases[k]["text"] for k in range(i, j + 1)))
+            if ba:
+                used["before_after"] = True
+                emit(segments, ph["start"], phrases[j]["end"], role, {"type": "hold"}, "none",
+                     {"type": "none", "hyperframes": {"block": "before_after", "variables": ba}}, "bottom")
+                i = j + 1
+                continue
+
+        # Цифра -> HyperFrames-блок stat_number (fullscreen), окно >= 4с.
+        # Фолбэк none. Не в первой фразе/хуке (число словами не ловим).
+        if not used["stat"] and i > 0 and role in ("development", "payoff", "context"):
+            st = _stat_from_phrase(text)
+            if st:
+                used["stat"] = True
+                j = _extend_to_min(phrases, i, block, 4.0)
+                emit(segments, ph["start"], phrases[j]["end"], role, {"type": "hold"}, "none",
+                     {"type": "none", "hyperframes": {"block": "stat_number", "variables": st}}, "bottom")
+                i = j + 1
+                continue
 
         # Перечисление -> график. Смотрим вперёд по фразам блока, собираем регион
         # с запятыми, режем на пункты по запятым/«и», берём короткие (<=3 слов).

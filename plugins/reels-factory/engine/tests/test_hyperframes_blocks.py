@@ -101,3 +101,44 @@ def test_resolve_hyperframes_игнорит_обычные_сегменты(tmp_
     seg = {"id": 1, "start": 0, "end": 3, "effect": {"type": "none"}, "caption": "bottom"}
     rr._resolve_hyperframes_segment(seg, tmp_path, hf_render=lambda *a: None)
     assert seg["effect"]["type"] == "none"
+
+
+# ---- stat_number / before_after билдеры ----
+
+def test_build_stat_number_запекает_число_и_подписи():
+    html = hb.build_stat_number_html(4.0, 42, prefix="×", suffix="%",
+                                     label_top="рост", label_bottom="в месяц")
+    assert "const target = 42;" in html
+    assert 'data-duration="4.0"' in html
+    assert "рост" in html and "в месяц" in html
+    assert ">×<" in html or "×" in html
+
+
+def test_build_stat_number_нечисло_в_ноль():
+    html = hb.build_stat_number_html(4.0, "abc")
+    assert "const target = 0;" in html
+
+
+def test_build_before_after_запекает_значения():
+    html = hb.build_before_after_html(4.5, "3 часа", "1 клик",
+                                      before_label="было", after_label="стало")
+    assert "3 часа" in html and "1 клик" in html
+    assert 'data-duration="4.5"' in html
+
+
+def test_build_before_after_экранирует():
+    html = hb.build_before_after_html(4.0, "<b>x</b>", "y")
+    assert "<b>x</b>" not in html and "&lt;b&gt;" in html
+
+
+def test_blocks_реестр_содержит_все_три():
+    assert set(hb.BLOCKS) == {"task_list", "stat_number", "before_after"}
+
+
+def test_render_block_stat_number_мок(tmp_path):
+    def fake(project, out, timeout):
+        out.write_bytes(b"mp4")
+    out = tmp_path / "s.mp4"
+    hb.render_block("stat_number", {"value": 10}, 4.0, out, runner=fake)
+    assert out.exists()
+    assert (hb.HF_DIR / "stat_number" / "index.html").exists()

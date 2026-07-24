@@ -72,3 +72,56 @@ def test_без_insert_блок_остаётся_аватарным():
     assert not any(s["effect"].get("type") == "broll"
                    and s["effect"].get("style") == "fullscreen"
                    and s["start"] == 3.0 and s["end"] == 15.0 for s in dev)
+
+
+# ---- HyperFrames-триггеры адаптера ----
+from reels_factory.revideo_adapter import _stat_from_phrase, _before_after_from_text
+
+
+def test_stat_from_phrase_ловит_число():
+    assert _stat_from_phrase("публикуем 10 статей")["value"] == 10
+    assert _stat_from_phrase("нет чисел тут") is None
+    assert _stat_from_phrase("число словами десять") is None
+
+
+def test_before_after_ловит_маркеры():
+    ba = _before_after_from_text("было 3 часа стало 1 клик")
+    assert ba["before_value"].startswith("3 часа") and ba["after_value"] == "1 клик"
+    assert _before_after_from_text("только стало без было") is None
+
+
+def _timed_stat():
+    return {"total": 20.0, "blocks": [
+        {"role": "hook", "start": 0.0, "end": 3.0, "speech": "хук"},
+        {"role": "development", "start": 3.0, "end": 12.0, "speech": "публикуем 10 статей в день на автопилоте"},
+        {"role": "cta", "start": 12.0, "end": 20.0, "speech": "подпишись"},
+    ]}
+
+
+def test_plan_to_tz_эмитит_stat_number_на_цифре():
+    words = [
+        {"start": 0.3, "end": 2.7, "text": "хук."},
+        {"start": 3.3, "end": 6.0, "text": "публикуем 10 статей"},
+        {"start": 6.3, "end": 11.6, "text": "в день на автопилоте."},
+        {"start": 12.3, "end": 19.6, "text": "подпишись."},
+    ]
+    tz = plan_to_tz(_timed_stat(), None, {}, words=words)
+    hf = [s for s in tz["segments"] if (s["effect"] or {}).get("hyperframes")]
+    assert any(h["effect"]["hyperframes"]["block"] == "stat_number" for h in hf)
+
+
+def test_plan_to_tz_эмитит_before_after_на_маркерах():
+    timed = {"total": 20.0, "blocks": [
+        {"role": "hook", "start": 0.0, "end": 3.0, "speech": "хук"},
+        {"role": "development", "start": 3.0, "end": 12.0, "speech": "было три часа работы стало один клик"},
+        {"role": "cta", "start": 12.0, "end": 20.0, "speech": "подпишись"},
+    ]}
+    words = [
+        {"start": 0.3, "end": 2.7, "text": "хук."},
+        {"start": 3.3, "end": 7.0, "text": "было три часа работы"},
+        {"start": 7.3, "end": 11.6, "text": "стало один клик."},
+        {"start": 12.3, "end": 19.6, "text": "подпишись."},
+    ]
+    tz = plan_to_tz(timed, None, {}, words=words)
+    assert any((s["effect"] or {}).get("hyperframes", {}).get("block") == "before_after"
+               for s in tz["segments"])

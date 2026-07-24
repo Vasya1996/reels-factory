@@ -122,6 +122,157 @@ def build_task_list_html(title: str, items: list[str], duration: float) -> str:
             .replace("__STAGGER__", f"{round(stagger, 3)}"))
 
 
+# ---------- stat_number ----------
+
+_STAT_TMPL = """<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&family=Manrope:wght@500;700&display=swap");
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden;
+        background: radial-gradient(120% 90% at 50% 40%, #191816 0%, #0b0b0a 58%, #060605 100%);
+        font-family: "Manrope", sans-serif; }
+      #root { position: relative; width: 1080px; height: 1920px; --accent: #FFE500; }
+      .halo { position: absolute; top: 700px; left: 50%; transform: translateX(-50%);
+        width: 820px; height: 620px;
+        background: radial-gradient(closest-side, rgba(255,229,0,0.14), rgba(255,229,0,0)); filter: blur(6px); }
+      .top { position: absolute; top: 620px; left: 0; width: 1080px; text-align: center;
+        font-family: "Manrope"; font-weight: 700; font-size: 40px;
+        letter-spacing: 7px; text-transform: uppercase; color: var(--accent); }
+      .num { position: absolute; top: 720px; left: 0; width: 1080px; text-align: center;
+        font-family: "Unbounded"; font-weight: 800; color: #ffffff;
+        letter-spacing: -6px; line-height: 1; white-space: nowrap; }
+      .num .big { font-size: 380px; }
+      .num .fix { font-size: 200px; color: var(--accent); letter-spacing: -4px; }
+      .bottom { position: absolute; top: 1240px; left: 140px; width: 800px; text-align: center;
+        font-family: "Unbounded"; font-weight: 600; font-size: 58px;
+        color: #f2f2ee; letter-spacing: -0.5px; line-height: 1.12; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="__DUR__" data-width="1080" data-height="1920">
+      <div id="halo" class="halo clip" data-start="0" data-duration="__DUR__" data-track-index="0"></div>
+      <div id="top" class="top clip" data-start="0" data-duration="__DUR__" data-track-index="1">__TOP__</div>
+      <div id="num" class="num clip" data-start="0" data-duration="__DUR__" data-track-index="2">
+        <span id="pre" class="fix">__PRE__</span><span id="big" class="big">0</span><span id="suf" class="fix">__SUF__</span>
+      </div>
+      <div id="bottom" class="bottom clip" data-start="0" data-duration="__DUR__" data-track-index="3">__BOTTOM__</div>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const target = __TARGET__;
+      const big = document.getElementById("big");
+      const counter = { n: 0 };
+      const tl = gsap.timeline({ paused: true, defaults: { ease: "power3.out" } });
+      tl.from("#top", { opacity: 0, y: 20, duration: 0.5 }, 0.1);
+      tl.fromTo(big, { scale: 0.7, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5, ease: "back.out(1.6)" }, 0.35);
+      tl.to(counter, { n: target, duration: 1.4, ease: "power2.out",
+        onUpdate: () => { big.textContent = Math.round(counter.n).toString(); } }, 0.4);
+      tl.from(["#pre", "#suf"], { opacity: 0, scale: 0.5, duration: 0.5, ease: "back.out(2)" }, 1.4);
+      tl.from("#bottom", { opacity: 0, y: 26, duration: 0.55 }, 1.55);
+      tl.to("#num", { scale: 1.05, duration: 0.2, yoyo: true, repeat: 1, ease: "power2.inOut", transformOrigin: "50% 50%" }, 1.85);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
+"""
+
+
+def build_stat_number_html(duration: float, value, prefix: str = "", suffix: str = "",
+                           label_top: str = "", label_bottom: str = "") -> str:
+    """index.html блока stat_number: большая цифра со счётом от 0."""
+    try:
+        target = int(round(float(value)))
+    except (TypeError, ValueError):
+        target = 0
+    dur = max(3.0, round(float(duration), 2))
+    return (_STAT_TMPL
+            .replace("__DUR__", f"{dur}")
+            .replace("__TARGET__", f"{target}")
+            .replace("__PRE__", _html.escape(str(prefix)))
+            .replace("__SUF__", _html.escape(str(suffix)))
+            .replace("__TOP__", _html.escape(str(label_top).strip()))
+            .replace("__BOTTOM__", _html.escape(str(label_bottom).strip())))
+
+
+# ---------- before_after ----------
+
+_BA_TMPL = """<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&family=Manrope:wght@600;700&display=swap");
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden;
+        background: radial-gradient(120% 90% at 50% 42%, #191816 0%, #0b0b0a 58%, #060605 100%);
+        font-family: "Manrope", sans-serif; }
+      #root { position: relative; width: 1080px; height: 1920px; --accent: #FFE500; }
+      .card { position: absolute; left: 100px; width: 880px; padding: 60px 70px; border-radius: 44px; }
+      .lbl { font-family: "Manrope"; font-weight: 700; font-size: 34px; letter-spacing: 6px;
+        text-transform: uppercase; margin-bottom: 18px; }
+      .val { font-family: "Unbounded"; font-weight: 700; line-height: 1.05; letter-spacing: -1px; }
+      #before { top: 560px; background: rgba(255,255,255,0.05); border: 2px solid rgba(255,255,255,0.10); }
+      #before .lbl { color: rgba(255,255,255,0.5); }
+      #before .val { color: rgba(255,255,255,0.62); font-size: 64px; text-decoration: line-through;
+        text-decoration-thickness: 4px; text-decoration-color: rgba(255,255,255,0.35); }
+      .arrow { position: absolute; left: 50%; top: 852px; transform: translateX(-50%);
+        width: 96px; height: 96px; border-radius: 50%; background: var(--accent);
+        display: flex; align-items: center; justify-content: center; }
+      .arrow svg { width: 48px; height: 48px; }
+      #after { top: 1000px; background: rgba(255,229,0,0.10); border: 2px solid var(--accent);
+        box-shadow: 0 0 80px rgba(255,229,0,0.14); }
+      #after .lbl { color: var(--accent); }
+      #after .val { color: #ffffff; font-size: 88px; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="__DUR__" data-width="1080" data-height="1920">
+      <div id="before" class="card clip" data-start="0" data-duration="__DUR__" data-track-index="0">
+        <div class="lbl">__BLABEL__</div><div class="val">__BVALUE__</div>
+      </div>
+      <div id="arrow" class="arrow clip" data-start="0" data-duration="__DUR__" data-track-index="1">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#0b0b0a" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5 L12 19 M6 13 L12 19 L18 13"></path>
+        </svg>
+      </div>
+      <div id="after" class="card clip" data-start="0" data-duration="__DUR__" data-track-index="2">
+        <div class="lbl">__ALABEL__</div><div class="val">__AVALUE__</div>
+      </div>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true, defaults: { ease: "power3.out" } });
+      tl.from("#before", { opacity: 0, y: -50, duration: 0.6 }, 0.1);
+      tl.from("#arrow", { opacity: 0, scale: 0, duration: 0.5, ease: "back.out(2)", transformOrigin: "50% 50%" }, 0.75);
+      tl.from("#after", { opacity: 0, y: 60, duration: 0.6 }, 1.05);
+      tl.to("#before", { opacity: 0.55, duration: 0.5 }, 1.15);
+      tl.to("#after", { scale: 1.03, duration: 0.22, yoyo: true, repeat: 1, ease: "power2.inOut", transformOrigin: "50% 50%" }, 1.7);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
+"""
+
+
+def build_before_after_html(duration: float, before_value: str, after_value: str,
+                            before_label: str = "было", after_label: str = "стало") -> str:
+    """index.html блока before_after: карточки «было -> стало»."""
+    dur = max(3.0, round(float(duration), 2))
+    return (_BA_TMPL
+            .replace("__DUR__", f"{dur}")
+            .replace("__BLABEL__", _html.escape(str(before_label).strip() or "было"))
+            .replace("__BVALUE__", _html.escape(str(before_value).strip() or "-"))
+            .replace("__ALABEL__", _html.escape(str(after_label).strip() or "стало"))
+            .replace("__AVALUE__", _html.escape(str(after_value).strip() or "-")))
+
+
 # ---------- рендер ----------
 
 def _default_runner(project_dir: Path, out_path: Path, timeout: int) -> None:
@@ -135,6 +286,8 @@ def _default_runner(project_dir: Path, out_path: Path, timeout: int) -> None:
 # name -> (project subdir, HTML builder(**variables, duration))
 BLOCKS = {
     "task_list": ("task_list", build_task_list_html),
+    "stat_number": ("stat_number", build_stat_number_html),
+    "before_after": ("before_after", build_before_after_html),
 }
 
 
