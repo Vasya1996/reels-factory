@@ -19,6 +19,7 @@ from reels_factory.config import FFMPEG
 
 TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 VOICES_ADD_URL = "https://api.elevenlabs.io/v1/voices/add"
+VOICES_URL = "https://api.elevenlabs.io/v1/voices/{voice_id}"
 MODEL_ID = "eleven_multilingual_v2"
 
 
@@ -89,3 +90,19 @@ def create_voice_clone(audio_path, name: str, http=None) -> str:
     if not voice_id:
         raise RuntimeError(f"ElevenLabs не вернул voice_id: {resp.json()!r}")
     return voice_id
+
+
+def delete_voice(voice_id: str, http=None) -> None:
+    """Удаляет клон голоса в ElevenLabs — на тарифе лимит числа голосов,
+    старый клон надо освободить перед тем, как записать новый.
+    """
+    api_key = os.environ.get("ELEVENLABS_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "ElevenLabs API key не задан: установите env ELEVENLABS_API_KEY")
+    if http is None:
+        import requests
+        http = requests
+    resp = http.delete(VOICES_URL.format(voice_id=voice_id),
+                       headers={"xi-api-key": api_key}, timeout=30)
+    resp.raise_for_status()

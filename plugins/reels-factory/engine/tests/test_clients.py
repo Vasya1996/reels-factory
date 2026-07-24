@@ -96,3 +96,22 @@ def test_недопустимый_client_id_отвергается():
 
 def test_list_пустого_реестра_пустой():
     assert clients.list_clients() == []
+
+
+def test_clear_client_voice_убирает_voice_id_но_не_ломает_аватар():
+    import yaml
+
+    clients.register_client("ivan", _base(), name="Иван", voice_id="V1", look_id="LOOK1")
+
+    clients.clear_client_voice("ivan")
+
+    cfg = yaml.safe_load(clients.client_path("ivan").read_text(encoding="utf-8"))
+    assert "voice_id" not in cfg
+    assert cfg["avatar"]["heygen_look_id"] == "LOOK1"
+    # без voice_id профиль честно неполон — падает, а не 404 в ElevenLabs
+    with pytest.raises(ConfigError, match="voice_id"):
+        clients.load_client("ivan")
+
+
+def test_clear_client_voice_молчит_если_клиента_нет():
+    clients.clear_client_voice("нет-такого")  # не должно падать

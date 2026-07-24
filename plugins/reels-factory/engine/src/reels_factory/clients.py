@@ -139,3 +139,18 @@ def register_client(client_id: str, base: dict, *, name=None, voice_id=None,
         path.unlink(missing_ok=True)
         raise
     return path
+
+
+def clear_client_voice(client_id: str) -> None:
+    """Убрать voice_id из профиля клиента — когда клон в ElevenLabs удалён,
+    профиль не должен молча ссылаться на несуществующий голос. Без voice_id
+    load_config/load_client честно упадёт («поле обязательно»), а не 404 при
+    сборке. Файла нет — тихо ничего не делаем."""
+    path = client_path(client_id)
+    if not path.exists():
+        return
+    cfg = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(cfg, dict) or "voice_id" not in cfg:
+        return
+    cfg.pop("voice_id", None)
+    path.write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False), encoding="utf-8")
