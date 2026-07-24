@@ -220,13 +220,20 @@ def test_назад_с_ввода_текста_возвращает_к_мате�
     assert msg.replies[-1] == bot.ASK_MATERIAL
 
 
-def test_назад_с_материала_возвращает_к_выбору_пути(work):
-    bot.save_session(7, {"step": bot.CHOOSING_MATERIAL, "material_mode": "text"})
+def test_назад_с_материала_возвращает_к_выбору_пути_сохраняя_сценарий(work):
+    # сценарий уже утверждён (кнопка «Редактировать существующий» видна) —
+    # «Назад» отсюда не имеет права его стереть
+    bot.save_session(7, {"step": bot.CHOOSING_MATERIAL, "material_mode": "text",
+                         "scenario": SCENARIO, "photo": {"asset_id": "a1"},
+                         "voice_id": "voice-1"})
 
     msg = _Msg()
     _press("back", msg)
 
-    assert bot.load_session(7)["step"] == bot.CHOOSING
+    s = bot.load_session(7)
+    assert s["step"] == bot.CHOOSING
+    assert s["scenario"] == SCENARIO
+    assert s["photo"] == {"asset_id": "a1"} and s["voice_id"] == "voice-1"
     assert msg.replies[-1] == bot.HELLO
 
 
@@ -452,6 +459,17 @@ def test_записать_заново_удаляет_старый_клон_и_�
     s = bot.load_session(7)
     assert s["step"] == bot.WAIT_VOICE and "voice_id" not in s
     assert msg.replies[-1] == bot.ASK_VOICE
+
+
+def test_записать_заново_чистит_voice_id_в_профиле_клиента(work, monkeypatch):
+    monkeypatch.setattr(bot, "step_delete_voice", lambda vid: None)
+    вызовы = []
+    monkeypatch.setattr(bot, "clear_client_voice_profile", lambda chat_id: вызовы.append(chat_id))
+    bot.save_session(7, {"step": bot.CHOOSING_VOICE, "voice_id": "voice-старый"})
+
+    _press("voice:new", _Msg())
+
+    assert вызовы == [7]  # профиль клиента честно неполон, не ссылается на удалённый голос
 
 
 def test_ошибка_удаления_старого_голоса_не_блокирует_запись(work, monkeypatch):

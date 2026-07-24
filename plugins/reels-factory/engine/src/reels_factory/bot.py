@@ -148,6 +148,13 @@ def loop_session(s: dict) -> dict:
     return {"step": CHOOSING, **{k: s[k] for k in _LOOP_KEYS if k in (s or {})}}
 
 
+def _keep_all(s: dict) -> dict:
+    """«Назад» на стартовый экран: меняем только шаг, данные не трогаем —
+    в отличие от /start (fresh_session) это не новый заход, а просто просмотр
+    экрана выбора пути."""
+    return {**(s or {}), "step": CHOOSING}
+
+
 def session_dir(chat_id: int) -> Path:
     return WORK_ROOT / "bot" / str(chat_id)
 
@@ -210,6 +217,15 @@ def step_delete_voice(voice_id: str) -> None:
     from reels_factory.tts import delete_voice
 
     delete_voice(voice_id)
+
+
+def clear_client_voice_profile(chat_id: int) -> None:
+    """Клон в ElevenLabs удалён — тем же движением чистим voice_id в
+    зарегистрированном профиле клиента, чтобы `make --client` честно сказал
+    «профиль неполон», а не упал 404 на несуществующий голос."""
+    from reels_factory.clients import clear_client_voice
+
+    clear_client_voice(str(chat_id))
 
 
 def save_client_profile(chat_id: int, session: dict) -> None:
@@ -364,13 +380,13 @@ async def _go_back(msg, chat_id: int, s: dict):
     elif step in (WAIT_TEXT, WAIT_RAW):
         await _show_material(msg, chat_id, s, s.get("material_mode", "text"))
     elif step == CHOOSING_MATERIAL:
-        await _show_start(msg, chat_id, s)
+        await _show_start(msg, chat_id, s, _keep_all)
     elif step in (WAIT_PHOTO, CHOOSING_PHOTO):
         await _show_review(msg, chat_id, s)
     elif step in (CHOOSING_VOICE, WAIT_VOICE, READY):
         await _photo_stage(msg, chat_id, s)
     else:  # CHOOSING — дальше некуда, начало разговора
-        await _show_start(msg, chat_id, s)
+        await _show_start(msg, chat_id, s, _keep_all)
 
 
 async def cmd_start(update, context):
@@ -429,6 +445,7 @@ async def on_button(update, context):
         old_voice = s.pop("voice_id", None)
         save_session(chat_id, s)
         if old_voice:
+            clear_client_voice_profile(chat_id)  # профиль не должен ссылаться на удалённый голос
             try:
                 await asyncio.to_thread(step_delete_voice, old_voice)
             except Exception:
