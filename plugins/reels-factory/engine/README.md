@@ -23,11 +23,12 @@ python -m venv .venv
 `split` и `avatar` — ещё аватар: либо `avatar.heygen_look_id` (Digital Twin,
 качество выше), либо `avatar.heygen_asset_id` (фото-аватар).
 
-Необязательные поля аватара: `avatar.motion_prompt` (движения и жесты словами;
-задан — перебивает ролевые промпты), `avatar.engine` (по умолчанию `avatar_iv`
-для фото и `avatar_v` для двойника; есть `avatar_iii`), `avatar.resolution`
-(`1080p` по умолчанию, можно `4k`), `avatar.expressiveness` (шлётся только с
-`avatar_iv`).
+Необязательные поля аватара: `avatar.motion_prompt`, `avatar.engine` (по
+умолчанию `avatar_iv` для фото и `avatar_v` для двойника),
+`avatar.resolution` (`1080p` по умолчанию, можно `4k`) и
+`avatar.expressiveness`. По актуальной API-схеме HeyGen `motion_prompt` и
+`expressiveness` относятся к Photo Avatar / Avatar IV и не отправляются в
+Avatar V request.
 
 ### Master audio и Eleven v3
 
@@ -63,13 +64,40 @@ style exaggeration не передаётся, чтобы не снижать с�
 оплаченную генерацию. Наш сценарный лимит значительно ниже; request stitching
 для v3 не поддерживается, поэтому narration генерируется одним запросом.
 
-### Пластика по ролям
+### Canonical edit plan и пластика по фразам
 
-Без своего `motion_prompt` движок берёт промпт под роль блока
-(`MOTION_PROMPT_BY_ROLE`): хук — энергичное открытие с наклоном к камере,
-development — объясняющие жесты, payoff — спокойный вывод, cta — прямое
-обращение с открытой ладонью. Один промпт на весь ролик давал ровную
-«дикторскую» подачу.
+До TTS и HeyGen движок создаёт единственный versioned `edit_plan.json`.
+Документ фиксирует stable phrase IDs и character ranges, `visual_intent`,
+`coverage` (`avatar|full_broll|hyperframes|mixed`), выбранный asset с
+confidence/duration, estimated timing, fallback и `avatar_performance`.
+Детерминированный validator проверяет существование и длину assets, hook/CTA,
+не более 10 секунд без лица и безопасность HeyGen skip. После master alignment
+меняются только exact timings; если asset стал коротким или окно нарушило
+лимит, это записывается как явная revision с fallback на avatar.
+
+Каждая phrase уже содержит `expressiveness: low|medium|high` и короткий
+английский `motion_prompt`. Без LLM используются консервативные ролевые
+defaults. Опциональный анализ включается так:
+
+```yaml
+edit_plan:
+  performance_llm:
+    enabled: true
+    timeout_s: 600
+```
+
+Модель обязана вернуть рекомендацию для каждого phrase ID. Явный
+`avatar.motion_prompt`/`avatar.expressiveness` имеет приоритет. Motion prompt
+описывает одно видимое движение и необязательную эмоцию, максимум двумя
+короткими частями; camera/scene/props/walking/background/lighting/timing
+validator отклоняет.
+
+Текущий переходный HeyGen-контракт всё ещё генерирует один clip на смысловой
+блок, поэтому per-phrase performance пока хранится в плане, но не дробит
+аватар. Фактическое применение каждой рекомендации относится к следующему
+этапу avatar islands: иначе разрезание блока на фразы ухудшит непрерывность.
+API reference: https://developers.heygen.com/reference/create-video; prompt
+guide: https://help.heygen.com/en/articles/12805098-fine-tune-avatar-gestures-and-movements-with-custom-motion-prompts-avatar-iv-v.
 
 ### Фото-аватар
 
@@ -185,6 +213,7 @@ work/jobs/<job_id>/
 ├── job.input.json
 ├── build-config.yaml
 ├── script.canonical.json
+├── edit_plan.json
 ├── voice_master.mp3
 ├── voice_master.wav
 ├── alignment.characters.json

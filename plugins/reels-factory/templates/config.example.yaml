@@ -108,16 +108,15 @@ avatar:
   # [обязательно для format: split и format: avatar]
   heygen_asset_id: ""
 
-  # Промпт движения аватара для HeyGen v3 (мимика/жесты/взгляд). Опционально
-  # — без него движок берёт дефолт: "смотрит прямо в камеру, доброжелательно,
-  # лёгкая жестикуляция, спокойная уверенность".
+  # Performance controls официально относятся к Photo Avatar / Avatar IV.
+  # Motion prompt: обычный английский, одно видимое движение + необязательная
+  # эмоция, не больше двух коротких частей. Не задавать камеру, сцену, фон,
+  # реквизит, ходьбу, свет или timing.
   motion_prompt: >-
-    talking directly to the camera as a friendly presenter, natural warm
-    expression, subtle head movements and light hand gestures while
-    speaking, steady eye contact with the camera, calm and confident
+    Looks at the camera and gestures lightly with one hand, calm and confident.
 
-  # Выразительность мимики HeyGen v3: low | medium | high. Опционально
-  # (дефолт medium).
+  # low | medium | high. Консервативный default low; high использовать только
+  # для фразы, которой действительно нужна усиленная подача.
   expressiveness: medium
 
 # Активный голос ElevenLabs — обязательно голос языка `language`.
@@ -138,6 +137,15 @@ voices:
 # То же можно сделать env RF_MASTER_AUDIO_ENABLED=1.
 master_audio:
   enabled: false
+
+# Canonical edit plan строится до платных стадий. Опциональный LLM-проход
+# рекомендует expressiveness/motion_prompt отдельно для каждой phrase.
+# Runtime применит phrase-level controls после перехода на avatar islands;
+# текущий block-level HeyGen сохраняет рекомендации в edit_plan.json.
+edit_plan:
+  performance_llm:
+    enabled: false
+    timeout_s: 600
 
 # ElevenLabs Text-to-Speech with Timestamps.
 tts:

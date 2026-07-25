@@ -23,10 +23,14 @@ from reels_factory.compose import (
     _concat_avatars, retime_scenario, _pause_after,
     apply_caption_fixes, _default_transcribe, VENC,
 )
-from reels_factory.revideo_adapter import plan_to_tz
+from reels_factory.editplan import (
+    build_edit_plan,
+    finalize_edit_plan,
+    save_edit_plan,
+)
+from reels_factory.revideo_adapter import edit_plan_to_tz
 from reels_factory import broll_library as _broll_lib
 from reels_factory import hyperframes_blocks as _hf
-from reels_factory.broll_retrieval import resolve_broll
 from reels_factory.tz_validator import validate_tz
 
 # engine/revideo — самодостаточный Node-модуль рендера
@@ -174,7 +178,8 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
                      config: dict | None = None, face: dict | None = None,
                      hf_render=None, master_audio: Path | None = None,
                      alignment_words: list | None = None,
-                     master_timed_scenario: dict | None = None) -> dict:
+                     master_timed_scenario: dict | None = None,
+                     edit_plan: dict | None = None) -> dict:
     rdir = Path(rdir)
     rdir.mkdir(parents=True, exist_ok=True)
     out_mp4 = Path(out_mp4)
@@ -232,19 +237,40 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
         words = apply_caption_fixes(words, caption_fixes)
     words = _normalize_words(words)
 
-    # 4) tz.json из адаптера (фразовая раскладка по словам, с broll_query)
-    tz = plan_to_tz(timed, broll_segments, config, words=words, base_video="base.mp4",
-                    broll_file="broll.mp4", face=face)
+    # 4) Один edit_plan получает exact timing и только затем проецируется в tz.
+    # Compatibility-вход broll_segments сначала нормализуется тем же canonical
+    # planner; Revideo больше не принимает творческих решений самостоятельно.
+    if edit_plan is None:
+        edit_plan = build_edit_plan(
+            scenario,
+            config,
+            index={},
+            legacy_broll_plan={"segments": list(broll_segments or [])},
+            require_asset_files=False,
+        )
+    if edit_plan.get("status") != "final":
+        edit_plan = finalize_edit_plan(edit_plan, timed, words)
+    save_edit_plan(edit_plan, rdir)
+    tz = edit_plan_to_tz(
+        edit_plan,
+        config,
+        base_video="base.mp4",
+        face=face,
+    )
     if master_audio is not None:
         tz.setdefault("meta", {})["master_audio"] = "voice_master.wav"
         tz["meta"]["voice_layers"] = 1
 
-    # 4b) Модуль B — семантический подбор b-roll: заполнить effect.src по
-    # broll_query из библиотеки. Если библиотека не проиндексирована, src
-    # остаётся дефолтным broll.mp4 (обратная совместимость, деградация мягкая).
-    retr = resolve_broll(tz, library_dir=_broll_lib.LIBRARY_DIR)
-    for line in retr.log:
-        print(f"[broll] {line}")
+    # Assets уже выбраны draft-планом. Здесь только собираем frozen paths для
+    # копирования; semantic retrieval после оплаты запрещён.
+    planned_clips = {}
+    for window in edit_plan.get("windows") or []:
+        asset = window.get("asset") or {}
+        if asset.get("source") != "library" or not asset.get("src"):
+            continue
+        planned_clips[asset["src"]] = Path(
+            asset.get("path") or (_broll_lib.LIBRARY_DIR / asset["src"])
+        )
 
     # 4b') HyperFrames-блоки: сегмент с effect.hyperframes рендерится в клип
     # (моушн-графика на HTML/GSAP) и подставляется как fullscreen-биролл. На
@@ -254,10 +280,17 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
 
     # 4c) Валидатор-линтер: дублирует монтажные правила движка на уровне плана,
     # чинит безопасное (длинное тире) и логирует риски перед рендером.
-    # covered_ranges — precut-блоки (аватар не генерился, base чёрный).
-    covered_roles = {s["role"] for s in (broll_segments or []) if s.get("insert")}
-    covered_ranges = [(float(b["start"]), float(b["end"]))
-                      for b in timed["blocks"] if b.get("role") in covered_roles]
+    # covered_ranges — блоки, для которых canonical plan разрешил HeyGen skip.
+    covered_indexes = {
+        int(block["index"])
+        for block in edit_plan.get("blocks") or []
+        if not block.get("avatar_required", True)
+    }
+    covered_ranges = [
+        (float(block["start"]), float(block["end"]))
+        for index, block in enumerate(timed["blocks"])
+        if index in covered_indexes
+    ]
     report = validate_tz(tz, index=_broll_lib.load_index(_broll_lib.LIBRARY_DIR),
                          covered_ranges=covered_ranges)
     for line in report.lines():
@@ -281,9 +314,8 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
     shutil.copy(str(base), str(render_public / "base.mp4"))
     if master_audio is not None:
         shutil.copy(str(master_audio), str(render_public / "voice_master.wav"))
-    # подобранные библиотечные клипы → public/ (движок читает src как /<file>)
-    for name in retr.used_clips:
-        src_clip = _broll_lib.LIBRARY_DIR / name
+    # frozen библиотечные клипы → public/ (движок читает src как /<file>)
+    for name, src_clip in planned_clips.items():
         if src_clip.exists():
             shutil.copy(str(src_clip), str(render_public / name))
     # дефолтный broll.mp4 — фолбэк для сегментов со слабым матчем

@@ -6,8 +6,8 @@
    look_id) — аватар обучен на видео человека, поэтому модель не выдумывает
    зубы, мимику и пластику, а воспроизводит настоящие. Тело запроса:
    `type: "avatar"` + `avatar_id` (look id двойника) + `engine.type: "avatar_v"`.
-   `expressiveness` в этом пути НЕ шлётся: параметр существует только у
-   Avatar IV. Разнообразие роликов даёт motion_prompt (+ ротация луков).
+   `expressiveness` и `motion_prompt` в этом API-пути НЕ шлются: актуальная
+   request schema ограничивает оба поля Photo Avatar / Avatar IV.
 2. **Photo Avatar (Avatar IV)** — старый путь по одному фото (`type: "image"`),
    остаётся фолбэком, когда двойника ещё нет. Слабое место: рот на фото закрыт,
    зубы модель домысливает.
@@ -61,9 +61,7 @@ _AUDIO_MIME_BY_SUFFIX = {".wav": "audio/wav", ".mp3": "audio/mpeg"}
 
 # Дефолт для аватара-ведущего: говорит прямо в камеру, живо, без переигрывания.
 DEFAULT_MOTION_PROMPT = (
-    "talking directly to the camera as a friendly presenter, natural warm "
-    "expression, subtle head movements and light hand gestures while speaking, "
-    "steady eye contact with the camera, calm and confident"
+    "Looks at the camera and gestures lightly with one hand, calm and confident."
 )
 
 # Один motion_prompt на весь ролик даёт ровную, «дикторскую» подачу: хук просит
@@ -71,24 +69,19 @@ DEFAULT_MOTION_PROMPT = (
 # сценария (hook/context/development/payoff/cta), остальное берёт дефолт.
 MOTION_PROMPT_BY_ROLE = {
     "hook": (
-        "energetic opening straight to the camera, leaning slightly forward, "
-        "brows lifted, expressive hands starting the phrase, high engagement"
+        "Looks at the camera and leans in slightly, confident and engaged."
     ),
     "context": (
-        "calm explanatory tone, relaxed posture, small grounding hand gestures, "
-        "steady eye contact with the camera"
+        "Looks at the camera with a calm expression and subtle natural gestures."
     ),
     "development": (
-        "confident explaining, natural hand gestures marking the points, "
-        "light head movements, steady eye contact with the camera"
+        "Looks at the camera and gestures lightly with one hand, confident and clear."
     ),
     "payoff": (
-        "warm confident conclusion, slower steadier delivery, open palms, "
-        "direct eye contact with the camera"
+        "Looks at the camera and nods gently, sincere and confident."
     ),
     "cta": (
-        "direct personal address to the camera, friendly inviting smile, "
-        "one clear open-palm gesture towards the viewer, unhurried"
+        "Looks at the camera and makes one inviting open-hand gesture, warm and direct."
     ),
 }
 
@@ -101,8 +94,8 @@ DEFAULT_ENGINE_TWIN = "avatar_v"
 DEFAULT_ENGINE_PHOTO = "avatar_iv"
 DEFAULT_RESOLUTION = "1080p"
 
-# expressiveness принимает только Avatar IV — с V его слать нельзя.
-_ENGINES_WITH_EXPRESSIVENESS = ("avatar_iv",)
+# API request schema ограничивает оба performance controls Avatar IV.
+_ENGINES_WITH_PERFORMANCE_CONTROLS = ("avatar_iv",)
 
 POLL_INTERVAL_S = 10
 POLL_MAX_ITERATIONS = 60  # 60 * 10с = 600с (10 мин)
@@ -257,12 +250,12 @@ class HeyGenClient:
             "avatar_id": self.look_id,
             "audio_asset_id": audio_asset_id,
             "engine": {"type": self.engine},
-            "motion_prompt": motion_prompt,
             "aspect_ratio": "9:16",
             "resolution": self.resolution,
         }
-        # expressiveness есть только у Avatar IV; с avatar_v его слать нельзя
-        if self.engine in _ENGINES_WITH_EXPRESSIVENESS:
+        # Оба поля IV-only по API schema; Avatar V отклоняет extra inputs.
+        if self.engine in _ENGINES_WITH_PERFORMANCE_CONTROLS:
+            body["motion_prompt"] = motion_prompt
             body["expressiveness"] = self.expressiveness
         return body
 
@@ -283,7 +276,7 @@ class HeyGenClient:
             # фото — теперь фиксируем явно, плагин целиком про 9:16-рилсы
             "aspect_ratio": "9:16",
         }
-        if self.engine in _ENGINES_WITH_EXPRESSIVENESS:
+        if self.engine in _ENGINES_WITH_PERFORMANCE_CONTROLS:
             body["expressiveness"] = self.expressiveness
         return body
 
@@ -364,10 +357,17 @@ def cached_generate(client: HeyGenClient, audio_wav: Path, cache_dir: Path,
     # getattr — чтобы ключ считался и для облегчённых дублей клиента в тестах
     motion_prompt = (client.motion_prompt_for(role)
                      if hasattr(client, "motion_prompt_for") else client.motion_prompt)
+    supports_performance = (
+        getattr(client, "engine", None) in _ENGINES_WITH_PERFORMANCE_CONTROLS
+    )
+    performance_key = (
+        f"{motion_prompt}|{client.expressiveness}"
+        if supports_performance else "provider-default-performance"
+    )
     key = hashlib.sha1(
         f"{audio_sha1}|{client.avatar_id}|{getattr(client, 'look_id', None)}"
         f"|{getattr(client, 'engine', None)}|{getattr(client, 'resolution', None)}"
-        f"|{motion_prompt}|{client.expressiveness}"
+        f"|{performance_key}"
         .encode("utf-8")
     ).hexdigest()[:16]
     out_mp4 = cache_dir / f"{key}.mp4"

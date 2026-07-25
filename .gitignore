@@ -11,3 +11,4 @@ work/
 build/
 dist/
 .pytest_cache/
+.test-deps/

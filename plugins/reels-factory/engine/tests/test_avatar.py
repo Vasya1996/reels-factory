@@ -233,6 +233,27 @@ def test_кэш_другой_motion_prompt_даёт_другой_ключ(tmp_pa
     assert len(http.posts) > n_posts_after_first
 
 
+def test_avatar_v_кэш_игнорирует_неотправляемый_motion_prompt(tmp_path):
+    http = _FakeHttp()
+    audio = _wav(tmp_path / "cta.wav", b"avatar-v-cache")
+    cache_dir = tmp_path / "cache"
+
+    first = HeyGenClient(
+        api_key="k", look_id="look1", motion_prompt="m1",
+        http=http, sleep=lambda _seconds: None,
+    )
+    p1 = cached_generate(first, audio, cache_dir)
+    posts_after_first = len(http.posts)
+    second = HeyGenClient(
+        api_key="k", look_id="look1", motion_prompt="m2",
+        http=http, sleep=lambda _seconds: None,
+    )
+    p2 = cached_generate(second, audio, cache_dir)
+
+    assert p1 == p2
+    assert len(http.posts) == posts_after_first
+
+
 def test_v3_403_на_аплоаде_переключает_на_v2_без_повторного_захода_в_v3(tmp_path):
     http = _FakeHttpV3Forbidden()
     c = HeyGenClient(api_key="k", avatar_id="a1", motion_prompt="m", http=http, sleep=lambda s: None)
@@ -255,7 +276,7 @@ def test_v3_403_на_аплоаде_переключает_на_v2_без_пов
     assert any("video_status" in g for g in http.gets)
 
 
-def test_digital_twin_шлёт_avatar_v_без_expressiveness(tmp_path):
+def test_digital_twin_шлёт_avatar_v_без_iv_performance_controls(tmp_path):
     http = _FakeHttp()
     c = HeyGenClient(api_key="k", look_id="look1", motion_prompt="m",
                      http=http, sleep=lambda s: None)
@@ -270,8 +291,9 @@ def test_digital_twin_шлёт_avatar_v_без_expressiveness(tmp_path):
     assert body["audio_asset_id"] == "aud1"
     assert body["aspect_ratio"] == "9:16"
     assert body["resolution"] == "1080p"
-    # expressiveness есть только у Avatar IV — с V его слать нельзя
+    # API schema ограничивает оба performance controls Avatar IV.
     assert "expressiveness" not in body
+    assert "motion_prompt" not in body
     # фон двойника снят на видео, подменять его фото-ассетом не нужно
     assert "background" not in body
 
@@ -300,6 +322,7 @@ def test_avatar_iv_на_двойнике_сохраняет_expressiveness(tmp_p
     _, body, _, _ = http.posts[1]
     assert body["engine"] == {"type": "avatar_iv"}
     assert body["expressiveness"] == "medium"
+    assert body["motion_prompt"] == DEFAULT_MOTION_PROMPT
 
 
 def test_двойник_не_деградирует_молча_до_v2_при_403(tmp_path):
