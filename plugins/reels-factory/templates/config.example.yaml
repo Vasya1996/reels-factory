@@ -34,19 +34,22 @@ niche_keywords:
   - "кофе рецепты"
   - "кофе дома без кофемашины"
 
-# Язык. Движок сейчас работает только с русским (сценарий, TTS-голос,
-# распознавание Whisper с language="ru") — оставь "ru".
+# Активный язык текущего CLI-конфига/job snapshot. В Telegram язык выбирается
+# заново после каждого /start и /new. Поддерживаемые кнопками языки: ru, kk.
+# Передаётся Eleven v3 как language_code и локальной транскрибации медиа.
 language: ru
 
 # Формат сборки. [обязательно] split | fullscreen | avatar
 #   split      — аватар-ведущий (HeyGen) сверху 1080x672 + видеоряд снизу
-#                1080x1248, голос вшит в аватар-фрагменты. Фото для HeyGen —
+#                1080x1248. В master-path HeyGen — беззвучный visual layer.
+#                Фото для HeyGen —
 #                ГОРИЗОНТАЛЬНОЕ (≈1.6:1, лицо по центру). Дороже (HeyGen
 #                рендерит видео на каждый блок).
 #   fullscreen — видеоряд на весь кадр 1080x1920, голос ведущего за кадром
 #                (только TTS ElevenLabs, HeyGen НЕ рендерится) — вдвое дешевле.
 #                Фото не нужно.
-#   avatar     — аватар-ведущий (HeyGen) на весь кадр 1080x1920, голос вшит.
+#   avatar     — аватар-ведущий (HeyGen) на весь кадр 1080x1920; master voice
+#                проигрывается отдельным единственным аудиослоем.
 #                Фото для HeyGen — ВЕРТИКАЛЬНОЕ (9:16). Видеоряд опционален:
 #                отдельные ВСТАВКИ поверх аватара (broll_plan сегменты с
 #                "insert": true); без вставок видеоряд не нужен вовсе.
@@ -117,8 +120,53 @@ avatar:
   # (дефолт medium).
   expressiveness: medium
 
-# id голоса ElevenLabs (выбирается из списка на этапе setup). [обязательно]
+# Активный голос ElevenLabs — обязательно голос языка `language`.
 voice_id: ""
+
+# Язык активного голоса. Обязан совпадать с language.
+voice_language: ru
+
+# Голоса пользователя по языкам. При первом запуске достаточно активного
+# языка; второй бот запросит при первом ролике на этом языке и сохранит рядом.
+# Значение активного языка обязано совпадать с voice_id.
+voices:
+  ru: ""
+  # kk: "voice_id казахского клона"
+
+# Одна связная озвучка всего утверждённого сценария. До production rollout
+# оставлена выключенной: включать после fixture-тестов/согласованного smoke.
+# То же можно сделать env RF_MASTER_AUDIO_ENABLED=1.
+master_audio:
+  enabled: false
+
+# ElevenLabs Text-to-Speech with Timestamps.
+tts:
+  # Самая выразительная модель; 70+ языков, максимум 5000 символов/request.
+  model_id: eleven_v3
+
+  # Главный quality setting v3: 0 = Creative, 0.5 = Natural, 1 = Robust.
+  # Natural сохраняет узнаваемость IVC и остаётся отзывчивым к audio tags.
+  stability: 0.5
+
+  # Best-effort повторяемость. Одинаковый seed не гарантирует идентичный звук.
+  # seed: 42
+
+  # auto | on | off. Auto безопаснее для чисел, дат и сокращений.
+  apply_text_normalization: auto
+
+  # Provider MP3 без требования Pro-тарифа; затем локально -> PCM 48 kHz stereo.
+  output_format: mp3_44100_128
+
+  # До трёх словарей ElevenLabs. Для v3 phoneme entries могут использовать IPA
+  # и для неанглийских языков.
+  pronunciation_dictionary_locators: []
+  #  - pronunciation_dictionary_id: "..."
+  #    version_id: "..."
+
+# Для v3 НЕ добавлять speed, similarity_boost и use_speaker_boost: модель их
+# не поддерживает. Style exaggeration держать 0/не передавать. Подачу задают
+# пунктуация и одобренные пользователем теги [curious], [excited], [whispers],
+# [laughs], [sighs]. SSML <break> в v3 не поддерживается.
 
 # Видеоряд (broll). Сам движок берёт источник аргументом --broll команды
 # `make` (ссылка YouTube или локальный файл) — это поле им НЕ читается.

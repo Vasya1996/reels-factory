@@ -116,3 +116,47 @@ def test_language_invalid_rejected(tmp_path):
     p = _write(tmp_path, {**BASE, "language": "en-US-x"})
     with pytest.raises(ConfigError):
         load_config(p)
+
+
+def test_voice_language_обязан_совпадать_с_языком_профиля(tmp_path):
+    p = _write(tmp_path, {
+        **BASE, "language": "kk", "voice_language": "ru"
+    })
+    with pytest.raises(ConfigError, match="voice_language"):
+        load_config(p)
+
+
+def test_карта_голосов_принимает_отдельные_ru_и_kk(tmp_path):
+    p = _write(tmp_path, {
+        **BASE,
+        "language": "kk",
+        "voice_id": "voice-kk",
+        "voice_language": "kk",
+        "voices": {"ru": "voice-ru", "kk": "voice-kk"},
+    })
+
+    cfg = load_config(p)
+
+    assert cfg["voices"]["ru"] == "voice-ru"
+    assert cfg["voices"]["kk"] == cfg["voice_id"]
+
+
+def test_активный_voice_id_обязан_совпадать_с_голосом_выбранного_языка(tmp_path):
+    p = _write(tmp_path, {
+        **BASE,
+        "language": "kk",
+        "voice_id": "voice-ru",
+        "voice_language": "kk",
+        "voices": {"ru": "voice-ru", "kk": "voice-kk"},
+    })
+
+    with pytest.raises(ConfigError, match=r"voices\['kk'\]"):
+        load_config(p)
+
+
+def test_tts_language_обязан_совпадать_с_языком_профиля(tmp_path):
+    p = _write(tmp_path, {
+        **BASE, "language": "kk", "tts": {"language_code": "ru"}
+    })
+    with pytest.raises(ConfigError, match="tts.language_code"):
+        load_config(p)

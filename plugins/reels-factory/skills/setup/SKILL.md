@@ -124,6 +124,16 @@ ffmpeg не нашёлся в PATH — зафиксируй и перепров�
   видеоряд опционален (отдельные вставки поверх аватара). Нужен HeyGen;
   фото — ВЕРТИКАЛЬНОЕ (9:16).
 
+Для первой настройки спроси, с какого языка пользователь хочет начать:
+
+> На каком языке будет первый ролик?
+
+Варианты: `ru` — русский, `kk` — қазақша. Сохрани выбор как активный
+`language`; запись/клон голоса на шаге 6 должны быть на том же языке. В
+Telegram после каждого `/start` и `/new` язык выбирается для конкретного
+ролика. Если позже пользователь выберет второй язык, бот отдельно запросит
+голос на нём и добавит его в `voices`, не удаляя первый.
+
 Спроси у пользователя в чате ключ(и):
 - `ELEVENLABS_API_KEY` (ElevenLabs → Profile → API Keys) — нужен в любом формате.
 - `HEYGEN_API_KEY` (HeyGen → Settings → API) — нужен, если формат `split` или
@@ -197,13 +207,14 @@ $env:HEYGEN_API_KEY="<ключ>"; .venv\Scripts\python.exe -c "import os,sys,req
 requests — при 401/403 сообщи пользователю, что ключ неверный, и вернись
 к шагу 4).
 
-## Шаг 6. Голос: список русских голосов ElevenLabs
+## Шаг 6. Голос: один голос на выбранном языке
 
 ```powershell
 $env:ELEVENLABS_API_KEY="<ключ>"; .venv\Scripts\python.exe -c "import os,requests; k=os.environ['ELEVENLABS_API_KEY']; r=requests.get('https://api.elevenlabs.io/v2/voices', headers={'xi-api-key':k}, params={'page_size':100}, timeout=60); r.raise_for_status(); vs=r.json()['voices']; ru=[v for v in vs if any((l.get('language')=='ru') for l in (v.get('verified_languages') or []))]; pick=ru or vs; [print(v['voice_id'], '-', v['name']) for v in pick[:15]]"
 ```
 
-Из напечатанного списка выбери 3-5 голосов и предложи пользователю в чате
+Для `kk` замени фильтр `ru` в команде на `kk`. Из напечатанного списка выбери
+3-5 голосов и предложи пользователю в чате
 в формате «имя — voice_id» (если явно русских голосов (`ru` в
 `verified_languages`) не нашлось — предупреди, что показываешь
 мультиязычные голоса ElevenLabs, они всё равно озвучивают русский текст
@@ -232,10 +243,12 @@ $env:ELEVENLABS_API_KEY="<ключ>"; .venv\Scripts\python.exe -c "import os,req
 ### Голос пользователя (клон ElevenLabs)
 
 1. Спроси: «Озвучивать твоим голосом или готовым?» Если своим:
-2. Попроси запись голоса 1–2 минуты: чистая речь без музыки и шума, обычный
-   разговорный темп (можно голосовым сообщением; форматы mp3/wav/m4a).
+2. Попроси запись голоса 1–2 минуты **на выбранном языке**: чистая
+   речь без музыки и шума, обычный разговорный темп (можно голосовым
+   сообщением; форматы mp3/wav/m4a).
 3. Запусти сам: `$env:ELEVENLABS_API_KEY="<ключ>"; .venv\Scripts\python.exe -m reels_factory clone-voice --audio <файл> --name "<имя пользователя>"`
-4. `voice_id` из ответа запиши в `factory/config.yaml` -> `voice_id`.
+4. `voice_id` из ответа запиши в `factory/config.yaml` одновременно в
+   `voice_id` и `voices[language]`; запиши `voice_language: language`.
 5. Про тарифы/лимиты ElevenLabs пользователю НЕ рассказывай — ключ наш
    (авторов продукта), это не его забота. Ошибка доступа/лимитов — сообщи
    пользователю нейтрально «настрою голос чуть позже, продолжаем» и передай
@@ -244,7 +257,8 @@ $env:ELEVENLABS_API_KEY="<ключ>"; .venv\Scripts\python.exe -c "import os,req
 Не хочет клон — бери голос из библиотеки (см. выше, под пол/тон персоны).
 
 Критерий: у тебя есть конкретный `voice_id`, подтверждённый пользователем
-(через список ИЛИ названный им напрямую).
+(через список ИЛИ названный им напрямую), `voice_language == language` и
+`voices[language] == voice_id`.
 
 ## Шаг 7. Интервью: персонаж, тема, ниша, продукт
 
@@ -293,7 +307,8 @@ HeyGen) — здесь его повторно НЕ переспрашивай, 
 Критерий: собраны все обязательные поля (theme, format, persona.description,
 product.name, product.cta_phrase — как в `load_config`), плюс из шагов 5/6
 `avatar.heygen_asset_id` (обязателен для `format: split` и `format: avatar`)
-и `voice_id`.
+и `voice_id`; `voice_language` совпадает с `language`, а
+`voices[language] == voice_id`.
 
 ## Шаг 8. Собрать factory/config.yaml + скопировать шаблоны
 

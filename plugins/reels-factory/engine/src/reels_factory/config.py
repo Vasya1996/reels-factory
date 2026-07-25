@@ -10,6 +10,8 @@ from pathlib import Path
 
 import yaml
 
+from reels_factory.language import SUPPORTED_LANGUAGES
+
 
 def _resolve(exe: str) -> str:
     """Путь к ffmpeg/ffprobe: PATH первичен, winget-сборка — фолбэк, иначе имя."""
@@ -17,9 +19,15 @@ def _resolve(exe: str) -> str:
     if found:
         return found
     base = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
-    if base.exists():
-        for cand in base.glob(f"Gyan.FFmpeg*/**/{exe}.exe"):
-            return str(cand)
+    try:
+        if base.exists():
+            for cand in base.glob(f"Gyan.FFmpeg*/**/{exe}.exe"):
+                return str(cand)
+    except PermissionError:
+        # Restricted worker/test accounts may see LOCALAPPDATA but cannot stat
+        # another user's WinGet package directory. PATH/final executable name
+        # remain valid fallbacks.
+        pass
     return exe
 
 
@@ -113,11 +121,48 @@ def load_config(path=None) -> dict:
     # в пути «дословно» не добавляется вовсе (см. spec 2026-07-21).
 
     lang = str(cfg.get("language") or "ru").strip().lower()
-    if not (len(lang) == 2 and lang.isalpha()):
+    if lang not in SUPPORTED_LANGUAGES:
         raise ConfigError(
-            f"Поле language должно быть двухбуквенным кодом языка ('ru', 'kk'), сейчас: {cfg.get('language')!r}."
+            "Поле language должно быть одним из поддерживаемых языков "
+            f"{tuple(SUPPORTED_LANGUAGES)}, сейчас: {cfg.get('language')!r}."
         )
     cfg["language"] = lang
+    voice_language = str(cfg.get("voice_language") or "").strip().lower()
+    if voice_language and voice_language != lang:
+        raise ConfigError(
+            f"voice_language ({voice_language!r}) должен совпадать с language "
+            f"({lang!r})."
+        )
+    if voice_language:
+        cfg["voice_language"] = voice_language
+
+    voices = cfg.get("voices")
+    if voices is not None:
+        if not isinstance(voices, dict):
+            raise ConfigError("Поле voices должно быть YAML-объектом: ru/kk -> voice_id.")
+        normalized_voices = {}
+        for code, voice_id in voices.items():
+            normalized_code = str(code or "").strip().lower()
+            normalized_id = str(voice_id or "").strip()
+            if normalized_code not in SUPPORTED_LANGUAGES or not normalized_id:
+                raise ConfigError(
+                    "В voices разрешены только непустые voice_id для языков "
+                    f"{tuple(SUPPORTED_LANGUAGES)}."
+                )
+            normalized_voices[normalized_code] = normalized_id
+        active_voice = str(cfg.get("voice_id") or "").strip()
+        if normalized_voices.get(lang) != active_voice:
+            raise ConfigError(
+                f"voices[{lang!r}] должен совпадать с активным voice_id."
+            )
+        cfg["voices"] = normalized_voices
+
+    tts_language = str(((cfg.get("tts") or {}).get("language_code") or lang)).strip().lower()
+    if tts_language != lang:
+        raise ConfigError(
+            f"tts.language_code ({tts_language!r}) должен совпадать с language "
+            f"({lang!r})."
+        )
 
     if fmt in ("split", "avatar"):
         avatar = cfg.get("avatar") or {}

@@ -7,6 +7,11 @@ run_make() гонит стадии подряд; при исключении н�
 "error"}. DI на внешние ресурсы (synth/ingest/avatar/assemble/covered_block) —
 тестируемо без сети/ffmpeg. verify_reel не параметр (детерминированная QA-логика).
 
+При ``RF_MASTER_AUDIO_ENABLED=1`` (либо ``master_audio.enabled: true``) весь
+утверждённый сценарий озвучивается одним ElevenLabs request. По alignment из
+master WAV режутся технические block WAV только для переходного HeyGen-пути;
+финальный render проигрывает исключительно master WAV.
+
 Для формата avatar блок, чья роль на 100% закрыта вставкой видеоряда
 (broll_plan segments с "insert": true — plan_avatar_inserts берёт вставку
 строго на весь [start,end] блока), не рендерится через HeyGen: аватар всё
@@ -20,6 +25,10 @@ from pathlib import Path
 from reels_factory.config import WORK_ROOT, edit_settings
 from reels_factory.avatar import HeyGenClient, cached_generate, render_covered_block
 from reels_factory.tts import synth_voice as _synth_voice
+from reels_factory.master_audio import (
+    build_master_audio as _build_master_audio,
+    master_audio_enabled,
+)
 from reels_factory.ingest import ingest as _ingest
 from reels_factory.compose import build_caption_fixes
 # Рендер-слой: Revideo (единственный рендерер). Совместим по контракту с
@@ -49,7 +58,8 @@ def _fixes_hypothesis(config: dict) -> dict:
 def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
              broll_plan: dict | None = None, scenario: dict | None = None,
              avatar_client=None, synth_fn=None, ingest_fn=None, assemble_fn=None,
-             covered_block_fn=None, jump_cut_fn=None, precut_fn=None) -> dict:
+             covered_block_fn=None, jump_cut_fn=None, precut_fn=None,
+             master_audio_fn=None) -> dict:
     fmt = config.get("format", "split")
     wd = Path(workdir)
     wd.mkdir(parents=True, exist_ok=True)
@@ -60,6 +70,7 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
     covered_block_fn = covered_block_fn or render_covered_block
     jump_cut_fn = jump_cut_fn or _jump_cut_fragments
     edit_cfg = edit_settings(config)
+    use_master_audio = master_audio_enabled(config)
 
     def fail(stage, e):
         return {"ok": False, "workdir": str(wd), "mp4": None, "qa_pass": False,
@@ -72,6 +83,49 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
             return fail("scenario", e)
 
     voice_id = config.get("voice_id")
+    config_language = str(config.get("language") or "").strip().lower()
+    voice_language = str(config.get("voice_language") or "").strip().lower()
+    voices = config.get("voices")
+    scenario_language = str(scenario.get("language") or "").strip().lower()
+    tts_language = str(
+        ((config.get("tts") or {}).get("language_code") or config_language)
+    ).strip().lower()
+    if scenario_language and scenario_language != config_language:
+        return fail(
+            "language",
+            RuntimeError(
+                f"язык сценария {scenario_language!r} != язык job "
+                f"{config_language!r}"
+            ),
+        )
+    if tts_language and tts_language != config_language:
+        return fail(
+            "language",
+            RuntimeError(
+                f"TTS language_code {tts_language!r} != язык job "
+                f"{config_language!r}"
+            ),
+        )
+    if voice_language and voice_language != config_language:
+        return fail(
+            "language",
+            RuntimeError(
+                f"язык активного голоса {voice_language!r} != язык job "
+                f"{config_language!r}"
+            ),
+        )
+    if voices is not None and (
+        not isinstance(voices, dict)
+        or str(voices.get(config_language) or "").strip()
+        != str(voice_id or "").strip()
+    ):
+        return fail(
+            "language",
+            RuntimeError(
+                f"в профиле нет подходящего голоса для языка "
+                f"{config_language!r}"
+            ),
+        )
     product = config.get("product") or {}
     avatar_cfg = config.get("avatar") or {}
     caption_fixes = build_caption_fixes(_fixes_hypothesis(config))
@@ -112,13 +166,28 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
     _log("voice")
     try:
         avatar_mp4s, voice_wavs = [], []
+        master = None
         cache_dir = WORK_ROOT / AVATAR_CACHE_DIRNAME
-        for i, b in enumerate(scenario["blocks"]):
-            text = b.get("speech")
-            if not text:
-                raise RuntimeError(f"блок {i} ({b.get('role')}): пустой speech")
-            wav = wd / f"voice_{i}.wav"
-            synth_fn(text, wav, voice_id=voice_id)
+        if use_master_audio:
+            master_audio_fn = master_audio_fn or _build_master_audio
+            master = master_audio_fn(scenario, config, wd, voice_id=voice_id)
+            block_wavs = list(master.block_wavs)
+            if len(block_wavs) != len(scenario["blocks"]):
+                raise RuntimeError(
+                    f"master audio blocks {len(block_wavs)} != "
+                    f"scenario blocks {len(scenario['blocks'])}"
+                )
+        else:
+            block_wavs = []
+            for i, b in enumerate(scenario["blocks"]):
+                text = b.get("speech")
+                if not text:
+                    raise RuntimeError(f"блок {i} ({b.get('role')}): пустой speech")
+                wav = wd / f"voice_{i}.wav"
+                synth_fn(text, wav, voice_id=voice_id)
+                block_wavs.append(wav)
+
+        for i, (b, wav) in enumerate(zip(scenario["blocks"], block_wavs)):
             if fmt in ("split", "avatar"):
                 role = b.get("role")
                 if role == "cta":
@@ -134,7 +203,7 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
     except Exception as e:
         return fail("voice", e)
 
-    if edit_cfg["jump_cuts"] and avatar_mp4s:
+    if edit_cfg["jump_cuts"] and avatar_mp4s and not use_master_audio:
         # режем паузы ДО assemble: media_dur померяет уже подрезанные фрагменты,
         # retime_scenario построит сетку по ним, и субтитры со вставками сами
         # встанут на новые времена
@@ -143,6 +212,13 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
             avatar_mp4s = jump_cut_fn(avatar_mp4s, wd)
         except Exception as e:
             return fail("jump_cuts", e)
+    elif edit_cfg["jump_cuts"] and use_master_audio:
+        # Покадровое удаление пауз из HeyGen-клипов разрушило бы immutable
+        # master timeline. Вернуть jump cuts можно после timeline-aware версии.
+        print(
+            "[make] jump_cuts отключены: master audio является source of truth",
+            file=sys.stderr,
+        )
 
     _log("ingest")
     try:
@@ -165,7 +241,10 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
                           caption_fixes=caption_fixes,
                           grade=edit_cfg["grade"], grain=edit_cfg["grain"],
                           zoom=edit_cfg["zoom"], flash=edit_cfg["flash"],
-                          config=config)
+                          config=config,
+                          master_audio=master.wav if master else None,
+                          alignment_words=list(master.words) if master else None,
+                          master_timed_scenario=master.timed_scenario if master else None)
         mp4 = res["mp4"]
         timed = res["timed_scenario"]
         words = res.get("words_fixed")

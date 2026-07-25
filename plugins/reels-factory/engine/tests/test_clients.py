@@ -115,3 +115,65 @@ def test_clear_client_voice_убирает_voice_id_но_не_ломает_ав�
 
 def test_clear_client_voice_молчит_если_клиента_нет():
     clients.clear_client_voice("нет-такого")  # не должно падать
+
+
+def test_clear_client_voice_убирает_только_активный_языковой_голос():
+    import yaml
+
+    clients.register_client(
+        "ivan",
+        _base(
+            language="ru",
+            voice_language="ru",
+            voices={"ru": "V1", "kk": "V2"},
+        ),
+        voice_id="V1",
+        look_id="LOOK1",
+    )
+
+    clients.clear_client_voice("ivan")
+
+    cfg = yaml.safe_load(
+        clients.client_path("ivan").read_text(encoding="utf-8")
+    )
+    assert "voice_id" not in cfg and "voice_language" not in cfg
+    assert cfg["voices"] == {"kk": "V2"}
+    assert cfg["avatar"]["heygen_look_id"] == "LOOK1"
+
+
+def test_list_clients_показывает_карту_голосов_и_активный_язык():
+    clients.register_client(
+        "ivan",
+        _base(
+            language="ru",
+            voice_language="ru",
+            voices={"ru": "V1", "kk": "V2"},
+        ),
+        voice_id="V1",
+        look_id="LOOK1",
+    )
+
+    row = next(r for r in clients.list_clients() if r["id"] == "ivan")
+
+    assert row["voice_language"] == "ru"
+    assert row["voices"] == {"ru": "V1", "kk": "V2"}
+
+
+def test_clear_client_voice_другого_языка_не_сбрасывает_активный():
+    clients.register_client(
+        "ivan",
+        _base(
+            language="ru",
+            voice_language="ru",
+            voices={"ru": "V1", "kk": "V2"},
+        ),
+        voice_id="V1",
+        look_id="LOOK1",
+    )
+
+    clients.clear_client_voice("ivan", language="kk")
+
+    cfg = clients.load_client("ivan")
+    assert cfg["voice_id"] == "V1"
+    assert cfg["voice_language"] == "ru"
+    assert cfg["voices"] == {"ru": "V1"}

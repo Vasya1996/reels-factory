@@ -23,7 +23,7 @@ ROLES_5 = ["hook", "context", "development", "payoff", "cta"]
 
 HOOK_TYPES = "fail_first, clutch_save, number_shock, question_hook, before_after, insight_reveal"
 
-# эмоц-теги ElevenLabs в квадратных скобках ([смех], [вздыхает]...) — не слова
+# Eleven v3 audio tags в квадратных скобках ([laughs], [sighs]...) — не слова
 _TAG_RE = re.compile(r"\[[^\]\n]*\]")
 
 WORD_LIMIT_HARD = 70   # валидатор: жёсткий предел (иначе ролик не влезет)
@@ -140,9 +140,11 @@ def build_prompt(hypothesis: dict) -> str:
         "нужна пауза 0.4-0.6 (дать фразе повиснуть), в остальных местах — по "
         "смыслу или совсем без неё.\n"
         "В сложных словах можно ставить ударение акутом (символ U+0301 сразу "
-        "после ударной гласной). В speech допустимы эмоц-теги ElevenLabs в "
-        "квадратных скобках, например [смех], [вздыхает] — они не считаются "
-        "словами при подсчёте лимита речи.\n"
+        "после ударной гласной). В speech допустимы редкие Eleven v3 audio tags "
+        "на английском, например [curious], [excited], [whispers], [laughs], "
+        "[sighs]. Используй их только когда тег естественен для персонажа; они "
+        "не считаются словами при подсчёте лимита речи. SSML <break> не используй: "
+        "Eleven v3 его не поддерживает; паузы задавай пунктуацией и многоточием.\n"
         f"ЛИМИТ РЕЧИ (критично, иначе ролик не влезет): суммарно по всем speech — "
         f"НЕ БОЛЕЕ {WORD_LIMIT_SOFT} слов; одна реплика — не более 14 слов. "
         "Коротко и хлёстко.",
@@ -354,10 +356,12 @@ def split_verbatim(text: str) -> list[dict]:
     return blocks
 
 
-def scenario_from_text(workdir: Path, text: str) -> dict:
+def scenario_from_text(workdir: Path, text: str, language: str | None = None) -> dict:
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
     sc = {"mode": "verbatim", "blocks": split_verbatim(text)}
+    if language:
+        sc["language"] = str(language).strip().lower()
     (workdir / "scenario.json").write_text(
         json.dumps(sc, ensure_ascii=False, indent=1), encoding="utf-8")
     return sc
@@ -395,6 +399,8 @@ def run_verbatim_path(workdir, text: str, skill_runner, language: str) -> dict:
     draft = {"mode": "verbatim", "blocks": split_verbatim(text)}
     final = humanize_scenario(skill_runner, workdir, draft,
                               mode="phonetics", language=language)
+    final["language"] = str(language).strip().lower()
+    final["mode"] = "verbatim"
     errs = validate_integrity(final)
     if errs:
         raise ScenarioError(f"целостность: {errs}")
@@ -453,6 +459,8 @@ def run_generated_path(workdir, idea: dict, skill_runner, language: str) -> dict
     final, verdict = refine_loop(skill_runner, workdir, draft,
                                  {k: task[k] for k in ("idea", "length_s", "quotes")},
                                  language)
+    final["language"] = str(language).strip().lower()
+    final.setdefault("mode", "generated")
     errs = validate_integrity(final)
     if errs:
         raise ScenarioError(f"целостность после полировки: {errs}")
@@ -466,6 +474,8 @@ def run_generated_path(workdir, idea: dict, skill_runner, language: str) -> dict
             attempts = json.loads(log_path.read_text(encoding="utf-8")).get("attempts", [])
             variant2 = _pick_variant2(attempts, final)
             if variant2 is not None:
+                variant2["language"] = str(language).strip().lower()
+                variant2.setdefault("mode", "generated")
                 (workdir / "scenario.variant2.json").write_text(
                     json.dumps(variant2, ensure_ascii=False, indent=1), encoding="utf-8")
                 result["variants"] = 2

@@ -12,6 +12,7 @@ const W = 1080, H = 1920;
 const YELLOW = '#FFE500';
 const FONT = (tz as any).brand?.font ?? 'Unbounded';
 const DURATION = (tz as any).meta.duration;
+const MASTER_AUDIO = (tz as any).meta?.master_audio as string | undefined;
 const SEGMENTS = (tz as any).segments ?? [];
 const KEYWORDS: string[] = (tz as any).captions?.keywords ?? [];
 const SFX = (tz as any).sfx ?? [];
@@ -385,7 +386,8 @@ const scene = makeScene2D('reel', function* (view) {
   view.add(
     <>
       <Rect size={'100%'} fill={'#000'} zIndex={-1} />
-      <Video ref={base} src={'/base.mp4'} size={[W, H]} play zIndex={0} />
+      <Video ref={base} src={'/base.mp4'} size={[W, H]} play volume={MASTER_AUDIO ? 0 : 1} zIndex={0} />
+      {MASTER_AUDIO ? <Audio src={`/${MASTER_AUDIO}`} play={true} /> : null}
       <Layout ref={fx} size={'100%'} zIndex={20} />
       <Layout ref={capLayer} size={'100%'} zIndex={30} />
       <Rect ref={flash} size={'100%'} fill={'#FFF'} opacity={0} zIndex={50} />

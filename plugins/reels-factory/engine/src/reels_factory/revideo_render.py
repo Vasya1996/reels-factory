@@ -1,7 +1,8 @@
 """Revideo как рендер-слой: drop-in замена compose.assemble.
 
 Готовит вход для движка `engine/revideo` (base.mp4 из склейки аватар-фрагментов,
-words.json, tz.json из адаптера, видеоряд), запускает `node render.mjs` и
+master audio/alignment либо legacy words.json, tz.json из адаптера, видеоряд),
+запускает `node render.mjs` и
 возвращает тот же контракт, что и compose.assemble:
 {"mp4","timed_scenario","words_fixed"} — verify.py работает без изменений.
 
@@ -16,11 +17,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from reels_factory.config import FFMPEG, OUT_H, LUFS_TARGET
+from reels_factory.config import FFMPEG, FPS, OUT_H, OUT_W, LUFS_TARGET
 from reels_factory.render import media_dur
 from reels_factory.compose import (
     _concat_avatars, retime_scenario, _pause_after,
-    apply_caption_fixes, _default_transcribe,
+    apply_caption_fixes, _default_transcribe, VENC,
 )
 from reels_factory.revideo_adapter import plan_to_tz
 from reels_factory import broll_library as _broll_lib
@@ -120,6 +121,49 @@ def _normalize_words(words: list) -> list:
     return out
 
 
+def _concat_master_visuals(
+    rdir: Path, avatar_mp4s: list, block_durations: list[float], height: int = OUT_H
+) -> Path:
+    """Собрать беззвучный base ровно по immutable master timeline.
+
+    HeyGen иногда добавляет/съедает несколько кадров относительно входного WAV.
+    Каждый visual fragment поэтому trim/pad-ится до alignment-derived block
+    duration. Аудио HeyGen полностью отбрасывается.
+    """
+    if len(avatar_mp4s) != len(block_durations):
+        raise ValueError("avatar fragments и master block durations не совпадают")
+    if not avatar_mp4s:
+        raise ValueError("нет avatar fragments для master visual timeline")
+
+    base = Path(rdir) / "top.master.mp4"
+    cmd = [FFMPEG, "-y"]
+    for source in avatar_mp4s:
+        cmd += ["-i", str(source)]
+
+    parts, labels = [], []
+    for index, duration in enumerate(block_durations):
+        duration = float(duration)
+        if duration <= 0:
+            raise ValueError(f"master block {index} имеет duration <= 0")
+        parts.append(
+            f"[{index}:v]"
+            f"scale={OUT_W}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={OUT_W}:{height},fps={FPS},setsar=1,"
+            f"tpad=stop_mode=clone:stop_duration={duration:.6f},"
+            f"trim=duration={duration:.6f},setpts=PTS-STARTPTS[v{index}]"
+        )
+        labels.append(f"[v{index}]")
+    parts.append(
+        "".join(labels) + f"concat=n={len(labels)}:v=1:a=0[v]"
+    )
+    cmd += [
+        "-filter_complex", ";".join(parts),
+        "-map", "[v]", *VENC, "-an", str(base),
+    ]
+    subprocess.run(cmd, check=True)
+    return base
+
+
 def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out_mp4, *,
                      format: str = "avatar", avatar_mp4s: list | None = None,
                      voice_wavs: list | None = None, transcribe_fn=None,
@@ -128,7 +172,9 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
                      grade: bool = False, grain: bool = False,
                      zoom: bool = False, flash: bool = False,
                      config: dict | None = None, face: dict | None = None,
-                     hf_render=None) -> dict:
+                     hf_render=None, master_audio: Path | None = None,
+                     alignment_words: list | None = None,
+                     master_timed_scenario: dict | None = None) -> dict:
     rdir = Path(rdir)
     rdir.mkdir(parents=True, exist_ok=True)
     out_mp4 = Path(out_mp4)
@@ -151,21 +197,37 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
     if len(frag_srcs) != len(blocks):
         raise RuntimeError(f"фрагментов {len(frag_srcs)} != блоков {len(blocks)}")
 
-    # 1) ретайминг под фактические длительности
-    frag_durs = [media_dur(str(a)) for a in frag_srcs]
-    timed = retime_scenario(scenario, frag_durs)
-    holds = [_pause_after(b) for b in timed["blocks"]]
-
-    # 2) base.mp4 — склейка аватар-фрагментов (голос вшит), фуллскрин
-    if format in ("split", "avatar"):
-        base = _concat_avatars(rdir, avatar_mp4s, holds, height=OUT_H)
+    if master_audio is not None:
+        master_audio = Path(master_audio)
+        if not master_audio.exists():
+            raise RuntimeError(f"master audio не найден: {master_audio}")
+        if not master_timed_scenario or alignment_words is None:
+            raise RuntimeError(
+                "master audio требует master_timed_scenario и alignment_words"
+            )
+        timed = master_timed_scenario
+        if len(timed.get("blocks") or []) != len(blocks):
+            raise RuntimeError("master timed scenario не совпадает со scenario")
+        block_durations = [
+            float(block["end"]) - float(block["start"])
+            for block in timed["blocks"]
+        ]
+        if format not in ("split", "avatar"):
+            raise RuntimeError("Master Revideo-путь пока поддерживает format=split|avatar")
+        base = _concat_master_visuals(rdir, avatar_mp4s, block_durations, height=OUT_H)
+        words = list(alignment_words)
     else:
-        # fullscreen: нужен видеоряд-подложка; base = concat голосов поверх видеоряда
-        # (упрощённо — для MVP Revideo-пути основной сценарий avatar/split)
-        raise RuntimeError("Revideo-путь пока поддерживает format=split|avatar")
+        # Legacy rollback: ретайминг по фактическим HeyGen fragments и Whisper.
+        frag_durs = [media_dur(str(a)) for a in frag_srcs]
+        timed = retime_scenario(scenario, frag_durs)
+        holds = [_pause_after(b) for b in timed["blocks"]]
+        if format in ("split", "avatar"):
+            base = _concat_avatars(rdir, avatar_mp4s, holds, height=OUT_H)
+        else:
+            raise RuntimeError("Revideo-путь пока поддерживает format=split|avatar")
+        words = transcribe_fn(base, rdir)
 
-    # 3) words.json (транскрипт base + caption-фиксы)
-    words = transcribe_fn(base, rdir)
+    # 3) words.json: ElevenLabs alignment primary, Whisper только legacy/fallback.
     if caption_fixes:
         words = apply_caption_fixes(words, caption_fixes)
     words = _normalize_words(words)
@@ -173,6 +235,9 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
     # 4) tz.json из адаптера (фразовая раскладка по словам, с broll_query)
     tz = plan_to_tz(timed, broll_segments, config, words=words, base_video="base.mp4",
                     broll_file="broll.mp4", face=face)
+    if master_audio is not None:
+        tz.setdefault("meta", {})["master_audio"] = "voice_master.wav"
+        tz["meta"]["voice_layers"] = 1
 
     # 4b) Модуль B — семантический подбор b-roll: заполнить effect.src по
     # broll_query из библиотеки. Если библиотека не проиндексирована, src
@@ -214,6 +279,8 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
     (render_workspace / "src" / "words.json").write_text(
         json.dumps({"words": words}, ensure_ascii=False), encoding="utf-8")
     shutil.copy(str(base), str(render_public / "base.mp4"))
+    if master_audio is not None:
+        shutil.copy(str(master_audio), str(render_public / "voice_master.wav"))
     # подобранные библиотечные клипы → public/ (движок читает src как /<file>)
     for name in retr.used_clips:
         src_clip = _broll_lib.LIBRARY_DIR / name

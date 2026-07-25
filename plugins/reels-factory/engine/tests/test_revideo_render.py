@@ -3,7 +3,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from reels_factory.config import FFMPEG, LUFS_TARGET
-from reels_factory.revideo_render import _normalize_loudness, _prepare_render_workspace
+from reels_factory.revideo_render import (
+    _concat_master_visuals,
+    _normalize_loudness,
+    _prepare_render_workspace,
+)
 
 
 def test_normalize_loudness_вызывает_ffmpeg_с_loudnorm_и_lufs_target(tmp_path):
@@ -63,3 +67,26 @@ def test_revideo_workspace_изолирован_для_каждой_job(tmp_path
     assert (second / "public" / "emoji" / "icon.png").exists()
     assert (first / "public" / "whoosh.wav").read_bytes() == b"sfx"
     assert (second / "public" / "whoosh.wav").read_bytes() == b"sfx"
+
+
+def test_master_visual_concat_точно_подгоняет_timeline_и_удаляет_audio(tmp_path):
+    clips = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+    for clip in clips:
+        clip.write_bytes(b"video")
+
+    def fake_run(cmd, **kwargs):
+        Path(cmd[-1]).write_bytes(b"silent-base")
+
+    with patch(
+        "reels_factory.revideo_render.subprocess.run", side_effect=fake_run
+    ) as run:
+        out = _concat_master_visuals(tmp_path, clips, [1.25, 2.5])
+
+    assert out.read_bytes() == b"silent-base"
+    cmd = run.call_args.args[0]
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "trim=duration=1.250000" in graph
+    assert "trim=duration=2.500000" in graph
+    assert "concat=n=2:v=1:a=0" in graph
+    assert "-an" in cmd
+    assert run.call_args.kwargs["check"] is True

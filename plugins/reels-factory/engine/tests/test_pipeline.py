@@ -5,6 +5,7 @@ monkeypatch модуля.
 """
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import reels_factory.pipeline as pipeline
 
@@ -73,6 +74,9 @@ def _fakes(monkeypatch, tmp_path, calls, captured=None):
             captured["caption_fixes"] = kw.get("caption_fixes")
             captured["broll_segments"] = kw.get("broll_segments")
             captured["punch_windows"] = kw.get("punch_windows")
+            captured["master_audio"] = kw.get("master_audio")
+            captured["alignment_words"] = kw.get("alignment_words")
+            captured["master_timed_scenario"] = kw.get("master_timed_scenario")
         Path(out_mp4).write_bytes(b"")
         timed = dict(scenario, total=25.0)
         return {"mp4": str(out_mp4), "dur": 25.0, "lufs": -14.0,
@@ -154,6 +158,91 @@ def test_avatar_с_аватаром_без_broll(monkeypatch, tmp_path):
     assert captured["verify_format"] == "avatar"
 
 
+def test_master_audio_одна_озвучка_вместо_block_tts(monkeypatch, tmp_path):
+    calls = []
+    captured = {}
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+    master_calls = []
+
+    def fake_master(scenario, config, workdir, voice_id=None):
+        master_calls.append((scenario, config, Path(workdir), voice_id))
+        master_wav = Path(workdir) / "voice_master.wav"
+        master_wav.write_bytes(b"master")
+        block_wavs = []
+        for index in range(len(scenario["blocks"])):
+            wav = Path(workdir) / f"voice_{index}.wav"
+            wav.write_bytes(b"slice")
+            block_wavs.append(wav)
+        timed = json.loads(json.dumps(scenario))
+        for index, block in enumerate(timed["blocks"]):
+            block["start"] = index * 2.0
+            block["end"] = (index + 1) * 2.0
+        timed["total"] = 8.0
+        return SimpleNamespace(
+            wav=master_wav,
+            block_wavs=tuple(block_wavs),
+            words=({"start": 0.0, "end": 0.3, "text": "кофе"},),
+            timed_scenario=timed,
+        )
+
+    cfg = _cfg("avatar")
+    cfg["master_audio"] = {"enabled": True}
+    res = pipeline.run_make(
+        cfg, None, 0.0, wd, avatar_client=avatar, synth_fn=fs,
+        ingest_fn=fi, assemble_fn=fa, master_audio_fn=fake_master,
+    )
+
+    assert res["ok"] is True
+    assert len(master_calls) == 1
+    assert master_calls[0][3] == "v1"
+    assert not any(call[0] == "synth" for call in calls)
+    assert len(avatar.calls) == 4
+    assert captured["master_audio"] == wd / "voice_master.wav"
+    assert captured["alignment_words"] == [
+        {"start": 0.0, "end": 0.3, "text": "кофе"}
+    ]
+    assert captured["master_timed_scenario"]["total"] == 8.0
+
+
+def test_master_audio_не_разрешает_jump_cuts_ломать_timeline(monkeypatch, tmp_path):
+    calls = []
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+    cut_calls = []
+
+    def fake_master(scenario, config, workdir, voice_id=None):
+        master_wav = Path(workdir) / "voice_master.wav"
+        master_wav.write_bytes(b"master")
+        slices = []
+        for index in range(len(scenario["blocks"])):
+            wav = Path(workdir) / f"voice_{index}.wav"
+            wav.write_bytes(b"slice")
+            slices.append(wav)
+        return SimpleNamespace(
+            wav=master_wav, block_wavs=tuple(slices), words=(),
+            timed_scenario=dict(scenario, total=8.0),
+        )
+
+    def fake_cut(*args, **kwargs):
+        cut_calls.append(1)
+        return args[0]
+
+    cfg = _cfg("avatar")
+    cfg["master_audio"] = {"enabled": True}
+    cfg["edit"] = {"jump_cuts": True}
+    res = pipeline.run_make(
+        cfg, None, 0.0, wd, avatar_client=avatar, synth_fn=fs,
+        ingest_fn=fi, assemble_fn=fa, master_audio_fn=fake_master,
+        jump_cut_fn=fake_cut,
+    )
+
+    assert res["ok"] is True
+    assert cut_calls == []
+
+
 def test_avatar_со_вставками_ingest_вызывается(monkeypatch, tmp_path):
     calls = []
     captured = {}
@@ -225,6 +314,58 @@ def test_нет_scenario_даёт_stage_scenario(monkeypatch, tmp_path):
                             synth_fn=fs, ingest_fn=fi, assemble_fn=fa)
 
     assert res["ok"] is False and res["stage"] == "scenario"
+
+
+def test_несовпадение_языка_останавливает_pipeline_до_tts(monkeypatch, tmp_path):
+    calls = []
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    scenario = _scenario()
+    scenario["language"] = "kk"
+    wd = tmp_path / "wd"
+    wd.mkdir()
+    (wd / "scenario.json").write_text(
+        json.dumps(scenario, ensure_ascii=False), encoding="utf-8"
+    )
+    cfg = _cfg("fullscreen")
+    cfg["language"] = "ru"
+    cfg["voice_language"] = "ru"
+    cfg["tts"] = {"language_code": "ru"}
+
+    res = pipeline.run_make(
+        cfg, "broll.mp4", 30.0, wd,
+        synth_fn=fs, ingest_fn=fi, assemble_fn=fa,
+    )
+
+    assert res["ok"] is False and res["stage"] == "language"
+    assert calls == []
+
+
+def test_голос_другого_языка_останавливает_pipeline_до_tts(monkeypatch, tmp_path):
+    calls = []
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    scenario = _scenario()
+    scenario["language"] = "kk"
+    wd = tmp_path / "wd"
+    wd.mkdir()
+    (wd / "scenario.json").write_text(
+        json.dumps(scenario, ensure_ascii=False), encoding="utf-8"
+    )
+    cfg = _cfg("fullscreen")
+    cfg.update({
+        "language": "kk",
+        "voice_id": "voice-ru",
+        "voice_language": "ru",
+        "voices": {"ru": "voice-ru"},
+        "tts": {"language_code": "kk"},
+    })
+
+    res = pipeline.run_make(
+        cfg, "broll.mp4", 30.0, wd,
+        synth_fn=fs, ingest_fn=fi, assemble_fn=fa,
+    )
+
+    assert res["ok"] is False and res["stage"] == "language"
+    assert calls == []
 
 
 def test_caption_fixes_и_broll_plan_прокидываются(monkeypatch, tmp_path):

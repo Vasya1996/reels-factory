@@ -1,10 +1,11 @@
 """Телеграм-бот фабрики: сырьё или готовый текст -> утверждённый сценарий.
 
-Разговор: /start -> выбор пути -> материал (прежний или новый) -> сценарий в
-чате -> правка текста руками или утверждение -> фото -> голос -> готовность.
+Разговор: /start или /new -> язык ролика -> выбор пути -> материал -> сценарий
+в чате -> правка текста руками или утверждение -> фото -> голос языка ролика
+-> готовность.
 После «Создать ролик» — экран с кнопкой «Новый ролик» (или команда /new):
-разговор начинается заново на шаге выбора пути, но фото, голос и утверждённый
-сценарий остаются — цикл можно повторять без повторного онбординга.
+разговор начинается заново с языка. Фото и отдельные голоса ru/kk остаются,
+сценарий сбрасывается.
 
 По кнопке «Создать ролик» бот зовёт сборку (движок Юли — чёрный ящик, только
 через subprocess `python -m reels_factory make`) в отдельном потоке и присылает
@@ -16,6 +17,8 @@
 Токен бота — env TELEGRAM_BOT_TOKEN. Запуск: python -m reels_factory.bot
 """
 import asyncio
+import copy
+import hashlib
 import json
 import logging
 import os
@@ -26,6 +29,12 @@ from pathlib import Path
 
 from reels_factory.config import OUT_H, OUT_W, WORK_ROOT, load_config
 from reels_factory.jobs import BuildJob, JobStore
+from reels_factory.language import (
+    SUPPORTED_LANGUAGES,
+    confident_mismatch,
+    language_label,
+    normalize_profile_language,
+)
 from reels_factory.llm import ClaudeSkillRunner
 from reels_factory.scenario import (ScenarioError, run_generated_path, run_ideas,
                                     run_verbatim_path, split_verbatim)
@@ -33,6 +42,7 @@ from reels_factory.scenario import (ScenarioError, run_generated_path, run_ideas
 log = logging.getLogger(__name__)
 
 # Шаги разговора.
+CHOOSING_LANGUAGE = "choosing_language"  # язык нового ролика
 CHOOSING = "choosing"                # ждём выбора пути
 CHOOSING_MATERIAL = "choosing_material"  # прежний материал или новый
 WAIT_TEXT = "wait_text"              # ждём готовый текст реплик
@@ -55,6 +65,16 @@ ROLE_RU = {"hook": "хук", "context": "контекст", "development": "ра
 HELLO = (
     "Это фабрика рилсов. Сделаю вертикальный ролик, где вашим голосом и лицом "
     "говорят ваши мысли.\n\nС чего начнём?"
+)
+ASK_LANGUAGE = (
+    "На каком языке хотите сделать ролик?"
+)
+LANGUAGE_SAVED = (
+    "Делаем этот ролик на языке: {language}."
+)
+LANGUAGE_MISMATCH = (
+    "Похоже, этот сценарий написан на языке: {detected}.\n\n"
+    "Для этого ролика выбран язык: {selected}."
 )
 ASK_MATERIAL = "Что используем?"
 ASK_TEXT = (
@@ -93,6 +113,16 @@ ASK_VOICE = (
     "— Меняйте подачу по ходу: спокойное объяснение, азарт на подъёме, "
     "вопрос собеседнику, уверенный вывод."
 )
+
+
+def _ask_voice_text(language: str) -> str:
+    """Инструкция явно называет язык: клон не считается мультиязычным."""
+    return (
+        f"Для ролика на языке {language_label(language)} нужен отдельный "
+        f"голос.\n\n{ASK_VOICE}"
+    )
+
+
 PHOTO_SAVED = "Фото принял."
 VOICE_SAVED = "Голос принял."
 READY_MSG = "Всё на месте: сценарий, фото и голос. Жмите «Создать ролик», когда готовы."
@@ -125,6 +155,9 @@ MAX_TG_VIDEO_BYTES = 50 * 1024 * 1024  # лимит Bot API на видео/до
 def render_scenario(sc: dict) -> str:
     """Сценарий человеку: заголовок, блоки по ролям, оценка длительности."""
     lines = []
+    language = sc.get("language")
+    if language in SUPPORTED_LANGUAGES:
+        lines.append(f"Язык ролика: {language_label(language)}\n")
     title = str(sc.get("title") or "").strip()
     if title:
         lines.append(f"🎬 {title}\n")
@@ -156,24 +189,52 @@ def clean_input(text: str) -> str:
     return " ".join(ln for ln in lines if ln)
 
 
-def scenario_from_text(text: str) -> dict:
+def scenario_from_text(text: str, language: str | None = None) -> dict:
     """Правка пользователя — закон: слова его, движок только режет на блоки."""
-    return {"mode": "verbatim", "blocks": split_verbatim(text)}
+    scenario = {"mode": "verbatim", "blocks": split_verbatim(text)}
+    if language:
+        scenario["language"] = normalize_profile_language(language)
+    return scenario
 
 
-# Фото, голос и утверждённый сценарий переживают новый цикл («Новый ролик»).
-_PROFILE_KEYS = ("photo", "voice_id")
-_LOOP_KEYS = _PROFILE_KEYS + ("scenario",)
+# Фото и голоса по языкам переживают новый цикл («Новый ролик»).
+_PROFILE_KEYS = (
+    "photo",
+    "voices",
+    "voice_id",          # active voice текущего языка; legacy-compatible
+    "voice_language",
+    "pending_previous_voice",
+)
+_LOOP_KEYS = _PROFILE_KEYS
+
+
+def _preserved_profile(s: dict, keys=_PROFILE_KEYS) -> dict:
+    """Сохранить медиа и безопасно отменить незавершённую замену голоса."""
+    profile = {k: s[k] for k in keys if k in (s or {})}
+    pending = profile.get("pending_previous_voice") or {}
+    pending_language = pending.get("language")
+    pending_voice = pending.get("voice_id")
+    voices = dict(profile.get("voices") or {})
+    if (
+        pending_language in SUPPORTED_LANGUAGES
+        and pending_voice
+        and pending_language not in voices
+    ):
+        # Новый clone ещё не создан: /start или /new означает отмену замены.
+        voices[pending_language] = pending_voice
+        profile["voices"] = voices
+        profile.pop("pending_previous_voice", None)
+    return profile
 
 
 def fresh_session(s: dict) -> dict:
-    """/start: заново нужен сценарий, а фото и голос — нет."""
-    return {"step": CHOOSING, **{k: s[k] for k in _PROFILE_KEYS if k in (s or {})}}
+    """/start: язык и сценарий заново, фото и голос сохраняются."""
+    return {"step": CHOOSING, **_preserved_profile(s)}
 
 
 def loop_session(s: dict) -> dict:
-    """Новый цикл после готового ролика: ничего не стирается, кроме шага."""
-    return {"step": CHOOSING, **{k: s[k] for k in _LOOP_KEYS if k in (s or {})}}
+    """Новый ролик: сбросить язык/сценарий, сохранить профильные медиа."""
+    return {"step": CHOOSING, **_preserved_profile(s, _LOOP_KEYS)}
 
 
 def _keep_all(s: dict) -> dict:
@@ -218,6 +279,23 @@ def load_session(chat_id: int) -> dict:
             data["photo"] = photos[idx]
         except IndexError:
             data.pop("photo", None)
+    # Миграция старой сессии с одним voice_id. До языкового routing фабрика
+    # работала на языке общего config (обычно ru), поэтому именно к нему
+    # безопасно привязываем legacy voice. Ключи оставляем для совместимости,
+    # но новая логика всегда читает карту voices.
+    if data.get("voice_id"):
+        language = data.get("voice_language")
+        if language not in SUPPORTED_LANGUAGES:
+            try:
+                language = normalize_profile_language(
+                    load_config().get("language", "ru")
+                )
+            except Exception:
+                language = "ru"
+        voices = dict(data.get("voices") or {})
+        voices.setdefault(language, data["voice_id"])
+        data["voices"] = voices
+        data["voice_language"] = language
     return data
 
 
@@ -234,26 +312,62 @@ def save_session(chat_id: int, data: dict) -> None:
 
 # --- шаги движка (синхронные и небыстрые — в боте зовутся через to_thread) ---
 
-def _language() -> str:
-    try:
-        return load_config().get("language", "ru")
-    except Exception:
-        return "ru"
+def _reel_language(session: dict, *, required: bool = True) -> str | None:
+    """Выбранный язык текущего сценария/ролика."""
+    raw = (session or {}).get("language")
+    if raw:
+        try:
+            return normalize_profile_language(raw)
+        except ValueError:
+            pass
+    if required:
+        # Совместимость только для уже начатых pre-MVP разговоров. Новый
+        # пользователь проходит _show_start(required=False) и обязательно
+        # выбирает язык; после этого глобальный fallback больше не участвует.
+        try:
+            return normalize_profile_language(load_config().get("language", "ru"))
+        except Exception:
+            return "ru"
+    return None
 
 
-def step_verbatim(chat_id: int, text: str) -> dict:
+def _voice_for_language(session: dict, language: str) -> str | None:
+    language = normalize_profile_language(language)
+    voice_id = str(((session or {}).get("voices") or {}).get(language) or "").strip()
+    return voice_id or None
+
+
+def _activate_language_voice(session: dict, language: str) -> str | None:
+    """Синхронизировать legacy active fields с выбранным языковым голосом."""
+    language = normalize_profile_language(language)
+    voice_id = _voice_for_language(session, language)
+    if voice_id:
+        session["voice_id"] = voice_id
+        session["voice_language"] = language
+    else:
+        session.pop("voice_id", None)
+        session.pop("voice_language", None)
+    return voice_id
+
+
+def step_verbatim(chat_id: int, text: str, language: str) -> dict:
     res = run_verbatim_path(session_dir(chat_id), text, ClaudeSkillRunner(),
-                            language=_language())
+                            language=normalize_profile_language(language))
     return res["scenario"]
 
 
-def step_ideas(chat_id: int, text: str) -> list:
-    return run_ideas(session_dir(chat_id), text, ClaudeSkillRunner(), _language())["ideas"]
+def step_ideas(chat_id: int, text: str, language: str) -> list:
+    return run_ideas(
+        session_dir(chat_id),
+        text,
+        ClaudeSkillRunner(),
+        normalize_profile_language(language),
+    )["ideas"]
 
 
-def step_scenario(chat_id: int, idea: dict) -> dict:
+def step_scenario(chat_id: int, idea: dict, language: str) -> dict:
     res = run_generated_path(session_dir(chat_id), idea, ClaudeSkillRunner(),
-                             language=_language())
+                             language=normalize_profile_language(language))
     return res["scenario"]
 
 
@@ -264,11 +378,12 @@ def step_photo(chat_id: int, photo: Path) -> str:
     return upload_photo_asset(photo)
 
 
-def step_voice(chat_id: int, audio: Path) -> str:
+def step_voice(chat_id: int, audio: Path, language: str) -> str:
     """Запись -> клон голоса в ElevenLabs -> voice_id."""
     from reels_factory.tts import create_voice_clone
 
-    return create_voice_clone(str(audio), f"tg-{chat_id}")
+    language = normalize_profile_language(language)
+    return create_voice_clone(str(audio), f"tg-{chat_id}-{language}")
 
 
 def step_delete_voice(voice_id: str) -> None:
@@ -278,25 +393,49 @@ def step_delete_voice(voice_id: str) -> None:
     delete_voice(voice_id)
 
 
-def clear_client_voice_profile(chat_id: int) -> None:
-    """Клон в ElevenLabs удалён — тем же движением чистим voice_id в
-    зарегистрированном профиле клиента, чтобы `make --client` честно сказал
-    «профиль неполон», а не упал 404 на несуществующий голос."""
+def clear_client_voice_profile(chat_id: int, language: str) -> None:
+    """Убрать заменяемый языковой voice из профиля до paid build.
+
+    Сам provider-клон удаляется только после успешной записи и сохранения
+    нового; голоса остальных языков не затрагиваются.
+    """
     from reels_factory.clients import clear_client_voice
 
-    clear_client_voice(str(chat_id))
+    clear_client_voice(str(chat_id), language=language)
 
 
 def save_client_profile(chat_id: int, session: dict) -> None:
-    """Профиль клиента в реестре — с ним сборка идёт как `make --client <id>`."""
+    """Сохранить профиль и активировать голос языка текущего ролика."""
     from reels_factory.clients import register_client
 
     photo = session.get("photo")
-    if not (photo and session.get("voice_id")):
+    language = _reel_language(session)
+    voices = {
+        code: str(voice_id).strip()
+        for code, voice_id in dict(session.get("voices") or {}).items()
+        if code in SUPPORTED_LANGUAGES and str(voice_id).strip()
+    }
+    voice_id = voices.get(language)
+    if not (photo and voice_id):
         return
-    register_client(str(chat_id), load_config(), name=f"tg-{chat_id}",
-                    voice_id=session["voice_id"], asset_id=photo["asset_id"],
-                    overwrite=True)
+    session["voices"] = voices
+    session["voice_id"] = voice_id
+    session["voice_language"] = language
+    base = copy.deepcopy(load_config())
+    base["language"] = language
+    base["voice_language"] = language
+    base["voices"] = voices
+    tts = dict(base.get("tts") or {})
+    tts["language_code"] = language
+    base["tts"] = tts
+    register_client(
+        str(chat_id),
+        base,
+        name=f"tg-{chat_id}",
+        voice_id=voice_id,
+        asset_id=photo["asset_id"],
+        overwrite=True,
+    )
 
 
 def client_profile_ready(chat_id: int) -> bool:
@@ -316,7 +455,17 @@ def client_profile_ready(chat_id: int) -> bool:
     if not isinstance(cfg, dict):
         return False
     avatar = cfg.get("avatar") or {}
-    return bool(cfg.get("voice_id")) and bool(avatar.get("heygen_asset_id"))
+    language = str(cfg.get("language") or "").strip().lower()
+    voices = cfg.get("voices") or {}
+    voice_id = str(cfg.get("voice_id") or "").strip()
+    return (
+        language in SUPPORTED_LANGUAGES
+        and cfg.get("voice_language") == language
+        and isinstance(voices, dict)
+        and str(voices.get(language) or "").strip() == voice_id
+        and bool(voice_id)
+        and bool(avatar.get("heygen_asset_id"))
+    )
 
 
 def _write_scenario(workdir: Path, scenario: dict) -> None:
@@ -327,14 +476,94 @@ def _write_scenario(workdir: Path, scenario: dict) -> None:
     tmp.replace(target)
 
 
-def enqueue_build(chat_id: int, scenario: dict) -> BuildJob:
-    """Подготовить immutable input и лишь затем сделать job видимой worker."""
+def _write_yaml_atomic(path: Path, payload: dict) -> None:
+    import yaml
+
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(
+        yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    tmp.replace(path)
+
+
+def enqueue_build(
+    chat_id: int,
+    scenario: dict,
+    *,
+    language: str | None = None,
+    voice_id: str | None = None,
+) -> BuildJob:
+    """Подготовить immutable scenario/config и лишь затем показать job worker."""
+    from reels_factory.clients import load_client
+
     store = _job_store()
     job_id = store.new_id()
     workdir = store.workdir_for(job_id)
     workdir.mkdir(parents=True, exist_ok=False)
     try:
-        _write_scenario(workdir, scenario)
+        config = copy.deepcopy(load_client(str(chat_id)))
+        language = normalize_profile_language(
+            language or scenario.get("language") or config.get("language")
+        )
+        voice_id = str(voice_id or config.get("voice_id") or "").strip()
+        if not voice_id:
+            raise RuntimeError("voice_id отсутствует в профиле пользователя")
+        config_language = str(config.get("language") or "").strip().lower()
+        if config_language != language:
+            raise RuntimeError(
+                f"активный язык профиля {config_language!r} не совпадает с "
+                f"языком job {language!r}"
+            )
+        if config.get("voice_language") != language:
+            raise RuntimeError(
+                "активный голос профиля записан не для языка текущего ролика"
+            )
+        config_voices = config.get("voices") or {}
+        if (
+            not isinstance(config_voices, dict)
+            or str(config_voices.get(language) or "").strip() != voice_id
+        ):
+            raise RuntimeError(
+                f"в профиле нет подходящего голоса для языка {language!r}"
+            )
+        immutable_scenario = copy.deepcopy(scenario)
+        scenario_language = immutable_scenario.get("language")
+        if scenario_language and scenario_language != language:
+            raise RuntimeError(
+                f"язык сценария {scenario_language!r} не совпадает с языком job "
+                f"{language!r}"
+            )
+        immutable_scenario["language"] = language
+        _write_scenario(workdir, immutable_scenario)
+
+        config["language"] = language
+        config["voice_id"] = voice_id
+        config["voice_language"] = language
+        # Job получает только голос своего языка: поздняя смена профиля и
+        # наличие второго голоса не могут повлиять на уже созданный snapshot.
+        config["voices"] = {language: voice_id}
+        tts = dict(config.get("tts") or {})
+        tts["language_code"] = language
+        config["tts"] = tts
+        config_path = workdir / "build-config.yaml"
+        _write_yaml_atomic(config_path, config)
+
+        scenario_bytes = (workdir / "scenario.json").read_bytes()
+        input_doc = {
+            "format_version": 1,
+            "job_id": job_id,
+            "user_id": int(chat_id),
+            "language": language,
+            "voice_language": language,
+            "voice_id_sha256": hashlib.sha256(voice_id.encode("utf-8")).hexdigest(),
+            "scenario_sha256": hashlib.sha256(scenario_bytes).hexdigest(),
+            "config_path": config_path.name,
+        }
+        input_path = workdir / "job.input.json"
+        input_path.write_text(
+            json.dumps(input_doc, ensure_ascii=False, indent=1), encoding="utf-8"
+        )
         return store.enqueue_prepared(chat_id, job_id=job_id, workdir=workdir)
     except Exception:
         # Не удаляем непустую папку автоматически: scenario/input могут быть
@@ -348,9 +577,15 @@ def run_build(chat_id: int, workdir: Path) -> dict:
     площадки), как и требует движок. Разбираем JSON из stdout; если разобрать
     не вышло (сбой на середине без валидного ответа) — честная ошибка из
     stderr/stdout."""
+    config_path = Path(workdir) / "build-config.yaml"
+    config_args = (
+        ["--config", str(config_path)]
+        if config_path.exists()
+        else ["--client", str(chat_id)]  # queued job старого формата
+    )
     p = subprocess.run(
         [sys.executable, "-m", "reels_factory", "make",
-         "--workdir", str(workdir), "--client", str(chat_id)],
+         "--workdir", str(workdir), *config_args],
         capture_output=True, text=True, encoding="utf-8", errors="replace")
     # node-рендер (vite) пишет свой прогресс в stdout движка, поэтому JSON-ответ
     # make — не весь stdout, а последняя разбираемая строка-объект
@@ -364,11 +599,15 @@ def run_build(chat_id: int, workdir: Path) -> dict:
     return {"ok": False, "error": (p.stderr or p.stdout or "пустой ответ движка")[:500]}
 
 
-def transcribe(chat_id: int, media: Path) -> str:
+def transcribe(chat_id: int, media: Path, language: str) -> str:
     """Речь из записи в текст — локально, без сети и без денег."""
     from reels_factory.transcribe import transcribe_file
 
-    meta = transcribe_file(str(media), str(session_dir(chat_id)), language=_language())
+    meta = transcribe_file(
+        str(media),
+        str(session_dir(chat_id)),
+        language=normalize_profile_language(language),
+    )
     words = json.loads(Path(meta["out"]).read_text(encoding="utf-8"))["words"]
     return " ".join(w["text"] for w in words)
 
@@ -380,6 +619,28 @@ def _kb_start():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("У меня готовый сценарий", callback_data="mode:text")],
         [InlineKeyboardButton("Предложи сценарий", callback_data="mode:raw")],
+    ])
+
+
+def _kb_language():
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🇷🇺 Русский", callback_data="reel_language:ru")],
+        [InlineKeyboardButton("🇰🇿 Қазақша", callback_data="reel_language:kk")],
+    ])
+
+
+def _kb_language_mismatch():
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            "Изменить язык ролика", callback_data="mismatch:change"
+        )],
+        [InlineKeyboardButton(
+            "Прислать другой сценарий", callback_data="mismatch:retry"
+        )],
     ])
 
 
@@ -450,7 +711,33 @@ def _kb_done():
 
 
 async def _show_start(msg, chat_id: int, s: dict, session_builder=fresh_session):
-    save_session(chat_id, session_builder(s))
+    next_session = session_builder(s)
+    if not _reel_language(next_session, required=False):
+        next_session["step"] = CHOOSING_LANGUAGE
+        save_session(chat_id, next_session)
+        await msg.reply_text(ASK_LANGUAGE, reply_markup=_kb_language())
+        return
+    save_session(chat_id, next_session)
+    await msg.reply_text(HELLO, reply_markup=_kb_start())
+
+
+async def _show_language_choice(msg, chat_id: int, s: dict):
+    s["step"] = CHOOSING_LANGUAGE
+    s.pop("language", None)
+    s.pop("scenario", None)
+    s.pop("ideas", None)
+    s.pop("material_mode", None)
+    save_session(chat_id, s)
+    await msg.reply_text(ASK_LANGUAGE, reply_markup=_kb_language())
+
+
+async def _select_reel_language(msg, chat_id: int, s: dict, language: str):
+    language = normalize_profile_language(language)
+    s["language"] = language
+    _activate_language_voice(s, language)
+    s["step"] = CHOOSING
+    save_session(chat_id, s)
+    await msg.reply_text(LANGUAGE_SAVED.format(language=language_label(language)))
     await msg.reply_text(HELLO, reply_markup=_kb_start())
 
 
@@ -519,7 +806,7 @@ async def cmd_start(update, context):
 
 
 async def cmd_new(update, context):
-    """/new — то же, что кнопка «Новый ролик»: фото, голос и сценарий остаются."""
+    """/new — новый язык и сценарий; фото и языковые голоса остаются."""
     chat_id = update.effective_chat.id
     await _show_start(update.message, chat_id, load_session(chat_id), loop_session)
 
@@ -558,7 +845,14 @@ async def on_button(update, context):
     s = load_session(chat_id)
     data = q.data
 
-    if data == "mode:text":
+    if data.startswith("reel_language:"):
+        value = data.split(":", 1)[1]
+        await _select_reel_language(q.message, chat_id, s, value)
+    elif data == "mismatch:change":
+        await _show_language_choice(q.message, chat_id, s)
+    elif data == "mismatch:retry":
+        await _ask(q.message, chat_id, s, WAIT_TEXT, ASK_TEXT)
+    elif data == "mode:text":
         await _show_material(q.message, chat_id, s, "text")
     elif data == "mode:raw":
         await _show_material(q.message, chat_id, s, "raw")
@@ -575,7 +869,9 @@ async def on_button(update, context):
         idea = (s.get("ideas") or [])[int(data.split(":")[1])]
         await q.message.reply_text(WORKING)
         try:
-            sc = await asyncio.to_thread(step_scenario, chat_id, idea)
+            sc = await asyncio.to_thread(
+                step_scenario, chat_id, idea, _reel_language(s)
+            )
         except (ScenarioError, RuntimeError) as e:
             await q.message.reply_text(f"Не получилось собрать сценарий: {e}")
             return
@@ -584,6 +880,16 @@ async def on_button(update, context):
     elif data == "edit":
         await _ask(q.message, chat_id, s, WAIT_EDIT, ASK_EDIT)
     elif data == "ok":
+        language = _reel_language(s)
+        scenario_language = (s.get("scenario") or {}).get("language")
+        if scenario_language and scenario_language != language:
+            await q.message.reply_text(
+                "Язык сценария не совпадает с выбранным языком ролика. "
+                "Начните новый ролик через /new или вернитесь к тексту."
+            )
+            return
+        s["scenario"]["language"] = language
+        save_session(chat_id, s)
         await q.message.reply_text(APPROVED_MSG)
         await _photo_stage(q.message, chat_id, s)
     elif data == "photo:old":
@@ -593,16 +899,25 @@ async def on_button(update, context):
     elif data == "voice:old":
         await _finish_voice(q.message, chat_id, s)
     elif data == "voice:new":
-        old_voice = s.pop("voice_id", None)
+        language = _reel_language(s)
+        voices = dict(s.get("voices") or {})
+        old_voice = voices.pop(language, None)
+        s["voices"] = voices
+        s.pop("voice_id", None)
+        s.pop("voice_language", None)
+        if old_voice:
+            s["pending_previous_voice"] = {
+                "voice_id": old_voice,
+                "language": language,
+            }
         save_session(chat_id, s)
         if old_voice:
-            clear_client_voice_profile(chat_id)  # профиль не должен ссылаться на удалённый голос
-            try:
-                await asyncio.to_thread(step_delete_voice, old_voice)
-            except Exception as e:
-                # лучше дать перезаписать голос, чем застрять на ошибке чистки
-                log.warning("не удалось удалить старый клон голоса %s: %s", old_voice, e)
-        await _ask(q.message, chat_id, s, WAIT_VOICE, ASK_VOICE)
+            # Старый provider voice удалим только после успешного создания и
+            # сохранения нового. Профиль уже не должен разрешать paid build.
+            clear_client_voice_profile(chat_id, language)
+        await _ask(
+            q.message, chat_id, s, WAIT_VOICE, _ask_voice_text(language)
+        )
     elif data == "build":
         # инлайн-кнопки живут в истории чата вечно: тап по старому сообщению
         # READY после DONE не должен зазывать платную сборку заново
@@ -639,27 +954,57 @@ async def _photo_stage(msg, chat_id: int, s: dict):
 
 
 async def _voice_stage(msg, chat_id: int, s: dict):
-    """Голос уже есть — прежний или перезаписать; иначе просим впервые."""
-    if s.get("voice_id"):
+    """Предложить голос выбранного языка или запросить его первую запись."""
+    language = _reel_language(s)
+    voice_id = _activate_language_voice(s, language)
+    if voice_id:
         s["step"] = CHOOSING_VOICE
         save_session(chat_id, s)
-        await msg.reply_text("Голос уже записан. Что делаем?", reply_markup=_kb_voice())
+        await msg.reply_text(
+            f"Голос для языка {language_label(language)} уже записан. Что делаем?",
+            reply_markup=_kb_voice(),
+        )
     else:
-        await _ask(msg, chat_id, s, WAIT_VOICE, ASK_VOICE)
+        await _ask(msg, chat_id, s, WAIT_VOICE, _ask_voice_text(language))
 
 
 async def _finish_voice(msg, chat_id: int, s: dict):
     """Голос получен (прежний или новый) — сохраняем профиль и идём к готовности."""
+    language = _reel_language(s)
+    voice_id = _activate_language_voice(s, language)
+    if not voice_id:
+        await _ask(msg, chat_id, s, WAIT_VOICE, _ask_voice_text(language))
+        return
     s["step"] = READY
     save_session(chat_id, s)
     save_client_profile(chat_id, s)
+    previous = s.get("pending_previous_voice")
+    if previous and previous.get("language") == language:
+        if previous.get("voice_id") != voice_id:
+            try:
+                await asyncio.to_thread(step_delete_voice, previous["voice_id"])
+            except Exception as e:
+                # Новый профиль уже сохранён и готов. Не блокируем пользователя
+                # из-за best-effort уборки старого клона.
+                log.warning(
+                    "не удалось удалить старый клон голоса %s: %s",
+                    previous["voice_id"],
+                    e,
+                )
+        s.pop("pending_previous_voice", None)
+        save_session(chat_id, s)
     await msg.reply_text(READY_MSG, reply_markup=_kb_ready())
 
 
 async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
     """Поставить job в durable FIFO; платный pipeline здесь не запускается."""
     try:
-        job = enqueue_build(chat_id, s["scenario"])
+        job = enqueue_build(
+            chat_id,
+            s["scenario"],
+            language=_reel_language(s),
+            voice_id=s.get("voice_id"),
+        )
     except Exception as e:
         await msg.reply_text(f"Не удалось поставить ролик в очередь: {str(e)[:200]}")
         return None
@@ -829,6 +1174,10 @@ async def on_message(update, context):
     step = s.get("step", CHOOSING)
     msg = update.message
 
+    if step == CHOOSING_LANGUAGE:
+        await msg.reply_text(ASK_LANGUAGE, reply_markup=_kb_language())
+        return
+
     if step == WAIT_PHOTO:
         photo = (msg.photo[-1] if msg.photo else None) or msg.document
         if photo is None:
@@ -856,10 +1205,18 @@ async def on_message(update, context):
             return
         try:
             path = await _download(context, rec, chat_id)
-            s["voice_id"] = await asyncio.to_thread(step_voice, chat_id, path)
+            language = _reel_language(s)
+            voice_id = await asyncio.to_thread(
+                step_voice, chat_id, path, language
+            )
         except Exception as e:
             await msg.reply_text(f"Голос не принялся: {str(e)[:200]}")
             return
+        voices = dict(s.get("voices") or {})
+        voices[language] = voice_id
+        s["voices"] = voices
+        s["voice_id"] = voice_id
+        s["voice_language"] = language
         save_session(chat_id, s)
         await msg.reply_text(VOICE_SAVED)
         await _finish_voice(msg, chat_id, s)
@@ -871,7 +1228,9 @@ async def on_message(update, context):
         await msg.reply_text(TRANSCRIBING)
         try:
             path = await _download(context, media, chat_id)
-            text = await asyncio.to_thread(transcribe, chat_id, path)
+            text = await asyncio.to_thread(
+                transcribe, chat_id, path, _reel_language(s)
+            )
         except Exception as e:
             await msg.reply_text(f"Не смог разобрать запись: {str(e)[:200]}")
             return
@@ -882,9 +1241,23 @@ async def on_message(update, context):
         return
 
     if step == WAIT_TEXT:
+        language = _reel_language(s)
+        cleaned = clean_input(text)
+        mismatch = confident_mismatch(cleaned, language)
+        if mismatch:
+            await msg.reply_text(
+                LANGUAGE_MISMATCH.format(
+                    detected=language_label(mismatch.code),
+                    selected=language_label(language),
+                ),
+                reply_markup=_kb_language_mismatch(),
+            )
+            return
         await msg.reply_text(WORKING)
         try:
-            sc = await asyncio.to_thread(step_verbatim, chat_id, clean_input(text))
+            sc = await asyncio.to_thread(
+                step_verbatim, chat_id, cleaned, language
+            )
         except (ScenarioError, RuntimeError) as e:
             await msg.reply_text(f"Не получилось разобрать текст: {e}")
             return
@@ -894,7 +1267,9 @@ async def on_message(update, context):
     elif step == WAIT_RAW:
         await msg.reply_text(WORKING)
         try:
-            ideas = await asyncio.to_thread(step_ideas, chat_id, text)
+            ideas = await asyncio.to_thread(
+                step_ideas, chat_id, text, _reel_language(s)
+            )
         except (ScenarioError, RuntimeError) as e:
             await msg.reply_text(f"Не получилось вытащить идеи: {e}")
             return
@@ -902,8 +1277,20 @@ async def on_message(update, context):
         await _show_ideas(msg, chat_id, s)
 
     elif step == WAIT_EDIT:
+        language = _reel_language(s)
+        cleaned = clean_input(text)
+        mismatch = confident_mismatch(cleaned, language)
+        if mismatch:
+            await msg.reply_text(
+                LANGUAGE_MISMATCH.format(
+                    detected=language_label(mismatch.code),
+                    selected=language_label(language),
+                ),
+                reply_markup=_kb_language_mismatch(),
+            )
+            return
         try:
-            sc = scenario_from_text(clean_input(text))
+            sc = scenario_from_text(cleaned, language)
         except ScenarioError as e:
             await msg.reply_text(str(e))
             return
@@ -928,7 +1315,10 @@ async def _post_init(app):
     from telegram import BotCommand
 
     await app.bot.set_my_commands(
-        [BotCommand("new", "Новый ролик"), BotCommand("status", "Статус сборки")]
+        [
+            BotCommand("new", "Новый ролик"),
+            BotCommand("status", "Статус сборки"),
+        ]
     )
     interrupted = await asyncio.to_thread(_job_store().mark_running_interrupted)
     for job in interrupted:

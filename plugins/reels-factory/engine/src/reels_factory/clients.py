@@ -80,7 +80,10 @@ def list_clients() -> list:
             "id": p.stem,
             "name": cfg.get("name") or (cfg.get("persona") or {}).get("name"),
             "mode": avatar_mode(cfg),
+            "language": cfg.get("language"),
             "voice_id": cfg.get("voice_id"),
+            "voice_language": cfg.get("voice_language"),
+            "voices": cfg.get("voices") or {},
             "look_id": avatar.get("heygen_look_id"),
             "asset_id": avatar.get("heygen_asset_id"),
         })
@@ -141,16 +144,27 @@ def register_client(client_id: str, base: dict, *, name=None, voice_id=None,
     return path
 
 
-def clear_client_voice(client_id: str) -> None:
-    """Убрать voice_id из профиля клиента — когда клон в ElevenLabs удалён,
-    профиль не должен молча ссылаться на несуществующий голос. Без voice_id
-    load_config/load_client честно упадёт («поле обязательно»), а не 404 при
-    сборке. Файла нет — тихо ничего не делаем."""
+def clear_client_voice(client_id: str, *, language: str | None = None) -> None:
+    """Убрать активный языковой голос, сохранив голоса других языков.
+
+    Профиль временно становится неполным и не может попасть в paid build.
+    Файла нет — тихо ничего не делаем.
+    """
     path = client_path(client_id)
     if not path.exists():
         return
     cfg = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if not isinstance(cfg, dict) or "voice_id" not in cfg:
         return
-    cfg.pop("voice_id", None)
+    active_language = str(
+        cfg.get("voice_language") or cfg.get("language") or ""
+    ).strip().lower()
+    target_language = str(language or active_language).strip().lower()
+    voices = dict(cfg.get("voices") or {})
+    voices.pop(target_language, None)
+    if voices or "voices" in cfg:
+        cfg["voices"] = voices
+    if target_language == active_language:
+        cfg.pop("voice_id", None)
+        cfg.pop("voice_language", None)
     path.write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False), encoding="utf-8")

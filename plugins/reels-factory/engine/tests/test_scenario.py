@@ -316,6 +316,7 @@ def test_run_verbatim_path_full_flow(tmp_path):
     assert res["ok"] is True
     sc = res["scenario"]
     assert sc["mode"] == "verbatim"
+    assert sc["language"] == "ru"
     assert "Майкрософт" in sc["blocks"][0]["speech"]
     assert (tmp_path / "scenario.json").exists()
     assert res["info"]["words"] > 0
@@ -388,6 +389,8 @@ def test_run_generated_path_full_flow(tmp_path):
     res = run_generated_path(tmp_path, IDEA, runner, language="ru")
     assert res["ok"] is True
     assert res["verdict"]["pass"] is True
+    assert res["scenario"]["language"] == "ru"
+    assert res["scenario"]["mode"] == "generated"
     assert (tmp_path / "scenario.json").exists()
     # порядок вызовов: генерация -> полировка -> судья
     assert [c[0] for c in runner.calls] == [

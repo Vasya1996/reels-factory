@@ -9,7 +9,7 @@ description: Этап 4 продуктового цикла — размечае
 сценарию и раскадровке на `/reels-factory:script` — если этого не было в
 текущем диалоге, ОСТАНОВИСЬ и попроси пройти `/reels-factory:script` (или
 явное подтверждение) сначала: дальше в этом скилле — платные операции
-(ElevenLabs TTS + HeyGen при `format: split`).
+(один ElevenLabs master TTS + HeyGen при `format: split|avatar`).
 
 Запускай всё из корня рабочей папки проекта (там же `factory/`, `work/`,
 `.venv/`). Ключи `HEYGEN_API_KEY`/`ELEVENLABS_API_KEY` должны быть в env
@@ -136,6 +136,14 @@ $env:PYTHONUTF8="1"; .venv\Scripts\python.exe -m reels_factory make --workdir <�
 (`... make --workdir <имя>`) — аватар соберётся с одним голосом. Со вставками
 `--broll` обязателен (источник видеоряда для вставок).
 
+При включённом `master_audio.enabled` движок делает один ElevenLabs v3
+`with-timestamps` request на весь утверждённый сценарий. Артефакты
+`script.canonical.json`, `voice_master.mp3/.wav`,
+`alignment.characters.json`, `alignment.words.json` и `audio_manifest.json`
+обязаны остаться в workdir. `voice_*.wav` в этом режиме — только локальные
+нарезки master WAV для переходного HeyGen-by-block пути; Revideo проигрывает
+ровно один голосовой слой `voice_master.wav`.
+
 Может идти долго (HeyGen рендерит аватар-фрагменты по одному блоку с
 поллингом до 10 минут на блок при `format: split` и `format: avatar`) — если
 запускаешь в фоне, ДОЖИДАЙСЯ завершения, не убивай процесс раньше времени.
@@ -148,7 +156,7 @@ $env:PYTHONUTF8="1"; .venv\Scripts\python.exe -m reels_factory make --workdir <�
 **Известные грабли:** если фоновая сборка была всё же прервана — скачанный
 видеоряд (`broll_source.mp4`) и CTA-фрагмент аватара (кэш в
 `work/avatar_cache` по sha1 голоса+аватара) переиспользуются автоматически
-при повторном `make`; а вот голос (ElevenLabs) и аватар-фрагменты
+при повторном `make`; а вот master voice (ElevenLabs) и аватар-фрагменты
 hook/development/payoff (HeyGen) — НЕТ, полный повтор `make` оплатит их
 заново. Поэтому лучше дождаться завершения, чем перезапускать вслепую.
 

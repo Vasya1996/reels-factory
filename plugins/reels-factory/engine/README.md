@@ -2,7 +2,8 @@
 
 Generic-порт движка `reels-saas` без игровой/Vael-специфики. Собирает вертикальный
 рилс 1080×1920@30 из голоса ведущего (ElevenLabs) и видеоряда пользователя:
-сценарий → TTS → (split/avatar: аватар HeyGen) → сборка → 7 QA-гейтов.
+сценарий → одна master narration → alignment → визуальный HeyGen →
+Revideo → QA-gate.
 
 ## Установка
 
@@ -27,6 +28,40 @@ python -m venv .venv
 для фото и `avatar_v` для двойника; есть `avatar_iii`), `avatar.resolution`
 (`1080p` по умолчанию, можно `4k`), `avatar.expressiveness` (шлётся только с
 `avatar_iv`).
+
+### Master audio и Eleven v3
+
+Новый путь включается `master_audio.enabled: true` либо
+`RF_MASTER_AUDIO_ENABLED=1`. До отдельного production rollout default —
+`false`; legacy-путь остаётся rollback-вариантом.
+
+```yaml
+master_audio:
+  enabled: false
+tts:
+  model_id: eleven_v3
+  stability: 0.5              # Natural; 0=Creative, 1=Robust
+  # seed: 42                  # best-effort, не гарантия идентичного результата
+  apply_text_normalization: auto
+  output_format: mp3_44100_128
+  pronunciation_dictionary_locators: []
+```
+
+Master path делает один `POST /v1/text-to-speech/{voice_id}/with-timestamps`,
+сохраняет provider MP3, PCM WAV, original character alignment, нормализованные
+word timings и manifest. Whisper остаётся для входящих пользовательских медиа и
+legacy/fallback, но не подменяет утверждённый текст после TTS.
+
+Для Eleven v3 намеренно передаётся только `stability`. Параметры `speed`,
+`similarity_boost` и `use_speaker_boost` этой моделью не поддерживаются;
+style exaggeration не передаётся, чтобы не снижать стабильность. Эмоции, темп и
+паузы управляются пунктуацией и audio tags (`[curious]`, `[excited]`,
+`[whispers]`, `[laughs]`, `[sighs]`) внутри текста, который видит и утверждает
+пользователь. SSML `<break>` v3 не поддерживает.
+
+Лимит v3 — 5000 символов. Движок проверяет его до HTTP и не начинает частично
+оплаченную генерацию. Наш сценарный лимит значительно ниже; request stitching
+для v3 не поддерживается, поэтому narration генерируется одним запросом.
 
 ### Пластика по ролям
 
@@ -101,16 +136,29 @@ python -m reels_factory verify --workdir demo1            # перепровер
   хуманизация + LLM-судья (exit 2 = судья не принял, см. verdict.issues).
 - `script ...` — классический research-цикл (без изменений).
 
-Язык всех шагов — `language` из factory/config.yaml (ru по умолчанию, kk
-поддержан насквозь: идеи, генерация, хуманизация, судья, расшифровка).
+В Telegram язык выбирается **для каждого нового ролика**. После `/start` и
+`/new` бот сначала предлагает `ru` или `kk`, затем спрашивает: готовый сценарий
+или создать новый. Выбранный язык применяется к идеям, генерации,
+хуманизации, судье, расшифровке, master audio и субтитрам.
+
+Голос не считается мультиязычным. В профиле пользователя хранится карта
+`voices` с отдельным `voice_id` для каждого языка. Если русский голос уже
+есть, а для нового ролика выбран казахский и `voices.kk` отсутствует, бот
+просит записать казахский голос. Русский клон при этом сохраняется. При
+возврате к русскому ролику бот снова предлагает прежний русский голос.
+
+Готовый текст не переключает язык автоматически. Консервативный локальный
+детектор только блокирует уверенное несовпадение с языком текущего ролика;
+неоднозначный текст обрабатывается на выбранном пользователем языке.
 
 ## Форматы
 
 - **split** — аватар-ведущий от HeyGen сверху (1080×672) + видеоряд снизу
-  (1080×1248), голос вшит в аватар.
+  (1080×1248); в master-path HeyGen — беззвучный визуальный слой.
 - **fullscreen** — видеоряд на весь кадр, голос ведущего за кадром (только TTS,
   HeyGen не рендерится — вдвое дешевле).
-- **avatar** — аватар-ведущий от HeyGen на весь кадр (1080×1920), голос вшит;
+- **avatar** — аватар-ведущий от HeyGen на весь кадр (1080×1920);
+  в master-path речь идёт только из `voice_master.wav`;
   видеоряд опционален — вставки поверх аватара (`broll_plan` сегменты с
   `"insert": true`), либо вовсе без видеоряда.
 
@@ -119,7 +167,8 @@ python -m reels_factory verify --workdir demo1            # перепровер
 Кнопка «Создать ролик» больше не запускает сборку внутри callback. Бот:
 
 1. создаёт UUID `job_id`;
-2. атомарно пишет утверждённый сценарий в `work/jobs/<job_id>/scenario.json`;
+2. атомарно пишет утверждённый сценарий, `job.input.json` и immutable
+   `build-config.yaml` в `work/jobs/<job_id>/`;
 3. добавляет job в `work/jobs.sqlite3`;
 4. один FIFO-worker забирает её транзакционным claim;
 5. доставляет видео только при `qa_pass=true`.
@@ -133,6 +182,14 @@ python -m reels_factory verify --workdir demo1            # перепровер
 ```text
 work/jobs/<job_id>/
 ├── scenario.json
+├── job.input.json
+├── build-config.yaml
+├── script.canonical.json
+├── voice_master.mp3
+├── voice_master.wav
+├── alignment.characters.json
+├── alignment.words.json
+├── audio_manifest.json
 ├── voice_*.wav
 ├── avatar_*.mp4
 ├── reel.mp4
@@ -140,6 +197,7 @@ work/jobs/<job_id>/
     ├── src/tz.json
     ├── src/words.json
     ├── public/base.mp4
+    ├── public/voice_master.wav
     ├── public/<broll>.mp4
     └── output/reel.mp4
 ```
@@ -149,6 +207,10 @@ jobs продолжают выполняться. Job, которая имела
 рестарта, переводится в `interrupted` и **не повторяется автоматически**:
 до внедрения provider idempotency/job-id такой повтор мог бы дважды списать
 деньги HeyGen или ElevenLabs.
+
+Worker запускает `make --config <job>/build-config.yaml`, а не перечитывает
+изменяемый профиль клиента. Поэтому queued job сохраняет исходные language и
+voice_id, даже если пользователь уже начал следующий ролик на другом языке.
 
 ## Тесты
 

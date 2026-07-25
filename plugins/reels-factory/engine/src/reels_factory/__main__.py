@@ -462,8 +462,18 @@ def main():
     p_m.add_argument("--broll-plan", default=None, dest="broll_plan",
                      help="JSON {segments:[{role,offset,slow?}], punch:[[start,dur],...], ...} "
                           "— мультисегментный низ + панч-окна (наезд на килл/пик-моментах)")
-    p_m.add_argument("--client", default=None,
-                     help="id клиента: взять factory/clients/<id>.yaml вместо config.yaml")
+    make_profile = p_m.add_mutually_exclusive_group()
+    make_profile.add_argument(
+        "--client",
+        default=None,
+        help="id клиента: взять factory/clients/<id>.yaml вместо config.yaml",
+    )
+    make_profile.add_argument(
+        "--config",
+        dest="config_path",
+        default=None,
+        help="immutable config snapshot конкретной job",
+    )
 
     p_e = sub.add_parser("edit", help="монтажные шаги на готовом ролике (без конфига)")
     p_e.add_argument("--input", required=True, help="исходный mp4")
@@ -572,8 +582,14 @@ def main():
         return
 
     try:
-        # --client <id> берёт профиль клиента вместо дефолтного factory/config.yaml
-        cfg = load_client(args.client) if getattr(args, "client", None) else load_config()
+        # Bot передаёт immutable --config snapshot, чтобы queued job не менялась
+        # при последующей смене языка/голоса в профиле пользователя.
+        if getattr(args, "config_path", None):
+            cfg = load_config(args.config_path)
+        elif getattr(args, "client", None):
+            cfg = load_client(args.client)
+        else:
+            cfg = load_config()
     except ConfigError as e:
         print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
         sys.exit(1)
