@@ -2,18 +2,23 @@ import {renderVideo} from '@revideo/renderer';
 import fs from 'node:fs';
 import path from 'node:path';
 
-// ВАЖНО: рендерим всегда в ./output внутри модуля. Revideo резолвит ассеты
-// (аудио видео-тегов) как <outDir>/../public — если отдать outDir во внешнюю
-// папку воркдира, public/ не найдётся и итоговый ролик остаётся БЕЗ ЗВУКА
-// (ffprobe тихо падает в лог). Внешний путь (env RF_OUTFILE) получает копию.
+// Код и node_modules общие, но project/src/public/output принадлежат одной job.
+// Revideo резолвит ассеты как <outDir>/../public, поэтому RF_RENDER_DIR должен
+// быть <job>/revideo/output, а RF_PROJECT_FILE — <job>/revideo/src/project.tsx.
 const outAbs = process.env.RF_OUTFILE ? path.resolve(process.env.RF_OUTFILE) : null;
+const projectFile = process.env.RF_PROJECT_FILE
+  ? path.resolve(process.env.RF_PROJECT_FILE)
+  : path.resolve('./src/project.tsx');
+const renderDir = process.env.RF_RENDER_DIR
+  ? path.resolve(process.env.RF_RENDER_DIR)
+  : path.resolve('./output');
 
-console.log('Rendering ->', outAbs ?? path.resolve('./output/reel.mp4'));
+console.log('Rendering ->', outAbs ?? path.join(renderDir, 'reel.mp4'));
 const file = await renderVideo({
-  projectFile: './src/project.tsx',
+  projectFile,
   settings: {
     outFile: 'reel.mp4',
-    outDir: './output',
+    outDir: renderDir,
     logProgress: true,
     puppeteer: {
       args: [
@@ -29,6 +34,6 @@ const file = await renderVideo({
 });
 if (outAbs) {
   fs.mkdirSync(path.dirname(outAbs), {recursive: true});
-  fs.copyFileSync(path.resolve(file ?? './output/reel.mp4'), outAbs);
+  fs.copyFileSync(path.resolve(file ?? path.join(renderDir, 'reel.mp4')), outAbs);
 }
 console.log(`Rendered video to ${outAbs ?? file}`);

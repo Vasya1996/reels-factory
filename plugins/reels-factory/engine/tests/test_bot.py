@@ -55,6 +55,28 @@ class _Query:
         pass
 
 
+class _BotAPI:
+    """Минимальный Telegram Bot для background worker."""
+
+    def __init__(self):
+        self.messages = []
+        self.videos = []
+
+    async def send_message(self, chat_id, text):
+        self.messages.append((chat_id, text))
+
+    async def send_video(self, chat_id, video, caption=None, reply_markup=None,
+                         width=None, height=None):
+        self.videos.append({
+            "chat_id": chat_id,
+            "bytes": video.read(),
+            "caption": caption,
+            "reply_markup": reply_markup,
+            "width": width,
+            "height": height,
+        })
+
+
 def _press(button, msg):
     """Нажатие кнопки в чате."""
     upd = type("U", (), {"callback_query": _Query(button, msg)})()
@@ -64,6 +86,12 @@ def _press(button, msg):
 def _labels(markup):
     """Подписи кнопок клавиатуры — плоским списком."""
     return [b.text for row in markup.inline_keyboard for b in row]
+
+
+def _claim_job():
+    job = bot._job_store().claim_next()
+    assert job is not None
+    return job
 
 
 SCENARIO = {"title": "Про подготовку", "blocks": [
@@ -104,6 +132,16 @@ def test_сессия_переживает_перезапуск(work):
     assert bot.load_session(7)["scenario"] == SCENARIO
     # чужой чат не видит соседа
     assert bot.load_session(8) == {"step": bot.CHOOSING}
+
+
+def test_status_читает_последнюю_job_из_sqlite(work):
+    job = bot._job_store().enqueue(7)
+    msg = _Msg()
+
+    asyncio.run(bot.cmd_status(_Update(msg), None))
+
+    assert job.job_id[:8] in msg.replies[-1]
+    assert "в очереди" in msg.replies[-1]
 
 
 # --- миграция сессий старого формата (photos: [...] + photo: int) -------------
@@ -583,15 +621,9 @@ def клиент(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_создать_ролик_сохраняет_профиль_и_показывает_новый_ролик(work, клиент, monkeypatch):
+def test_создать_ролик_сохраняет_профиль_и_ставит_job_в_очередь(work, клиент, monkeypatch):
     вызовы = []
     monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: вызовы.append(chat_id))
-
-    def fake_run_build(chat_id, workdir):
-        (workdir / "reel.mp4").write_bytes(b"video-bytes")
-        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
-
-    monkeypatch.setattr(bot, "run_build", fake_run_build)
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
@@ -600,11 +632,13 @@ def test_создать_ролик_сохраняет_профиль_и_пока
 
     assert вызовы == [7]
     s = bot.load_session(7)
-    assert s["step"] == bot.DONE
-    assert bot.BUILDING_MSG in msg.replies
-    video, caption, markup = msg.videos[-1]
-    assert caption == bot.DONE_MSG
-    assert "Новый ролик" in _labels(markup)
+    assert s["step"] == bot.BUILDING
+    assert s["current_job_id"]
+    assert bot.BUILDING_MSG in msg.replies[-1]
+    assert not msg.videos
+    job = bot._job_store().get(s["current_job_id"])
+    assert job.status == "queued"
+    assert (job.workdir / "scenario.json").exists()
 
 
 # --- шаг 9: сборка ролика ------------------------------------------------------
@@ -746,16 +780,13 @@ def test_сбой_save_client_profile_не_роняет_бота(work, tmp_path,
 
 
 def test_повторное_нажатие_создать_ролик_пока_сборка_идёт(work, клиент):
-    bot._building.add(7)
-    try:
-        bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
-                             "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-        msg = _Msg()
-        _press("build", msg)
-        assert msg.replies == [bot.BUSY_MSG]
-        assert not msg.videos
-    finally:
-        bot._building.discard(7)
+    bot._job_store().enqueue(7)
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    msg = _Msg()
+    _press("build", msg)
+    assert msg.replies == [bot.BUSY_MSG]
+    assert not msg.videos
 
 
 def test_ролик_шлётся_с_явными_размерами_кадра(work, клиент, monkeypatch):
@@ -765,79 +796,81 @@ def test_ролик_шлётся_с_явными_размерами_кадра(w
         (workdir / "reel.mp4").write_bytes(b"x")
         return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
 
-    monkeypatch.setattr(bot, "run_build", fake_run_build)
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    msg = _Msg()
+    _press("build", _Msg())
+    api = _BotAPI()
 
-    _press("build", msg)
+    asyncio.run(bot._process_job(api, _claim_job(), build_fn=fake_run_build))
 
-    assert msg.videos
-    assert msg.video_sizes == (bot.OUT_W, bot.OUT_H)
+    assert api.videos
+    assert (api.videos[-1]["width"], api.videos[-1]["height"]) == (bot.OUT_W, bot.OUT_H)
 
 
-def test_сценарий_пишется_в_workdir_с_привязкой_к_чату_и_времени(work, клиент, monkeypatch):
-    захвачено = {}
-
-    def fake_run_build(chat_id, workdir):
-        захвачено["workdir"] = workdir
-        (workdir / "reel.mp4").write_bytes(b"x")
-        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
-
-    monkeypatch.setattr(bot, "run_build", fake_run_build)
+def test_сценарий_пишется_в_job_workdir_с_uuid(work, клиент):
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
     _press("build", _Msg())
 
-    wd = захвачено["workdir"]
-    assert wd.name.startswith("bot-7-")
-    assert json.loads((wd / "scenario.json").read_text(encoding="utf-8")) == SCENARIO
+    job = bot._job_store().latest_for_chat(7)
+    assert job.workdir.parent == bot.WORK_ROOT / "jobs"
+    assert job.workdir.name == job.job_id
+    assert len(job.job_id) == 32
+    assert json.loads((job.workdir / "scenario.json").read_text(encoding="utf-8")) == SCENARIO
 
 
 def test_сбой_сборки_сообщается_человеческим_текстом(work, клиент, monkeypatch):
-    monkeypatch.setattr(bot, "run_build",
-                        lambda chat_id, workdir: {"ok": False, "error": "HeyGen 500"})
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build", _Msg())
+    job = _claim_job()
+    api = _BotAPI()
 
-    msg = _Msg()
-    _press("build", msg)
+    asyncio.run(bot._process_job(
+        api, job, build_fn=lambda chat_id, workdir:
+        {"ok": False, "stage": "voice", "error": "HeyGen 500"}
+    ))
 
-    assert "HeyGen 500" in msg.replies[-1]
-    assert not msg.videos
-    assert bot.load_session(7)["step"] != bot.DONE
+    assert "HeyGen 500" in api.messages[-1][1]
+    assert not api.videos
+    assert bot._job_store().get(job.job_id).status == "failed"
+    assert bot.load_session(7)["step"] == bot.BUILD_FAILED
 
 
 def test_исключение_при_сборке_не_роняет_бота(work, клиент, monkeypatch):
     def падаем(chat_id, workdir):
         raise RuntimeError("subprocess не поднялся")
 
-    monkeypatch.setattr(bot, "run_build", падаем)
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build", _Msg())
+    job = _claim_job()
+    api = _BotAPI()
 
-    msg = _Msg()
-    _press("build", msg)
+    asyncio.run(bot._process_job(api, job, build_fn=падаем))
 
-    assert "subprocess не поднялся" in msg.replies[-1]
-    assert 7 not in bot._building
+    assert "subprocess не поднялся" in api.messages[-1][1]
+    assert bot._job_store().get(job.job_id).status == "failed"
 
 
-def test_ролик_собран_но_qa_не_пройден_шлётся_с_пометкой(work, клиент, monkeypatch):
+def test_ролик_собран_но_qa_не_пройден_не_отправляется(work, клиент):
     def fake_run_build(chat_id, workdir):
         (workdir / "reel.mp4").write_bytes(b"x")
         return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": False}
 
-    monkeypatch.setattr(bot, "run_build", fake_run_build)
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build", _Msg())
+    job = _claim_job()
+    api = _BotAPI()
 
-    msg = _Msg()
-    _press("build", msg)
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
 
-    assert msg.videos[-1][1] == bot.QA_FAIL_MSG
-    assert bot.load_session(7)["step"] == bot.DONE
+    assert not api.videos
+    assert bot.QA_FAIL_MSG in api.messages[-1][1]
+    assert bot._job_store().get(job.job_id).status == "qa_failed"
+    assert bot.load_session(7)["step"] == bot.BUILD_FAILED
 
 
 def test_ролик_больше_50мб_не_отправляется(work, клиент, monkeypatch):
@@ -847,39 +880,35 @@ def test_ролик_больше_50мб_не_отправляется(work, кл
         (workdir / "reel.mp4").write_bytes(b"1234567890")
         return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
 
-    monkeypatch.setattr(bot, "run_build", fake_run_build)
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build", _Msg())
+    job = _claim_job()
+    api = _BotAPI()
 
-    msg = _Msg()
-    _press("build", msg)
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
 
-    assert "50 МБ" in msg.replies[-1]
-    assert not msg.videos
+    assert "50 МБ" in api.messages[-1][1]
+    assert not api.videos
+    assert bot._job_store().get(job.job_id).status == "delivery_failed"
 
 
-def test_сбой_отправки_сообщения_о_начале_сборки_не_держит_chat_id_в_building(
-        work, клиент, monkeypatch):
-    """Critical из ревью: reply_text(BUILDING_MSG) стоял вне try/finally —
-    если он падает (RetryAfter/таймаут Telegram), chat_id навсегда застревал
-    в _building и чат до рестарта бота получал BUSY_MSG на каждое нажатие.
-    После фикса сбой ловится тем же except, что и остальные, и chat_id
-    освобождается в finally."""
+def test_сбой_статусного_сообщения_не_теряет_durable_job(work, клиент):
+    """После INSERT job уже принадлежит очереди, даже если Telegram временно
+    не принял служебное сообщение о постановке."""
 
     class FlakyMsg(_Msg):
         async def reply_text(self, text, reply_markup=None):
-            if text == bot.BUILDING_MSG:
+            if text.startswith(bot.BUILDING_MSG):
                 raise RuntimeError("Telegram недоступен")
             await super().reply_text(text, reply_markup)
 
-    вызвано = []
-    monkeypatch.setattr(bot, "run_build", lambda chat_id, workdir: вызвано.append(1))
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
     msg = FlakyMsg()
-    asyncio.run(bot._build_and_send(msg, 7, bot.load_session(7)))
+    _press("build", msg)
 
-    assert 7 not in bot._building  # не застрял — иначе следующее нажатие получит BUSY_MSG навсегда
-    assert вызвано == []  # до сборки дело не дошло
-    assert "Telegram недоступен" in msg.replies[-1]
+    job = bot._job_store().latest_for_chat(7)
+    assert job.status == "queued"
+    assert bot.load_session(7)["current_job_id"] == job.job_id

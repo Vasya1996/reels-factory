@@ -114,6 +114,42 @@ python -m reels_factory verify --workdir demo1            # перепровер
   видеоряд опционален — вставки поверх аватара (`broll_plan` сегменты с
   `"insert": true`), либо вовсе без видеоряда.
 
+## Telegram: очередь и изоляция jobs
+
+Кнопка «Создать ролик» больше не запускает сборку внутри callback. Бот:
+
+1. создаёт UUID `job_id`;
+2. атомарно пишет утверждённый сценарий в `work/jobs/<job_id>/scenario.json`;
+3. добавляет job в `work/jobs.sqlite3`;
+4. один FIFO-worker забирает её транзакционным claim;
+5. доставляет видео только при `qa_pass=true`.
+
+Команда `/status` показывает durable-статус последней job. Повторное нажатие
+«Создать ролик», пока у чата есть `queued`/`running` job, не создаёт вторую
+платную сборку.
+
+Все изменяемые данные Revideo находятся внутри job:
+
+```text
+work/jobs/<job_id>/
+├── scenario.json
+├── voice_*.wav
+├── avatar_*.mp4
+├── reel.mp4
+└── revideo/
+    ├── src/tz.json
+    ├── src/words.json
+    ├── public/base.mp4
+    ├── public/<broll>.mp4
+    └── output/reel.mp4
+```
+
+Общими и read-only остаются код Revideo и `node_modules`. При старте queued
+jobs продолжают выполняться. Job, которая имела статус `running` во время
+рестарта, переводится в `interrupted` и **не повторяется автоматически**:
+до внедрения provider idempotency/job-id такой повтор мог бы дважды списать
+деньги HeyGen или ElevenLabs.
+
 ## Тесты
 
 ```bash

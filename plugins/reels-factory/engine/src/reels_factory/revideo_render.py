@@ -32,6 +32,40 @@ from reels_factory.tz_validator import validate_tz
 REVIDEO_DIR = Path(__file__).resolve().parents[2] / "revideo"
 
 
+def _prepare_render_workspace(rdir: Path, template_dir: Path | None = None) -> Path:
+    """Создать изолированный Revideo workspace конкретной job.
+
+    Код и node_modules остаются общими и только читаются. Все изменяемые входы
+    (tz/words/media) и output живут в <job>/revideo, поэтому параллельные
+    клиенты не могут перезаписать файлы друг друга.
+    """
+    template = Path(template_dir or REVIDEO_DIR)
+    workspace = Path(rdir) / "revideo"
+    src_dir = workspace / "src"
+    public_dir = workspace / "public"
+    output_dir = workspace / "output"
+    src_dir.mkdir(parents=True, exist_ok=True)
+    public_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for name in ("project.tsx", "global.css"):
+        source = template / "src" / name
+        if not source.exists():
+            raise RuntimeError(f"Revideo template не содержит src/{name}")
+        shutil.copy2(source, src_dir / name)
+
+    # Копируем только явно разрешённую статику. Нельзя copytree всего public:
+    # на старом сервере там могут остаться base.mp4/broll.mp4 другого клиента.
+    for name in ("emoji", "whoosh.wav", "type.wav", "pop.wav", "ding.wav"):
+        source = template / "public" / name
+        target = public_dir / name
+        if source.is_dir():
+            shutil.copytree(source, target, dirs_exist_ok=True)
+        elif source.is_file():
+            shutil.copy2(source, target)
+    return workspace
+
+
 def _ensure_deps(rev: Path) -> None:
     """Разовая установка node_modules (в setup обычно уже сделана)."""
     if not (rev / "node_modules").exists():
@@ -100,6 +134,8 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
     out_mp4 = Path(out_mp4)
     transcribe_fn = transcribe_fn or _default_transcribe
     config = config or {}
+    render_workspace = _prepare_render_workspace(rdir)
+    render_public = render_workspace / "public"
 
     blocks = scenario["blocks"]
     if format in ("split", "avatar"):
@@ -149,7 +185,7 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
     # (моушн-графика на HTML/GSAP) и подставляется как fullscreen-биролл. На
     # ошибке рендера сегмент остаётся встроенным эффектом (мягкий фолбэк).
     for seg in tz.get("segments", []):
-        _resolve_hyperframes_segment(seg, REVIDEO_DIR / "public", hf_render=hf_render)
+        _resolve_hyperframes_segment(seg, render_public, hf_render=hf_render)
 
     # 4c) Валидатор-линтер: дублирует монтажные правила движка на уровне плана,
     # чинит безопасное (длинное тире) и логирует риски перед рендером.
@@ -169,24 +205,30 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
         raise RuntimeError("precut-покрытие сломано: " +
                            "; ".join(i.message for i in fatal[:3]))
 
-    # 5) разложить вход в модуль и отрендерить
+    # 5) разложить вход в изолированный workspace job и отрендерить общим
+    # read-only кодом/зависимостями Revideo.
     rev = REVIDEO_DIR
     _ensure_deps(rev)
-    (rev / "src" / "tz.json").write_text(
+    (render_workspace / "src" / "tz.json").write_text(
         json.dumps(tz, ensure_ascii=False, indent=2), encoding="utf-8")
-    (rev / "src" / "words.json").write_text(
+    (render_workspace / "src" / "words.json").write_text(
         json.dumps({"words": words}, ensure_ascii=False), encoding="utf-8")
-    shutil.copy(str(base), str(rev / "public" / "base.mp4"))
+    shutil.copy(str(base), str(render_public / "base.mp4"))
     # подобранные библиотечные клипы → public/ (движок читает src как /<file>)
     for name in retr.used_clips:
         src_clip = _broll_lib.LIBRARY_DIR / name
         if src_clip.exists():
-            shutil.copy(str(src_clip), str(rev / "public" / name))
+            shutil.copy(str(src_clip), str(render_public / name))
     # дефолтный broll.mp4 — фолбэк для сегментов со слабым матчем
     if broll_mp4 is not None and Path(broll_mp4).exists():
-        shutil.copy(str(broll_mp4), str(rev / "public" / "broll.mp4"))
+        shutil.copy(str(broll_mp4), str(render_public / "broll.mp4"))
 
-    env = {**os.environ, "RF_OUTFILE": str(out_mp4.resolve())}
+    env = {
+        **os.environ,
+        "RF_OUTFILE": str(out_mp4.resolve()),
+        "RF_PROJECT_FILE": str((render_workspace / "src" / "project.tsx").resolve()),
+        "RF_RENDER_DIR": str((render_workspace / "output").resolve()),
+    }
     subprocess.run("node render.mjs", cwd=str(rev), shell=True, check=True, env=env)
 
     # Revideo не нормализует звук сам — приводим к LUFS_TARGET после рендера

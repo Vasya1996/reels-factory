@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from reels_factory.config import FFMPEG, LUFS_TARGET
-from reels_factory.revideo_render import _normalize_loudness
+from reels_factory.revideo_render import _normalize_loudness, _prepare_render_workspace
 
 
 def test_normalize_loudness_вызывает_ffmpeg_с_loudnorm_и_lufs_target(tmp_path):
@@ -32,3 +32,34 @@ def test_normalize_loudness_вызывает_ffmpeg_с_loudnorm_и_lufs_target(t
     assert kwargs.get("check") is True
     # out_mp4 заменён нормализованным результатом (tmp -> out через Path.replace)
     assert mp4.read_bytes() == b"normalized"
+
+
+def test_revideo_workspace_изолирован_для_каждой_job(tmp_path):
+    template = tmp_path / "template"
+    (template / "src").mkdir(parents=True)
+    (template / "public" / "emoji").mkdir(parents=True)
+    (template / "src" / "project.tsx").write_text("// project", encoding="utf-8")
+    (template / "src" / "global.css").write_text("/* css */", encoding="utf-8")
+    (template / "public" / "emoji" / "icon.png").write_bytes(b"png")
+    (template / "public" / "whoosh.wav").write_bytes(b"sfx")
+    # Остаток старого shared runtime не должен попасть новому клиенту.
+    (template / "public" / "base.mp4").write_bytes(b"old-client")
+
+    first = _prepare_render_workspace(tmp_path / "jobs" / "job-a", template)
+    second = _prepare_render_workspace(tmp_path / "jobs" / "job-b", template)
+    assert not (first / "public" / "base.mp4").exists()
+    assert not (second / "public" / "base.mp4").exists()
+    (first / "src" / "tz.json").write_text('{"job":"a"}', encoding="utf-8")
+    (second / "src" / "tz.json").write_text('{"job":"b"}', encoding="utf-8")
+    (first / "public" / "base.mp4").write_bytes(b"client-a")
+    (second / "public" / "base.mp4").write_bytes(b"client-b")
+
+    assert first != second
+    assert (first / "src" / "tz.json").read_text(encoding="utf-8") == '{"job":"a"}'
+    assert (second / "src" / "tz.json").read_text(encoding="utf-8") == '{"job":"b"}'
+    assert (first / "public" / "base.mp4").read_bytes() == b"client-a"
+    assert (second / "public" / "base.mp4").read_bytes() == b"client-b"
+    assert (first / "public" / "emoji" / "icon.png").exists()
+    assert (second / "public" / "emoji" / "icon.png").exists()
+    assert (first / "public" / "whoosh.wav").read_bytes() == b"sfx"
+    assert (second / "public" / "whoosh.wav").read_bytes() == b"sfx"

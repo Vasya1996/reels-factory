@@ -21,10 +21,11 @@ import logging
 import os
 import subprocess
 import sys
-import time
+from contextlib import suppress
 from pathlib import Path
 
 from reels_factory.config import OUT_H, OUT_W, WORK_ROOT, load_config
+from reels_factory.jobs import BuildJob, JobStore
 from reels_factory.llm import ClaudeSkillRunner
 from reels_factory.scenario import (ScenarioError, run_generated_path, run_ideas,
                                     run_verbatim_path, split_verbatim)
@@ -44,6 +45,8 @@ WAIT_PHOTO = "wait_photo"
 CHOOSING_VOICE = "choosing_voice"    # голос уже есть: прежний или новый
 WAIT_VOICE = "wait_voice"
 READY = "ready"                      # сценарий утверждён, фото и голос собраны
+BUILDING = "building"                # job стоит в очереди или исполняется
+BUILD_FAILED = "build_failed"        # сборка/QA остановлены, видео не отправлено
 DONE = "done"                        # ролик заказан, ждём новый цикл
 
 ROLE_RU = {"hook": "хук", "context": "контекст", "development": "развитие",
@@ -99,17 +102,22 @@ DONE_MSG = (
 )
 NOT_NOW = "Сначала выберите, с чего начать: /start"
 
-BUILDING_MSG = "Собираю ролик, это займёт несколько минут…"
+BUILDING_MSG = "Задание поставлено в очередь. Напишу, когда начну сборку."
+RUNNING_MSG = "Начинаю сборку ролика. Это займёт несколько минут…"
 BUSY_MSG = "Уже собираю ролик — дождитесь, пришлю, как будет готово."
 CLIENT_NOT_FOUND_MSG = (
     "Не нашёл ваш профиль для сборки — похоже, что-то не сохранилось (например, "
     "не удалось склонировать голос). Пройдите шаги фото и голоса заново."
 )
 QA_FAIL_MSG = (
-    "Ролик собран, но проверка качества не пройдена — посмотрите внимательно.\n\n"
-    "Когда будет что снять ещё — жмите «Новый ролик» или пришлите /new."
+    "Ролик собран, но проверка качества не пройдена. Я не отправляю брак "
+    "автоматически; результат сохранён для диагностики."
 )
 MISSING_FILE_MSG = "Сборка отчиталась об успехе, но файла ролика не нашлось — гляньте руками."
+INTERRUPTED_MSG = (
+    "Сборка была остановлена перезапуском сервиса. Автоматически повторять её "
+    "не буду, чтобы исключить повторную оплату генерации."
+)
 
 MAX_TG_VIDEO_BYTES = 50 * 1024 * 1024  # лимит Bot API на видео/документ
 
@@ -175,12 +183,24 @@ def _keep_all(s: dict) -> dict:
     return {**(s or {}), "step": CHOOSING}
 
 
-# Чаты, для которых сборка сейчас идёт — не даём запустить вторую поверх.
-_building: set[int] = set()
+_job_wakeup: asyncio.Event | None = None
+_worker_task: asyncio.Task | None = None
+_job_store_cache: tuple[Path, JobStore] | None = None
 
 
 def session_dir(chat_id: int) -> Path:
     return WORK_ROOT / "bot" / str(chat_id)
+
+
+def _job_store() -> JobStore:
+    global _job_store_cache
+    db_path = (WORK_ROOT / "jobs.sqlite3").resolve()
+    if _job_store_cache is None or _job_store_cache[0] != db_path:
+        _job_store_cache = (
+            db_path,
+            JobStore(db_path, WORK_ROOT / "jobs"),
+        )
+    return _job_store_cache[1]
 
 
 def load_session(chat_id: int) -> dict:
@@ -204,8 +224,12 @@ def load_session(chat_id: int) -> dict:
 def save_session(chat_id: int, data: dict) -> None:
     d = session_dir(chat_id)
     d.mkdir(parents=True, exist_ok=True)
-    (d / "session.json").write_text(json.dumps(data, ensure_ascii=False, indent=1),
-                                    encoding="utf-8")
+    target = d / "session.json"
+    tmp = d / "session.json.tmp"
+    tmp.write_text(
+        json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8"
+    )
+    tmp.replace(target)
 
 
 # --- шаги движка (синхронные и небыстрые — в боте зовутся через to_thread) ---
@@ -295,14 +319,27 @@ def client_profile_ready(chat_id: int) -> bool:
     return bool(cfg.get("voice_id")) and bool(avatar.get("heygen_asset_id"))
 
 
-def _new_build_dir(chat_id: int) -> Path:
-    return WORK_ROOT / f"bot-{chat_id}-{int(time.time())}"
-
-
 def _write_scenario(workdir: Path, scenario: dict) -> None:
     workdir.mkdir(parents=True, exist_ok=True)
-    (workdir / "scenario.json").write_text(
-        json.dumps(scenario, ensure_ascii=False, indent=1), encoding="utf-8")
+    target = workdir / "scenario.json"
+    tmp = workdir / "scenario.json.tmp"
+    tmp.write_text(json.dumps(scenario, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(target)
+
+
+def enqueue_build(chat_id: int, scenario: dict) -> BuildJob:
+    """Подготовить immutable input и лишь затем сделать job видимой worker."""
+    store = _job_store()
+    job_id = store.new_id()
+    workdir = store.workdir_for(job_id)
+    workdir.mkdir(parents=True, exist_ok=False)
+    try:
+        _write_scenario(workdir, scenario)
+        return store.enqueue_prepared(chat_id, job_id=job_id, workdir=workdir)
+    except Exception:
+        # Не удаляем непустую папку автоматически: scenario/input могут быть
+        # полезны для диагностики. В БД такой job нет, worker её не увидит.
+        raise
 
 
 def run_build(chat_id: int, workdir: Path) -> dict:
@@ -487,6 +524,33 @@ async def cmd_new(update, context):
     await _show_start(update.message, chat_id, load_session(chat_id), loop_session)
 
 
+_JOB_STATUS_RU = {
+    "queued": "в очереди",
+    "running": "собирается",
+    "completed": "готов и отправлен",
+    "qa_failed": "остановлен проверкой качества",
+    "failed": "сборка завершилась ошибкой",
+    "interrupted": "остановлен перезапуском сервиса",
+    "delivery_failed": "готов, но не отправлен в Telegram",
+}
+
+
+async def cmd_status(update, context):
+    """Показать durable-статус последней job, а не состояние памяти процесса."""
+    chat_id = update.effective_chat.id
+    job = _job_store().latest_for_chat(chat_id)
+    if job is None:
+        await update.message.reply_text("У вас пока нет заданий на сборку.")
+        return
+    status = _JOB_STATUS_RU.get(job.status, job.status)
+    detail = f"\nЭтап: {job.stage}" if job.stage else ""
+    if job.error:
+        detail += f"\nОшибка: {job.error[:200]}"
+    await update.message.reply_text(
+        f"Последнее задание {job.job_id[:8]}: {status}.{detail}"
+    )
+
+
 async def on_button(update, context):
     q = update.callback_query
     await q.answer()
@@ -543,9 +607,12 @@ async def on_button(update, context):
         # инлайн-кнопки живут в истории чата вечно: тап по старому сообщению
         # READY после DONE не должен зазывать платную сборку заново
         if s.get("step") != READY:
-            await q.message.reply_text(NOT_NOW)
+            if _job_store().active_for_chat(chat_id):
+                await q.message.reply_text(BUSY_MSG)
+            else:
+                await q.message.reply_text(NOT_NOW)
             return
-        if chat_id in _building:
+        if _job_store().active_for_chat(chat_id):
             await q.message.reply_text(BUSY_MSG)
             return
         try:
@@ -556,7 +623,7 @@ async def on_button(update, context):
         if not client_profile_ready(chat_id):
             await q.message.reply_text(CLIENT_NOT_FOUND_MSG)
             return
-        await _build_and_send(q.message, chat_id, s)
+        await _enqueue_build(q.message, chat_id, s)
     elif data == "new_reel":
         await _show_start(q.message, chat_id, s, loop_session)
 
@@ -589,42 +656,171 @@ async def _finish_voice(msg, chat_id: int, s: dict):
     await msg.reply_text(READY_MSG, reply_markup=_kb_ready())
 
 
-async def _build_and_send(msg, chat_id: int, s: dict):
-    """Сборка минутами — движок синхронный, зовём через поток, бот тем временем
-    отвечает другим чатам. По готовности шлём mp4 в чат и показываем DONE."""
-    _building.add(chat_id)
+async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
+    """Поставить job в durable FIFO; платный pipeline здесь не запускается."""
     try:
-        await msg.reply_text(BUILDING_MSG)
-        workdir = _new_build_dir(chat_id)
-        _write_scenario(workdir, s["scenario"])
-        result = await asyncio.to_thread(run_build, chat_id, workdir)
+        job = enqueue_build(chat_id, s["scenario"])
     except Exception as e:
-        await msg.reply_text(f"Сборка сорвалась: {str(e)[:200]}")
+        await msg.reply_text(f"Не удалось поставить ролик в очередь: {str(e)[:200]}")
+        return None
+
+    s["step"] = BUILDING
+    s["current_job_id"] = job.job_id
+    save_session(chat_id, s)
+    ahead = _job_store().queued_ahead(job.job_id)
+    suffix = f" Перед вами заданий: {ahead}." if ahead else ""
+    if _job_wakeup is not None:
+        _job_wakeup.set()
+    try:
+        await msg.reply_text(f"{BUILDING_MSG}{suffix}\nID: {job.job_id[:8]}")
+    except Exception as e:
+        # Job уже durable и worker разбужен. Сбой служебного Telegram-сообщения
+        # не должен потерять задание или оставить очередь спящей.
+        log.warning("job %s поставлена в очередь, но статус не отправлен: %s", job.job_id, e)
+    return job
+
+
+def _update_session_after_job(chat_id: int, job_id: str, step: str) -> None:
+    """Не затирать более новую сессию, если пользователь уже начал другой цикл."""
+    s = load_session(chat_id)
+    if s.get("current_job_id") != job_id:
         return
-    finally:
-        _building.discard(chat_id)
+    s["step"] = step
+    s["last_job_id"] = job_id
+    s.pop("current_job_id", None)
+    save_session(chat_id, s)
+
+
+async def _safe_job_message(bot_api, chat_id: int, text: str) -> None:
+    try:
+        await bot_api.send_message(chat_id=chat_id, text=text)
+    except Exception as e:
+        log.warning("не удалось отправить статус job в чат %s: %s", chat_id, e)
+
+
+async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
+    """Исполнить уже claimed job и доставить только результат с QA PASS."""
+    store = _job_store()
+    build_fn = build_fn or run_build
+    await _safe_job_message(
+        bot_api, job.chat_id, f"{RUNNING_MSG}\nID: {job.job_id[:8]}"
+    )
+    try:
+        result = await asyncio.to_thread(build_fn, job.chat_id, job.workdir)
+    except Exception as e:
+        result = {"ok": False, "stage": "build", "error": str(e)[:500]}
 
     if not result.get("ok"):
-        await msg.reply_text(f"Не получилось собрать ролик: {result.get('error') or 'неизвестная ошибка'}")
+        error = result.get("error") or "неизвестная ошибка"
+        store.finish(
+            job.job_id,
+            "failed",
+            result=result,
+            stage=result.get("stage") or "build",
+            error=error,
+        )
+        _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        await _safe_job_message(
+            bot_api,
+            job.chat_id,
+            f"Не получилось собрать ролик: {error}\nID: {job.job_id[:8]}",
+        )
         return
 
-    mp4 = Path(result.get("mp4") or (workdir / "reel.mp4"))
+    mp4 = Path(result.get("mp4") or (job.workdir / "reel.mp4"))
     if not mp4.exists():
-        await msg.reply_text(MISSING_FILE_MSG)
-        return
-    if mp4.stat().st_size > MAX_TG_VIDEO_BYTES:
-        await msg.reply_text(f"Ролик собрался, но весит больше 50 МБ — Telegram такое "
-                             f"не примет. Файл здесь: {mp4}")
+        store.finish(
+            job.job_id,
+            "failed",
+            result=result,
+            stage="output",
+            error=MISSING_FILE_MSG,
+        )
+        _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        await _safe_job_message(bot_api, job.chat_id, MISSING_FILE_MSG)
         return
 
-    caption = DONE_MSG if result.get("qa_pass") else QA_FAIL_MSG
-    with mp4.open("rb") as f:
-        # width/height обязательны: без них телеграм-плеер не знает размеров
-        # до полной загрузки и показывает вертикальный ролик квадратом
-        await msg.reply_video(video=f, caption=caption, reply_markup=_kb_done(),
-                              width=OUT_W, height=OUT_H)
-    s["step"] = DONE
-    save_session(chat_id, s)
+    if not result.get("qa_pass"):
+        store.finish(
+            job.job_id,
+            "qa_failed",
+            result=result,
+            stage="verify",
+            error="QA gates failed",
+        )
+        _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        await _safe_job_message(
+            bot_api, job.chat_id, f"{QA_FAIL_MSG}\nID: {job.job_id[:8]}"
+        )
+        return
+
+    if mp4.stat().st_size > MAX_TG_VIDEO_BYTES:
+        error = (
+            "Ролик собрался, но весит больше 50 МБ — Telegram его не примет. "
+            f"Файл сохранён: {mp4}"
+        )
+        store.finish(
+            job.job_id,
+            "delivery_failed",
+            result=result,
+            stage="delivery",
+            error=error,
+        )
+        _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        await _safe_job_message(bot_api, job.chat_id, error)
+        return
+
+    try:
+        with mp4.open("rb") as f:
+            await bot_api.send_video(
+                chat_id=job.chat_id,
+                video=f,
+                caption=DONE_MSG,
+                reply_markup=_kb_done(),
+                width=OUT_W,
+                height=OUT_H,
+            )
+    except Exception as e:
+        store.finish(
+            job.job_id,
+            "delivery_failed",
+            result=result,
+            stage="delivery",
+            error=str(e),
+        )
+        _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        await _safe_job_message(
+            bot_api,
+            job.chat_id,
+            "Ролик готов и прошёл QA, но Telegram не принял файл. "
+            f"Он сохранён для повторной отправки.\nID: {job.job_id[:8]}",
+        )
+        return
+
+    store.finish(job.job_id, "completed", result=result, stage="delivery")
+    _update_session_after_job(job.chat_id, job.job_id, DONE)
+
+
+async def _job_worker(bot_api) -> None:
+    """Один последовательный worker; очередь и claim находятся в SQLite."""
+    store = _job_store()
+    while True:
+        try:
+            if _job_wakeup is not None:
+                _job_wakeup.clear()
+            job = await asyncio.to_thread(store.claim_next)
+            if job is None:
+                if _job_wakeup is None:
+                    await asyncio.sleep(1)
+                else:
+                    await _job_wakeup.wait()
+                continue
+            await _process_job(bot_api, job)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("необработанная ошибка render worker")
+            await asyncio.sleep(1)
 
 
 async def on_message(update, context):
@@ -728,10 +924,33 @@ async def _download(context, media, chat_id: int) -> Path:
 
 
 async def _post_init(app):
-    """Команда /new в меню бота — чтобы кнопка «Новый ролик» не терялась в переписке."""
+    """Поднять durable worker и безопасно закрыть осиротевшие running jobs."""
     from telegram import BotCommand
 
-    await app.bot.set_my_commands([BotCommand("new", "Новый ролик")])
+    await app.bot.set_my_commands(
+        [BotCommand("new", "Новый ролик"), BotCommand("status", "Статус сборки")]
+    )
+    interrupted = await asyncio.to_thread(_job_store().mark_running_interrupted)
+    for job in interrupted:
+        _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        await _safe_job_message(
+            app.bot, job.chat_id, f"{INTERRUPTED_MSG}\nID: {job.job_id[:8]}"
+        )
+
+    global _job_wakeup, _worker_task
+    _job_wakeup = asyncio.Event()
+    _worker_task = asyncio.create_task(_job_worker(app.bot), name="reels-render-worker")
+    _job_wakeup.set()  # забрать queued jobs, пережившие перезапуск
+
+
+async def _post_shutdown(app):
+    global _job_wakeup, _worker_task
+    if _worker_task is not None:
+        _worker_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _worker_task
+    _worker_task = None
+    _job_wakeup = None
 
 
 def main():
@@ -741,9 +960,16 @@ def main():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
         raise SystemExit("Нет TELEGRAM_BOT_TOKEN в окружении")
-    app = ApplicationBuilder().token(token).post_init(_post_init).build()
+    app = (
+        ApplicationBuilder()
+        .token(token)
+        .post_init(_post_init)
+        .post_shutdown(_post_shutdown)
+        .build()
+    )
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("new", cmd_new))
+    app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(MessageHandler(~filters.COMMAND, on_message))
     app.run_polling()
