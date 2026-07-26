@@ -154,6 +154,7 @@ from reels_factory.editplan import (
     save_edit_plan,
     validate_edit_plan,
 )
+from reels_factory.revideo_adapter import edit_plan_to_tz
 
 
 def _canonical_scenario():
@@ -200,6 +201,56 @@ def _canonical_config(**avatar):
     }
     result["avatar"].update(avatar)
     return result
+
+
+def _three_questions_scenario():
+    return {
+        "theme": "три вопроса продаж",
+        "blocks": [
+            {
+                "role": "hook",
+                "start": 0.0,
+                "end": 6.2,
+                "speech": (
+                    "Все продажи на свете сводятся к трём вопросам. "
+                    "И порядок этих вопросов решает всё."
+                ),
+            },
+            {
+                "role": "development",
+                "start": 6.2,
+                "end": 33.2,
+                "speech": (
+                    "Мы обожаем усложнять продажи. Учим хитрые приёмы. "
+                    "Зубрим скрипты. Ищем волшебные фразы. "
+                    "А в основе — три больших вопроса. Первый: кому продаём? "
+                    "Кто этот человек, чем живёт, какая у него боль. "
+                    "Второй: что продаём? Что человек на самом деле у нас "
+                    "покупает. Третий: как продаём? Где встречаемся с ним, "
+                    "какими словами говорим, в каком виде предлагаем. "
+                    "Всё остальное — надстройка над этими тремя."
+                ),
+            },
+            {
+                "role": "payoff",
+                "start": 33.2,
+                "end": 40.0,
+                "speech": (
+                    "Звучит просто. Но самое важное — порядок. "
+                    "Сначала кто, пото́м что, и только пото́м как."
+                ),
+            },
+            {
+                "role": "cta",
+                "start": 40.0,
+                "end": 44.7,
+                "speech": (
+                    "Сохрани это видео. Прогони свой продукт по трём вопросам. "
+                    "Прямо сегодня."
+                ),
+            },
+        ],
+    }
 
 
 def _library(tmp_path, *, duration=8.0):
@@ -279,6 +330,134 @@ def test_canonical_draft_фиксирует_script_phrase_windows_и_asset(tmp_p
     assert development["coverage"] == "full_broll"
     assert development["safe_to_skip_avatar"] is True
     assert development["asset"]["path"].endswith("automation.mp4")
+
+
+def test_three_questions_формирует_task_list_с_avatar_bubble():
+    plan = build_edit_plan(
+        _three_questions_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+
+    bubbles = [
+        window
+        for window in plan["windows"]
+        if (window.get("effect") or {}).get("bubble")
+    ]
+    assert len(bubbles) == 1
+    bubble = bubbles[0]
+    effect = bubble["effect"]
+    assert bubble["coverage"] == "mixed"
+    assert bubble["safe_to_skip_avatar"] is False
+    assert effect["bubble"] == {
+        "shape": "circle",
+        "position": "bottom_left",
+    }
+    assert effect["hyperframes"]["block"] == "task_list"
+    assert effect["hyperframes"]["variables"] == {
+        "title": "3 · КАК ПРОДАЁМ",
+        "items": [
+            "Где встречаемся с ним",
+            "какими словами говорим",
+            "в каком виде предлагаем",
+        ],
+    }
+    own = {
+        phrase["id"]: phrase
+        for phrase in plan["phrases"]
+        if phrase["id"] in bubble["phrase_ids"]
+    }
+    assert all(phrase["coverage"] == "mixed" for phrase in own.values())
+    bubble_index = plan["windows"].index(bubble)
+    lead = plan["windows"][bubble_index - 1]
+    assert lead["coverage"] == "avatar"
+    assert lead["camera"]["type"] == "punch_in"
+    assert "Третий: как продаём?" in " ".join(
+        phrase["text"]
+        for phrase in plan["phrases"]
+        if phrase["id"] in lead["phrase_ids"]
+    )
+    assert plan["summary"]["bubble_windows"] == 1
+    assert 3.0 <= plan["summary"]["bubble_seconds"] <= 6.0
+    assert plan["validation"]["all_pass"] is True
+
+
+def test_bubble_можно_отключить_в_config():
+    config = _canonical_config()
+    config["edit_plan"] = {"bubble": {"enabled": False}}
+
+    plan = build_edit_plan(
+        _three_questions_scenario(),
+        config,
+        index={},
+        require_asset_files=False,
+    )
+
+    assert not any(
+        (window.get("effect") or {}).get("bubble")
+        for window in plan["windows"]
+    )
+    assert plan["constraints"]["bubble"]["max_count"] == 0
+
+
+def test_bubble_проецируется_в_revideo_с_face_crop():
+    final = build_edit_plan(
+        _three_questions_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+    final["status"] = "final"
+    final["timeline"]["final_duration_seconds"] = final["timeline"][
+        "estimated_duration_seconds"
+    ]
+    for collection in ("phrases", "windows", "blocks"):
+        for item in final[collection]:
+            item["final_timing"] = copy.deepcopy(item["estimated_timing"])
+    final["validation"] = validate_edit_plan(
+        final, require_final=True, require_asset_files=False
+    )
+
+    tz = edit_plan_to_tz(
+        final,
+        _canonical_config(),
+        face={"cx": 531, "cy": 608, "h": 412},
+    )
+
+    bubble = next(
+        segment
+        for segment in tz["segments"]
+        if (segment.get("effect") or {}).get("bubble")
+    )
+    assert bubble["coverage"] == "mixed"
+    assert bubble["effect"]["bubble"] == {
+        "shape": "circle",
+        "position": "bottom_left",
+        "face": {"cx": 531, "cy": 608, "h": 412},
+        "face_zoom": 3.1,
+        "face_dy": 45,
+    }
+
+
+def test_validator_защищает_avatar_bubble_contract():
+    plan = build_edit_plan(
+        _three_questions_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+    bubble = next(
+        window
+        for window in plan["windows"]
+        if (window.get("effect") or {}).get("bubble")
+    )
+    bubble["coverage"] = "avatar"
+
+    report = validate_edit_plan(plan, require_asset_files=False)
+
+    assert report["all_pass"] is False
+    assert any("bubble требует mixed coverage" in error for error in report["errors"])
 
 
 def test_save_canonical_пишет_только_edit_plan(tmp_path):

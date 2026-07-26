@@ -27,6 +27,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 import re
 import subprocess
 from pathlib import Path
@@ -231,6 +232,37 @@ PHRASE_BROLL_THRESHOLD = 0.18
 ASSET_DURATION_SAFETY = 1.25
 FULL_COVER_ROLES = {"context", "development"}
 
+# Avatar bubble — это не замена смысловому визуалу, а присутствие ведущего
+# поверх полноэкранного B-roll/HyperFrames. Окно короче 3с мелькает, длиннее
+# 6с снова начинает читаться как затянутая «голова в углу».
+BUBBLE_DEFAULTS = {
+    "enabled": True,
+    "min_seconds": 3.0,
+    "max_seconds": 6.0,
+    "max_per_45_seconds": 1,
+    "shape": "circle",
+    "position": "bottom_left",
+}
+BUBBLE_SHAPES = {"circle", "square"}
+BUBBLE_POSITIONS = {"bottom_left", "bottom_right", "top_left", "top_right"}
+_BUBBLE_SEQUENCE_HEAD = re.compile(
+    r"\b(перв\w*|втор\w*|трет\w*|четвер\w*|пят\w*|"
+    r"first|second|third|fourth|fifth)\s*:",
+    re.IGNORECASE,
+)
+_BUBBLE_ORDINALS = {
+    "перв": "1",
+    "втор": "2",
+    "трет": "3",
+    "четвер": "4",
+    "пят": "5",
+    "first": "1",
+    "second": "2",
+    "third": "3",
+    "fourth": "4",
+    "fifth": "5",
+}
+
 # HeyGen рекомендует короткий prompt: одно видимое движение + выражение лица,
 # максимум две короткие части. Ролевые defaults намеренно консервативны:
 # ``high`` не используется автоматически, чтобы не провоцировать переигрывание.
@@ -345,6 +377,15 @@ def _phrase_spans(speech: str) -> list[tuple[int, int]]:
     spans: list[tuple[int, int]] = []
     start_index = 0
     for index, token in enumerate(tokens):
+        # Нумерованный смысловой шаг должен начинать новую canonical phrase.
+        # Иначе короткий хвост предыдущего предложения («покупает.») может
+        # склеиться с «Третий: ...» и исказить visual timing/bubble window.
+        starts_numbered_step = bool(
+            _BUBBLE_SEQUENCE_HEAD.match(token.group(0))
+        )
+        if starts_numbered_step and index > start_index:
+            spans.append((tokens[start_index].start(), tokens[index - 1].end()))
+            start_index = index
         count = index - start_index + 1
         ends_punctuation = bool(re.search(r"[,;.!?…]$", token.group(0)))
         if count >= 6 or (ends_punctuation and count >= 3):
@@ -578,6 +619,127 @@ def _chart_variables(text: str, start: float, end: float) -> dict | None:
     }
 
 
+def _bubble_settings(config: dict, duration: float) -> dict:
+    raw = ((config.get("edit_plan") or {}).get("bubble") or {})
+    settings = dict(BUBBLE_DEFAULTS)
+    settings.update(raw)
+    enabled = settings.get("enabled")
+    if isinstance(enabled, str):
+        enabled = enabled.strip().lower() in {"1", "true", "yes", "on"}
+    settings["enabled"] = bool(enabled)
+    try:
+        settings["min_seconds"] = float(settings["min_seconds"])
+        settings["max_seconds"] = float(settings["max_seconds"])
+        settings["max_per_45_seconds"] = int(settings["max_per_45_seconds"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("edit_plan.bubble содержит нечисловой лимит") from exc
+    if not 1.2 <= settings["min_seconds"] <= settings["max_seconds"] <= 10.0:
+        raise ValueError(
+            "edit_plan.bubble требует 1.2 <= min_seconds <= max_seconds <= 10"
+        )
+    if settings["max_per_45_seconds"] < 0:
+        raise ValueError("edit_plan.bubble.max_per_45_seconds должен быть >= 0")
+    settings["shape"] = str(settings["shape"]).strip().lower()
+    settings["position"] = str(settings["position"]).strip().lower()
+    if settings["shape"] not in BUBBLE_SHAPES:
+        raise ValueError("edit_plan.bubble.shape должен быть circle|square")
+    if settings["position"] not in BUBBLE_POSITIONS:
+        raise ValueError(
+            "edit_plan.bubble.position должен быть одним из четырёх углов"
+        )
+    periods = max(1, math.ceil(max(0.0, float(duration)) / 45.0 - 1e-9))
+    settings["max_count"] = (
+        settings["max_per_45_seconds"] * periods if settings["enabled"] else 0
+    )
+    return settings
+
+
+def _bubble_title(text: str, match: re.Match) -> str:
+    ordinal = match.group(1).lower()
+    number = next(
+        (
+            value
+            for prefix, value in _BUBBLE_ORDINALS.items()
+            if ordinal.startswith(prefix)
+        ),
+        "",
+    )
+    topic = text[match.end():].strip(" .!?…:;—-")
+    topic = " ".join(topic.split()[:4]).upper()
+    return f"{number} · {topic}".strip(" ·")[:30] or "КЛЮЧЕВОЙ ШАГ"
+
+
+def _bubble_item_label(text: str) -> str:
+    clean = " ".join(str(text or "").strip(" ,.!?…:;—-").split()[:5])
+    return clean[:32]
+
+
+def _bubble_task_list_candidate(
+    block_phrases: list[dict],
+    start_index: int,
+    settings: dict,
+) -> dict | None:
+    """Найти короткий нумерованный шаг с тремя поясняющими пунктами.
+
+    Это детерминированный offline fallback для конструкций вида
+    «Третий: как продаём? Где..., какими..., в каком...». Более свободные
+    семантические случаи позже может рекомендовать visual LLM, но renderer
+    получает тот же canonical effect contract.
+    """
+    if not settings["enabled"] or start_index >= len(block_phrases):
+        return None
+    head = block_phrases[start_index]
+    match = _BUBBLE_SEQUENCE_HEAD.search(head["text"])
+    if not match:
+        return None
+    supporting: list[dict] = []
+    items: list[str] = []
+    for phrase in block_phrases[start_index + 1:start_index + 4]:
+        if _BUBBLE_SEQUENCE_HEAD.search(phrase["text"]):
+            break
+        label = _bubble_item_label(phrase["text"])
+        if not label:
+            break
+        supporting.append(phrase)
+        items.append(label)
+    if len(items) != 3:
+        return None
+    start = float(supporting[0]["estimated_timing"]["start"])
+    end = float(supporting[-1]["estimated_timing"]["end"])
+    duration = end - start
+    if not settings["min_seconds"] <= duration <= settings["max_seconds"]:
+        return None
+    title = _bubble_title(head["text"], match)
+    span = max(0.1, duration)
+    chart_items = [
+        {
+            "t": round(start + span * index / len(items), 2),
+            "label": label,
+            "v": [0.72, 0.86, 1.0][index],
+        }
+        for index, label in enumerate(items)
+    ]
+    return {
+        "lead": [head],
+        "selected": supporting,
+        "title": title,
+        "items": items,
+        "effect": {
+            "type": "chart_bars",
+            "title": title,
+            "items": chart_items,
+            "hyperframes": {
+                "block": "task_list",
+                "variables": {"title": title, "items": items},
+            },
+            "bubble": {
+                "shape": settings["shape"],
+                "position": settings["position"],
+            },
+        },
+    }
+
+
 def _window_effect(
     coverage: str,
     *,
@@ -708,6 +870,8 @@ def _plan_visual_windows(
 ) -> list[dict]:
     windows: list[dict] = []
     used_assets: set[str] = set()
+    total_duration = float((scenario.get("blocks") or [{}])[-1].get("end") or 0)
+    bubble_settings = _bubble_settings(config, total_duration)
     allow_full_cover = str(config.get("format") or "split") == "avatar"
     explicit_full_cover = (
         _legacy_full_cover(scenario, legacy_broll_plan)
@@ -786,7 +950,7 @@ def _plan_visual_windows(
         "before_after": False,
         "stat": False,
         "chart": False,
-        "bubble": False,
+        "bubble": 0,
         "automation_broll": False,
         "instruction_broll": False,
     }
@@ -897,6 +1061,55 @@ def _plan_visual_windows(
             text = phrase["text"]
             low = f" {text.lower()} "
 
+            bubble_sequence = (
+                _bubble_task_list_candidate(
+                    block_phrases, local_index, bubble_settings
+                )
+                if role in {"context", "development", "payoff"}
+                and used_effects["bubble"] < bubble_settings["max_count"]
+                else None
+            )
+            if bubble_sequence:
+                lead = bubble_sequence["lead"]
+                selected = bubble_sequence["selected"]
+                _assign_window(
+                    windows,
+                    phrases,
+                    lead,
+                    coverage="avatar",
+                    visual_intent=(
+                        "Сформулировать нумерованный вопрос лицом в кадре "
+                        "перед раскрытием списка."
+                    ),
+                    reason=(
+                        "Короткая постановка вопроса сохраняет eye contact; "
+                        "смысловой visual раскрывается на следующих пунктах."
+                    ),
+                    camera="punch_in",
+                    caption="highlight",
+                )
+                _assign_window(
+                    windows,
+                    phrases,
+                    selected,
+                    coverage="mixed",
+                    visual_intent=(
+                        "Показать смысловую последовательность на весь экран, "
+                        "сохранив ведущего в avatar bubble."
+                    ),
+                    reason=(
+                        "Нумерованный шаг раскрывается тремя короткими "
+                        "пунктами; task-list получает приоритет, лицо остаётся "
+                        "в поддерживающем bubble."
+                    ),
+                    effect=bubble_sequence["effect"],
+                    camera="hold",
+                    caption="hidden",
+                )
+                used_effects["bubble"] += 1
+                local_index += len(lead) + len(selected)
+                continue
+
             stat = (
                 stat_from_phrase(text)
                 if not used_effects["stat"]
@@ -933,7 +1146,10 @@ def _plan_visual_windows(
 
             if (
                 role == "payoff"
-                and not used_effects["bubble"]
+                and used_effects["bubble"] < bubble_settings["max_count"]
+                and bubble_settings["min_seconds"]
+                <= block_duration
+                <= bubble_settings["max_seconds"]
                 and re.search(r"настро|один раз|больше не|готов", low)
             ):
                 query = broll_query(text, "крупный план, атмосфера")
@@ -956,7 +1172,7 @@ def _plan_visual_windows(
                     block_duration,
                 )
                 if asset:
-                    used_effects["bubble"] = True
+                    used_effects["bubble"] += 1
                     effect = _window_effect("full_broll", asset=asset)
                     effect["bubble"] = {
                         "shape": "circle",
@@ -1108,6 +1324,8 @@ def _refresh_blocks_and_summary(plan: dict) -> None:
     timing_key = "final_timing" if plan.get("status") == "final" else "estimated_timing"
     full_broll_seconds = 0.0
     avatar_visible_seconds = 0.0
+    bubble_seconds = 0.0
+    bubble_windows = 0
     for window in windows:
         timing = window.get(timing_key) or window.get("estimated_timing") or {}
         duration = max(0.0, float(timing.get("end", 0)) - float(timing.get("start", 0)))
@@ -1115,6 +1333,9 @@ def _refresh_blocks_and_summary(plan: dict) -> None:
             full_broll_seconds += duration
         if window.get("coverage") in {"avatar", "mixed"}:
             avatar_visible_seconds += duration
+        if (window.get("effect") or {}).get("bubble"):
+            bubble_seconds += duration
+            bubble_windows += 1
     block_avatar_seconds = 0.0
     for block in blocks:
         timing = block.get(timing_key) or block.get("estimated_timing") or {}
@@ -1128,6 +1349,8 @@ def _refresh_blocks_and_summary(plan: dict) -> None:
         "windows": len(windows),
         "full_broll_seconds": round(full_broll_seconds, 3),
         "avatar_visible_seconds": round(avatar_visible_seconds, 3),
+        "bubble_seconds": round(bubble_seconds, 3),
+        "bubble_windows": bubble_windows,
         "transitional_heygen_block_seconds": round(block_avatar_seconds, 3),
         "covered_block_indexes": [
             block["index"] for block in blocks if not block["avatar_required"]
@@ -1184,6 +1407,7 @@ def build_edit_plan(
             "final_timing": None,
         })
     total = float(scenario["blocks"][-1]["end"])
+    bubble_constraints = _bubble_settings(config, total)
     plan = {
         "format_version": EDIT_PLAN_FORMAT_VERSION,
         "status": "draft",
@@ -1204,6 +1428,7 @@ def build_edit_plan(
             "phrase_broll_confidence_min": PHRASE_BROLL_THRESHOLD,
             "max_face_absence_seconds": MAX_FACE_ABSENCE_S,
             "min_fullscreen_seconds": MIN_FULLSCREEN_S,
+            "bubble": bubble_constraints,
         },
         "blocks": blocks,
         "phrases": phrases,
@@ -1379,6 +1604,24 @@ def finalize_edit_plan(
                     f"({available:.2f}с < {duration:.2f}с)",
                 )
                 continue
+        bubble = (window.get("effect") or {}).get("bubble")
+        bubble_constraints = (result.get("constraints") or {}).get("bubble") or {}
+        bubble_min = float(
+            bubble_constraints.get("min_seconds", BUBBLE_DEFAULTS["min_seconds"])
+        )
+        bubble_max = float(
+            bubble_constraints.get("max_seconds", BUBBLE_DEFAULTS["max_seconds"])
+        )
+        if bubble and not (
+            bubble_min <= duration <= bubble_max
+        ):
+            _downgrade_window(
+                result,
+                window,
+                f"bubble exact window {duration:.2f}с вне разрешённого "
+                f"{bubble_min:.1f}–{bubble_max:.1f}с",
+            )
+            continue
         if (
             window.get("coverage") in {"full_broll", "hyperframes"}
             and duration > MAX_FACE_ABSENCE_S
@@ -1485,6 +1728,14 @@ def validate_edit_plan(
     previous_window_end = 0.0
     timing_key = "final_timing" if plan.get("status") == "final" else "estimated_timing"
     face_absence_start = None
+    bubble_count = 0
+    bubble_constraints = (plan.get("constraints") or {}).get("bubble") or {}
+    bubble_min = float(
+        bubble_constraints.get("min_seconds", BUBBLE_DEFAULTS["min_seconds"])
+    )
+    bubble_max = float(
+        bubble_constraints.get("max_seconds", BUBBLE_DEFAULTS["max_seconds"])
+    )
     for window in windows:
         own_ids = window.get("phrase_ids") or []
         assigned.extend(own_ids)
@@ -1536,10 +1787,39 @@ def validate_edit_plan(
         if role == "cta" and coverage not in {"avatar", "mixed"}:
             errors.append(f"{window.get('id')}: CTA нельзя полностью скрывать")
 
+        effect = window.get("effect") or {}
+        bubble = effect.get("bubble")
+        if bubble:
+            bubble_count += 1
+            if coverage != "mixed" or window.get("safe_to_skip_avatar"):
+                errors.append(
+                    f"{window.get('id')}: bubble требует mixed coverage и Avatar IV"
+                )
+            if role in {"hook", "cta"}:
+                errors.append(
+                    f"{window.get('id')}: bubble нельзя использовать в {role}"
+                )
+            if not bubble_min <= duration <= bubble_max:
+                errors.append(
+                    f"{window.get('id')}: bubble должен длиться "
+                    f"{bubble_min:.1f}–{bubble_max:.1f}с"
+                )
+            if str(bubble.get("shape") or "") not in BUBBLE_SHAPES:
+                errors.append(f"{window.get('id')}: неизвестная bubble shape")
+            if str(bubble.get("position") or "") not in BUBBLE_POSITIONS:
+                errors.append(f"{window.get('id')}: неизвестная bubble position")
+            has_supporting_visual = bool(effect.get("hyperframes")) or (
+                effect.get("type") == "broll"
+                and effect.get("style") == "fullscreen"
+            )
+            if not has_supporting_visual:
+                errors.append(
+                    f"{window.get('id')}: bubble требует fullscreen "
+                    "B-roll или HyperFrames visual"
+                )
+
         asset = window.get("asset") or {}
-        if coverage in {"full_broll", "mixed"} and (window.get("effect") or {}).get(
-            "type"
-        ) == "broll":
+        if coverage in {"full_broll", "mixed"} and effect.get("type") == "broll":
             if not asset.get("src"):
                 errors.append(f"{window.get('id')}: B-roll без asset")
             confidence = float(asset.get("confidence") or 0.0)
@@ -1570,6 +1850,12 @@ def validate_edit_plan(
             warnings.append(
                 f"{window.get('id')}: external B-roll проверяется после ingest"
             )
+
+    max_bubbles = int(bubble_constraints.get("max_count", max(1, bubble_count)))
+    if bubble_count > max_bubbles:
+        errors.append(
+            f"bubble windows превышают лимит: {bubble_count}>{max_bubbles}"
+        )
 
     if sorted(assigned) != sorted(ids):
         errors.append("windows должны назначить каждую phrase ровно один раз")

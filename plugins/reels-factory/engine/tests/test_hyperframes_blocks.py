@@ -86,6 +86,27 @@ def test_resolve_hyperframes_конвертит_в_fullscreen_broll(tmp_path):
     assert (tmp_path / "hf_7.mp4").exists()
 
 
+def test_resolve_hyperframes_сохраняет_avatar_bubble(tmp_path):
+    seg = _hf_seg()
+    seg["effect"]["bubble"] = {
+        "shape": "circle",
+        "position": "bottom_left",
+        "face": {"cx": 531, "cy": 669, "h": 313},
+        "face_zoom": 3.1,
+        "face_dy": 45,
+    }
+
+    def fake_render(block, variables, duration, out_path):
+        out_path.write_bytes(b"mp4")
+        return out_path
+
+    rr._resolve_hyperframes_segment(seg, tmp_path, hf_render=fake_render)
+
+    assert seg["effect"]["type"] == "broll"
+    assert seg["effect"]["bubble"]["shape"] == "circle"
+    assert seg["effect"]["bubble"]["face"]["cx"] == 531
+
+
 def test_resolve_hyperframes_фолбэк_на_ошибке(tmp_path):
     seg = _hf_seg()
 

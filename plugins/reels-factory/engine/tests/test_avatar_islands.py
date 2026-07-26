@@ -214,6 +214,57 @@ def test_performance_intents_preserved_and_low_high_forces_boundary():
     }
 
 
+def test_mixed_bubble_window_is_included_in_avatar_iv_islands():
+    edit_plan = _final_edit_plan(30)
+    bubble_window = next(
+        window
+        for window in edit_plan["windows"]
+        if window["coverage"] == "hyperframes"
+    )
+    bubble_window_index = edit_plan["windows"].index(bubble_window)
+    remainder = copy.deepcopy(bubble_window)
+    bubble_window["phrase_ids"] = bubble_window["phrase_ids"][:2]
+    remainder["id"] = f"{bubble_window['id']}-remainder"
+    remainder["phrase_ids"] = remainder["phrase_ids"][2:]
+    split_at = edit_plan["phrases"][6]["final_timing"]["end"]
+    for timing_key in ("estimated_timing", "final_timing"):
+        bubble_window[timing_key]["end"] = split_at
+        bubble_window[timing_key]["duration"] = (
+            split_at - bubble_window[timing_key]["start"]
+        )
+        remainder[timing_key]["start"] = split_at
+        remainder[timing_key]["duration"] = (
+            remainder[timing_key]["end"] - split_at
+        )
+    bubble_window["coverage"] = "mixed"
+    bubble_window["effect"] = {
+        "type": "chart_bars",
+        "hyperframes": {"block": "task_list", "variables": {}},
+        "bubble": {"shape": "circle", "position": "bottom_left"},
+    }
+    edit_plan["windows"][bubble_window_index:bubble_window_index + 1] = [
+        bubble_window,
+        remainder,
+    ]
+    bubble_phrase_ids = set(bubble_window["phrase_ids"])
+    for phrase in edit_plan["phrases"]:
+        if phrase["id"] in bubble_phrase_ids:
+            phrase["coverage"] = "mixed"
+            phrase["window_id"] = bubble_window["id"]
+        elif phrase["id"] in remainder["phrase_ids"]:
+            phrase["window_id"] = remainder["id"]
+
+    plan = build_avatar_render_plan(edit_plan, _config())
+    generated_phrase_ids = {
+        phrase_id
+        for shot in plan["shots"]
+        for phrase_id in shot["phrase_ids"]
+    }
+
+    assert bubble_phrase_ids <= generated_phrase_ids
+    assert plan["validation"]["all_pass"] is True
+
+
 def test_avatar_v_is_rejected_before_render_plan():
     config = _config()
     config["avatar"]["heygen_look_id"] = "look-v"

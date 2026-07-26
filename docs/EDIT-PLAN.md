@@ -50,6 +50,51 @@ defaults используют `low`/`medium`, а `high` оставляют дл�
 содержит ровно одну рекомендацию для каждой фразы. Явные avatar settings
 пользователя не перезаписываются.
 
+## Avatar bubble
+
+Bubble является canonical visual decision, а не поздним украшением Revideo.
+Окно хранится как `coverage: mixed`: полноэкранный B-roll/HyperFrames несёт
+смысл, а Photo Avatar IV остаётся поверх него в круглом или квадратном crop.
+Поэтому Avatar Islands обязаны сгенерировать соответствующие phrase IDs.
+
+Deterministic fallback распознаёт короткий нумерованный шаг с тремя
+поясняющими фразами, например:
+
+```text
+Третий: как продаём? Где встречаемся, какими словами говорим,
+в каком виде предлагаем.
+```
+
+Для такого окна planner создаёт HyperFrames `task_list`, добавляет
+`effect.bubble` и скрывает дублирующие нижние captions. Существующий
+payoff+B-roll триггер (`настроил`, `один раз`, `больше не`, `готово`) использует
+тот же контракт.
+
+Quality gates:
+
+- только `coverage: mixed`, без `safe_to_skip_avatar`;
+- supporting visual обязателен: fullscreen B-roll либо HyperFrames;
+- hook и CTA запрещены;
+- default duration 3–6 секунд;
+- default frequency — один bubble на каждые начатые 45 секунд;
+- `shape: circle|square`, позиция — один из четырёх углов;
+- exact master alignment вне разрешённой длительности даёт явный avatar
+  fallback до HeyGen.
+
+Настройки находятся в `edit_plan.bubble`. При успешном HyperFrames render
+bubble сохраняется при замене HTML-блока на fullscreen mp4; при сбое остаётся
+встроенный `chart_bars` fallback.
+
+На сценарии «три вопроса продаж» offline draft формирует:
+
+- `23.768–25.208` — лицо крупно, punch-in на «Третий: как продаём?»;
+- `25.208–30.176` — HyperFrames `task_list`, три пункта появляются
+  последовательно, Photo Avatar IV остаётся в `bottom_left` circle bubble.
+
+Это estimated timing. После master alignment границы уточняются без повторного
+семантического решения; если exact bubble вышел за 3–6 секунд, применяется
+явный avatar fallback.
+
 HeyGen API reference помечает `expressiveness` и `motion_prompt` как controls
 для Photo Avatar / Avatar IV:
 
@@ -57,8 +102,9 @@ HeyGen API reference помечает `expressiveness` и `motion_prompt` как
 - https://developers.heygen.com/photo-avatar
 - https://help.heygen.com/en/articles/12805098-fine-tune-avatar-gestures-and-movements-with-custom-motion-prompts-avatar-iv-v
 
-Текущий runtime генерирует HeyGen по смысловым блокам. Поэтому Stage 2 хранит
-per-phrase режиссуру, а Stage 3 (avatar islands) должен применить её на
-совместимом IV request либо сначала подтвердить отдельным provider probe новый
-API-контракт Avatar V. Дробить блоки на фразы в Stage 2 нельзя: это ухудшит
-визуальную непрерывность и вернёт покусковую генерацию.
+Stage 3 Avatar Islands считает `mixed` видимым coverage и включает все phrase
+IDs bubble-окна в Photo Avatar IV shots. Revideo adapter добавляет к
+`effect.bubble` face crop/zoom, а HyperFrames resolver сохраняет bubble при
+замене блока на MP4. Avatar V остаётся вне scope. Дробить платную генерацию на
+каждую фразу нельзя: это ухудшит визуальную непрерывность и вернёт покусковые
+seams.

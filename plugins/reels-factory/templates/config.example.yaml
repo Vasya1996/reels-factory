@@ -144,6 +144,16 @@ edit_plan:
   performance_llm:
     enabled: false
     timeout_s: 600
+  # Avatar IV в bubble поверх полноэкранного смыслового визуала. Планировщик
+  # использует bubble только для короткой последовательности/личного payoff,
+  # не в hook/CTA и не чаще заданного лимита.
+  bubble:
+    enabled: true
+    min_seconds: 3.0
+    max_seconds: 6.0
+    max_per_45_seconds: 1
+    shape: circle
+    position: bottom_left
 
 # Производный render plan после master alignment. Только Photo Avatar IV:
 # Avatar V / heygen_look_id этим этапом сознательно не затрагиваются.

@@ -290,12 +290,24 @@ function* effects(fx: Reference<Layout>, base: Reference<Video>, flash: Referenc
       case 'chart_bars': {
         const items = e.items as {t: number; label: string; v: number}[];
         const panel = createRef<Layout>();
+        const bub = createRef<Layout>();
         fx().add(
           <Layout ref={panel} y={-40} opacity={0} zIndex={36} layout direction={'column'} gap={26} alignItems={'start'}>
             <Txt fontFamily={FONT} fontWeight={900} fontSize={52} fill={YELLOW}
               shadowColor={'rgba(0,0,0,0.6)'} shadowBlur={16}>{e.title}</Txt>
           </Layout>);
-        yield* panel().opacity(1, 0.25); used += 0.25;
+        if (e.bubble) {
+          // Offline fallback for a failed HyperFrames render must preserve the
+          // same canonical mixed composition: chart background + Avatar IV.
+          makeBubble(fx(), bub, {...e.bubble, _t: useTime()});
+          yield* all(
+            panel().opacity(1, 0.25),
+            bub().scale(1, 0.45, easeOutBack),
+          );
+          used += 0.45;
+        } else {
+          yield* panel().opacity(1, 0.25); used += 0.25;
+        }
         const barRefs: Reference<Rect>[] = [];
         for (const it of items) {
           yield* use(Math.max(0, it.t - (seg.start + used)));
@@ -312,7 +324,16 @@ function* effects(fx: Reference<Layout>, base: Reference<Video>, flash: Referenc
           yield* bar().width(120 + it.v * 640, 0.4, easeOutQuad); used += 0.55;
         }
         yield* use(Math.max(0, D - used - 0.3));
-        yield* panel().opacity(0, 0.3); used += 0.3;
+        if (e.bubble) {
+          yield* all(
+            panel().opacity(0, 0.3),
+            bub().scale(0, 0.2, easeInQuad),
+          );
+          bub().remove();
+        } else {
+          yield* panel().opacity(0, 0.3);
+        }
+        used += 0.3;
         panel().remove();
         break;
       }

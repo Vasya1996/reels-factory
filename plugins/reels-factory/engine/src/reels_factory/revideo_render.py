@@ -11,6 +11,7 @@ caption-фиксы) — Revideo меняет только сам рендер, �
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import shutil
@@ -105,7 +106,17 @@ def _resolve_hyperframes_segment(seg: dict, public_dir: Path, *, hf_render=None)
     clip = Path(public_dir) / f"hf_{seg.get('id')}.mp4"
     try:
         render(hf["block"], hf.get("variables") or {}, window, clip)
-        seg["effect"] = {"type": "broll", "style": "fullscreen", "src": clip.name, "offset": 0.0}
+        resolved = {
+            "type": "broll",
+            "style": "fullscreen",
+            "src": clip.name,
+            "offset": 0.0,
+        }
+        # Bubble — часть canonical visual decision. Рендер HyperFrames меняет
+        # только background source и не имеет права терять Avatar IV overlay.
+        if eff.get("bubble"):
+            resolved["bubble"] = copy.deepcopy(eff["bubble"])
+        seg["effect"] = resolved
         seg["caption"] = "hidden"
         print(f"[hyperframes] seg#{seg.get('id')}: блок {hf['block']} → {clip.name}")
     except Exception as e:

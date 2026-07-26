@@ -48,6 +48,9 @@ Flow:
 1. `edit_plan.json` is finalized from ElevenLabs alignment.
 2. Adjacent phrase windows with `coverage=avatar|mixed` become continuous
    islands. `full_broll|hyperframes` terminates an island.
+   `effect.bubble` always remains `mixed`: its fullscreen visual is the
+   background, while the synchronized Photo Avatar IV base supplies the
+   presenter crop. Bubble therefore cannot use `safe_to_skip_avatar`.
 3. A deterministic dynamic-programming pass partitions each island into
    performance shots.
 4. Exact shot audio is cut from `voice_master.wav`, with bounded handles.
