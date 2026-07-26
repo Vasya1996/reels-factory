@@ -162,6 +162,8 @@ function makeBubble(fxLayer: Layout, bubble: Reference<Layout>, cfg: any) {
 // A segment "covers" the face if its main visual is a fullscreen overlay.
 const isCover = (s: any) =>
   !!s && (s.effect?.type === 'broll_bg_particles' || s.effect?.type === 'chart_bars' ||
+    ['complexity_cloud', 'persona_card', 'value_layers', 'concept_nodes', 'sequence_flow']
+      .includes(s.effect?.type) ||
     (s.effect?.type === 'broll' && s.effect?.style === 'fullscreen'));
 const MIN_SHOT = 1.2; // seconds — no shot may flash shorter than this between two others
 
@@ -287,15 +289,250 @@ function* effects(fx: Reference<Layout>, base: Reference<Video>, flash: Referenc
         br().remove(); dim().remove(); refs.forEach(r => r().remove());
         break;
       }
+      case 'complexity_cloud': {
+        const group = createRef<Layout>();
+        const title = createRef<Txt>();
+        const resolution = createRef<Layout>();
+        const items = ((e.items ?? []) as string[]).slice(0, 5);
+        const chips: Reference<Layout>[] = [];
+        fx().add(
+          <Layout ref={group} zIndex={36}>
+            <Txt ref={title} text={String(e.title ?? '').toUpperCase()} y={-650}
+              width={900} textAlign={'center'} fontFamily={FONT} fontWeight={800}
+              fontSize={48} fill={YELLOW} opacity={0} />
+          </Layout>,
+        );
+        yield* title().opacity(1, 0.25); used += 0.25;
+        const positions: [number, number, number][] = [
+          [-230, -360, -4], [230, -170, 3], [-180, 40, -2],
+          [210, 250, 4], [0, 420, 0],
+        ];
+        for (let k = 0; k < items.length; k++) {
+          const chip = createRef<Layout>();
+          const [x, y, rotation] = positions[k];
+          group().add(
+            <Layout ref={chip} x={x} y={y} rotation={rotation} opacity={0} scale={0.86}>
+              <Rect layout padding={[26, 36]} radius={26}
+                fill={'rgba(255,255,255,0.08)'} stroke={'rgba(255,255,255,0.22)'} lineWidth={2}>
+                <Txt text={String(items[k]).toUpperCase()} fontFamily={FONT} fontWeight={700}
+                  fontSize={35} fill={'#FFF'} />
+              </Rect>
+            </Layout>,
+          );
+          chips.push(chip);
+          yield* all(chip().opacity(1, 0.22), chip().scale(1, 0.28, easeOutBack));
+          used += 0.28;
+        }
+        yield* use(Math.max(0, Math.min(D * 0.48, D - 1.2) - used));
+        yield* all(group().opacity(0, 0.3), group().scale(0.72, 0.3, easeInQuad));
+        used += 0.3;
+        fx().add(
+          <Layout ref={resolution} scale={0.72} opacity={0} zIndex={38}>
+            <Rect width={900} minHeight={500} layout direction={'column'} gap={34}
+              alignItems={'center'} justifyContent={'center'} padding={70} radius={42}
+              fill={'rgba(255,229,0,0.10)'} stroke={YELLOW} lineWidth={3}>
+              <Txt text={'→'} fontFamily={FONT} fontWeight={800} fontSize={86} fill={YELLOW} />
+              <Txt text={String(e.resolution ?? '').toUpperCase()} width={760} textAlign={'center'}
+                fontFamily={FONT} fontWeight={800} fontSize={62} lineHeight={72} fill={'#FFF'} />
+            </Rect>
+          </Layout>,
+        );
+        yield* all(resolution().opacity(1, 0.4), resolution().scale(1, 0.5, easeOutBack));
+        used += 0.5;
+        yield* use(Math.max(0, D - used - 0.25));
+        yield* resolution().opacity(0, 0.25); used += 0.25;
+        group().remove(); resolution().remove();
+        break;
+      }
+      case 'persona_card': {
+        const panel = createRef<Layout>();
+        const badge = createRef<Circle>();
+        const rows = ((e.items ?? []) as string[]).slice(0, 4);
+        const rowRefs: Reference<Layout>[] = [];
+        fx().add(
+          <Layout ref={panel} opacity={0} zIndex={36}>
+            <Rect width={920} minHeight={1040} layout direction={'column'} gap={28}
+              alignItems={'center'} padding={70} radius={48}
+              fill={'rgba(255,229,0,0.07)'} stroke={'rgba(255,229,0,0.55)'} lineWidth={2}>
+              <Circle ref={badge} size={160} fill={YELLOW} scale={0.68}>
+                <Txt text={'Ч'} fontFamily={FONT} fontWeight={900} fontSize={70} fill={'#111'} />
+              </Circle>
+              <Txt text={String(e.title ?? '').toUpperCase()} width={760} textAlign={'center'}
+                fontFamily={FONT} fontWeight={800} fontSize={46} fill={YELLOW} />
+            </Rect>
+          </Layout>,
+        );
+        yield* panel().opacity(1, 0.24); used += 0.24;
+        yield* badge().scale(1, 0.38, easeOutBack); used += 0.38;
+        const host = panel().children()[0] as Rect;
+        for (let k = 0; k < rows.length; k++) {
+          const row = createRef<Layout>();
+          host.add(
+            <Layout ref={row} width={780} minHeight={132} layout direction={'row'}
+              gap={28} alignItems={'center'} opacity={0}>
+              <Txt text={`${k + 1}`.padStart(2, '0')} fontFamily={FONT} fontWeight={800}
+                fontSize={28} fill={YELLOW} />
+              <Txt text={String(rows[k]).toUpperCase()} width={670} fontFamily={FONT}
+                fontWeight={750} fontSize={42} lineHeight={50} fill={'#FFF'} />
+            </Layout>,
+          );
+          rowRefs.push(row);
+          yield* all(row().opacity(1, 0.22), row().y(0, 0.28, easeOutQuad));
+          used += 0.28;
+        }
+        yield* use(Math.max(0, D - used - 0.25));
+        yield* panel().opacity(0, 0.25); used += 0.25;
+        panel().remove(); void rowRefs;
+        break;
+      }
+      case 'value_layers': {
+        const heading = createRef<Txt>();
+        const offer = createRef<Layout>();
+        const actual = createRef<Layout>();
+        fx().add(
+          <Txt ref={heading} text={String(e.title ?? '').toUpperCase()} y={-620}
+            width={900} textAlign={'center'} fontFamily={FONT} fontWeight={800}
+            fontSize={46} fill={YELLOW} opacity={0} zIndex={37} />,
+        );
+        fx().add(
+          <Layout ref={offer} scale={0.72} opacity={0} zIndex={36}>
+            <Rect width={900} minHeight={500} layout direction={'column'} gap={36}
+              alignItems={'center'} justifyContent={'center'} padding={70} radius={42}
+              fill={'rgba(255,255,255,0.06)'} stroke={'rgba(255,255,255,0.18)'} lineWidth={2}>
+              <Txt text={'ФОРМАЛЬНО'} fontFamily={'Manrope'} fontWeight={800}
+                fontSize={30} letterSpacing={6} fill={'rgba(255,255,255,0.55)'} />
+              <Txt text={String(e.offer ?? '').toUpperCase()} width={760} textAlign={'center'}
+                fontFamily={FONT} fontWeight={800} fontSize={64} lineHeight={74} fill={'#FFF'} />
+            </Rect>
+          </Layout>,
+        );
+        yield* all(heading().opacity(1, 0.25), offer().opacity(1, 0.36), offer().scale(1, 0.42, easeOutQuad));
+        used += 0.42;
+        yield* use(Math.max(0, Math.min(D * 0.46, D - 1.25) - used));
+        yield* all(offer().opacity(0, 0.32), offer().scale(0.72, 0.32, easeInQuad));
+        used += 0.32;
+        fx().add(
+          <Layout ref={actual} scale={1.28} opacity={0} zIndex={38}>
+            <Rect width={900} minHeight={500} layout direction={'column'} gap={36}
+              alignItems={'center'} justifyContent={'center'} padding={70} radius={42}
+              fill={'rgba(255,229,0,0.10)'} stroke={YELLOW} lineWidth={3}>
+              <Txt text={'НА САМОМ ДЕЛЕ'} fontFamily={'Manrope'} fontWeight={800}
+                fontSize={30} letterSpacing={5} fill={YELLOW} />
+              <Txt text={String(e.actual ?? '').toUpperCase()} width={760} textAlign={'center'}
+                fontFamily={FONT} fontWeight={800} fontSize={64} lineHeight={74} fill={'#FFF'} />
+            </Rect>
+          </Layout>,
+        );
+        yield* all(actual().opacity(1, 0.38), actual().scale(1, 0.48, easeOutBack));
+        used += 0.48;
+        yield* use(Math.max(0, D - used - 0.25));
+        yield* all(actual().opacity(0, 0.25), heading().opacity(0, 0.25)); used += 0.25;
+        heading().remove(); offer().remove(); actual().remove();
+        break;
+      }
+      case 'concept_nodes': {
+        const hub = createRef<Layout>();
+        const group = createRef<Layout>();
+        const values = ((e.items ?? []) as string[]).slice(0, 3);
+        const nodeRefs: Reference<Layout>[] = [];
+        const lineRefs: Reference<Rect>[] = [];
+        fx().add(<Layout ref={group} zIndex={36} />);
+        group().add(
+          <Layout ref={hub} opacity={0} scale={0.66}>
+            <Rect width={500} minHeight={280} layout alignItems={'center'} justifyContent={'center'}
+              padding={46} radius={140} fill={'rgba(255,229,0,0.10)'}
+              stroke={YELLOW} lineWidth={3}>
+              <Txt text={String(e.title ?? '').toUpperCase()} width={420} textAlign={'center'}
+                fontFamily={FONT} fontWeight={800} fontSize={42} lineHeight={50} fill={'#FFF'} />
+            </Rect>
+          </Layout>,
+        );
+        yield* all(hub().opacity(1, 0.34), hub().scale(1, 0.46, easeOutBack)); used += 0.46;
+        const positions: [number, number][] = [[0, -520], [-310, 510], [310, 510]];
+        const rotations = [-90, 130, 50];
+        for (let k = 0; k < values.length; k++) {
+          const line = createRef<Rect>(); const node = createRef<Layout>();
+          group().add(<Rect ref={line} width={0} height={4} x={0} y={0}
+            rotation={rotations[k]} offsetX={-1} fill={YELLOW} opacity={0.65} />);
+          group().add(
+            <Layout ref={node} x={positions[k][0]} y={positions[k][1]} scale={0.7} opacity={0}>
+              <Rect width={350} minHeight={160} layout alignItems={'center'} justifyContent={'center'}
+                padding={30} radius={32} fill={'#171819'} stroke={'rgba(255,255,255,0.20)'} lineWidth={2}>
+                <Txt text={String(values[k]).toUpperCase()} width={300} textAlign={'center'}
+                  fontFamily={FONT} fontWeight={800} fontSize={42} fill={'#FFF'} />
+              </Rect>
+            </Layout>,
+          );
+          lineRefs.push(line); nodeRefs.push(node);
+          yield* line().width(k === 0 ? 390 : 470, 0.22, easeOutQuad);
+          yield* all(node().opacity(1, 0.22), node().scale(1, 0.3, easeOutBack));
+          used += 0.52;
+        }
+        yield* use(Math.max(0, D - used - 0.25));
+        yield* group().opacity(0, 0.25); used += 0.25;
+        group().remove(); void lineRefs; void nodeRefs;
+        break;
+      }
+      case 'sequence_flow': {
+        const panel = createRef<Layout>();
+        const heading = createRef<Txt>();
+        const values = ((e.items ?? []) as string[]).slice(0, 4);
+        const steps: Reference<Rect>[] = [];
+        fx().add(
+          <Layout ref={panel} zIndex={36} layout direction={'column'} gap={22} alignItems={'center'}>
+            <Txt text={'ПОРЯДОК РЕШАЕТ'} fontFamily={'Manrope'} fontWeight={800}
+              fontSize={30} letterSpacing={6} fill={YELLOW} />
+            <Txt ref={heading} text={String(e.title ?? '').toUpperCase()} width={900}
+              textAlign={'center'} fontFamily={FONT} fontWeight={800}
+              fontSize={56} lineHeight={66} fill={'#FFF'} opacity={0} />
+          </Layout>,
+        );
+        yield* heading().opacity(1, 0.32); used += 0.32;
+        for (let k = 0; k < values.length; k++) {
+          const step = createRef<Rect>();
+          panel().add(
+            <Rect ref={step} width={840} minHeight={180} layout direction={'row'} gap={36}
+              alignItems={'center'} padding={[34, 46]} radius={34}
+              fill={'rgba(255,255,255,0.06)'} stroke={'rgba(255,255,255,0.16)'}
+              lineWidth={2} opacity={0} scale={0.9}>
+              <Circle size={94} fill={YELLOW}>
+                <Txt text={`${k + 1}`.padStart(2, '0')} fontFamily={FONT}
+                  fontWeight={900} fontSize={32} fill={'#111'} />
+              </Circle>
+              <Txt text={String(values[k]).toUpperCase()} width={620} fontFamily={FONT}
+                fontWeight={800} fontSize={48} fill={'#FFF'} />
+            </Rect>,
+          );
+          steps.push(step);
+          yield* all(step().opacity(1, 0.22), step().scale(1, 0.32, easeOutBack));
+          used += 0.32;
+        }
+        yield* use(Math.max(0, D - used - 0.25));
+        yield* panel().opacity(0, 0.25); used += 0.25;
+        panel().remove(); void steps;
+        break;
+      }
       case 'chart_bars': {
         const items = e.items as {t: number; label: string; v: number}[];
         const panel = createRef<Layout>();
+        const bub = createRef<Layout>();
         fx().add(
           <Layout ref={panel} y={-40} opacity={0} zIndex={36} layout direction={'column'} gap={26} alignItems={'start'}>
             <Txt fontFamily={FONT} fontWeight={900} fontSize={52} fill={YELLOW}
               shadowColor={'rgba(0,0,0,0.6)'} shadowBlur={16}>{e.title}</Txt>
           </Layout>);
-        yield* panel().opacity(1, 0.25); used += 0.25;
+        if (e.bubble) {
+          // Offline fallback for a failed HyperFrames render must preserve the
+          // same canonical mixed composition: chart background + Avatar IV.
+          makeBubble(fx(), bub, {...e.bubble, _t: useTime()});
+          yield* all(
+            panel().opacity(1, 0.25),
+            bub().scale(1, 0.45, easeOutBack),
+          );
+          used += 0.45;
+        } else {
+          yield* panel().opacity(1, 0.25); used += 0.25;
+        }
         const barRefs: Reference<Rect>[] = [];
         for (const it of items) {
           yield* use(Math.max(0, it.t - (seg.start + used)));
@@ -312,7 +549,16 @@ function* effects(fx: Reference<Layout>, base: Reference<Video>, flash: Referenc
           yield* bar().width(120 + it.v * 640, 0.4, easeOutQuad); used += 0.55;
         }
         yield* use(Math.max(0, D - used - 0.3));
-        yield* panel().opacity(0, 0.3); used += 0.3;
+        if (e.bubble) {
+          yield* all(
+            panel().opacity(0, 0.3),
+            bub().scale(0, 0.2, easeInQuad),
+          );
+          bub().remove();
+        } else {
+          yield* panel().opacity(0, 0.3);
+        }
+        used += 0.3;
         panel().remove();
         break;
       }

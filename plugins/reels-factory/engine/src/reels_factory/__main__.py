@@ -43,6 +43,8 @@ def _cmd_script(args, cfg):
         "cta_phrase": product.get("cta_phrase"),
         "product_name": product.get("name"),
         "persona": cfg.get("persona"),
+        "target_duration_s":
+            ((cfg.get("limits") or {}).get("target_duration_s")),
     }
     wd = _resolve_workdir(args.workdir)
     wd.mkdir(parents=True, exist_ok=True)

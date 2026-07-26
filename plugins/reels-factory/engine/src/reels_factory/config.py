@@ -174,4 +174,20 @@ def load_config(path=None) -> dict:
                 "(id лука Digital Twin — предпочтительно, качество выше) "
                 "или avatar.heygen_asset_id (id фото-ассета аватара)."
             )
+        islands = cfg.get("avatar_islands") or {}
+        if islands.get("enabled"):
+            if has_look:
+                raise ConfigError(
+                    "avatar_islands сейчас поддерживает только Photo Avatar IV: "
+                    "убери avatar.heygen_look_id и задай heygen_asset_id."
+                )
+            if not has_photo:
+                raise ConfigError(
+                    "avatar_islands требует avatar.heygen_asset_id фото-аватара."
+                )
+            engine = str(avatar.get("engine") or "avatar_iv").strip().lower()
+            if engine != "avatar_iv":
+                raise ConfigError(
+                    "avatar_islands сейчас поддерживает только engine: avatar_iv."
+                )
     return cfg

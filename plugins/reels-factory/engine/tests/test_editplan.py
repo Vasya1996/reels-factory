@@ -135,3 +135,716 @@ def test_fill_static_gaps_пересекающиеся_интервалы_сли
 
     # два куска покрывают 0..9 без дыр — панчей нет (ролик 9с)
     assert fill_static_gaps([(0.0, 5.0), (4.0, 9.0)], 9.0) == []
+
+
+# --- canonical edit_plan.json ---
+
+import copy
+import json
+
+import pytest
+
+from reels_factory.editplan import (
+    EDIT_PLAN_FILENAME,
+    apply_performance_recommendations,
+    apply_visual_recommendations,
+    build_edit_plan,
+    covered_block_indexes,
+    enrich_performance_with_llm,
+    enrich_visuals_with_llm,
+    finalize_edit_plan,
+    save_edit_plan,
+    validate_edit_plan,
+)
+from reels_factory.revideo_adapter import edit_plan_to_tz
+
+
+def _canonical_scenario():
+    return {
+        "theme": "автоматизация",
+        "blocks": [
+            {
+                "role": "hook",
+                "start": 0.0,
+                "end": 3.0,
+                "speech": "Вы всё ещё делаете это вручную?",
+            },
+            {
+                "role": "development",
+                "start": 3.0,
+                "end": 9.0,
+                "speech": (
+                    "Настройте один сценарий, и он сам собирает данные "
+                    "и готовит отчёт."
+                ),
+            },
+            {
+                "role": "payoff",
+                "start": 9.0,
+                "end": 15.0,
+                "speech": "Команда экономит 10 часов каждую неделю.",
+            },
+            {
+                "role": "cta",
+                "start": 15.0,
+                "end": 18.0,
+                "speech": "Подпишитесь, чтобы получить схему.",
+            },
+        ],
+    }
+
+
+def _canonical_config(**avatar):
+    result = {
+        "format": "avatar",
+        "language": "ru",
+        "avatar": {"engine": "avatar_iv"},
+        "product": {"cta_button": "ПОЛУЧИТЬ"},
+    }
+    result["avatar"].update(avatar)
+    return result
+
+
+def _three_questions_scenario():
+    return {
+        "theme": "три вопроса продаж",
+        "blocks": [
+            {
+                "role": "hook",
+                "start": 0.0,
+                "end": 6.2,
+                "speech": (
+                    "Все продажи на свете сводятся к трём вопросам. "
+                    "И порядок этих вопросов решает всё."
+                ),
+            },
+            {
+                "role": "development",
+                "start": 6.2,
+                "end": 33.2,
+                "speech": (
+                    "Мы обожаем усложнять продажи. Учим хитрые приёмы. "
+                    "Зубрим скрипты. Ищем волшебные фразы. "
+                    "А в основе — три больших вопроса. Первый: кому продаём? "
+                    "Кто этот человек, чем живёт, какая у него боль. "
+                    "Второй: что продаём? Что человек на самом деле у нас "
+                    "покупает. Третий: как продаём? Где встречаемся с ним, "
+                    "какими словами говорим, в каком виде предлагаем. "
+                    "Всё остальное — надстройка над этими тремя."
+                ),
+            },
+            {
+                "role": "payoff",
+                "start": 33.2,
+                "end": 40.0,
+                "speech": (
+                    "Звучит просто. Но самое важное — порядок. "
+                    "Сначала кто, пото́м что, и только пото́м как."
+                ),
+            },
+            {
+                "role": "cta",
+                "start": 40.0,
+                "end": 44.7,
+                "speech": (
+                    "Сохрани это видео. Прогони свой продукт по трём вопросам. "
+                    "Прямо сегодня."
+                ),
+            },
+        ],
+    }
+
+
+def _library(tmp_path, *, duration=8.0):
+    clip = tmp_path / "automation.mp4"
+    clip.write_bytes(b"offline fixture")
+    return {
+        clip.name: {
+            "path": str(clip),
+            "duration": duration,
+            "embedding": [1.0, 0.0],
+        }
+    }
+
+
+def _build_canonical(tmp_path, *, config=None, duration=8.0):
+    return build_edit_plan(
+        _canonical_scenario(),
+        config or _canonical_config(),
+        index=_library(tmp_path, duration=duration),
+        library_dir=tmp_path,
+        embed_fn=lambda _text: [1.0, 0.0],
+    )
+
+
+def _timed_and_words(plan, *, development_end=9.0):
+    timed = copy.deepcopy(_canonical_scenario())
+    delta = development_end - 9.0
+    timed["blocks"][1]["end"] = development_end
+    timed["blocks"][2]["start"] = development_end
+    timed["blocks"][2]["end"] = 15.0 + delta
+    timed["blocks"][3]["start"] = 15.0 + delta
+    timed["blocks"][3]["end"] = 18.0 + delta
+    timed["total"] = 18.0 + delta
+
+    words = []
+    phrases_by_block = {}
+    for phrase in plan["phrases"]:
+        phrases_by_block.setdefault(phrase["block_index"], []).append(phrase)
+    for block_index, phrases in phrases_by_block.items():
+        block = timed["blocks"][block_index]
+        span = (float(block["end"]) - float(block["start"])) / len(phrases)
+        for index, phrase in enumerate(phrases):
+            start = float(block["start"]) + span * index + 0.05
+            end = float(block["start"]) + span * (index + 1) - 0.05
+            words.append({
+                "block_index": block_index,
+                "start": start,
+                "end": end,
+                "text": phrase["text"],
+                "character_start": phrase["character_start"],
+                "character_end": phrase["character_end"],
+            })
+    return timed, words
+
+
+def test_canonical_draft_фиксирует_script_phrase_windows_и_asset(tmp_path):
+    plan = _build_canonical(tmp_path)
+
+    assert plan["format_version"] == 1
+    assert plan["status"] == "draft"
+    assert plan["validation"]["all_pass"] is True
+    assert covered_block_indexes(plan) == {1}
+    assert plan["summary"]["full_broll_seconds"] == 6.0
+    assert [phrase["id"] for phrase in plan["phrases"]] == [
+        f"phrase-{index:03d}" for index in range(len(plan["phrases"]))
+    ]
+    for phrase in plan["phrases"]:
+        start, end = phrase["character_start"], phrase["character_end"]
+        assert plan["script"]["text"][start:end] == phrase["text"]
+        assert phrase["window_id"]
+        assert phrase["avatar_performance"]["expressiveness"] in {
+            "low", "medium", "high"
+        }
+    development = next(
+        window for window in plan["windows"] if window["role"] == "development"
+    )
+    assert development["coverage"] == "full_broll"
+    assert development["safe_to_skip_avatar"] is True
+    assert development["asset"]["path"].endswith("automation.mp4")
+
+
+def test_three_questions_формирует_task_list_с_avatar_bubble():
+    plan = build_edit_plan(
+        _three_questions_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+
+    bubbles = [
+        window
+        for window in plan["windows"]
+        if (window.get("effect") or {}).get("bubble")
+    ]
+    assert len(bubbles) == 1
+    bubble = bubbles[0]
+    effect = bubble["effect"]
+    assert bubble["coverage"] == "mixed"
+    assert bubble["safe_to_skip_avatar"] is False
+    assert effect["bubble"] == {
+        "shape": "circle",
+        "position": "bottom_left",
+    }
+    assert effect["hyperframes"]["block"] == "task_list"
+    assert effect["hyperframes"]["variables"] == {
+        "title": "3 · КАК ПРОДАЁМ",
+        "items": [
+            "Где встречаемся с ним",
+            "какими словами говорим",
+            "в каком виде предлагаем",
+        ],
+    }
+    own = {
+        phrase["id"]: phrase
+        for phrase in plan["phrases"]
+        if phrase["id"] in bubble["phrase_ids"]
+    }
+    assert all(phrase["coverage"] == "mixed" for phrase in own.values())
+    bubble_index = plan["windows"].index(bubble)
+    lead = plan["windows"][bubble_index - 1]
+    assert lead["coverage"] == "avatar"
+    assert lead["camera"]["type"] == "punch_in"
+    assert "Третий: как продаём?" in " ".join(
+        phrase["text"]
+        for phrase in plan["phrases"]
+        if phrase["id"] in lead["phrase_ids"]
+    )
+    assert plan["summary"]["bubble_windows"] == 1
+    assert 3.0 <= plan["summary"]["bubble_seconds"] <= 6.0
+    assert plan["validation"]["all_pass"] is True
+
+
+def test_three_questions_получает_пять_встроенных_смысловых_визуалов():
+    plan = build_edit_plan(
+        _three_questions_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+
+    visual_windows = [
+        window
+        for window in plan["windows"]
+        if (window.get("effect") or {}).get("visual_director")
+    ]
+    assert [
+        window["effect"]["visual_director"]["template"]
+        for window in visual_windows
+    ] == [
+        "complexity_cloud",
+        "persona_card",
+        "value_layers",
+        "concept_nodes",
+        "sequence_flow",
+    ]
+    assert [
+        (
+            window["estimated_timing"]["start"],
+            window["estimated_timing"]["end"],
+        )
+        for window in visual_windows
+    ] == [
+        (6.2, 14.624),
+        (16.136, 19.448),
+        (19.448, 23.768),
+        (30.176, 33.2),
+        (35.76, 40.0),
+    ]
+    assert all(
+        window["coverage"] == "hyperframes"
+        and window["caption"] == "hidden"
+        and window["effect"]["hyperframes"]["block"]
+        == window["effect"]["visual_director"]["template"]
+        and window["effect"]["visual_director"]["source"] == "rules"
+        for window in visual_windows
+    )
+    assert not any(
+        (window.get("effect") or {}).get("visual_director")
+        and window["role"] in {"hook", "cta"}
+        for window in plan["windows"]
+    )
+    assert plan["summary"]["built_in_visual_windows"] == 5
+    assert plan["summary"]["built_in_visual_seconds"] == 23.32
+
+    avatar_only_run = 0.0
+    max_avatar_only_run = 0.0
+    for window in plan["windows"]:
+        timing = window["estimated_timing"]
+        duration = timing["end"] - timing["start"]
+        if (
+            window["coverage"] == "avatar"
+            and (window.get("effect") or {}).get("type") == "none"
+        ):
+            avatar_only_run += duration
+            max_avatar_only_run = max(max_avatar_only_run, avatar_only_run)
+        else:
+            avatar_only_run = 0.0
+    assert max_avatar_only_run == pytest.approx(6.2)
+    assert max_avatar_only_run <= 10.0
+    assert plan["validation"]["all_pass"] is True
+
+
+def test_visual_director_можно_отключить_не_отключая_bubble():
+    config = _canonical_config()
+    config["edit_plan"] = {"visual_director": {"enabled": False}}
+
+    plan = build_edit_plan(
+        _three_questions_scenario(),
+        config,
+        index={},
+        require_asset_files=False,
+    )
+
+    assert not any(
+        (window.get("effect") or {}).get("visual_director")
+        for window in plan["windows"]
+    )
+    assert any(
+        (window.get("effect") or {}).get("bubble")
+        for window in plan["windows"]
+    )
+    assert plan["constraints"]["visual_director"]["max_count"] == 0
+
+
+def test_bubble_можно_отключить_в_config():
+    config = _canonical_config()
+    config["edit_plan"] = {"bubble": {"enabled": False}}
+
+    plan = build_edit_plan(
+        _three_questions_scenario(),
+        config,
+        index={},
+        require_asset_files=False,
+    )
+
+    assert not any(
+        (window.get("effect") or {}).get("bubble")
+        for window in plan["windows"]
+    )
+    assert plan["constraints"]["bubble"]["max_count"] == 0
+
+
+def test_bubble_проецируется_в_revideo_с_face_crop():
+    final = build_edit_plan(
+        _three_questions_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+    final["status"] = "final"
+    final["timeline"]["final_duration_seconds"] = final["timeline"][
+        "estimated_duration_seconds"
+    ]
+    for collection in ("phrases", "windows", "blocks"):
+        for item in final[collection]:
+            item["final_timing"] = copy.deepcopy(item["estimated_timing"])
+    final["validation"] = validate_edit_plan(
+        final, require_final=True, require_asset_files=False
+    )
+
+    tz = edit_plan_to_tz(
+        final,
+        _canonical_config(),
+        face={"cx": 531, "cy": 608, "h": 412},
+    )
+
+    bubble = next(
+        segment
+        for segment in tz["segments"]
+        if (segment.get("effect") or {}).get("bubble")
+    )
+    assert bubble["coverage"] == "mixed"
+    assert bubble["effect"]["bubble"] == {
+        "shape": "circle",
+        "position": "bottom_left",
+        "face": {"cx": 531, "cy": 608, "h": 412},
+        "face_zoom": 3.1,
+        "face_dy": 45,
+    }
+    semantic = [
+        segment
+        for segment in tz["segments"]
+        if (segment.get("effect") or {}).get("visual_director")
+    ]
+    assert len(semantic) == 5
+    assert all(segment["intensity"] == 3 for segment in semantic)
+
+
+def test_validator_защищает_avatar_bubble_contract():
+    plan = build_edit_plan(
+        _three_questions_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+    bubble = next(
+        window
+        for window in plan["windows"]
+        if (window.get("effect") or {}).get("bubble")
+    )
+    bubble["coverage"] = "avatar"
+
+    report = validate_edit_plan(plan, require_asset_files=False)
+
+    assert report["all_pass"] is False
+    assert any("bubble требует mixed coverage" in error for error in report["errors"])
+
+
+def test_validator_защищает_visual_director_contract():
+    plan = build_edit_plan(
+        _three_questions_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+    visual = next(
+        window
+        for window in plan["windows"]
+        if (window.get("effect") or {}).get("visual_director")
+    )
+    visual["coverage"] = "avatar"
+    visual["caption"] = "bottom"
+    visual["effect"]["hyperframes"]["variables"]["items"] = []
+    visual["effect"]["items"] = []
+
+    report = validate_edit_plan(plan, require_asset_files=False)
+
+    assert report["all_pass"] is False
+    assert any("built-in visual требует hyperframes" in error for error in report["errors"])
+    assert any("built-in visual требует hidden caption" in error for error in report["errors"])
+    assert any("visual items требуют" in error for error in report["errors"])
+
+
+def _visual_llm_scenario():
+    return {
+        "theme": "выбор решения",
+        "blocks": [
+            {
+                "role": "hook",
+                "start": 0.0,
+                "end": 3.0,
+                "speech": "Почему клиент откладывает решение?",
+            },
+            {
+                "role": "development",
+                "start": 3.0,
+                "end": 9.0,
+                "speech": (
+                    "Клиент видит проблему, сравнивает варианты "
+                    "и выбирает решение."
+                ),
+            },
+            {
+                "role": "payoff",
+                "start": 9.0,
+                "end": 13.0,
+                "speech": "Ясная система делает выбор понятным.",
+            },
+            {
+                "role": "cta",
+                "start": 13.0,
+                "end": 16.0,
+                "speech": "Сохрани эту схему.",
+            },
+        ],
+    }
+
+
+def _visual_recommendation(plan):
+    development = [
+        phrase["id"]
+        for phrase in plan["phrases"]
+        if phrase["role"] == "development"
+    ]
+    return {
+        "visuals": [
+            {
+                "phrase_ids": development,
+                "template": "concept_nodes",
+                "variables": {
+                    "title": "КАК КЛИЕНТ ВЫБИРАЕТ",
+                    "items": ["ПРОБЛЕМА", "ВАРИАНТЫ", "РЕШЕНИЕ"],
+                },
+                "rationale": "Три смысловых узла объясняют путь выбора.",
+            }
+        ]
+    }
+
+
+def test_visual_llm_заменяет_только_целое_avatar_only_окно():
+    draft = build_edit_plan(
+        _visual_llm_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+
+    enriched = apply_visual_recommendations(
+        draft,
+        _visual_recommendation(draft),
+    )
+
+    visual = next(
+        window
+        for window in enriched["windows"]
+        if (window.get("effect") or {}).get("visual_director", {}).get("source")
+        == "llm"
+    )
+    assert visual["role"] == "development"
+    assert visual["coverage"] == "hyperframes"
+    assert visual["estimated_timing"] == {"start": 3.0, "end": 9.0}
+    assert visual["effect"]["hyperframes"]["block"] == "concept_nodes"
+    assert visual["caption"] == "hidden"
+    assert enriched["validation"]["all_pass"] is True
+
+
+def test_visual_llm_prompt_и_guardrails():
+    draft = build_edit_plan(
+        _visual_llm_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+
+    class Runner:
+        prompt = None
+
+        def run(self, prompt):
+            self.prompt = prompt
+            return json.dumps(_visual_recommendation(draft))
+
+    runner = Runner()
+    enriched = enrich_visuals_with_llm(draft, runner)
+
+    assert "Visual Director" in runner.prompt
+    assert enriched["summary"]["built_in_visual_windows"] == 1
+
+    invalid = _visual_recommendation(draft)
+    invalid["visuals"][0]["phrase_ids"] = [
+        phrase["id"] for phrase in draft["phrases"] if phrase["role"] == "hook"
+    ]
+    with pytest.raises(ValueError, match="hook/CTA"):
+        apply_visual_recommendations(draft, invalid)
+
+    invalid = _visual_recommendation(draft)
+    invalid["visuals"][0]["template"] = "invented_template"
+    with pytest.raises(ValueError, match="template/variables"):
+        apply_visual_recommendations(draft, invalid)
+
+
+def test_save_canonical_пишет_только_edit_plan(tmp_path):
+    plan = _build_canonical(tmp_path)
+    out = save_edit_plan(plan, tmp_path)
+
+    assert out.name == EDIT_PLAN_FILENAME
+    assert json.loads(out.read_text(encoding="utf-8"))["format_version"] == 1
+    assert not (tmp_path / "segment_plan.json").exists()
+    assert not (tmp_path / f".{EDIT_PLAN_FILENAME}.tmp").exists()
+
+
+def test_validator_ловит_отсутствующий_asset_и_low_confidence(tmp_path):
+    plan = _build_canonical(tmp_path)
+    development = next(
+        window for window in plan["windows"] if window["role"] == "development"
+    )
+    development["asset"]["path"] = str(tmp_path / "missing.mp4")
+    development["asset"]["confidence"] = 0.01
+
+    report = validate_edit_plan(plan)
+
+    assert report["all_pass"] is False
+    assert any("low-confidence" in error for error in report["errors"])
+    assert any("не существует" in error for error in report["errors"])
+
+
+def test_validator_защищает_hook_face_absence_и_motion_contract(tmp_path):
+    plan = _build_canonical(tmp_path)
+    hook = next(window for window in plan["windows"] if window["role"] == "hook")
+    hook["coverage"] = "hyperframes"
+    for window in plan["windows"]:
+        if window["role"] in {"hook", "development", "payoff"}:
+            window["coverage"] = "hyperframes"
+    plan["phrases"][0]["avatar_performance"]["motion_prompt"] = (
+        "Zoom the camera around the kitchen for five seconds."
+    )
+
+    report = validate_edit_plan(plan)
+
+    assert any("hook нельзя полностью скрывать" in error for error in report["errors"])
+    assert any("лицо отсутствует дольше" in error for error in report["errors"])
+    assert any("неподдерживаемым объектом" in error for error in report["errors"])
+
+
+def test_finalize_добавляет_exact_timing_не_перепланируя(tmp_path):
+    draft = _build_canonical(tmp_path)
+    window_ids = [window["id"] for window in draft["windows"]]
+    coverages = [window["coverage"] for window in draft["windows"]]
+    timed, words = _timed_and_words(draft)
+
+    final = finalize_edit_plan(draft, timed, words)
+
+    assert final["status"] == "final"
+    assert final["timeline"]["final_duration_seconds"] == 18.0
+    assert [window["id"] for window in final["windows"]] == window_ids
+    assert [window["coverage"] for window in final["windows"]] == coverages
+    assert all(phrase["final_timing"] for phrase in final["phrases"])
+    assert final["validation"]["all_pass"] is True
+
+
+def test_finalize_exact_timing_делает_явный_asset_fallback(tmp_path):
+    draft = _build_canonical(tmp_path, duration=8.0)
+    timed, words = _timed_and_words(draft, development_end=12.0)
+
+    final = finalize_edit_plan(draft, timed, words)
+    development = next(
+        window for window in final["windows"] if window["role"] == "development"
+    )
+
+    assert development["coverage"] == "avatar"
+    assert development["safe_to_skip_avatar"] is False
+    assert final["revisions"]
+    assert "короче exact window" in final["revisions"][0]["reason"]
+    assert covered_block_indexes(final) == set()
+
+
+class _PerformanceRunner:
+    def __init__(self, plan):
+        self.prompt = None
+        self.reply = json.dumps({
+            "phrases": [
+                {
+                    "phrase_id": phrase["id"],
+                    "expressiveness": (
+                        "high" if phrase["role"] == "hook" else "medium"
+                    ),
+                    "motion_prompt": (
+                        "Looks at the camera and nods gently, calm and clear."
+                    ),
+                    "rationale": "Matches the phrase intent.",
+                }
+                for phrase in plan["phrases"]
+            ]
+        })
+
+    def run(self, prompt):
+        self.prompt = prompt
+        return self.reply
+
+
+def test_llm_enrichment_требует_рекомендацию_для_каждой_фразы(tmp_path):
+    draft = _build_canonical(tmp_path)
+    runner = _PerformanceRunner(draft)
+
+    enriched = enrich_performance_with_llm(draft, runner)
+
+    assert "Photo Avatar IV" in runner.prompt
+    assert all(
+        phrase["avatar_performance"]["source"] == "llm"
+        for phrase in enriched["phrases"]
+    )
+    hook = next(phrase for phrase in enriched["phrases"] if phrase["role"] == "hook")
+    assert hook["avatar_performance"]["expressiveness"] == "high"
+
+    incomplete = json.loads(runner.reply)
+    incomplete["phrases"].pop()
+    with pytest.raises(ValueError, match="phrase IDs"):
+        apply_performance_recommendations(draft, incomplete)
+
+
+def test_llm_enrichment_не_перезаписывает_явный_avatar_config(tmp_path):
+    draft = _build_canonical(
+        tmp_path,
+        config=_canonical_config(
+            expressiveness="low",
+            motion_prompt="Looks at the camera and nods gently, calm and sincere.",
+        ),
+    )
+    enriched = enrich_performance_with_llm(draft, _PerformanceRunner(draft))
+
+    assert all(
+        phrase["avatar_performance"]["source"] == "config"
+        and phrase["avatar_performance"]["expressiveness"] == "low"
+        for phrase in enriched["phrases"]
+    )
+
+
+def test_performance_recommendations_отклоняют_неподдерживаемый_prompt(tmp_path):
+    draft = _build_canonical(tmp_path)
+    recommendations = json.loads(_PerformanceRunner(draft).reply)
+    recommendations["phrases"][0]["motion_prompt"] = (
+        "Walk outside while the camera zooms in."
+    )
+
+    with pytest.raises(ValueError, match="неподдерживаемым объектом"):
+        apply_performance_recommendations(draft, recommendations)

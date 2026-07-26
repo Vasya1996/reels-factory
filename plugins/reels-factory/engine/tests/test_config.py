@@ -84,6 +84,26 @@ def test_avatar_с_heygen_asset_ок(tmp_path):
     assert load_config(_write(tmp_path, cfg))["format"] == "avatar"
 
 
+def test_avatar_islands_разрешает_только_photo_avatar_iv(tmp_path):
+    cfg = _base_cfg()
+    cfg["format"] = "avatar"
+    cfg["avatar"] = {
+        "heygen_asset_id": "photo",
+        "heygen_look_id": "avatar-v-look",
+    }
+    cfg["avatar_islands"] = {"enabled": True}
+    with pytest.raises(ConfigError, match="Photo Avatar IV"):
+        load_config(_write(tmp_path, cfg))
+
+
+def test_avatar_islands_photo_avatar_iv_валиден(tmp_path):
+    cfg = _base_cfg()
+    cfg["format"] = "avatar"
+    cfg["avatar"] = {"heygen_asset_id": "photo", "engine": "avatar_iv"}
+    cfg["avatar_islands"] = {"enabled": True}
+    assert load_config(_write(tmp_path, cfg))["avatar_islands"]["enabled"] is True
+
+
 # Tests for Task 1: optional cta_phrase and language validation
 BASE = {
     "theme": "тема",

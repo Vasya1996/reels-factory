@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="310" viewBox="0 0 1440 310">
+<style>
+  .title { font: 700 24px Arial, sans-serif; fill: #0F172A; }
+  .label { font: 700 15px Arial, sans-serif; fill: #334155; }
+  .seg { font: 700 13px Arial, sans-serif; fill: white; }
+  .tick { font: 12px Arial, sans-serif; fill: #64748B; }
+  .meta { font: 14px Arial, sans-serif; fill: #334155; }
+</style>
+<rect width="100%" height="100%" fill="#F8FAFC"/>
+<text x="120" y="34" class="title">Photo Avatar IV · adaptive timeline · 60s</text>
+<line x1="120.0" y1="54" x2="120.0" y2="232" stroke="#CBD5E1" stroke-width="1"/><text x="120.0" y="252" text-anchor="middle" class="tick">0s</text><line x1="333.3" y1="54" x2="333.3" y2="232" stroke="#CBD5E1" stroke-width="1"/><text x="333.3" y="252" text-anchor="middle" class="tick">10s</text><line x1="546.7" y1="54" x2="546.7" y2="232" stroke="#CBD5E1" stroke-width="1"/><text x="546.7" y="252" text-anchor="middle" class="tick">20s</text><line x1="760.0" y1="54" x2="760.0" y2="232" stroke="#CBD5E1" stroke-width="1"/><text x="760.0" y="252" text-anchor="middle" class="tick">30s</text><line x1="973.3" y1="54" x2="973.3" y2="232" stroke="#CBD5E1" stroke-width="1"/><text x="973.3" y="252" text-anchor="middle" class="tick">40s</text><line x1="1186.7" y1="54" x2="1186.7" y2="232" stroke="#CBD5E1" stroke-width="1"/><text x="1186.7" y="252" text-anchor="middle" class="tick">50s</text><line x1="1400.0" y1="54" x2="1400.0" y2="232" stroke="#CBD5E1" stroke-width="1"/><text x="1400.0" y="252" text-anchor="middle" class="tick">60s</text>
+<text x="18" y="112" class="label">VISUAL</text>
+<rect x="120.0" y="82" width="298.7" height="52" rx="8" fill="#5B8DEF"/><text x="269.3" y="113.0" text-anchor="middle" class="seg">Avatar</text><rect x="418.7" y="82" width="128.0" height="52" rx="8" fill="#FFB703"/><text x="482.7" y="113.0" text-anchor="middle" class="seg">Motion / B-roll</text><rect x="546.7" y="82" width="341.3" height="52" rx="8" fill="#5B8DEF"/><text x="717.3" y="113.0" text-anchor="middle" class="seg">Avatar</text><rect x="888.0" y="82" width="128.0" height="52" rx="8" fill="#FFB703"/><text x="952.0" y="113.0" text-anchor="middle" class="seg">Motion / B-roll</text><rect x="1016.0" y="82" width="384.0" height="52" rx="8" fill="#5B8DEF"/><text x="1208.0" y="113.0" text-anchor="middle" class="seg">Avatar</text>
+<text x="18" y="195" class="label">SHOTS</text>
+<rect x="120.0" y="166" width="42.7" height="48" rx="8" fill="#7B61FF"/><text x="141.3" y="195.0" text-anchor="middle" class="seg">S1</text><rect x="162.7" y="166" width="256.0" height="48" rx="8" fill="#79B8FF"/><text x="290.7" y="195.0" text-anchor="middle" class="seg">S2 · low</text><rect x="546.7" y="166" width="42.7" height="48" rx="8" fill="#79B8FF"/><text x="568.0" y="195.0" text-anchor="middle" class="seg">S3</text><rect x="589.3" y="166" width="298.7" height="48" rx="8" fill="#7B61FF"/><text x="738.7" y="195.0" text-anchor="middle" class="seg">S4 · medium</text><rect x="1016.0" y="166" width="341.3" height="48" rx="8" fill="#79B8FF"/><text x="1186.7" y="195.0" text-anchor="middle" class="seg">S5 · low</text><rect x="1357.3" y="166" width="42.7" height="48" rx="8" fill="#7B61FF"/><text x="1378.7" y="195.0" text-anchor="middle" class="seg">S6</text>
+<text x="120" y="286" class="meta">Islands: 3 · Shots: 6 · visible: 48.0s · requested with handles: 52.2s · saved vs full avatar: 7.8s</text>
+</svg>

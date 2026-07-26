@@ -31,7 +31,8 @@ headless-Chromium + ffmpeg.
 
 | Файл | Что это |
 |------|---------|
-| `src/tz.json` | План монтажа: сегменты по фразам с эффектами (аналог `editplan.py`) |
+| `../edit_plan.json` | Canonical source of truth: phrases, coverage, assets, draft/final timing |
+| `src/tz.json` | Runtime-проекция canonical edit plan; новых творческих решений здесь нет |
 | `src/words.json` | Слова с таймкодами (из `transcribe.py` / Whisper / ElevenLabs) |
 | `public/base.mp4` | Аватар с озвучкой (из `avatar.py` HeyGen) — **кладётся в runtime** |
 | `public/broll_*.mp4` | Видеоряд (из `broll.py`) — **кладётся в runtime** |
@@ -78,14 +79,17 @@ scenario → voice(ElevenLabs) → avatar(HeyGen) → [assemble_revideo] → ree
 ```
 
 Реализовано:
-- `reels_factory/revideo_adapter.py` — `plan_to_tz(timed, broll_segments, config)`:
-  ретаймленные блоки (роли hook/development/payoff/cta) → сегменты tz с эффектами
-  и ротацией зумов.
+- `reels_factory/editplan.py` — один versioned draft/final contract, asset и
+  rhythm validation до платных стадий.
+- `reels_factory/revideo_adapter.py` — `edit_plan_to_tz(edit_plan, config)`:
+  чистая проекция уже финализированных windows в runtime-сегменты. Старый
+  `plan_to_tz(...)` оставлен только как compatibility wrapper.
 - `reels_factory/revideo_render.py` — `assemble_revideo(...)`: drop-in замена
   `compose.assemble` с тем же контрактом `{mp4, timed_scenario, words_fixed}`.
   Переиспользует `_concat_avatars` (склейка аватара → `base.mp4`),
-  `retime_scenario`, `_default_transcribe`, `apply_caption_fixes`; кладёт
-  `tz.json`/`words.json`/`base.mp4` в модуль и зовёт `node render.mjs`.
+  `retime_scenario`, `_default_transcribe`, `apply_caption_fixes`; получает
+  frozen assets из edit plan, кладёт `tz.json`/`words.json`/`base.mp4` в
+  per-job workspace и зовёт `node render.mjs`.
 - `pipeline.py` — `assemble_fn` по умолчанию = `assemble_revideo`. Переключателя нет.
 - Выход рендера задаётся из Python через env `RF_OUTFILE`.
 

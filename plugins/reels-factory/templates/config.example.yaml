@@ -108,16 +108,15 @@ avatar:
   # [обязательно для format: split и format: avatar]
   heygen_asset_id: ""
 
-  # Промпт движения аватара для HeyGen v3 (мимика/жесты/взгляд). Опционально
-  # — без него движок берёт дефолт: "смотрит прямо в камеру, доброжелательно,
-  # лёгкая жестикуляция, спокойная уверенность".
+  # Performance controls официально относятся к Photo Avatar / Avatar IV.
+  # Motion prompt: обычный английский, одно видимое движение + необязательная
+  # эмоция, не больше двух коротких частей. Не задавать камеру, сцену, фон,
+  # реквизит, ходьбу, свет или timing.
   motion_prompt: >-
-    talking directly to the camera as a friendly presenter, natural warm
-    expression, subtle head movements and light hand gestures while
-    speaking, steady eye contact with the camera, calm and confident
+    Looks at the camera and gestures lightly with one hand, calm and confident.
 
-  # Выразительность мимики HeyGen v3: low | medium | high. Опционально
-  # (дефолт medium).
+  # low | medium | high. Консервативный default low; high использовать только
+  # для фразы, которой действительно нужна усиленная подача.
   expressiveness: medium
 
 # Активный голос ElevenLabs — обязательно голос языка `language`.
@@ -138,6 +137,52 @@ voices:
 # То же можно сделать env RF_MASTER_AUDIO_ENABLED=1.
 master_audio:
   enabled: false
+
+# Canonical edit plan строится до платных стадий. Опциональный LLM-проход
+# рекомендует expressiveness/motion_prompt отдельно для каждой phrase.
+edit_plan:
+  # Встроенные смысловые визуалы без внешних ассетов. Детерминированные
+  # правила включены по умолчанию; LLM может только дополнить безопасные
+  # avatar-only окна и не меняет hook/CTA/тайминг фраз.
+  visual_director:
+    enabled: true
+    min_seconds: 3.0
+    max_seconds: 9.5
+    max_per_30_seconds: 4
+    max_llm_windows: 3
+    llm:
+      enabled: false
+      timeout_s: 600
+  performance_llm:
+    enabled: false
+    timeout_s: 600
+  # Avatar IV в bubble поверх полноэкранного смыслового визуала. Планировщик
+  # использует bubble только для короткой последовательности/личного payoff,
+  # не в hook/CTA и не чаще заданного лимита.
+  bubble:
+    enabled: true
+    min_seconds: 3.0
+    max_seconds: 6.0
+    max_per_45_seconds: 1
+    shape: circle
+    position: bottom_left
+
+# Производный render plan после master alignment. Только Photo Avatar IV:
+# Avatar V / heygen_look_id этим этапом сознательно не затрагиваются.
+# Включать вместе с master_audio после согласованного paid smoke.
+avatar_islands:
+  enabled: false
+  # Короткие края запроса дают безопасный trim на exact master timeline.
+  handle_seconds: 0.2
+  min_request_seconds: 3.0
+  # Совместимые phrase intents объединяются; значимая смена подачи, hook/CTA
+  # или этот предел создают новый performance shot.
+  target_shot_seconds: 10.0
+  max_shot_seconds: 18.0
+  max_shots_per_30_seconds: 5
+  max_parallel: 2
+  # Только прогноз до разрешения платного запуска; не источник биллинга.
+  estimated_cost_per_second_usd: 0.05
 
 # ElevenLabs Text-to-Speech with Timestamps.
 tts:
@@ -175,13 +220,11 @@ broll:
   # тему (плейлист/канал/локальная папка с материалами). Свободный текст.
   source_hint: "готовка эспрессо крупным планом; локальные файлы в broll/"
 
-# Лимиты сценария. Сейчас захардкожены в engine/src/reels_factory/scenario.py
-# (WORD_LIMIT_SOFT=60 слов — целевой предел в промпте, WORD_LIMIT_HARD=70 —
-# жёсткий предел валидатора; длительность ролика 14-40с — validate_scenario и
-# гейт D1 в verify.py). Здесь — только справочная заметка для скиллов
-# research/script при планировании сценария; config.py их НЕ читает.
+# Целевая длина legacy CLI-сценария. Telegram-путь получает length_s от
+# выбранной идеи и уже поддерживает короткий панч 20-40с и разбор 60-90с.
+# Для 30/60/90 меняется word budget, а islands автоматически масштабируют
+# число shots; фиксированного «один HeyGen на блок» больше нет.
 limits:
-  words_soft: 60
-  words_hard: 70
+  target_duration_s: 30
   duration_s_min: 14
-  duration_s_max: 40
+  duration_s_max: 90

@@ -23,7 +23,15 @@ from dataclasses import dataclass, field
 
 # Синхронно с project.tsx.
 MIN_SHOT = 1.2                      # с — короче между двумя другими = флеш-кадр
-_COVER_TYPES = {"broll_bg_particles", "chart_bars"}   # полноэкранные оверлеи (для бэкплейта)
+_COVER_TYPES = {
+    "broll_bg_particles",
+    "chart_bars",
+    "complexity_cloud",
+    "persona_card",
+    "value_layers",
+    "concept_nodes",
+    "sequence_flow",
+}  # полноэкранные оверлеи (для бэкплейта)
 # Эффекты с видео-источником (нужен src-клип). chart_bars — cover, но это
 # инфографика (items), а не видео, поэтому src ему НЕ требуется.
 _VIDEO_SRC_TYPES = {"broll", "broll_bg_particles"}
@@ -210,19 +218,18 @@ def validate_tz(tz: dict, *, index: dict | None = None,
                 rep.add(WARN, "broll-first-phrase", sid,
                         "биролл в хуке — первую фразу открываем лицом, без биролла")
 
-        # ---- инфографика не должна делить экран с субтитрами ----
-        # chart_bars — структурированная панель по центру (y≈-40..+160), субтитры
-        # на y≈+195 (CAP_40). При caption != hidden субтитры (accumulate по words)
-        # ложатся прямо на нижние бары. Полноэкранное видео (broll fullscreen/
-        # particles) субтитры поверх допускает — там графики в центре нет.
-        if etype == "chart_bars" and seg.get("caption") not in (None, "hidden"):
+        # ---- смысловая инфографика не должна делить экран с субтитрами ----
+        # Текст уже является частью композиции, поэтому второй текстовый слой
+        # ухудшает читаемость. Видео-cover допускает обычные субтитры.
+        semantic_types = _COVER_TYPES - {"broll_bg_particles"}
+        if etype in semantic_types and seg.get("caption") not in (None, "hidden"):
             if autofix:
                 seg["caption"] = "hidden"
                 rep.add(FIXED, "caption-overlay", sid,
-                        "chart_bars + субтитры → наложение на бары; caption→hidden")
+                        f"{etype} + субтитры → наложение на визуал; caption→hidden")
             else:
                 rep.add(WARN, "caption-overlay", sid,
-                        "chart_bars с видимой подписью — субтитры наложатся на инфографику")
+                        f"{etype} с видимой подписью — субтитры наложатся на инфографику")
 
         # ---- мелкий текстовый оверлей поверх лица налезает на субтитры ----
         # chat_bubble («message»-пузырь с текстом) дублирует субтитры и ложится на
@@ -284,20 +291,20 @@ def validate_tz(tz: dict, *, index: dict | None = None,
                 rep.add(ERROR, "covered-base", s.get("id"),
                         "pip внутри precut-блока — фоном будет чёрный base")
 
-    # ---- ритм (бест-практис): не дольше 10с говорящей головы без b-roll ----
+    # ---- ритм: не дольше 10с одной говорящей головы без смены visual state ----
     marks = sorted((float(s.get("start", 0)), float(s.get("end", 0)))
                    for s in segs
-                   if (s.get("effect") or {}).get("type") in _VIDEO_SRC_TYPES)
+                   if _is_cover(s))
     pos = 0.0
     for bs, be in marks:
         if bs - pos > RHYTHM_MAX_AVATAR_S:
             rep.add(WARN, "broll-rhythm", None,
-                    f"{pos:.1f}-{bs:.1f}с: {bs - pos:.1f}с без b-roll "
-                    f"(бест-практис ≤{RHYTHM_MAX_AVATAR_S:.0f}с) — добавь вставку")
+                    f"{pos:.1f}-{bs:.1f}с: {bs - pos:.1f}с без visual state change "
+                    f"(правило ≤{RHYTHM_MAX_AVATAR_S:.0f}с) — добавь вставку")
         pos = max(pos, be)
     if duration and duration - pos > RHYTHM_MAX_AVATAR_S:
         rep.add(WARN, "broll-rhythm", None,
-                f"{pos:.1f}-{duration:.1f}с: {duration - pos:.1f}с без b-roll "
-                f"(бест-практис ≤{RHYTHM_MAX_AVATAR_S:.0f}с) — добавь вставку")
+                f"{pos:.1f}-{duration:.1f}с: {duration - pos:.1f}с без visual state change "
+                f"(правило ≤{RHYTHM_MAX_AVATAR_S:.0f}с) — добавь вставку")
 
     return rep

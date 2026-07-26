@@ -3,7 +3,13 @@ import re
 from pathlib import Path
 
 from reels_factory.llm import FakeRunner
-from reels_factory.scenario import generate_scenario, validate_scenario, ScenarioError, _mentions_theme
+from reels_factory.scenario import (
+    ScenarioError,
+    _mentions_theme,
+    build_prompt,
+    generate_scenario,
+    validate_scenario,
+)
 
 CTA = "пиши кофе в комменты"
 
@@ -84,6 +90,28 @@ def test_болтливый_сценарий_отклоняется():
     sc["blocks"][1]["speech"] = "слово " * 80
     errs = validate_scenario(sc, _hyp())
     assert any("слишком длинная" in e for e in errs)
+
+
+def test_target_90_расширяет_duration_и_word_budget():
+    sc = _ok_4blocks()
+    sc["blocks"][0]["end"] = 3.0
+    sc["blocks"][1]["start"], sc["blocks"][1]["end"] = 3.0, 65.0
+    sc["blocks"][2]["start"], sc["blocks"][2]["end"] = 65.0, 85.0
+    sc["blocks"][3]["start"], sc["blocks"][3]["end"] = 85.0, 90.0
+    sc["blocks"][1]["speech"] = "кофе " + "слово " * 150
+
+    assert validate_scenario(sc, _hyp(target_duration_s=90)) == []
+    assert any(
+        "вне 14-40" in error
+        for error in validate_scenario(sc, _hyp())
+    )
+
+
+def test_prompt_60_строит_динамический_skeleton_и_budget():
+    prompt = build_prompt(_hyp(target_duration_s=60))
+    assert "целевая длительность 60 секунд" in prompt
+    assert "около 150 слов" in prompt
+    assert '"end": 60.0' in prompt
 
 
 def test_hook_без_вопроса_валиден():

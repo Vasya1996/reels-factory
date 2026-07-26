@@ -11,6 +11,7 @@ caption-фиксы) — Revideo меняет только сам рендер, �
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import shutil
@@ -23,10 +24,14 @@ from reels_factory.compose import (
     _concat_avatars, retime_scenario, _pause_after,
     apply_caption_fixes, _default_transcribe, VENC,
 )
-from reels_factory.revideo_adapter import plan_to_tz
+from reels_factory.editplan import (
+    build_edit_plan,
+    finalize_edit_plan,
+    save_edit_plan,
+)
+from reels_factory.revideo_adapter import edit_plan_to_tz
 from reels_factory import broll_library as _broll_lib
 from reels_factory import hyperframes_blocks as _hf
-from reels_factory.broll_retrieval import resolve_broll
 from reels_factory.tz_validator import validate_tz
 
 # engine/revideo — самодостаточный Node-модуль рендера
@@ -101,7 +106,17 @@ def _resolve_hyperframes_segment(seg: dict, public_dir: Path, *, hf_render=None)
     clip = Path(public_dir) / f"hf_{seg.get('id')}.mp4"
     try:
         render(hf["block"], hf.get("variables") or {}, window, clip)
-        seg["effect"] = {"type": "broll", "style": "fullscreen", "src": clip.name, "offset": 0.0}
+        resolved = {
+            "type": "broll",
+            "style": "fullscreen",
+            "src": clip.name,
+            "offset": 0.0,
+        }
+        # Bubble — часть canonical visual decision. Рендер HyperFrames меняет
+        # только background source и не имеет права терять Avatar IV overlay.
+        if eff.get("bubble"):
+            resolved["bubble"] = copy.deepcopy(eff["bubble"])
+        seg["effect"] = resolved
         seg["caption"] = "hidden"
         print(f"[hyperframes] seg#{seg.get('id')}: блок {hf['block']} → {clip.name}")
     except Exception as e:
@@ -164,6 +179,85 @@ def _concat_master_visuals(
     return base
 
 
+def _concat_avatar_island_visuals(
+    rdir: Path,
+    avatar_mp4s: list,
+    avatar_render_plan: dict,
+    height: int = OUT_H,
+) -> Path:
+    """Build a silent exact-duration base from sparse Avatar IV shots.
+
+    Full B-roll/HyperFrames gaps are black only in this technical base and are
+    covered later by the canonical edit-plan overlays.  Each generated shot is
+    trimmed from its request handle to its exact visible timing; provider audio
+    is never mapped.
+    """
+    shots = list(avatar_render_plan.get("shots") or [])
+    if len(avatar_mp4s) != len(shots):
+        raise ValueError(
+            "avatar island clips и avatar_render_plan.shots не совпадают"
+        )
+    total = float(
+        (avatar_render_plan.get("timeline") or {}).get("duration_seconds") or 0
+    )
+    if total <= 0:
+        raise ValueError("avatar_render_plan имеет неположительную duration")
+    if not shots:
+        raise ValueError("avatar_render_plan не содержит shots")
+
+    base = Path(rdir) / "top.avatar-islands.mp4"
+    cmd = [FFMPEG, "-y"]
+    for source in avatar_mp4s:
+        cmd += ["-i", str(source)]
+
+    filters, labels = [], []
+    cursor = 0.0
+
+    def add_gap(start: float, end: float) -> None:
+        duration = end - start
+        if duration <= 0.001:
+            return
+        label = f"vpart{len(labels)}"
+        filters.append(
+            f"color=c=black:s={OUT_W}x{height}:r={FPS}:d={duration:.6f},"
+            f"setsar=1,setpts=PTS-STARTPTS[{label}]"
+        )
+        labels.append(f"[{label}]")
+
+    for input_index, shot in enumerate(shots):
+        visible = shot.get("visible_timing") or {}
+        start = float(visible.get("start", -1))
+        end = float(visible.get("end", -1))
+        if start + 0.002 < cursor or end <= start or end > total + 0.002:
+            raise ValueError(
+                f"{shot.get('id')}: некорректный visible timing в render plan"
+            )
+        add_gap(cursor, start)
+        duration = end - start
+        trim_start = float((shot.get("trim") or {}).get("start_seconds") or 0)
+        label = f"vpart{len(labels)}"
+        filters.append(
+            f"[{input_index}:v]"
+            f"scale={OUT_W}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={OUT_W}:{height},fps={FPS},setsar=1,"
+            f"tpad=stop_mode=clone:stop_duration={trim_start + duration + 1:.6f},"
+            f"trim=start={trim_start:.6f}:duration={duration:.6f},"
+            f"setpts=PTS-STARTPTS[{label}]"
+        )
+        labels.append(f"[{label}]")
+        cursor = end
+    add_gap(cursor, total)
+    filters.append(
+        "".join(labels) + f"concat=n={len(labels)}:v=1:a=0[v]"
+    )
+    cmd += [
+        "-filter_complex", ";".join(filters),
+        "-map", "[v]", *VENC, "-an", str(base),
+    ]
+    subprocess.run(cmd, check=True)
+    return base
+
+
 def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out_mp4, *,
                      format: str = "avatar", avatar_mp4s: list | None = None,
                      voice_wavs: list | None = None, transcribe_fn=None,
@@ -174,7 +268,9 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
                      config: dict | None = None, face: dict | None = None,
                      hf_render=None, master_audio: Path | None = None,
                      alignment_words: list | None = None,
-                     master_timed_scenario: dict | None = None) -> dict:
+                     master_timed_scenario: dict | None = None,
+                     edit_plan: dict | None = None,
+                     avatar_render_plan: dict | None = None) -> dict:
     rdir = Path(rdir)
     rdir.mkdir(parents=True, exist_ok=True)
     out_mp4 = Path(out_mp4)
@@ -194,8 +290,15 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
         frag_srcs = voice_wavs
     else:
         raise RuntimeError(f"неизвестный format: {format!r}")
-    if len(frag_srcs) != len(blocks):
+    if avatar_render_plan is None and len(frag_srcs) != len(blocks):
         raise RuntimeError(f"фрагментов {len(frag_srcs)} != блоков {len(blocks)}")
+    if avatar_render_plan is not None and len(frag_srcs) != len(
+        avatar_render_plan.get("shots") or []
+    ):
+        raise RuntimeError(
+            f"avatar clips {len(frag_srcs)} != avatar shots "
+            f"{len(avatar_render_plan.get('shots') or [])}"
+        )
 
     if master_audio is not None:
         master_audio = Path(master_audio)
@@ -208,13 +311,36 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
         timed = master_timed_scenario
         if len(timed.get("blocks") or []) != len(blocks):
             raise RuntimeError("master timed scenario не совпадает со scenario")
-        block_durations = [
-            float(block["end"]) - float(block["start"])
-            for block in timed["blocks"]
-        ]
+        if avatar_render_plan is not None:
+            planned_total = float(
+                (avatar_render_plan.get("timeline") or {}).get(
+                    "duration_seconds"
+                ) or 0
+            )
+            master_total = float(
+                timed.get("total") or timed["blocks"][-1]["end"]
+            )
+            if abs(planned_total - master_total) > 0.02:
+                raise RuntimeError(
+                    "avatar_render_plan duration не совпадает с master timeline"
+                )
         if format not in ("split", "avatar"):
             raise RuntimeError("Master Revideo-путь пока поддерживает format=split|avatar")
-        base = _concat_master_visuals(rdir, avatar_mp4s, block_durations, height=OUT_H)
+        if avatar_render_plan is not None:
+            base = _concat_avatar_island_visuals(
+                rdir,
+                avatar_mp4s,
+                avatar_render_plan,
+                height=OUT_H,
+            )
+        else:
+            block_durations = [
+                float(block["end"]) - float(block["start"])
+                for block in timed["blocks"]
+            ]
+            base = _concat_master_visuals(
+                rdir, avatar_mp4s, block_durations, height=OUT_H
+            )
         words = list(alignment_words)
     else:
         # Legacy rollback: ретайминг по фактическим HeyGen fragments и Whisper.
@@ -232,19 +358,40 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
         words = apply_caption_fixes(words, caption_fixes)
     words = _normalize_words(words)
 
-    # 4) tz.json из адаптера (фразовая раскладка по словам, с broll_query)
-    tz = plan_to_tz(timed, broll_segments, config, words=words, base_video="base.mp4",
-                    broll_file="broll.mp4", face=face)
+    # 4) Один edit_plan получает exact timing и только затем проецируется в tz.
+    # Compatibility-вход broll_segments сначала нормализуется тем же canonical
+    # planner; Revideo больше не принимает творческих решений самостоятельно.
+    if edit_plan is None:
+        edit_plan = build_edit_plan(
+            scenario,
+            config,
+            index={},
+            legacy_broll_plan={"segments": list(broll_segments or [])},
+            require_asset_files=False,
+        )
+    if edit_plan.get("status") != "final":
+        edit_plan = finalize_edit_plan(edit_plan, timed, words)
+    save_edit_plan(edit_plan, rdir)
+    tz = edit_plan_to_tz(
+        edit_plan,
+        config,
+        base_video="base.mp4",
+        face=face,
+    )
     if master_audio is not None:
         tz.setdefault("meta", {})["master_audio"] = "voice_master.wav"
         tz["meta"]["voice_layers"] = 1
 
-    # 4b) Модуль B — семантический подбор b-roll: заполнить effect.src по
-    # broll_query из библиотеки. Если библиотека не проиндексирована, src
-    # остаётся дефолтным broll.mp4 (обратная совместимость, деградация мягкая).
-    retr = resolve_broll(tz, library_dir=_broll_lib.LIBRARY_DIR)
-    for line in retr.log:
-        print(f"[broll] {line}")
+    # Assets уже выбраны draft-планом. Здесь только собираем frozen paths для
+    # копирования; semantic retrieval после оплаты запрещён.
+    planned_clips = {}
+    for window in edit_plan.get("windows") or []:
+        asset = window.get("asset") or {}
+        if asset.get("source") != "library" or not asset.get("src"):
+            continue
+        planned_clips[asset["src"]] = Path(
+            asset.get("path") or (_broll_lib.LIBRARY_DIR / asset["src"])
+        )
 
     # 4b') HyperFrames-блоки: сегмент с effect.hyperframes рендерится в клип
     # (моушн-графика на HTML/GSAP) и подставляется как fullscreen-биролл. На
@@ -254,10 +401,24 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
 
     # 4c) Валидатор-линтер: дублирует монтажные правила движка на уровне плана,
     # чинит безопасное (длинное тире) и логирует риски перед рендером.
-    # covered_ranges — precut-блоки (аватар не генерился, base чёрный).
-    covered_roles = {s["role"] for s in (broll_segments or []) if s.get("insert")}
-    covered_ranges = [(float(b["start"]), float(b["end"]))
-                      for b in timed["blocks"] if b.get("role") in covered_roles]
+    # covered_ranges — блоки, для которых canonical plan разрешил HeyGen skip.
+    covered_indexes = {
+        int(block["index"])
+        for block in edit_plan.get("blocks") or []
+        if not block.get("avatar_required", True)
+    }
+    if avatar_render_plan is not None:
+        covered_ranges = [
+            (float(segment["start"]), float(segment["end"]))
+            for segment in avatar_render_plan.get("visual_timeline") or []
+            if segment.get("coverage") in {"full_broll", "hyperframes"}
+        ]
+    else:
+        covered_ranges = [
+            (float(block["start"]), float(block["end"]))
+            for index, block in enumerate(timed["blocks"])
+            if index in covered_indexes
+        ]
     report = validate_tz(tz, index=_broll_lib.load_index(_broll_lib.LIBRARY_DIR),
                          covered_ranges=covered_ranges)
     for line in report.lines():
@@ -281,9 +442,8 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
     shutil.copy(str(base), str(render_public / "base.mp4"))
     if master_audio is not None:
         shutil.copy(str(master_audio), str(render_public / "voice_master.wav"))
-    # подобранные библиотечные клипы → public/ (движок читает src как /<file>)
-    for name in retr.used_clips:
-        src_clip = _broll_lib.LIBRARY_DIR / name
+    # frozen библиотечные клипы → public/ (движок читает src как /<file>)
+    for name, src_clip in planned_clips.items():
         if src_clip.exists():
             shutil.copy(str(src_clip), str(render_public / name))
     # дефолтный broll.mp4 — фолбэк для сегментов со слабым матчем
