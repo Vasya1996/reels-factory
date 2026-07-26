@@ -104,6 +104,28 @@ def test_chart_bars_hidden_без_претензий():
     assert not any(i.rule == "caption-overlay" for i in rep.issues)
 
 
+def test_visual_director_с_подписью_автофикс_на_hidden():
+    tz = _tz([_seg(
+        1,
+        0.0,
+        5.0,
+        effect={
+            "type": "concept_nodes",
+            "title": "ОСНОВА",
+            "items": ["КОМУ", "ЧТО", "КАК"],
+        },
+        caption="bottom",
+    )], duration=5.0)
+
+    rep = validate_tz(tz, autofix=True)
+
+    assert tz["segments"][0]["caption"] == "hidden"
+    assert any(
+        issue.rule == "caption-overlay" and issue.level == FIXED
+        for issue in rep.issues
+    )
+
+
 def test_broll_fullscreen_с_подписью_допустим():
     # полноэкранное видео субтитры поверх допускает — правило только для chart_bars
     tz = _tz([_seg(1, 0.0, 4.0,
@@ -185,6 +207,28 @@ def test_ритм_ок_когда_broll_каждые_10с():
               _fs(4, 19.0, 22.0)], duration=22.0)
     rep = validate_tz(tz)
     assert not any(i.rule == "broll-rhythm" for i in rep.warns)
+
+
+def test_ритм_учитывает_встроенный_visual_state_change():
+    tz = _tz([
+        _seg(1, 0.0, 8.0),
+        _seg(
+            2,
+            8.0,
+            13.0,
+            effect={
+                "type": "sequence_flow",
+                "title": "ПОРЯДОК",
+                "items": ["КТО", "ЧТО", "КАК"],
+            },
+            caption="hidden",
+        ),
+        _seg(3, 13.0, 21.0),
+    ], duration=21.0)
+
+    rep = validate_tz(tz)
+
+    assert not any(issue.rule == "broll-rhythm" for issue in rep.warns)
 
 
 # ---- новые монтаж-правила: эмодзи, резкие зумы, биролл ≥3с, биролл в хуке ----

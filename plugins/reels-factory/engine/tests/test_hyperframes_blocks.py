@@ -152,8 +152,85 @@ def test_build_before_after_экранирует():
     assert "<b>x</b>" not in html and "&lt;b&gt;" in html
 
 
-def test_blocks_реестр_содержит_все_три():
-    assert set(hb.BLOCKS) == {"task_list", "stat_number", "before_after"}
+@pytest.mark.parametrize(
+    ("block", "variables", "tokens"),
+    [
+        (
+            "complexity_cloud",
+            {
+                "title": "МЫ УСЛОЖНЯЕМ",
+                "items": ["СКРИПТЫ", "ПРИЁМЫ", "ФРАЗЫ"],
+                "resolution": "В ОСНОВЕ ТРИ ВОПРОСА",
+            },
+            ["СКРИПТЫ", "В ОСНОВЕ ТРИ ВОПРОСА"],
+        ),
+        (
+            "persona_card",
+            {"title": "КОМУ", "items": ["КТО", "КОНТЕКСТ", "БОЛЬ"]},
+            ["КОМУ", "КОНТЕКСТ"],
+        ),
+        (
+            "value_layers",
+            {"title": "ЧТО", "offer": "ПРОДУКТ", "actual": "РЕЗУЛЬТАТ"},
+            ["ПРОДУКТ", "РЕЗУЛЬТАТ"],
+        ),
+        (
+            "concept_nodes",
+            {"title": "ОСНОВА", "items": ["КОМУ", "ЧТО", "КАК"]},
+            ["ОСНОВА", "КОМУ"],
+        ),
+        (
+            "sequence_flow",
+            {"title": "ВАЖЕН ПОРЯДОК", "items": ["КТО", "ЧТО", "КАК"]},
+            ["ВАЖЕН ПОРЯДОК", "ПОРЯДОК РЕШАЕТ"],
+        ),
+    ],
+)
+def test_visual_director_blocks_следуют_hyperframes_contract(
+    block, variables, tokens
+):
+    _subdir, builder = hb.BLOCKS[block]
+    html = builder(duration=5.0, **variables)
+
+    assert 'data-composition-id="main"' in html
+    assert 'data-duration="5.0"' in html
+    assert 'class="backdrop clip"' in html
+    assert 'class="scene clip"' in html
+    assert "gsap.timeline({ paused: true" in html
+    assert 'window.__timelines["main"] = tl;' in html
+    assert all(token in html for token in tokens)
+
+
+def test_visual_director_blocks_экранируют_данные():
+    html = hb.build_complexity_cloud_html(
+        5.0,
+        "<script>bad()</script>",
+        ["<b>x</b>", "safe"],
+        "<img src=x>",
+    )
+    assert "<script>bad()</script>" not in html
+    assert "<b>x</b>" not in html
+    assert "<img src=x>" not in html
+    assert "&lt;script&gt;" in html
+    assert "&lt;b&gt;" in html
+    assert "&lt;img" in html
+
+
+def test_blocks_реестр_содержит_все_восемь():
+    assert set(hb.BLOCKS) == {
+        "task_list",
+        "stat_number",
+        "before_after",
+        "complexity_cloud",
+        "persona_card",
+        "value_layers",
+        "concept_nodes",
+        "sequence_flow",
+    }
+    assert all(
+        (hb.HF_DIR / subdir / "hyperframes.json").exists()
+        for subdir, _builder in hb.BLOCKS.values()
+    )
 
 
 def test_render_block_stat_number_мок(tmp_path):

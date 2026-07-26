@@ -147,9 +147,11 @@ import pytest
 from reels_factory.editplan import (
     EDIT_PLAN_FILENAME,
     apply_performance_recommendations,
+    apply_visual_recommendations,
     build_edit_plan,
     covered_block_indexes,
     enrich_performance_with_llm,
+    enrich_visuals_with_llm,
     finalize_edit_plan,
     save_edit_plan,
     validate_edit_plan,
@@ -383,6 +385,98 @@ def test_three_questions_формирует_task_list_с_avatar_bubble():
     assert plan["validation"]["all_pass"] is True
 
 
+def test_three_questions_получает_пять_встроенных_смысловых_визуалов():
+    plan = build_edit_plan(
+        _three_questions_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+
+    visual_windows = [
+        window
+        for window in plan["windows"]
+        if (window.get("effect") or {}).get("visual_director")
+    ]
+    assert [
+        window["effect"]["visual_director"]["template"]
+        for window in visual_windows
+    ] == [
+        "complexity_cloud",
+        "persona_card",
+        "value_layers",
+        "concept_nodes",
+        "sequence_flow",
+    ]
+    assert [
+        (
+            window["estimated_timing"]["start"],
+            window["estimated_timing"]["end"],
+        )
+        for window in visual_windows
+    ] == [
+        (6.2, 14.624),
+        (16.136, 19.448),
+        (19.448, 23.768),
+        (30.176, 33.2),
+        (35.76, 40.0),
+    ]
+    assert all(
+        window["coverage"] == "hyperframes"
+        and window["caption"] == "hidden"
+        and window["effect"]["hyperframes"]["block"]
+        == window["effect"]["visual_director"]["template"]
+        and window["effect"]["visual_director"]["source"] == "rules"
+        for window in visual_windows
+    )
+    assert not any(
+        (window.get("effect") or {}).get("visual_director")
+        and window["role"] in {"hook", "cta"}
+        for window in plan["windows"]
+    )
+    assert plan["summary"]["built_in_visual_windows"] == 5
+    assert plan["summary"]["built_in_visual_seconds"] == 23.32
+
+    avatar_only_run = 0.0
+    max_avatar_only_run = 0.0
+    for window in plan["windows"]:
+        timing = window["estimated_timing"]
+        duration = timing["end"] - timing["start"]
+        if (
+            window["coverage"] == "avatar"
+            and (window.get("effect") or {}).get("type") == "none"
+        ):
+            avatar_only_run += duration
+            max_avatar_only_run = max(max_avatar_only_run, avatar_only_run)
+        else:
+            avatar_only_run = 0.0
+    assert max_avatar_only_run == pytest.approx(6.2)
+    assert max_avatar_only_run <= 10.0
+    assert plan["validation"]["all_pass"] is True
+
+
+def test_visual_director_можно_отключить_не_отключая_bubble():
+    config = _canonical_config()
+    config["edit_plan"] = {"visual_director": {"enabled": False}}
+
+    plan = build_edit_plan(
+        _three_questions_scenario(),
+        config,
+        index={},
+        require_asset_files=False,
+    )
+
+    assert not any(
+        (window.get("effect") or {}).get("visual_director")
+        for window in plan["windows"]
+    )
+    assert any(
+        (window.get("effect") or {}).get("bubble")
+        for window in plan["windows"]
+    )
+    assert plan["constraints"]["visual_director"]["max_count"] == 0
+
+
 def test_bubble_можно_отключить_в_config():
     config = _canonical_config()
     config["edit_plan"] = {"bubble": {"enabled": False}}
@@ -438,6 +532,13 @@ def test_bubble_проецируется_в_revideo_с_face_crop():
         "face_zoom": 3.1,
         "face_dy": 45,
     }
+    semantic = [
+        segment
+        for segment in tz["segments"]
+        if (segment.get("effect") or {}).get("visual_director")
+    ]
+    assert len(semantic) == 5
+    assert all(segment["intensity"] == 3 for segment in semantic)
 
 
 def test_validator_защищает_avatar_bubble_contract():
@@ -458,6 +559,148 @@ def test_validator_защищает_avatar_bubble_contract():
 
     assert report["all_pass"] is False
     assert any("bubble требует mixed coverage" in error for error in report["errors"])
+
+
+def test_validator_защищает_visual_director_contract():
+    plan = build_edit_plan(
+        _three_questions_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+    visual = next(
+        window
+        for window in plan["windows"]
+        if (window.get("effect") or {}).get("visual_director")
+    )
+    visual["coverage"] = "avatar"
+    visual["caption"] = "bottom"
+    visual["effect"]["hyperframes"]["variables"]["items"] = []
+    visual["effect"]["items"] = []
+
+    report = validate_edit_plan(plan, require_asset_files=False)
+
+    assert report["all_pass"] is False
+    assert any("built-in visual требует hyperframes" in error for error in report["errors"])
+    assert any("built-in visual требует hidden caption" in error for error in report["errors"])
+    assert any("visual items требуют" in error for error in report["errors"])
+
+
+def _visual_llm_scenario():
+    return {
+        "theme": "выбор решения",
+        "blocks": [
+            {
+                "role": "hook",
+                "start": 0.0,
+                "end": 3.0,
+                "speech": "Почему клиент откладывает решение?",
+            },
+            {
+                "role": "development",
+                "start": 3.0,
+                "end": 9.0,
+                "speech": (
+                    "Клиент видит проблему, сравнивает варианты "
+                    "и выбирает решение."
+                ),
+            },
+            {
+                "role": "payoff",
+                "start": 9.0,
+                "end": 13.0,
+                "speech": "Ясная система делает выбор понятным.",
+            },
+            {
+                "role": "cta",
+                "start": 13.0,
+                "end": 16.0,
+                "speech": "Сохрани эту схему.",
+            },
+        ],
+    }
+
+
+def _visual_recommendation(plan):
+    development = [
+        phrase["id"]
+        for phrase in plan["phrases"]
+        if phrase["role"] == "development"
+    ]
+    return {
+        "visuals": [
+            {
+                "phrase_ids": development,
+                "template": "concept_nodes",
+                "variables": {
+                    "title": "КАК КЛИЕНТ ВЫБИРАЕТ",
+                    "items": ["ПРОБЛЕМА", "ВАРИАНТЫ", "РЕШЕНИЕ"],
+                },
+                "rationale": "Три смысловых узла объясняют путь выбора.",
+            }
+        ]
+    }
+
+
+def test_visual_llm_заменяет_только_целое_avatar_only_окно():
+    draft = build_edit_plan(
+        _visual_llm_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+
+    enriched = apply_visual_recommendations(
+        draft,
+        _visual_recommendation(draft),
+    )
+
+    visual = next(
+        window
+        for window in enriched["windows"]
+        if (window.get("effect") or {}).get("visual_director", {}).get("source")
+        == "llm"
+    )
+    assert visual["role"] == "development"
+    assert visual["coverage"] == "hyperframes"
+    assert visual["estimated_timing"] == {"start": 3.0, "end": 9.0}
+    assert visual["effect"]["hyperframes"]["block"] == "concept_nodes"
+    assert visual["caption"] == "hidden"
+    assert enriched["validation"]["all_pass"] is True
+
+
+def test_visual_llm_prompt_и_guardrails():
+    draft = build_edit_plan(
+        _visual_llm_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+
+    class Runner:
+        prompt = None
+
+        def run(self, prompt):
+            self.prompt = prompt
+            return json.dumps(_visual_recommendation(draft))
+
+    runner = Runner()
+    enriched = enrich_visuals_with_llm(draft, runner)
+
+    assert "Visual Director" in runner.prompt
+    assert enriched["summary"]["built_in_visual_windows"] == 1
+
+    invalid = _visual_recommendation(draft)
+    invalid["visuals"][0]["phrase_ids"] = [
+        phrase["id"] for phrase in draft["phrases"] if phrase["role"] == "hook"
+    ]
+    with pytest.raises(ValueError, match="hook/CTA"):
+        apply_visual_recommendations(draft, invalid)
+
+    invalid = _visual_recommendation(draft)
+    invalid["visuals"][0]["template"] = "invented_template"
+    with pytest.raises(ValueError, match="template/variables"):
+        apply_visual_recommendations(draft, invalid)
 
 
 def test_save_canonical_пишет_только_edit_plan(tmp_path):

@@ -12,3 +12,4 @@ build/
 dist/
 .pytest_cache/
 .test-deps/
+docs/visual-director-demo/*/edit_plan.json

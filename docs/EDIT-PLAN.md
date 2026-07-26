@@ -50,6 +50,66 @@ defaults используют `low`/`medium`, а `high` оставляют дл�
 содержит ровно одну рекомендацию для каждой фразы. Явные avatar settings
 пользователя не перезаписываются.
 
+## Visual Director
+
+Stage 2.1 добавляет assetless semantic visuals в тот же canonical plan. Это не
+новый монтажный документ: template, variables, phrase IDs, coverage и timing
+хранятся прямо в `window.effect`.
+
+Детерминированные правила работают без сети и создают пять шаблонов:
+
+- `complexity_cloud` — визуальный шум схлопывается в один базовый тезис;
+- `persona_card` — человек, контекст и боль;
+- `value_layers` — формальный продукт сменяется реальной ценностью;
+- `concept_nodes` — связанные опорные понятия;
+- `sequence_flow` — обязательный порядок шагов.
+
+Каждый effect дублирует безопасные runtime variables на верхнем уровне для
+Revideo fallback и хранит HyperFrames projection:
+
+```json
+{
+  "type": "concept_nodes",
+  "title": "ОСНОВА ПРОДАЖ",
+  "items": ["КОМУ", "ЧТО", "КАК"],
+  "hyperframes": {
+    "block": "concept_nodes",
+    "variables": {
+      "title": "ОСНОВА ПРОДАЖ",
+      "items": ["КОМУ", "ЧТО", "КАК"]
+    }
+  },
+  "visual_director": {
+    "template": "concept_nodes",
+    "source": "rules"
+  }
+}
+```
+
+Quality gates:
+
+- только целые contiguous phrase windows одного semantic block;
+- только `coverage: hyperframes`, без HeyGen skip;
+- hook и CTA запрещены;
+- default duration 3–9,5 секунды и hard limit 10 секунд без лица;
+- captions скрыты, потому что текст является частью композиции;
+- не больше четырёх built-in окон на каждые начатые 30 секунд;
+- title/items/variables имеют строгие длины и обязательные поля;
+- exact master timing вне границ даёт явный avatar fallback.
+
+Опциональный `edit_plan.visual_director.llm.enabled` запускается после
+детерминированного draft, но до per-phrase performance analysis. LLM видит
+только оставшиеся `avatar + effect:none` кандидаты и может заменить только
+целые безопасные окна одним из пяти разрешённых templates. Он не может менять
+текст, timing, hook/CTA, существующий B-roll, bubble или уже выбранный visual.
+По умолчанию этот проход выключен.
+
+HyperFrames render использует самостоятельные seek-safe GSAP compositions.
+Если он недоступен, Revideo рисует тот же semantic effect локально по тем же
+variables, поэтому окно не откатывается к одной голове.
+
+Подробный контракт и offline timelines: [VISUAL-DIRECTOR.md](VISUAL-DIRECTOR.md).
+
 ## Avatar bubble
 
 Bubble является canonical visual decision, а не поздним украшением Revideo.

@@ -90,7 +90,15 @@ def edit_plan_to_tz(
             "payoff": 1,
             "cta": 2,
         }.get(role, 2)
-        if effect.get("type") in {"chart_bars", "broll_bg_particles"}:
+        if effect.get("type") in {
+            "chart_bars",
+            "broll_bg_particles",
+            "complexity_cloud",
+            "persona_card",
+            "value_layers",
+            "concept_nodes",
+            "sequence_flow",
+        }:
             intensity = 3
         segments.append({
             "id": len(segments) + 1,

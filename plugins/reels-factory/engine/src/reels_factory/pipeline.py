@@ -40,6 +40,7 @@ from reels_factory.editplan import (
     build_edit_plan as _build_edit_plan,
     covered_block_indexes,
     enrich_performance_with_llm,
+    enrich_visuals_with_llm,
     finalize_edit_plan as _finalize_edit_plan,
     save_edit_plan,
 )
@@ -75,7 +76,8 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
              avatar_client=None, synth_fn=None, ingest_fn=None, assemble_fn=None,
              covered_block_fn=None, jump_cut_fn=None, precut_fn=None,
              master_audio_fn=None, edit_plan_fn=None,
-             finalize_edit_plan_fn=None, performance_runner=None,
+             finalize_edit_plan_fn=None, visual_runner=None,
+             performance_runner=None,
              avatar_plan_fn=None, avatar_render_fn=None) -> dict:
     fmt = config.get("format", "split")
     wd = Path(workdir)
@@ -161,6 +163,15 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
             config,
             legacy_broll_plan=legacy_plan,
         )
+        visual_cfg = (
+            (((config.get("edit_plan") or {}).get("visual_director") or {})
+             .get("llm") or {})
+        )
+        if visual_cfg.get("enabled"):
+            runner = visual_runner or ClaudeCliRunner(
+                timeout_s=int(visual_cfg.get("timeout_s") or 600)
+            )
+            edit_plan = enrich_visuals_with_llm(edit_plan, runner)
         performance_cfg = (
             ((config.get("edit_plan") or {}).get("performance_llm") or {})
         )

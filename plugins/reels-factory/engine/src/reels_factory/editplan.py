@@ -245,6 +245,27 @@ BUBBLE_DEFAULTS = {
 }
 BUBBLE_SHAPES = {"circle", "square"}
 BUBBLE_POSITIONS = {"bottom_left", "bottom_right", "top_left", "top_right"}
+VISUAL_DIRECTOR_DEFAULTS = {
+    "enabled": True,
+    "min_seconds": 3.0,
+    "max_seconds": 9.5,
+    "max_per_30_seconds": 4,
+    "max_llm_windows": 3,
+}
+VISUAL_DIRECTOR_BLOCKS = {
+    "complexity_cloud",
+    "persona_card",
+    "value_layers",
+    "concept_nodes",
+    "sequence_flow",
+}
+VISUAL_DIRECTOR_REQUIRED_VARIABLES = {
+    "complexity_cloud": {"title", "items", "resolution"},
+    "persona_card": {"title", "items"},
+    "value_layers": {"title", "offer", "actual"},
+    "concept_nodes": {"title", "items"},
+    "sequence_flow": {"title", "items"},
+}
 _BUBBLE_SEQUENCE_HEAD = re.compile(
     r"\b(перв\w*|втор\w*|трет\w*|четвер\w*|пят\w*|"
     r"first|second|third|fourth|fifth)\s*:",
@@ -262,6 +283,18 @@ _BUBBLE_ORDINALS = {
     "fourth": "4",
     "fifth": "5",
 }
+_COMPLEXITY_MARKERS = re.compile(
+    r"усложн|хитр\w*\s+при[её]м|скрипт|волшебн\w*\s+фраз",
+    re.IGNORECASE,
+)
+_FOUNDATION_MARKERS = re.compile(
+    r"в\s+основе|надстройк|три\w*\s+(?:больш\w*\s+)?вопрос",
+    re.IGNORECASE,
+)
+_ORDER_MARKERS = re.compile(
+    r"\bсначала\b.*\bпото(?:́)?м\b.*\bпото(?:́)?м\b",
+    re.IGNORECASE | re.DOTALL,
+)
 
 # HeyGen рекомендует короткий prompt: одно видимое движение + выражение лица,
 # максимум две короткие части. Ролевые defaults намеренно консервативны:
@@ -654,6 +687,91 @@ def _bubble_settings(config: dict, duration: float) -> dict:
     return settings
 
 
+def _visual_director_settings(config: dict, duration: float) -> dict:
+    raw = ((config.get("edit_plan") or {}).get("visual_director") or {})
+    settings = dict(VISUAL_DIRECTOR_DEFAULTS)
+    settings.update({key: value for key, value in raw.items() if key != "llm"})
+    enabled = settings.get("enabled")
+    if isinstance(enabled, str):
+        enabled = enabled.strip().lower() in {"1", "true", "yes", "on"}
+    settings["enabled"] = bool(enabled)
+    try:
+        settings["min_seconds"] = float(settings["min_seconds"])
+        settings["max_seconds"] = float(settings["max_seconds"])
+        settings["max_per_30_seconds"] = int(settings["max_per_30_seconds"])
+        settings["max_llm_windows"] = int(settings["max_llm_windows"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("edit_plan.visual_director содержит нечисловой лимит") from exc
+    if not (
+        MIN_FULLSCREEN_S
+        <= settings["min_seconds"]
+        <= settings["max_seconds"]
+        <= MAX_FACE_ABSENCE_S
+    ):
+        raise ValueError(
+            "edit_plan.visual_director требует "
+            f"{MIN_FULLSCREEN_S:.1f} <= min_seconds <= max_seconds "
+            f"<= {MAX_FACE_ABSENCE_S:.1f}"
+        )
+    if settings["max_per_30_seconds"] < 0 or settings["max_llm_windows"] < 0:
+        raise ValueError(
+            "edit_plan.visual_director frequency limits должны быть >= 0"
+        )
+    periods = max(1, math.ceil(max(0.0, float(duration)) / 30.0 - 1e-9))
+    settings["max_count"] = (
+        settings["max_per_30_seconds"] * periods if settings["enabled"] else 0
+    )
+    settings["blocks"] = sorted(VISUAL_DIRECTOR_BLOCKS)
+    return settings
+
+
+def _visual_duration(selected: list[dict]) -> float:
+    if not selected:
+        return 0.0
+    return (
+        float(selected[-1]["estimated_timing"]["end"])
+        - float(selected[0]["estimated_timing"]["start"])
+    )
+
+
+def _visual_label(value: str, *, words: int = 7, chars: int = 48) -> str:
+    clean = " ".join(
+        str(value or "").strip(" ,.!?…:;—-").split()[:words]
+    )
+    return clean[:chars]
+
+
+def _visual_items(value: str, *, limit: int = 4) -> list[str]:
+    parts = [
+        _visual_label(part, words=6, chars=42)
+        for part in re.split(r"[,;]", str(value or ""))
+    ]
+    return [part for part in parts if part][:limit]
+
+
+def _visual_director_effect(
+    block: str,
+    variables: dict,
+    *,
+    source: str = "rules",
+) -> dict:
+    if block not in VISUAL_DIRECTOR_BLOCKS:
+        raise ValueError(f"неизвестный Visual Director block: {block}")
+    frozen = copy.deepcopy(variables)
+    return {
+        "type": block,
+        **frozen,
+        "hyperframes": {
+            "block": block,
+            "variables": copy.deepcopy(frozen),
+        },
+        "visual_director": {
+            "template": block,
+            "source": source,
+        },
+    }
+
+
 def _bubble_title(text: str, match: re.Match) -> str:
     ordinal = match.group(1).lower()
     number = next(
@@ -737,6 +855,215 @@ def _bubble_task_list_candidate(
                 "position": settings["position"],
             },
         },
+    }
+
+
+def _complexity_cloud_candidate(
+    block_phrases: list[dict],
+    start_index: int,
+    settings: dict,
+) -> dict | None:
+    if not settings["enabled"] or start_index >= len(block_phrases):
+        return None
+    if not _COMPLEXITY_MARKERS.search(block_phrases[start_index]["text"]):
+        return None
+    selected: list[dict] = []
+    for phrase in block_phrases[start_index:]:
+        if selected and _BUBBLE_SEQUENCE_HEAD.search(phrase["text"]):
+            break
+        selected.append(phrase)
+    combined = " ".join(phrase["text"] for phrase in selected)
+    duration = _visual_duration(selected)
+    if (
+        not _FOUNDATION_MARKERS.search(combined)
+        or not settings["min_seconds"] <= duration <= settings["max_seconds"]
+    ):
+        return None
+    items = []
+    low = combined.lower()
+    if re.search(r"при[её]м", low):
+        items.append("ХИТРЫЕ ПРИЁМЫ")
+    if "скрипт" in low:
+        items.append("СКРИПТЫ")
+    if "фраз" in low:
+        items.append("ВОЛШЕБНЫЕ ФРАЗЫ")
+    if len(items) < 3:
+        items.extend(
+            item.upper()
+            for item in _visual_items(combined, limit=3)
+            if item.upper() not in items
+        )
+    variables = {
+        "title": "МЫ УСЛОЖНЯЕМ ПРОДАЖИ",
+        "items": items[:4],
+        "resolution": "В ОСНОВЕ — 3 ВОПРОСА",
+    }
+    return {
+        "lead": [],
+        "selected": selected,
+        "coverage": "hyperframes",
+        "effect": _visual_director_effect("complexity_cloud", variables),
+        "visual_intent": (
+            "Показать визуальный шум из приёмов, скриптов и фраз, затем "
+            "схлопнуть его до трёх базовых вопросов."
+        ),
+        "reason": (
+            "В речи есть явная дуга «усложняем → в основе простая система»."
+        ),
+    }
+
+
+def _ordinal_visual_candidate(
+    block_phrases: list[dict],
+    start_index: int,
+    settings: dict,
+) -> dict | None:
+    if not settings["enabled"] or start_index >= len(block_phrases):
+        return None
+    head = block_phrases[start_index]
+    match = _BUBBLE_SEQUENCE_HEAD.search(head["text"])
+    if not match:
+        return None
+    topic = head["text"][match.end():].lower()
+    following: list[dict] = []
+    for phrase in block_phrases[start_index + 1:]:
+        if _BUBBLE_SEQUENCE_HEAD.search(phrase["text"]):
+            break
+        following.append(phrase)
+    if not following:
+        return None
+    title = _bubble_title(head["text"], match)
+    combined = " ".join(phrase["text"] for phrase in following)
+
+    if re.search(r"\bкому\b|\bкто\b|человек|боль", topic):
+        selected = following
+        if not (
+            settings["min_seconds"]
+            <= _visual_duration(selected)
+            <= settings["max_seconds"]
+        ):
+            return None
+        items = _visual_items(combined, limit=4)
+        if len(items) < 2:
+            return None
+        return {
+            "lead": [head],
+            "selected": selected,
+            "coverage": "hyperframes",
+            "effect": _visual_director_effect(
+                "persona_card",
+                {"title": title, "items": items},
+            ),
+            "visual_intent": (
+                "Разложить аудиторию на человека, контекст жизни и боль."
+            ),
+            "reason": "Нумерованный вопрос описывает целевого человека.",
+        }
+
+    if re.search(r"\bчто\b.*прода|покупа", topic + " " + combined.lower()):
+        selected = [head, *following]
+        if not (
+            settings["min_seconds"]
+            <= _visual_duration(selected)
+            <= settings["max_seconds"]
+        ):
+            return None
+        variables = {
+            "title": title,
+            "offer": _visual_label(topic, words=5, chars=36).upper()
+            or "ЧТО ПРОДАЁМ",
+            "actual": _visual_label(combined, words=8, chars=58),
+        }
+        return {
+            "lead": [],
+            "selected": selected,
+            "coverage": "hyperframes",
+            "effect": _visual_director_effect("value_layers", variables),
+            "visual_intent": (
+                "Сопоставить формальное предложение и реальную покупку клиента."
+            ),
+            "reason": (
+                "Фраза явно противопоставляет «что продаём» и "
+                "«что человек покупает»."
+            ),
+        }
+    return None
+
+
+def _foundation_nodes_candidate(
+    block_phrases: list[dict],
+    start_index: int,
+    settings: dict,
+) -> dict | None:
+    if not settings["enabled"] or start_index >= len(block_phrases):
+        return None
+    # Не заглатывать предшествующий нумерованный шаг только потому, что
+    # «надстройка» встретилась в одной из следующих фраз: bubble для «как»
+    # и concept_nodes для итогового тезиса должны остаться разными окнами.
+    if not re.search(
+        r"вс[её]\s+остальн|надстройк",
+        block_phrases[start_index]["text"],
+        re.IGNORECASE,
+    ):
+        return None
+    selected = block_phrases[start_index:]
+    combined = " ".join(phrase["text"] for phrase in selected)
+    duration = _visual_duration(selected)
+    if (
+        not re.search(r"вс[её]\s+остальн|надстройк", combined, re.IGNORECASE)
+        or not re.search(r"трем|тр[её]м|тремя", combined, re.IGNORECASE)
+        or not settings["min_seconds"] <= duration <= settings["max_seconds"]
+    ):
+        return None
+    variables = {
+        "title": "ОСНОВА ПРОДАЖ",
+        "items": ["КОМУ", "ЧТО", "КАК"],
+    }
+    return {
+        "lead": [],
+        "selected": selected,
+        "coverage": "hyperframes",
+        "effect": _visual_director_effect("concept_nodes", variables),
+        "visual_intent": "Собрать три вопроса в единую основу системы продаж.",
+        "reason": "Текст называет всё остальное надстройкой над тремя вопросами.",
+    }
+
+
+def _sequence_flow_candidate(
+    block_phrases: list[dict],
+    start_index: int,
+    settings: dict,
+) -> dict | None:
+    if not settings["enabled"] or start_index >= len(block_phrases):
+        return None
+    remaining = block_phrases[start_index:]
+    combined = " ".join(phrase["text"] for phrase in remaining)
+    if not _ORDER_MARKERS.search(combined):
+        return None
+    first_flow = next(
+        (
+            index
+            for index, phrase in enumerate(remaining)
+            if re.search(r"порядок|сначала", phrase["text"], re.IGNORECASE)
+        ),
+        0,
+    )
+    lead = remaining[:first_flow]
+    selected = remaining[first_flow:]
+    duration = _visual_duration(selected)
+    if not settings["min_seconds"] <= duration <= settings["max_seconds"]:
+        return None
+    variables = {
+        "title": "ВАЖЕН ПОРЯДОК",
+        "items": ["КТО", "ЧТО", "КАК"],
+    }
+    return {
+        "lead": lead,
+        "selected": selected,
+        "coverage": "hyperframes",
+        "effect": _visual_director_effect("sequence_flow", variables),
+        "visual_intent": "Показать обязательный порядок: кто → что → как.",
+        "reason": "В payoff явно сформулирована последовательность шагов.",
     }
 
 
@@ -872,6 +1199,7 @@ def _plan_visual_windows(
     used_assets: set[str] = set()
     total_duration = float((scenario.get("blocks") or [{}])[-1].get("end") or 0)
     bubble_settings = _bubble_settings(config, total_duration)
+    visual_settings = _visual_director_settings(config, total_duration)
     allow_full_cover = str(config.get("format") or "split") == "avatar"
     explicit_full_cover = (
         _legacy_full_cover(scenario, legacy_broll_plan)
@@ -951,6 +1279,7 @@ def _plan_visual_windows(
         "stat": False,
         "chart": False,
         "bubble": 0,
+        "visual_director": 0,
         "automation_broll": False,
         "instruction_broll": False,
     }
@@ -1060,6 +1389,58 @@ def _plan_visual_windows(
             phrase = block_phrases[local_index]
             text = phrase["text"]
             low = f" {text.lower()} "
+
+            director_candidate = None
+            if (
+                role in {"context", "development", "payoff"}
+                and used_effects["visual_director"] < visual_settings["max_count"]
+            ):
+                for finder in (
+                    _complexity_cloud_candidate,
+                    _ordinal_visual_candidate,
+                    _foundation_nodes_candidate,
+                    _sequence_flow_candidate,
+                ):
+                    director_candidate = finder(
+                        block_phrases, local_index, visual_settings
+                    )
+                    if director_candidate:
+                        break
+            if director_candidate:
+                lead = director_candidate["lead"]
+                selected = director_candidate["selected"]
+                if lead:
+                    _assign_window(
+                        windows,
+                        phrases,
+                        lead,
+                        coverage="avatar",
+                        visual_intent=(
+                            "Сформулировать смысловой переход лицом в кадре "
+                            "перед встроенной инфографикой."
+                        ),
+                        reason=(
+                            "Eye contact разделяет соседние fullscreen visuals "
+                            "и удерживает непрерывность ведущего."
+                        ),
+                        camera="punch_in",
+                        caption="highlight",
+                    )
+                _assign_window(
+                    windows,
+                    phrases,
+                    selected,
+                    coverage=director_candidate["coverage"],
+                    visual_intent=director_candidate["visual_intent"],
+                    reason=director_candidate["reason"],
+                    effect=director_candidate["effect"],
+                    camera="hold",
+                    transition="zoom_blur",
+                    caption="hidden",
+                )
+                used_effects["visual_director"] += 1
+                local_index += len(lead) + len(selected)
+                continue
 
             bubble_sequence = (
                 _bubble_task_list_candidate(
@@ -1326,6 +1707,8 @@ def _refresh_blocks_and_summary(plan: dict) -> None:
     avatar_visible_seconds = 0.0
     bubble_seconds = 0.0
     bubble_windows = 0
+    built_in_visual_seconds = 0.0
+    built_in_visual_windows = 0
     for window in windows:
         timing = window.get(timing_key) or window.get("estimated_timing") or {}
         duration = max(0.0, float(timing.get("end", 0)) - float(timing.get("start", 0)))
@@ -1336,6 +1719,9 @@ def _refresh_blocks_and_summary(plan: dict) -> None:
         if (window.get("effect") or {}).get("bubble"):
             bubble_seconds += duration
             bubble_windows += 1
+        if (window.get("effect") or {}).get("visual_director"):
+            built_in_visual_seconds += duration
+            built_in_visual_windows += 1
     block_avatar_seconds = 0.0
     for block in blocks:
         timing = block.get(timing_key) or block.get("estimated_timing") or {}
@@ -1351,6 +1737,8 @@ def _refresh_blocks_and_summary(plan: dict) -> None:
         "avatar_visible_seconds": round(avatar_visible_seconds, 3),
         "bubble_seconds": round(bubble_seconds, 3),
         "bubble_windows": bubble_windows,
+        "built_in_visual_seconds": round(built_in_visual_seconds, 3),
+        "built_in_visual_windows": built_in_visual_windows,
         "transitional_heygen_block_seconds": round(block_avatar_seconds, 3),
         "covered_block_indexes": [
             block["index"] for block in blocks if not block["avatar_required"]
@@ -1366,6 +1754,7 @@ def build_edit_plan(
     library_dir: Path | str | None = None,
     embed_fn=None,
     legacy_broll_plan: dict | None = None,
+    visual_recommendations: dict | list | None = None,
     performance_recommendations: dict | list | None = None,
     require_asset_files: bool = True,
 ) -> dict:
@@ -1408,6 +1797,7 @@ def build_edit_plan(
         })
     total = float(scenario["blocks"][-1]["end"])
     bubble_constraints = _bubble_settings(config, total)
+    visual_constraints = _visual_director_settings(config, total)
     plan = {
         "format_version": EDIT_PLAN_FORMAT_VERSION,
         "status": "draft",
@@ -1429,6 +1819,7 @@ def build_edit_plan(
             "max_face_absence_seconds": MAX_FACE_ABSENCE_S,
             "min_fullscreen_seconds": MIN_FULLSCREEN_S,
             "bubble": bubble_constraints,
+            "visual_director": visual_constraints,
         },
         "blocks": blocks,
         "phrases": phrases,
@@ -1441,6 +1832,10 @@ def build_edit_plan(
         "revisions": [],
         "log": log,
     }
+    if visual_recommendations:
+        plan = apply_visual_recommendations(
+            plan, visual_recommendations, source="provided"
+        )
     if performance_recommendations:
         plan = apply_performance_recommendations(
             plan, performance_recommendations, source="provided"
@@ -1622,6 +2017,28 @@ def finalize_edit_plan(
                 f"{bubble_min:.1f}–{bubble_max:.1f}с",
             )
             continue
+        visual_director = (window.get("effect") or {}).get("visual_director")
+        visual_constraints = (
+            (result.get("constraints") or {}).get("visual_director") or {}
+        )
+        visual_min = float(
+            visual_constraints.get(
+                "min_seconds", VISUAL_DIRECTOR_DEFAULTS["min_seconds"]
+            )
+        )
+        visual_max = float(
+            visual_constraints.get(
+                "max_seconds", VISUAL_DIRECTOR_DEFAULTS["max_seconds"]
+            )
+        )
+        if visual_director and not visual_min <= duration <= visual_max:
+            _downgrade_window(
+                result,
+                window,
+                f"built-in visual exact window {duration:.2f}с вне разрешённого "
+                f"{visual_min:.1f}–{visual_max:.1f}с",
+            )
+            continue
         if (
             window.get("coverage") in {"full_broll", "hyperframes"}
             and duration > MAX_FACE_ABSENCE_S
@@ -1669,6 +2086,54 @@ def _motion_prompt_error(prompt: str) -> str | None:
     forbidden = _FORBIDDEN_MOTION.search(prompt)
     if forbidden:
         return f"motion_prompt управляет неподдерживаемым объектом: {forbidden.group(0)}"
+    return None
+
+
+def _visual_director_effect_error(effect: dict) -> str | None:
+    director = effect.get("visual_director")
+    if not director:
+        return None
+    if not isinstance(director, dict):
+        return "visual_director metadata должен быть object"
+    template = str(director.get("template") or "")
+    if template not in VISUAL_DIRECTOR_BLOCKS:
+        return f"неизвестный visual template: {template or '-'}"
+    if effect.get("type") != template:
+        return "effect.type не совпадает с visual_director.template"
+    hyperframes = effect.get("hyperframes") or {}
+    if hyperframes.get("block") != template:
+        return "HyperFrames block не совпадает с visual template"
+    variables = hyperframes.get("variables")
+    if not isinstance(variables, dict):
+        return "visual template variables должны быть object"
+    missing = VISUAL_DIRECTOR_REQUIRED_VARIABLES[template] - set(variables)
+    if missing:
+        return f"visual template не содержит variables: {sorted(missing)}"
+    for key in VISUAL_DIRECTOR_REQUIRED_VARIABLES[template]:
+        if effect.get(key) != variables.get(key):
+            return (
+                f"visual runtime variable {key} не совпадает "
+                "с HyperFrames variables"
+            )
+    title = str(variables.get("title") or "").strip()
+    if not title or len(title) > 60:
+        return "visual title пуст или длиннее 60 символов"
+    if "items" in VISUAL_DIRECTOR_REQUIRED_VARIABLES[template]:
+        items = variables.get("items")
+        if (
+            not isinstance(items, list)
+            or not 2 <= len(items) <= 5
+            or any(
+                not str(item).strip() or len(str(item).strip()) > 58
+                for item in items
+            )
+        ):
+            return "visual items требуют 2–5 непустых строк до 58 символов"
+    for key in ("resolution", "offer", "actual"):
+        if key in VISUAL_DIRECTOR_REQUIRED_VARIABLES[template]:
+            value = str(variables.get(key) or "").strip()
+            if not value or len(value) > 80:
+                return f"visual variable {key} пуст или длиннее 80 символов"
     return None
 
 
@@ -1736,6 +2201,20 @@ def validate_edit_plan(
     bubble_max = float(
         bubble_constraints.get("max_seconds", BUBBLE_DEFAULTS["max_seconds"])
     )
+    visual_count = 0
+    visual_constraints = (
+        (plan.get("constraints") or {}).get("visual_director") or {}
+    )
+    visual_min = float(
+        visual_constraints.get(
+            "min_seconds", VISUAL_DIRECTOR_DEFAULTS["min_seconds"]
+        )
+    )
+    visual_max = float(
+        visual_constraints.get(
+            "max_seconds", VISUAL_DIRECTOR_DEFAULTS["max_seconds"]
+        )
+    )
     for window in windows:
         own_ids = window.get("phrase_ids") or []
         assigned.extend(own_ids)
@@ -1788,6 +2267,30 @@ def validate_edit_plan(
             errors.append(f"{window.get('id')}: CTA нельзя полностью скрывать")
 
         effect = window.get("effect") or {}
+        visual_error = _visual_director_effect_error(effect)
+        if visual_error:
+            errors.append(f"{window.get('id')}: {visual_error}")
+        if effect.get("visual_director"):
+            visual_count += 1
+            if coverage != "hyperframes" or window.get("safe_to_skip_avatar"):
+                errors.append(
+                    f"{window.get('id')}: built-in visual требует "
+                    "hyperframes coverage без HeyGen skip"
+                )
+            if role in {"hook", "cta"}:
+                errors.append(
+                    f"{window.get('id')}: built-in visual нельзя использовать "
+                    f"в {role}"
+                )
+            if not visual_min <= duration <= visual_max:
+                errors.append(
+                    f"{window.get('id')}: built-in visual должен длиться "
+                    f"{visual_min:.1f}–{visual_max:.1f}с"
+                )
+            if window.get("caption") != "hidden":
+                errors.append(
+                    f"{window.get('id')}: built-in visual требует hidden caption"
+                )
         bubble = effect.get("bubble")
         if bubble:
             bubble_count += 1
@@ -1855,6 +2358,14 @@ def validate_edit_plan(
     if bubble_count > max_bubbles:
         errors.append(
             f"bubble windows превышают лимит: {bubble_count}>{max_bubbles}"
+        )
+    max_visuals = int(
+        visual_constraints.get("max_count", max(1, visual_count))
+    )
+    if visual_count > max_visuals:
+        errors.append(
+            f"built-in visual windows превышают лимит: "
+            f"{visual_count}>{max_visuals}"
         )
 
     if sorted(assigned) != sorted(ids):
@@ -1933,6 +2444,221 @@ def _extract_json_object(value: str) -> dict:
     if start < 0 or end < start:
         raise ValueError("LLM performance reply не содержит JSON object")
     return json.loads(value[start:end + 1])
+
+
+def visual_analysis_prompt(plan: dict) -> str:
+    """Prompt optional Visual Director pass after deterministic planning."""
+    phrase_by_id = {
+        phrase["id"]: phrase for phrase in plan.get("phrases") or []
+    }
+    candidates = []
+    for window in plan.get("windows") or []:
+        effect = window.get("effect") or {}
+        timing = window.get("estimated_timing") or {}
+        if (
+            window.get("coverage") != "avatar"
+            or effect.get("type") != "none"
+            or window.get("role") in {"hook", "cta"}
+        ):
+            continue
+        candidates.extend(
+            {
+                "phrase_id": phrase_id,
+                "role": phrase_by_id[phrase_id].get("role"),
+                "text": phrase_by_id[phrase_id]["text"],
+                "start": timing.get("start"),
+                "end": timing.get("end"),
+            }
+            for phrase_id in window.get("phrase_ids") or []
+        )
+    constraints = (plan.get("constraints") or {}).get("visual_director") or {}
+    return (
+        "You are the Visual Director for a short vertical talking-head video. "
+        "Recommend zero or more LOCAL built-in motion-graphic windows only for "
+        "the candidate phrase IDs below. Use only these templates: "
+        + ", ".join(sorted(VISUAL_DIRECTOR_BLOCKS))
+        + ". Every recommendation must use contiguous phrase IDs from one block, "
+        "must last between "
+        f"{constraints.get('min_seconds', 3.0)} and "
+        f"{constraints.get('max_seconds', 9.5)} seconds, and must not touch hook "
+        "or CTA. Prefer a visual only when it materially explains the words; "
+        "otherwise omit it. Use at most "
+        f"{constraints.get('max_llm_windows', 3)} windows. Variables contract: "
+        "complexity_cloud={title,items[2..5],resolution}; "
+        "persona_card={title,items[2..5]}; "
+        "value_layers={title,offer,actual}; "
+        "concept_nodes={title,items[2..5]}; "
+        "sequence_flow={title,items[2..5]}. Keep title <=60 characters, item "
+        "strings <=58, and other strings <=80. Return JSON only: "
+        '{"visuals":[{"phrase_ids":["phrase-000"],'
+        '"template":"concept_nodes","variables":{"title":"...",'
+        '"items":["...","..."]},"rationale":"..."}]}.'
+        "\n\nCANDIDATES:\n"
+        + json.dumps(candidates, ensure_ascii=False)
+    )
+
+
+def _reindex_edit_windows(plan: dict) -> None:
+    windows = plan.get("windows") or []
+    windows.sort(key=lambda item: item["estimated_timing"]["start"])
+    phrase_by_id = {
+        phrase["id"]: phrase for phrase in plan.get("phrases") or []
+    }
+    for index, window in enumerate(windows):
+        window["id"] = f"window-{index:03d}"
+        for phrase_id in window.get("phrase_ids") or []:
+            phrase_by_id[phrase_id]["window_id"] = window["id"]
+
+
+def apply_visual_recommendations(
+    plan: dict,
+    recommendations: dict | list,
+    *,
+    source: str = "llm",
+) -> dict:
+    """Replace only safe avatar-only windows with validated built-in visuals."""
+    result = copy.deepcopy(plan)
+    items = (
+        recommendations.get("visuals")
+        if isinstance(recommendations, dict)
+        else recommendations
+    )
+    if not isinstance(items, list):
+        raise ValueError("visual recommendations.visuals должен быть списком")
+    constraints = (result.get("constraints") or {}).get("visual_director") or {}
+    max_items = int(
+        constraints.get(
+            "max_llm_windows", VISUAL_DIRECTOR_DEFAULTS["max_llm_windows"]
+        )
+    )
+    if len(items) > max_items:
+        raise ValueError(
+            f"visual recommendations превышают лимит: {len(items)}>{max_items}"
+        )
+    phrase_by_id = {
+        phrase["id"]: phrase for phrase in result.get("phrases") or []
+    }
+    phrase_order = {
+        phrase["id"]: index
+        for index, phrase in enumerate(result.get("phrases") or [])
+    }
+    used_phrase_ids: set[str] = set()
+
+    for item in items:
+        if not isinstance(item, dict):
+            raise ValueError("каждая visual recommendation должна быть object")
+        phrase_ids = item.get("phrase_ids")
+        if (
+            not isinstance(phrase_ids, list)
+            or not phrase_ids
+            or any(phrase_id not in phrase_by_id for phrase_id in phrase_ids)
+        ):
+            raise ValueError("visual recommendation содержит неизвестные phrase IDs")
+        if len(set(phrase_ids)) != len(phrase_ids) or used_phrase_ids.intersection(
+            phrase_ids
+        ):
+            raise ValueError("visual recommendation phrase IDs дублируются")
+        indexes = [phrase_order[phrase_id] for phrase_id in phrase_ids]
+        if indexes != list(range(indexes[0], indexes[-1] + 1)):
+            raise ValueError("visual recommendation phrase IDs должны быть смежными")
+        selected = [phrase_by_id[phrase_id] for phrase_id in phrase_ids]
+        if len({phrase["block_index"] for phrase in selected}) != 1:
+            raise ValueError("visual recommendation не может пересекать blocks")
+        if any(phrase.get("role") in {"hook", "cta"} for phrase in selected):
+            raise ValueError("visual recommendation не может закрывать hook/CTA")
+        duration = _visual_duration(selected)
+        visual_min = float(
+            constraints.get(
+                "min_seconds", VISUAL_DIRECTOR_DEFAULTS["min_seconds"]
+            )
+        )
+        visual_max = float(
+            constraints.get(
+                "max_seconds", VISUAL_DIRECTOR_DEFAULTS["max_seconds"]
+            )
+        )
+        if not visual_min <= duration <= visual_max:
+            raise ValueError(
+                f"visual recommendation duration {duration:.2f}с вне "
+                f"{visual_min:.1f}–{visual_max:.1f}с"
+            )
+        window_by_id = {
+            window["id"]: window for window in result.get("windows") or []
+        }
+        source_windows = {
+            phrase["window_id"] for phrase in selected
+        }
+        selected_set = set(phrase_ids)
+        for window_id in source_windows:
+            window = window_by_id[window_id]
+            effect = window.get("effect") or {}
+            if (
+                window.get("coverage") != "avatar"
+                or effect.get("type") != "none"
+                or not set(window.get("phrase_ids") or []).issubset(selected_set)
+            ):
+                raise ValueError(
+                    "visual LLM может заменять только целые avatar-only windows"
+                )
+        template = str(item.get("template") or "")
+        variables = item.get("variables")
+        if template not in VISUAL_DIRECTOR_BLOCKS or not isinstance(variables, dict):
+            raise ValueError("visual recommendation template/variables invalid")
+        effect = _visual_director_effect(
+            template,
+            variables,
+            source=source,
+        )
+        effect["visual_director"]["rationale"] = str(
+            item.get("rationale") or ""
+        ).strip()
+        visual_error = _visual_director_effect_error(effect)
+        if visual_error:
+            raise ValueError(f"visual recommendation invalid: {visual_error}")
+        result["windows"] = [
+            window
+            for window in result["windows"]
+            if window["id"] not in source_windows
+        ]
+        _assign_window(
+            result["windows"],
+            result["phrases"],
+            selected,
+            coverage="hyperframes",
+            visual_intent=f"LLM Visual Director: {template}.",
+            reason=(
+                str(item.get("rationale") or "").strip()
+                or "Visual Director recommendation."
+            ),
+            effect=effect,
+            camera="hold",
+            transition="zoom_blur",
+            caption="hidden",
+        )
+        _reindex_edit_windows(result)
+        used_phrase_ids.update(phrase_ids)
+
+    if items:
+        result.setdefault("log", []).append(
+            f"Visual Director LLM добавил встроенных окон: {len(items)}."
+        )
+    _refresh_blocks_and_summary(result)
+    report = validate_edit_plan(result, require_asset_files=False)
+    result["validation"] = report
+    if not report["all_pass"]:
+        raise ValueError(
+            "LLM visual enrichment invalid: "
+            + "; ".join(report["errors"][:5])
+        )
+    return result
+
+
+def enrich_visuals_with_llm(plan: dict, runner) -> dict:
+    """Run injected Visual Director LLM; tests use an offline fake runner."""
+    reply = runner.run(visual_analysis_prompt(plan))
+    return apply_visual_recommendations(
+        plan, _extract_json_object(reply), source="llm"
+    )
 
 
 def apply_performance_recommendations(

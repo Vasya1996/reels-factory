@@ -711,6 +711,64 @@ def test_per_phrase_performance_llm_обогащает_canonical_plan(
     )
 
 
+def test_visual_director_llm_обогащает_canonical_plan_до_performance(
+    monkeypatch, tmp_path
+):
+    calls = []
+    captured = {}
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+
+    class Runner:
+        prompt = None
+
+        def run(self, prompt):
+            self.prompt = prompt
+            return json.dumps({
+                "visuals": [{
+                    "phrase_ids": ["phrase-002"],
+                    "template": "sequence_flow",
+                    "variables": {
+                        "title": "ПУТЬ К РЕЗУЛЬТАТУ",
+                        "items": ["БЫЛО", "ИЗМЕНИЛИ", "СТАЛО"],
+                    },
+                    "rationale": "Показывает причинную последовательность.",
+                }]
+            })
+
+    runner = Runner()
+    cfg = _cfg("split")
+    cfg["edit_plan"] = {
+        "visual_director": {
+            "llm": {"enabled": True},
+        }
+    }
+
+    res = pipeline.run_make(
+        cfg,
+        "broll.mp4",
+        0.0,
+        wd,
+        avatar_client=avatar,
+        synth_fn=fs,
+        ingest_fn=fi,
+        assemble_fn=fa,
+        visual_runner=runner,
+    )
+
+    assert res["ok"] is True
+    assert "Visual Director" in runner.prompt
+    visual = next(
+        window
+        for window in captured["edit_plan"]["windows"]
+        if (window.get("effect") or {}).get("visual_director")
+    )
+    assert visual["phrase_ids"] == ["phrase-002"]
+    assert visual["effect"]["visual_director"]["source"] == "llm"
+    assert visual["effect"]["hyperframes"]["block"] == "sequence_flow"
+
+
 def test_явный_broll_plan_отключает_авто_precut(monkeypatch, tmp_path):
     calls = []
     fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)

@@ -141,6 +141,18 @@ master_audio:
 # Canonical edit plan строится до платных стадий. Опциональный LLM-проход
 # рекомендует expressiveness/motion_prompt отдельно для каждой phrase.
 edit_plan:
+  # Встроенные смысловые визуалы без внешних ассетов. Детерминированные
+  # правила включены по умолчанию; LLM может только дополнить безопасные
+  # avatar-only окна и не меняет hook/CTA/тайминг фраз.
+  visual_director:
+    enabled: true
+    min_seconds: 3.0
+    max_seconds: 9.5
+    max_per_30_seconds: 4
+    max_llm_windows: 3
+    llm:
+      enabled: false
+      timeout_s: 600
   performance_llm:
     enabled: false
     timeout_s: 600
