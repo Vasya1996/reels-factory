@@ -146,8 +146,13 @@ import pytest
 
 from reels_factory.editplan import (
     EDIT_PLAN_FILENAME,
+    _chart_variables,
+    _language_rules,
+    _norm_word,
     apply_performance_recommendations,
     apply_visual_recommendations,
+    before_after_from_text,
+    broll_query,
     build_edit_plan,
     covered_block_indexes,
     enrich_performance_with_llm,
@@ -156,7 +161,7 @@ from reels_factory.editplan import (
     save_edit_plan,
     validate_edit_plan,
 )
-from reels_factory.revideo_adapter import edit_plan_to_tz
+from reels_factory.revideo_adapter import _keywords_from_config, edit_plan_to_tz
 
 
 def _canonical_scenario():
@@ -203,6 +208,95 @@ def _canonical_config(**avatar):
     }
     result["avatar"].update(avatar)
     return result
+
+
+def test_kazakh_unicode_keywords_не_теряют_национальные_буквы():
+    assert _norm_word("Қала!") == "қала"
+    assert _norm_word("Ғала!") == "ғала"
+    assert _norm_word("Қала!") != _norm_word("Ғала!")
+
+    keywords = _keywords_from_config({
+        "product": {"brand_captions": {"Қазақша": ["қазақша"]}},
+        "theme_captions": ["түсінікті"],
+    })
+    assert "қазақша" in keywords
+    assert "түсінікті" in keywords
+
+
+def test_kazakh_language_pack_семантика_и_локализованные_подписи():
+    rules = _language_rules("kk")
+    assert rules["automation"].search("Барлығын автоматтандыруға болады")
+    assert rules["instruction"].search("Үш қадамнан тұратын нұсқаулық")
+    assert rules["payoff"].search("Бір рет баптап, дайын нәтижені алыңыз")
+
+    before_after = before_after_from_text(
+        "Бұрын есеп қолмен жасалды, қазір жүйе автоматты жұмыс істейді.",
+        language="kk",
+    )
+    assert before_after == {
+        "before_value": "есеп қолмен жасалды",
+        "after_value": "жүйе автоматты жұмыс істейді",
+    }
+    assert broll_query(
+        "Бұл жүйе және есеп үшін өте пайдалы", language="kk"
+    ) == "жүйе есеп пайдалы"
+
+    chart = _chart_variables(
+        "талдау, есеп, жоспар, нәтиже",
+        0.0,
+        4.0,
+        language="kk",
+    )
+    assert chart["title"] == "НЕГІЗГІ ТАРМАҚТАР"
+
+
+def test_kazakh_edit_plan_берёт_казахский_cta_и_before_after():
+    scenario = {
+        "theme": "автоматтандыру",
+        "blocks": [
+            {
+                "role": "hook",
+                "start": 0.0,
+                "end": 3.0,
+                "speech": "Есепке қанша уақыт жұмсайсыз?",
+            },
+            {
+                "role": "development",
+                "start": 3.0,
+                "end": 9.0,
+                "speech": (
+                    "Бұрын есеп қолмен жасалды, қазір жүйе автоматты "
+                    "жұмыс істейді."
+                ),
+            },
+            {
+                "role": "cta",
+                "start": 9.0,
+                "end": 12.0,
+                "speech": "Келесі кеңестер үшін жазылыңыз.",
+            },
+        ],
+    }
+    plan = build_edit_plan(
+        scenario,
+        {
+            "format": "avatar",
+            "language": "kk",
+            "avatar": {"engine": "avatar_iv"},
+            "product": {},
+        },
+        index={},
+        require_asset_files=False,
+    )
+
+    assert plan["script"]["language"] == "kk"
+    cta = next(window for window in plan["windows"] if window["role"] == "cta")
+    assert cta["effect"]["button"] == "ЖАЗЫЛУ"
+    assert any(
+        (window.get("effect") or {}).get("hyperframes", {}).get("block")
+        == "before_after"
+        for window in plan["windows"]
+    )
 
 
 def _three_questions_scenario():

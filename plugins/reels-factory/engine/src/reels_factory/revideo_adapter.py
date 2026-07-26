@@ -24,10 +24,10 @@ def _keywords_from_config(config: dict) -> list[str]:
     product = config.get("product") or {}
     for source in (product.get("brand_captions"), config.get("theme_captions")):
         if source:
-            keywords += re.findall(r"[A-Za-zА-Яа-яЁё]{4,}", str(source))
+            keywords += re.findall(r"[^\W\d_]{4,}", str(source), re.UNICODE)
     seen, result = set(), []
     for keyword in keywords:
-        normalized = keyword.lower()
+        normalized = keyword.casefold()
         if normalized not in seen:
             seen.add(normalized)
             result.append(normalized)

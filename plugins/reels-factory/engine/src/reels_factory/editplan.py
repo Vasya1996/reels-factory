@@ -266,35 +266,152 @@ VISUAL_DIRECTOR_REQUIRED_VARIABLES = {
     "concept_nodes": {"title", "items"},
     "sequence_flow": {"title", "items"},
 }
-_BUBBLE_SEQUENCE_HEAD = re.compile(
-    r"\b(перв\w*|втор\w*|трет\w*|четвер\w*|пят\w*|"
-    r"first|second|third|fourth|fifth)\s*:",
-    re.IGNORECASE,
-)
-_BUBBLE_ORDINALS = {
-    "перв": "1",
-    "втор": "2",
-    "трет": "3",
-    "четвер": "4",
-    "пят": "5",
-    "first": "1",
-    "second": "2",
-    "third": "3",
-    "fourth": "4",
-    "fifth": "5",
+_LANGUAGE_COPY = {
+    "ru": {
+        "cta_subscribe": "ПОДПИСАТЬСЯ",
+        "chart_title": "ЧТО МОЖНО ЗАКРЫТЬ",
+        "key_step": "КЛЮЧЕВОЙ ШАГ",
+        "complexity_title": "МЫ УСЛОЖНЯЕМ ПРОДАЖИ",
+        "complexity_methods": "ХИТРЫЕ ПРИЁМЫ",
+        "complexity_scripts": "СКРИПТЫ",
+        "complexity_phrases": "ВОЛШЕБНЫЕ ФРАЗЫ",
+        "complexity_resolution": "В ОСНОВЕ — 3 ВОПРОСА",
+        "value_offer": "ЧТО ПРОДАЁМ",
+        "foundation_title": "ОСНОВА ПРОДАЖ",
+        "foundation_items": ["КОМУ", "ЧТО", "КАК"],
+        "sequence_title": "ВАЖЕН ПОРЯДОК",
+        "sequence_items": ["КТО", "ЧТО", "КАК"],
+        "payoff_hint": "крупный план, атмосфера",
+        "automation_hint": "технологии, абстрактный фон",
+        "instruction_hint": "рабочий стол, заметки",
+    },
+    "kk": {
+        "cta_subscribe": "ЖАЗЫЛУ",
+        "chart_title": "НЕГІЗГІ ТАРМАҚТАР",
+        "key_step": "НЕГІЗГІ ҚАДАМ",
+        "complexity_title": "БІЗ САТУДЫ КҮРДЕЛЕНДІРЕМІЗ",
+        "complexity_methods": "КҮРДЕЛІ ТӘСІЛДЕР",
+        "complexity_scripts": "СКРИПТТЕР",
+        "complexity_phrases": "СИҚЫРЛЫ СӨЗДЕР",
+        "complexity_resolution": "НЕГІЗІНДЕ — 3 СҰРАҚ",
+        "value_offer": "НЕ САТАМЫЗ",
+        "foundation_title": "САТУДЫҢ НЕГІЗІ",
+        "foundation_items": ["КІМГЕ", "НЕ", "ҚАЛАЙ"],
+        "sequence_title": "РЕТІ МАҢЫЗДЫ",
+        "sequence_items": ["КІМ", "НЕ", "ҚАЛАЙ"],
+        "payoff_hint": "ірі план, атмосфера",
+        "automation_hint": "технологиялар, абстрактілі фон",
+        "instruction_hint": "жұмыс үстелі, жазбалар",
+    },
 }
-_COMPLEXITY_MARKERS = re.compile(
-    r"усложн|хитр\w*\s+при[её]м|скрипт|волшебн\w*\s+фраз",
-    re.IGNORECASE,
-)
-_FOUNDATION_MARKERS = re.compile(
-    r"в\s+основе|надстройк|три\w*\s+(?:больш\w*\s+)?вопрос",
-    re.IGNORECASE,
-)
-_ORDER_MARKERS = re.compile(
-    r"\bсначала\b.*\bпото(?:́)?м\b.*\bпото(?:́)?м\b",
-    re.IGNORECASE | re.DOTALL,
-)
+
+_LANGUAGE_RULES = {
+    "ru": {
+        "sequence_head": re.compile(
+            r"\b(перв\w*|втор\w*|трет\w*|четвер\w*|пят\w*|"
+            r"first|second|third|fourth|fifth)\s*:",
+            re.IGNORECASE,
+        ),
+        "ordinals": {
+            "перв": "1", "втор": "2", "трет": "3", "четвер": "4",
+            "пят": "5", "first": "1", "second": "2", "third": "3",
+            "fourth": "4", "fifth": "5",
+        },
+        "complexity": re.compile(
+            r"усложн|хитр\w*\s+при[её]м|скрипт|волшебн\w*\s+фраз",
+            re.IGNORECASE,
+        ),
+        "foundation": re.compile(
+            r"в\s+основе|надстройк|три\w*\s+(?:больш\w*\s+)?вопрос",
+            re.IGNORECASE,
+        ),
+        "order": re.compile(
+            r"\bсначала\b.*\bпото(?:́)?м\b.*\bпото(?:́)?м\b",
+            re.IGNORECASE | re.DOTALL,
+        ),
+        "before": re.compile(
+            r"\b(был[оаи]?|раньше|прежде|обычно)\b", re.IGNORECASE
+        ),
+        "after": re.compile(
+            r"\b(ста(?:л[оаи]?|нет|ло)|теперь|сейчас)\b", re.IGNORECASE
+        ),
+        "command_verbs": ("напиш", "спрос", "попрос"),
+        "payoff": re.compile(r"настро|один раз|больше не|готов", re.IGNORECASE),
+        "automation": re.compile(
+            r"автоматизир|везде|многое", re.IGNORECASE
+        ),
+        "instruction": re.compile(
+            r"инструкц|набор|блокнот|список|заметк|шаг", re.IGNORECASE
+        ),
+        "persona": re.compile(
+            r"\bкому\b|\bкто\b|человек|боль", re.IGNORECASE
+        ),
+        "value": re.compile(r"\bчто\b.*прода|покупа", re.IGNORECASE),
+        "foundation_start": re.compile(
+            r"вс[её]\s+остальн|надстройк", re.IGNORECASE
+        ),
+        "foundation_three": re.compile(r"трем|тр[её]м|тремя", re.IGNORECASE),
+        "sequence_start": re.compile(r"порядок|сначала", re.IGNORECASE),
+        "method_item": re.compile(r"при[её]м", re.IGNORECASE),
+        "script_item": re.compile(r"скрипт", re.IGNORECASE),
+        "phrase_item": re.compile(r"фраз", re.IGNORECASE),
+        "list_split": re.compile(r"[,;]|\s+и\s+", re.IGNORECASE),
+    },
+    "kk": {
+        "sequence_head": re.compile(
+            r"\b(бірінш\w*|екінш\w*|үшінш\w*|төртінш\w*|бесінш\w*)\s*:",
+            re.IGNORECASE,
+        ),
+        "ordinals": {
+            "бірінш": "1", "екінш": "2", "үшінш": "3",
+            "төртінш": "4", "бесінш": "5",
+        },
+        "complexity": re.compile(
+            r"күрделен|айлакер\w*\s+тәсіл|скрипт|"
+            r"сиқырлы\w*\s+(?:сөз|тіркес)",
+            re.IGNORECASE,
+        ),
+        "foundation": re.compile(
+            r"негізінде|негізі|үстеме|"
+            r"үш\w*\s+(?:үлкен\w*\s+)?сұрақ",
+            re.IGNORECASE,
+        ),
+        "order": re.compile(
+            r"\b(?:алдымен|бірінші)\b.*\b(?:кейін|содан\s+кейін)\b.*"
+            r"\b(?:соңында|кейін|содан\s+кейін)\b",
+            re.IGNORECASE | re.DOTALL,
+        ),
+        "before": re.compile(
+            r"\b(бұрын|бастапқыда|алдында|әдетте)\b", re.IGNORECASE
+        ),
+        "after": re.compile(
+            r"\b(қазір|енді|кейін|нәтижесінде)\b", re.IGNORECASE
+        ),
+        "command_verbs": ("жаз", "сұра", "өтін"),
+        "payoff": re.compile(
+            r"бапта|бір рет|енді.{0,20}емес|дайын", re.IGNORECASE
+        ),
+        "automation": re.compile(
+            r"автоматтандыр|барлығын|көп нәрсе", re.IGNORECASE
+        ),
+        "instruction": re.compile(
+            r"нұсқаулық|жинақ|дәптер|тізім|жазба|қадам", re.IGNORECASE
+        ),
+        "persona": re.compile(
+            r"\bкімге\b|\bкім\b|адам|мәселе|қиындық", re.IGNORECASE
+        ),
+        "value": re.compile(r"\bне\b.*сат|сатып\s+ал", re.IGNORECASE),
+        "foundation_start": re.compile(
+            r"барлық\s+қалған|қалғанының\s+бәрі|үстеме", re.IGNORECASE
+        ),
+        "foundation_three": re.compile(r"\bүш\w*\b", re.IGNORECASE),
+        "sequence_start": re.compile(r"рет|алдымен", re.IGNORECASE),
+        "method_item": re.compile(r"тәсіл", re.IGNORECASE),
+        "script_item": re.compile(r"скрипт", re.IGNORECASE),
+        "phrase_item": re.compile(r"сөз|тіркес", re.IGNORECASE),
+        "list_split": re.compile(r"[,;]|\s+(?:және|мен)\s+", re.IGNORECASE),
+    },
+}
 
 # HeyGen рекомендует короткий prompt: одно видимое движение + выражение лица,
 # максимум две короткие части. Ролевые defaults намеренно консервативны:
@@ -333,14 +450,19 @@ PERFORMANCE_BY_ROLE = {
 }
 DEFAULT_PERFORMANCE = PERFORMANCE_BY_ROLE["development"]
 
-_QUERY_STOP = set((
-    "и в на что как это то он она они мы вы бы же ли за по из у о а но да не нет "
-    "для от до со во об про при или чтобы если когда уже ещё вот там тут так"
-).split())
+_QUERY_STOP = {
+    "ru": set((
+        "и в на что как это то он она они мы вы бы же ли за по из у о а но да "
+        "не нет для от до со во об про при или чтобы если когда уже ещё вот "
+        "там тут так"
+    ).split()),
+    "kk": set((
+        "және мен да де та те бұл сол ол олар біз сіз сен үшін туралы арқылы "
+        "дейін кейін бірақ немесе егер кезде қазір енді ғана емес бар жоқ осы "
+        "ана мына өте тағы"
+    ).split()),
+}
 _NUM_RE = re.compile(r"(?<![\d.,])(\d{1,4})(?![\d.,])")
-_BEFORE_MARK = re.compile(r"\b(был[оаи]?|раньше|прежде|обычно)\b", re.IGNORECASE)
-_AFTER_MARK = re.compile(r"\b(ста(?:л[оаи]?|нет|ло)|теперь|сейчас)\b", re.IGNORECASE)
-_CMD_VERBS = ("напиш", "спрос", "попрос")
 _FORBIDDEN_MOTION = re.compile(
     r"\b(zoom|pan|dolly|lighting|background|walk|walking|"
     r"seconds?|kitchen|outside|pick(?:s|ing)? up|phone|coffee|prop)\b",
@@ -352,17 +474,30 @@ def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _language_code(value: str | None) -> str:
+    return "kk" if str(value or "").strip().lower() == "kk" else "ru"
+
+
+def _language_rules(language: str | None) -> dict:
+    return _LANGUAGE_RULES[_language_code(language)]
+
+
+def _language_copy(language: str | None) -> dict:
+    return _LANGUAGE_COPY[_language_code(language)]
+
+
 def _norm_word(value: str) -> str:
-    return re.sub(r"[^a-zа-яё]", "", value.lower())
+    return "".join(char for char in str(value).casefold() if char.isalnum())
 
 
-def broll_query(text: str, hint: str = "") -> str:
+def broll_query(text: str, hint: str = "", *, language: str = "ru") -> str:
     """Короткий семантический запрос к локальному CLIP-индексу."""
     tokens = [
         token.strip(",.!?…:;«»\"'()-").lower()
         for token in str(text or "").split()
     ]
-    kept = [token for token in tokens if len(token) > 2 and token not in _QUERY_STOP]
+    stop_words = _QUERY_STOP[_language_code(language)]
+    kept = [token for token in tokens if len(token) > 2 and token not in stop_words]
     query = " ".join(kept[:8]) or str(text or "").strip().lower()
     return f"{query}, {hint}".strip(", ") if hint else query
 
@@ -384,8 +519,10 @@ def stat_from_phrase(text: str) -> dict | None:
     }
 
 
-def before_after_from_text(text: str) -> dict | None:
-    before, after = _BEFORE_MARK.search(text), _AFTER_MARK.search(text)
+def before_after_from_text(text: str, *, language: str = "ru") -> dict | None:
+    rules = _language_rules(language)
+    before = rules["before"].search(text)
+    after = rules["after"].search(text)
     if not (before and after and before.start() < after.start()):
         return None
     before_value = " ".join(
@@ -397,7 +534,7 @@ def before_after_from_text(text: str) -> dict | None:
     return {"before_value": before_value, "after_value": after_value}
 
 
-def _phrase_spans(speech: str) -> list[tuple[int, int]]:
+def _phrase_spans(speech: str, *, language: str = "ru") -> list[tuple[int, int]]:
     """Стабильная draft-нарезка без audio timing.
 
     Фразы заканчиваются по сильной пунктуации либо каждые шесть слов. Возвращаем
@@ -408,14 +545,13 @@ def _phrase_spans(speech: str) -> list[tuple[int, int]]:
     if not tokens:
         return []
     spans: list[tuple[int, int]] = []
+    sequence_head = _language_rules(language)["sequence_head"]
     start_index = 0
     for index, token in enumerate(tokens):
         # Нумерованный смысловой шаг должен начинать новую canonical phrase.
         # Иначе короткий хвост предыдущего предложения («покупает.») может
         # склеиться с «Третий: ...» и исказить visual timing/bubble window.
-        starts_numbered_step = bool(
-            _BUBBLE_SEQUENCE_HEAD.match(token.group(0))
-        )
+        starts_numbered_step = bool(sequence_head.match(token.group(0)))
         if starts_numbered_step and index > start_index:
             spans.append((tokens[start_index].start(), tokens[index - 1].end()))
             start_index = index
@@ -447,7 +583,7 @@ def _draft_phrases(canonical: dict, scenario: dict, config: dict) -> list[dict]:
         scenario.get("blocks") or [], canonical["blocks"]
     ):
         speech = canonical_block["speech"]
-        spans = _phrase_spans(speech)
+        spans = _phrase_spans(speech, language=canonical.get("language", "ru"))
         if not spans:
             raise ValueError(f"блок {canonical_block['id']}: нет произносимой фразы")
         block_start = float(block["start"])
@@ -574,6 +710,8 @@ def _pick_asset(
 def _legacy_full_cover(
     scenario: dict,
     legacy_broll_plan: dict | None,
+    *,
+    language: str = "ru",
 ) -> dict[int, dict]:
     by_role = {
         item.get("role"): item
@@ -591,7 +729,9 @@ def _legacy_full_cover(
             "source": "library" if item.get("clip") else "external",
             "src": clip,
             "path": str(item.get("path") or ""),
-            "query": item.get("query") or broll_query(block.get("speech") or ""),
+            "query": item.get("query") or broll_query(
+                block.get("speech") or "", language=language
+            ),
             "confidence": round(float(item.get("score") or 1.0), 4),
             "duration_seconds": float(item.get("duration") or 0.0),
             "required_seconds": round(
@@ -628,10 +768,18 @@ def _external_broll_asset(
     }
 
 
-def _chart_variables(text: str, start: float, end: float) -> dict | None:
+def _chart_variables(
+    text: str,
+    start: float,
+    end: float,
+    *,
+    language: str = "ru",
+    title: str | None = None,
+) -> dict | None:
+    rules = _language_rules(language)
     parts = [
         part.strip(" .,")
-        for part in re.split(r"[,;]| и ", text)
+        for part in rules["list_split"].split(text)
         if 0 < len(part.strip(" .,").split()) <= 3
         and len(part.strip(" .,")) > 2
     ]
@@ -640,7 +788,7 @@ def _chart_variables(text: str, start: float, end: float) -> dict | None:
     items = parts[:5]
     span = max(0.1, end - start)
     return {
-        "title": "ЧТО МОЖНО ЗАКРЫТЬ",
+        "title": title or _language_copy(language)["chart_title"],
         "items": [
             {
                 "t": round(start + span * index / len(items), 2),
@@ -772,19 +920,22 @@ def _visual_director_effect(
     }
 
 
-def _bubble_title(text: str, match: re.Match) -> str:
+def _bubble_title(text: str, match: re.Match, *, language: str = "ru") -> str:
     ordinal = match.group(1).lower()
     number = next(
         (
             value
-            for prefix, value in _BUBBLE_ORDINALS.items()
+            for prefix, value in _language_rules(language)["ordinals"].items()
             if ordinal.startswith(prefix)
         ),
         "",
     )
     topic = text[match.end():].strip(" .!?…:;—-")
     topic = " ".join(topic.split()[:4]).upper()
-    return f"{number} · {topic}".strip(" ·")[:30] or "КЛЮЧЕВОЙ ШАГ"
+    return (
+        f"{number} · {topic}".strip(" ·")[:30]
+        or _language_copy(language)["key_step"]
+    )
 
 
 def _bubble_item_label(text: str) -> str:
@@ -796,6 +947,8 @@ def _bubble_task_list_candidate(
     block_phrases: list[dict],
     start_index: int,
     settings: dict,
+    *,
+    language: str = "ru",
 ) -> dict | None:
     """Найти короткий нумерованный шаг с тремя поясняющими пунктами.
 
@@ -806,14 +959,15 @@ def _bubble_task_list_candidate(
     """
     if not settings["enabled"] or start_index >= len(block_phrases):
         return None
+    sequence_head = _language_rules(language)["sequence_head"]
     head = block_phrases[start_index]
-    match = _BUBBLE_SEQUENCE_HEAD.search(head["text"])
+    match = sequence_head.search(head["text"])
     if not match:
         return None
     supporting: list[dict] = []
     items: list[str] = []
     for phrase in block_phrases[start_index + 1:start_index + 4]:
-        if _BUBBLE_SEQUENCE_HEAD.search(phrase["text"]):
+        if sequence_head.search(phrase["text"]):
             break
         label = _bubble_item_label(phrase["text"])
         if not label:
@@ -827,7 +981,7 @@ def _bubble_task_list_candidate(
     duration = end - start
     if not settings["min_seconds"] <= duration <= settings["max_seconds"]:
         return None
-    title = _bubble_title(head["text"], match)
+    title = _bubble_title(head["text"], match, language=language)
     span = max(0.1, duration)
     chart_items = [
         {
@@ -862,31 +1016,35 @@ def _complexity_cloud_candidate(
     block_phrases: list[dict],
     start_index: int,
     settings: dict,
+    *,
+    language: str = "ru",
 ) -> dict | None:
     if not settings["enabled"] or start_index >= len(block_phrases):
         return None
-    if not _COMPLEXITY_MARKERS.search(block_phrases[start_index]["text"]):
+    rules = _language_rules(language)
+    copy_text = _language_copy(language)
+    if not rules["complexity"].search(block_phrases[start_index]["text"]):
         return None
     selected: list[dict] = []
     for phrase in block_phrases[start_index:]:
-        if selected and _BUBBLE_SEQUENCE_HEAD.search(phrase["text"]):
+        if selected and rules["sequence_head"].search(phrase["text"]):
             break
         selected.append(phrase)
     combined = " ".join(phrase["text"] for phrase in selected)
     duration = _visual_duration(selected)
     if (
-        not _FOUNDATION_MARKERS.search(combined)
+        not rules["foundation"].search(combined)
         or not settings["min_seconds"] <= duration <= settings["max_seconds"]
     ):
         return None
     items = []
     low = combined.lower()
-    if re.search(r"при[её]м", low):
-        items.append("ХИТРЫЕ ПРИЁМЫ")
-    if "скрипт" in low:
-        items.append("СКРИПТЫ")
-    if "фраз" in low:
-        items.append("ВОЛШЕБНЫЕ ФРАЗЫ")
+    if rules["method_item"].search(low):
+        items.append(copy_text["complexity_methods"])
+    if rules["script_item"].search(low):
+        items.append(copy_text["complexity_scripts"])
+    if rules["phrase_item"].search(low):
+        items.append(copy_text["complexity_phrases"])
     if len(items) < 3:
         items.extend(
             item.upper()
@@ -894,9 +1052,9 @@ def _complexity_cloud_candidate(
             if item.upper() not in items
         )
     variables = {
-        "title": "МЫ УСЛОЖНЯЕМ ПРОДАЖИ",
+        "title": copy_text["complexity_title"],
         "items": items[:4],
-        "resolution": "В ОСНОВЕ — 3 ВОПРОСА",
+        "resolution": copy_text["complexity_resolution"],
     }
     return {
         "lead": [],
@@ -917,25 +1075,29 @@ def _ordinal_visual_candidate(
     block_phrases: list[dict],
     start_index: int,
     settings: dict,
+    *,
+    language: str = "ru",
 ) -> dict | None:
     if not settings["enabled"] or start_index >= len(block_phrases):
         return None
+    rules = _language_rules(language)
+    copy_text = _language_copy(language)
     head = block_phrases[start_index]
-    match = _BUBBLE_SEQUENCE_HEAD.search(head["text"])
+    match = rules["sequence_head"].search(head["text"])
     if not match:
         return None
     topic = head["text"][match.end():].lower()
     following: list[dict] = []
     for phrase in block_phrases[start_index + 1:]:
-        if _BUBBLE_SEQUENCE_HEAD.search(phrase["text"]):
+        if rules["sequence_head"].search(phrase["text"]):
             break
         following.append(phrase)
     if not following:
         return None
-    title = _bubble_title(head["text"], match)
+    title = _bubble_title(head["text"], match, language=language)
     combined = " ".join(phrase["text"] for phrase in following)
 
-    if re.search(r"\bкому\b|\bкто\b|человек|боль", topic):
+    if rules["persona"].search(topic):
         selected = following
         if not (
             settings["min_seconds"]
@@ -960,7 +1122,7 @@ def _ordinal_visual_candidate(
             "reason": "Нумерованный вопрос описывает целевого человека.",
         }
 
-    if re.search(r"\bчто\b.*прода|покупа", topic + " " + combined.lower()):
+    if rules["value"].search(topic + " " + combined.lower()):
         selected = [head, *following]
         if not (
             settings["min_seconds"]
@@ -971,7 +1133,7 @@ def _ordinal_visual_candidate(
         variables = {
             "title": title,
             "offer": _visual_label(topic, words=5, chars=36).upper()
-            or "ЧТО ПРОДАЁМ",
+            or copy_text["value_offer"],
             "actual": _visual_label(combined, words=8, chars=58),
         }
         return {
@@ -994,30 +1156,30 @@ def _foundation_nodes_candidate(
     block_phrases: list[dict],
     start_index: int,
     settings: dict,
+    *,
+    language: str = "ru",
 ) -> dict | None:
     if not settings["enabled"] or start_index >= len(block_phrases):
         return None
+    rules = _language_rules(language)
+    copy_text = _language_copy(language)
     # Не заглатывать предшествующий нумерованный шаг только потому, что
     # «надстройка» встретилась в одной из следующих фраз: bubble для «как»
     # и concept_nodes для итогового тезиса должны остаться разными окнами.
-    if not re.search(
-        r"вс[её]\s+остальн|надстройк",
-        block_phrases[start_index]["text"],
-        re.IGNORECASE,
-    ):
+    if not rules["foundation_start"].search(block_phrases[start_index]["text"]):
         return None
     selected = block_phrases[start_index:]
     combined = " ".join(phrase["text"] for phrase in selected)
     duration = _visual_duration(selected)
     if (
-        not re.search(r"вс[её]\s+остальн|надстройк", combined, re.IGNORECASE)
-        or not re.search(r"трем|тр[её]м|тремя", combined, re.IGNORECASE)
+        not rules["foundation_start"].search(combined)
+        or not rules["foundation_three"].search(combined)
         or not settings["min_seconds"] <= duration <= settings["max_seconds"]
     ):
         return None
     variables = {
-        "title": "ОСНОВА ПРОДАЖ",
-        "items": ["КОМУ", "ЧТО", "КАК"],
+        "title": copy_text["foundation_title"],
+        "items": copy_text["foundation_items"],
     }
     return {
         "lead": [],
@@ -1033,18 +1195,22 @@ def _sequence_flow_candidate(
     block_phrases: list[dict],
     start_index: int,
     settings: dict,
+    *,
+    language: str = "ru",
 ) -> dict | None:
     if not settings["enabled"] or start_index >= len(block_phrases):
         return None
+    rules = _language_rules(language)
+    copy_text = _language_copy(language)
     remaining = block_phrases[start_index:]
     combined = " ".join(phrase["text"] for phrase in remaining)
-    if not _ORDER_MARKERS.search(combined):
+    if not rules["order"].search(combined):
         return None
     first_flow = next(
         (
             index
             for index, phrase in enumerate(remaining)
-            if re.search(r"порядок|сначала", phrase["text"], re.IGNORECASE)
+            if rules["sequence_start"].search(phrase["text"])
         ),
         0,
     )
@@ -1054,8 +1220,8 @@ def _sequence_flow_candidate(
     if not settings["min_seconds"] <= duration <= settings["max_seconds"]:
         return None
     variables = {
-        "title": "ВАЖЕН ПОРЯДОК",
-        "items": ["КТО", "ЧТО", "КАК"],
+        "title": copy_text["sequence_title"],
+        "items": copy_text["sequence_items"],
     }
     return {
         "lead": lead,
@@ -1197,12 +1363,17 @@ def _plan_visual_windows(
 ) -> list[dict]:
     windows: list[dict] = []
     used_assets: set[str] = set()
+    language = _language_code(config.get("language"))
+    language_rules = _language_rules(language)
+    copy_text = _language_copy(language)
     total_duration = float((scenario.get("blocks") or [{}])[-1].get("end") or 0)
     bubble_settings = _bubble_settings(config, total_duration)
     visual_settings = _visual_director_settings(config, total_duration)
     allow_full_cover = str(config.get("format") or "split") == "avatar"
     explicit_full_cover = (
-        _legacy_full_cover(scenario, legacy_broll_plan)
+        _legacy_full_cover(
+            scenario, legacy_broll_plan, language=language
+        )
         if allow_full_cover else {}
     )
     for block_index in list(explicit_full_cover):
@@ -1248,7 +1419,9 @@ def _plan_visual_windows(
                 f"дольше лимита {MAX_FACE_ABSENCE_S:.0f}с."
             )
             continue
-        query = broll_query(block.get("speech") or "")
+        query = broll_query(
+            block.get("speech") or "", language=language
+        )
         try:
             asset = _pick_asset(
                 query,
@@ -1317,7 +1490,7 @@ def _plan_visual_windows(
                 effect={
                     "type": "cta_endcard",
                     "button": ((config.get("product") or {}).get("cta_button")
-                               or "ПОДПИСАТЬСЯ"),
+                               or copy_text["cta_subscribe"]),
                 },
                 camera="ken_burns",
             )
@@ -1325,7 +1498,7 @@ def _plan_visual_windows(
 
         combined = " ".join(item["text"] for item in block_phrases)
         before_after = (
-            before_after_from_text(combined)
+            before_after_from_text(combined, language=language)
             if not used_effects["before_after"]
             and role in {"context", "development", "payoff"}
             else None
@@ -1354,6 +1527,8 @@ def _plan_visual_windows(
                 combined,
                 block_phrases[0]["estimated_timing"]["start"],
                 block_phrases[-1]["estimated_timing"]["end"],
+                language=language,
+                title=(config.get("product") or {}).get("chart_title"),
             )
             if not used_effects["chart"]
             and role in {"development", "payoff"}
@@ -1402,7 +1577,10 @@ def _plan_visual_windows(
                     _sequence_flow_candidate,
                 ):
                     director_candidate = finder(
-                        block_phrases, local_index, visual_settings
+                        block_phrases,
+                        local_index,
+                        visual_settings,
+                        language=language,
                     )
                     if director_candidate:
                         break
@@ -1444,7 +1622,10 @@ def _plan_visual_windows(
 
             bubble_sequence = (
                 _bubble_task_list_candidate(
-                    block_phrases, local_index, bubble_settings
+                    block_phrases,
+                    local_index,
+                    bubble_settings,
+                    language=language,
                 )
                 if role in {"context", "development", "payoff"}
                 and used_effects["bubble"] < bubble_settings["max_count"]
@@ -1531,9 +1712,13 @@ def _plan_visual_windows(
                 and bubble_settings["min_seconds"]
                 <= block_duration
                 <= bubble_settings["max_seconds"]
-                and re.search(r"настро|один раз|больше не|готов", low)
+                and language_rules["payoff"].search(low)
             ):
-                query = broll_query(text, "крупный план, атмосфера")
+                query = broll_query(
+                    text,
+                    copy_text["payoff_hint"],
+                    language=language,
+                )
                 try:
                     asset = _pick_asset(
                         query,
@@ -1576,16 +1761,16 @@ def _plan_visual_windows(
             hint = ""
             if (
                 not used_effects["automation_broll"]
-                and re.search(r"автоматизир|везде|многое", low)
+                and language_rules["automation"].search(low)
             ):
                 broll_rule = "automation_broll"
-                hint = "технологии, абстрактный фон"
+                hint = copy_text["automation_hint"]
             elif (
                 not used_effects["instruction_broll"]
-                and re.search(r"инструкц|набор|блокнот|список|заметк|шаг", low)
+                and language_rules["instruction"].search(low)
             ):
                 broll_rule = "instruction_broll"
-                hint = "рабочий стол, заметки"
+                hint = copy_text["instruction_hint"]
             if broll_rule:
                 global_index = phrases.index(phrase)
                 global_end = _extend_phrase_window(
@@ -1596,7 +1781,11 @@ def _plan_visual_windows(
                     selected[-1]["estimated_timing"]["end"]
                     - selected[0]["estimated_timing"]["start"]
                 )
-                query = broll_query(" ".join(item["text"] for item in selected), hint)
+                query = broll_query(
+                    " ".join(item["text"] for item in selected),
+                    hint,
+                    language=language,
+                )
                 try:
                     asset = _pick_asset(
                         query,

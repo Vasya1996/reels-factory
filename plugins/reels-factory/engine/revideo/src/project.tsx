@@ -12,6 +12,20 @@ const W = 1080, H = 1920;
 const YELLOW = '#FFE500';
 const FONT = (tz as any).brand?.font ?? 'Unbounded';
 const DURATION = (tz as any).meta.duration;
+const LANGUAGE = String((tz as any).meta?.language ?? 'ru').toLowerCase();
+const COPY = LANGUAGE === 'kk' ? {
+  personaBadge: 'А',
+  formal: 'РЕСМИ ТҮРДЕ',
+  actual: 'ШЫН МӘНІНДЕ',
+  orderMatters: 'РЕТІ ШЕШЕДІ',
+  subscribe: 'ЖАЗЫЛУ',
+} : {
+  personaBadge: 'Ч',
+  formal: 'ФОРМАЛЬНО',
+  actual: 'НА САМОМ ДЕЛЕ',
+  orderMatters: 'ПОРЯДОК РЕШАЕТ',
+  subscribe: 'ПОДПИСАТЬСЯ',
+};
 const MASTER_AUDIO = (tz as any).meta?.master_audio as string | undefined;
 const SEGMENTS = (tz as any).segments ?? [];
 const KEYWORDS: string[] = (tz as any).captions?.keywords ?? [];
@@ -21,7 +35,8 @@ const CAP_40 = 195; // ~40% up from the bottom (0.4 * 1920 from bottom edge)
 
 interface Word {start: number; end: number; text: string;}
 const words: Word[] = (wordsFile as any).words;
-const norm = (s: string) => s.toLowerCase().replace(/[^a-zа-яё]/g, '');
+const norm = (s: string) => s.normalize('NFKC').toLocaleLowerCase()
+  .replace(/[^\p{L}\p{N}]/gu, '');
 const isKw = (t: string) => KEYWORDS.some(k => norm(k) === norm(t));
 
 // caption placement per time window
@@ -355,7 +370,7 @@ function* effects(fx: Reference<Layout>, base: Reference<Video>, flash: Referenc
               alignItems={'center'} padding={70} radius={48}
               fill={'rgba(255,229,0,0.07)'} stroke={'rgba(255,229,0,0.55)'} lineWidth={2}>
               <Circle ref={badge} size={160} fill={YELLOW} scale={0.68}>
-                <Txt text={'Ч'} fontFamily={FONT} fontWeight={900} fontSize={70} fill={'#111'} />
+                <Txt text={COPY.personaBadge} fontFamily={FONT} fontWeight={900} fontSize={70} fill={'#111'} />
               </Circle>
               <Txt text={String(e.title ?? '').toUpperCase()} width={760} textAlign={'center'}
                 fontFamily={FONT} fontWeight={800} fontSize={46} fill={YELLOW} />
@@ -399,7 +414,7 @@ function* effects(fx: Reference<Layout>, base: Reference<Video>, flash: Referenc
             <Rect width={900} minHeight={500} layout direction={'column'} gap={36}
               alignItems={'center'} justifyContent={'center'} padding={70} radius={42}
               fill={'rgba(255,255,255,0.06)'} stroke={'rgba(255,255,255,0.18)'} lineWidth={2}>
-              <Txt text={'ФОРМАЛЬНО'} fontFamily={'Manrope'} fontWeight={800}
+              <Txt text={COPY.formal} fontFamily={'Manrope'} fontWeight={800}
                 fontSize={30} letterSpacing={6} fill={'rgba(255,255,255,0.55)'} />
               <Txt text={String(e.offer ?? '').toUpperCase()} width={760} textAlign={'center'}
                 fontFamily={FONT} fontWeight={800} fontSize={64} lineHeight={74} fill={'#FFF'} />
@@ -416,7 +431,7 @@ function* effects(fx: Reference<Layout>, base: Reference<Video>, flash: Referenc
             <Rect width={900} minHeight={500} layout direction={'column'} gap={36}
               alignItems={'center'} justifyContent={'center'} padding={70} radius={42}
               fill={'rgba(255,229,0,0.10)'} stroke={YELLOW} lineWidth={3}>
-              <Txt text={'НА САМОМ ДЕЛЕ'} fontFamily={'Manrope'} fontWeight={800}
+              <Txt text={COPY.actual} fontFamily={'Manrope'} fontWeight={800}
                 fontSize={30} letterSpacing={5} fill={YELLOW} />
               <Txt text={String(e.actual ?? '').toUpperCase()} width={760} textAlign={'center'}
                 fontFamily={FONT} fontWeight={800} fontSize={64} lineHeight={74} fill={'#FFF'} />
@@ -480,7 +495,7 @@ function* effects(fx: Reference<Layout>, base: Reference<Video>, flash: Referenc
         const steps: Reference<Rect>[] = [];
         fx().add(
           <Layout ref={panel} zIndex={36} layout direction={'column'} gap={22} alignItems={'center'}>
-            <Txt text={'ПОРЯДОК РЕШАЕТ'} fontFamily={'Manrope'} fontWeight={800}
+            <Txt text={COPY.orderMatters} fontFamily={'Manrope'} fontWeight={800}
               fontSize={30} letterSpacing={6} fill={YELLOW} />
             <Txt ref={heading} text={String(e.title ?? '').toUpperCase()} width={900}
               textAlign={'center'} fontFamily={FONT} fontWeight={800}
@@ -584,7 +599,11 @@ function* effects(fx: Reference<Layout>, base: Reference<Video>, flash: Referenc
         fx().add(
           <Layout ref={btn} y={520} scale={0} zIndex={40}>
             <Rect layout fill={goldGrad()} radius={30} padding={[26, 54]} shadowColor={'rgba(0,0,0,0.5)'} shadowBlur={40} shadowOffset={[0, 16]}>
-              <Txt fontFamily={FONT} fontWeight={900} fontSize={72} fill={'#161616'}>ПОДПИСАТЬСЯ</Txt>
+              <Txt fontFamily={FONT} fontWeight={900} fontSize={72} fill={'#161616'}>
+                {String(e.button ?? COPY.subscribe).toLocaleUpperCase(
+                  LANGUAGE === 'kk' ? 'kk-KZ' : 'ru-RU',
+                )}
+              </Txt>
             </Rect>
           </Layout>);
         yield* btn().scale(1.1, 0.3, easeOutBack); yield* btn().scale(1.0, 0.12); used += 0.42;

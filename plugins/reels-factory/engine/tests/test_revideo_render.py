@@ -70,6 +70,16 @@ def test_revideo_workspace_изолирован_для_каждой_job(tmp_path
     assert (second / "public" / "whoosh.wav").read_bytes() == b"sfx"
 
 
+def test_revideo_template_unicode_keywords_и_локализованный_cta():
+    project = (
+        Path(__file__).parents[1] / "revideo" / "src" / "project.tsx"
+    ).read_text(encoding="utf-8")
+
+    assert r"\p{L}\p{N}" in project
+    assert "e.button ?? COPY.subscribe" in project
+    assert "subscribe: 'ЖАЗЫЛУ'" in project
+
+
 def test_master_visual_concat_точно_подгоняет_timeline_и_удаляет_audio(tmp_path):
     clips = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
     for clip in clips:
