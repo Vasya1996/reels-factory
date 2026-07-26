@@ -168,6 +168,85 @@ def _concat_master_visuals(
     return base
 
 
+def _concat_avatar_island_visuals(
+    rdir: Path,
+    avatar_mp4s: list,
+    avatar_render_plan: dict,
+    height: int = OUT_H,
+) -> Path:
+    """Build a silent exact-duration base from sparse Avatar IV shots.
+
+    Full B-roll/HyperFrames gaps are black only in this technical base and are
+    covered later by the canonical edit-plan overlays.  Each generated shot is
+    trimmed from its request handle to its exact visible timing; provider audio
+    is never mapped.
+    """
+    shots = list(avatar_render_plan.get("shots") or [])
+    if len(avatar_mp4s) != len(shots):
+        raise ValueError(
+            "avatar island clips и avatar_render_plan.shots не совпадают"
+        )
+    total = float(
+        (avatar_render_plan.get("timeline") or {}).get("duration_seconds") or 0
+    )
+    if total <= 0:
+        raise ValueError("avatar_render_plan имеет неположительную duration")
+    if not shots:
+        raise ValueError("avatar_render_plan не содержит shots")
+
+    base = Path(rdir) / "top.avatar-islands.mp4"
+    cmd = [FFMPEG, "-y"]
+    for source in avatar_mp4s:
+        cmd += ["-i", str(source)]
+
+    filters, labels = [], []
+    cursor = 0.0
+
+    def add_gap(start: float, end: float) -> None:
+        duration = end - start
+        if duration <= 0.001:
+            return
+        label = f"vpart{len(labels)}"
+        filters.append(
+            f"color=c=black:s={OUT_W}x{height}:r={FPS}:d={duration:.6f},"
+            f"setsar=1,setpts=PTS-STARTPTS[{label}]"
+        )
+        labels.append(f"[{label}]")
+
+    for input_index, shot in enumerate(shots):
+        visible = shot.get("visible_timing") or {}
+        start = float(visible.get("start", -1))
+        end = float(visible.get("end", -1))
+        if start + 0.002 < cursor or end <= start or end > total + 0.002:
+            raise ValueError(
+                f"{shot.get('id')}: некорректный visible timing в render plan"
+            )
+        add_gap(cursor, start)
+        duration = end - start
+        trim_start = float((shot.get("trim") or {}).get("start_seconds") or 0)
+        label = f"vpart{len(labels)}"
+        filters.append(
+            f"[{input_index}:v]"
+            f"scale={OUT_W}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={OUT_W}:{height},fps={FPS},setsar=1,"
+            f"tpad=stop_mode=clone:stop_duration={trim_start + duration + 1:.6f},"
+            f"trim=start={trim_start:.6f}:duration={duration:.6f},"
+            f"setpts=PTS-STARTPTS[{label}]"
+        )
+        labels.append(f"[{label}]")
+        cursor = end
+    add_gap(cursor, total)
+    filters.append(
+        "".join(labels) + f"concat=n={len(labels)}:v=1:a=0[v]"
+    )
+    cmd += [
+        "-filter_complex", ";".join(filters),
+        "-map", "[v]", *VENC, "-an", str(base),
+    ]
+    subprocess.run(cmd, check=True)
+    return base
+
+
 def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out_mp4, *,
                      format: str = "avatar", avatar_mp4s: list | None = None,
                      voice_wavs: list | None = None, transcribe_fn=None,
@@ -179,7 +258,8 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
                      hf_render=None, master_audio: Path | None = None,
                      alignment_words: list | None = None,
                      master_timed_scenario: dict | None = None,
-                     edit_plan: dict | None = None) -> dict:
+                     edit_plan: dict | None = None,
+                     avatar_render_plan: dict | None = None) -> dict:
     rdir = Path(rdir)
     rdir.mkdir(parents=True, exist_ok=True)
     out_mp4 = Path(out_mp4)
@@ -199,8 +279,15 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
         frag_srcs = voice_wavs
     else:
         raise RuntimeError(f"неизвестный format: {format!r}")
-    if len(frag_srcs) != len(blocks):
+    if avatar_render_plan is None and len(frag_srcs) != len(blocks):
         raise RuntimeError(f"фрагментов {len(frag_srcs)} != блоков {len(blocks)}")
+    if avatar_render_plan is not None and len(frag_srcs) != len(
+        avatar_render_plan.get("shots") or []
+    ):
+        raise RuntimeError(
+            f"avatar clips {len(frag_srcs)} != avatar shots "
+            f"{len(avatar_render_plan.get('shots') or [])}"
+        )
 
     if master_audio is not None:
         master_audio = Path(master_audio)
@@ -213,13 +300,36 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
         timed = master_timed_scenario
         if len(timed.get("blocks") or []) != len(blocks):
             raise RuntimeError("master timed scenario не совпадает со scenario")
-        block_durations = [
-            float(block["end"]) - float(block["start"])
-            for block in timed["blocks"]
-        ]
+        if avatar_render_plan is not None:
+            planned_total = float(
+                (avatar_render_plan.get("timeline") or {}).get(
+                    "duration_seconds"
+                ) or 0
+            )
+            master_total = float(
+                timed.get("total") or timed["blocks"][-1]["end"]
+            )
+            if abs(planned_total - master_total) > 0.02:
+                raise RuntimeError(
+                    "avatar_render_plan duration не совпадает с master timeline"
+                )
         if format not in ("split", "avatar"):
             raise RuntimeError("Master Revideo-путь пока поддерживает format=split|avatar")
-        base = _concat_master_visuals(rdir, avatar_mp4s, block_durations, height=OUT_H)
+        if avatar_render_plan is not None:
+            base = _concat_avatar_island_visuals(
+                rdir,
+                avatar_mp4s,
+                avatar_render_plan,
+                height=OUT_H,
+            )
+        else:
+            block_durations = [
+                float(block["end"]) - float(block["start"])
+                for block in timed["blocks"]
+            ]
+            base = _concat_master_visuals(
+                rdir, avatar_mp4s, block_durations, height=OUT_H
+            )
         words = list(alignment_words)
     else:
         # Legacy rollback: ретайминг по фактическим HeyGen fragments и Whisper.
@@ -286,11 +396,18 @@ def assemble_revideo(rdir, scenario: dict, broll_mp4, broll_offset_s: float, out
         for block in edit_plan.get("blocks") or []
         if not block.get("avatar_required", True)
     }
-    covered_ranges = [
-        (float(block["start"]), float(block["end"]))
-        for index, block in enumerate(timed["blocks"])
-        if index in covered_indexes
-    ]
+    if avatar_render_plan is not None:
+        covered_ranges = [
+            (float(segment["start"]), float(segment["end"]))
+            for segment in avatar_render_plan.get("visual_timeline") or []
+            if segment.get("coverage") in {"full_broll", "hyperframes"}
+        ]
+    else:
+        covered_ranges = [
+            (float(block["start"]), float(block["end"]))
+            for index, block in enumerate(timed["blocks"])
+            if index in covered_indexes
+        ]
     report = validate_tz(tz, index=_broll_lib.load_index(_broll_lib.LIBRARY_DIR),
                          covered_ranges=covered_ranges)
     for line in report.lines():

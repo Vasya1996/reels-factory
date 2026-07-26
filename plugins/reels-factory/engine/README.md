@@ -92,12 +92,40 @@ edit_plan:
 короткими частями; camera/scene/props/walking/background/lighting/timing
 validator отклоняет.
 
-Текущий переходный HeyGen-контракт всё ещё генерирует один clip на смысловой
-блок, поэтому per-phrase performance пока хранится в плане, но не дробит
-аватар. Фактическое применение каждой рекомендации относится к следующему
-этапу avatar islands: иначе разрезание блока на фразы ухудшит непрерывность.
+При `master_audio.enabled + avatar_islands.enabled` переходный block-by-block
+контракт больше не используется. Per-phrase рекомендации становятся
+directorial intent для адаптивных performance shots. Совместимые соседние
+фразы объединяются, а hook/CTA, `low ↔ high`, B-roll/HyperFrames и максимум
+18 секунд создают границу. Это применяет значимые смены подачи, не разрезая
+аватар на клип для каждого предложения.
 API reference: https://developers.heygen.com/reference/create-video; prompt
 guide: https://help.heygen.com/en/articles/12805098-fine-tune-avatar-gestures-and-movements-with-custom-motion-prompts-avatar-iv-v.
+
+### Photo Avatar IV islands
+
+Stage 3 включается только вместе с master audio и до production rollout
+остаётся выключенным:
+
+```yaml
+master_audio:
+  enabled: true
+avatar_islands:
+  enabled: true
+  handle_seconds: 0.2
+  min_request_seconds: 3.0
+  target_shot_seconds: 10.0
+  max_shot_seconds: 18.0
+  max_shots_per_30_seconds: 5
+  max_parallel: 2
+```
+
+Этот путь намеренно поддерживает только Photo Avatar IV по
+`avatar.heygen_asset_id`; `heygen_look_id`/Avatar V отклоняется до платных
+стадий. Из final edit plan создаются производные `avatar_render_plan.json`
+и `avatar_render_manifest.json`. HeyGen получает только видимые islands,
+Revideo trim-ит handles на exact master timeline и удаляет provider audio.
+Content-addressed cache применяется ко всем shots. Подробный контракт и
+офлайн-таймлайны 30/60/90: `docs/AVATAR-ISLANDS.md`.
 
 ### Фото-аватар
 

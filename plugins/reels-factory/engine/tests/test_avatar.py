@@ -411,6 +411,59 @@ def test_неизвестная_роль_падает_на_дефолтный_п
     assert c.motion_prompt_for(None) == DEFAULT_MOTION_PROMPT
 
 
+def test_per_shot_controls_явно_переопределяют_client_defaults(tmp_path):
+    http = _FakeHttp()
+    c = HeyGenClient(
+        api_key="k",
+        avatar_id="a1",
+        motion_prompt="client default",
+        expressiveness="low",
+        http=http,
+        sleep=lambda _seconds: None,
+    )
+    audio = _wav(tmp_path / "a.wav")
+
+    c.generate(
+        audio,
+        tmp_path / "out.mp4",
+        role="development",
+        motion_prompt="Looks at the camera and nods once, confident.",
+        expressiveness="high",
+    )
+
+    _, body, _, _ = http.posts[1]
+    assert body["motion_prompt"] == (
+        "Looks at the camera and nods once, confident."
+    )
+    assert body["expressiveness"] == "high"
+
+
+def test_cache_key_учитывает_explicit_per_shot_controls(tmp_path):
+    http = _FakeHttp()
+    c = HeyGenClient(
+        api_key="k", avatar_id="a1", http=http, sleep=lambda _seconds: None
+    )
+    audio = _wav(tmp_path / "a.wav", b"same-island-audio")
+    cache = tmp_path / "cache"
+
+    first = cached_generate(
+        c,
+        audio,
+        cache,
+        motion_prompt="Looks at the camera and nods gently.",
+        expressiveness="low",
+    )
+    second = cached_generate(
+        c,
+        audio,
+        cache,
+        motion_prompt="Looks at the camera and leans in slightly.",
+        expressiveness="high",
+    )
+
+    assert first != second
+
+
 def test_кэш_различает_роли(monkeypatch, tmp_path):
     monkeypatch.delenv("HEYGEN_MOTION_PROMPT", raising=False)
     http = _FakeHttp()

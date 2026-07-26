@@ -78,6 +78,7 @@ def _fakes(monkeypatch, tmp_path, calls, captured=None):
             captured["alignment_words"] = kw.get("alignment_words")
             captured["master_timed_scenario"] = kw.get("master_timed_scenario")
             captured["edit_plan"] = kw.get("edit_plan")
+            captured["avatar_render_plan"] = kw.get("avatar_render_plan")
         Path(out_mp4).write_bytes(b"")
         timed = dict(scenario, total=25.0)
         return {"mp4": str(out_mp4), "dur": 25.0, "lufs": -14.0,
@@ -269,6 +270,86 @@ def test_master_audio_не_разрешает_jump_cuts_ломать_timeline(mo
 
     assert res["ok"] is True
     assert cut_calls == []
+
+
+def test_avatar_islands_заменяет_block_by_block_photo_avatar_iv(
+    monkeypatch, tmp_path
+):
+    calls = []
+    captured = {}
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    avatar = _FakeAvatar()
+    avatar.engine = "avatar_iv"
+    wd = _wd_with_scenario(tmp_path)
+
+    def fake_master(scenario, config, workdir, voice_id=None):
+        master_wav = Path(workdir) / "voice_master.wav"
+        master_wav.write_bytes(b"master-islands")
+        block_wavs = []
+        words = []
+        timed = json.loads(json.dumps(scenario))
+        for index, block in enumerate(timed["blocks"]):
+            block["start"] = index * 2.0
+            block["end"] = (index + 1) * 2.0
+            wav = Path(workdir) / f"voice_{index}.wav"
+            wav.write_bytes(b"legacy-slice")
+            block_wavs.append(wav)
+            words.append({
+                "start": index * 2.0 + 0.2,
+                "end": (index + 1) * 2.0 - 0.2,
+                "text": block["speech"],
+                "block_index": index,
+            })
+        timed["total"] = 8.0
+        return SimpleNamespace(
+            wav=master_wav,
+            block_wavs=tuple(block_wavs),
+            words=tuple(words),
+            timed_scenario=timed,
+        )
+
+    rendered_plans = []
+
+    def fake_render(master_wav, plan, client, workdir, cache_dir, *, edit_plan):
+        rendered_plans.append(plan)
+        clips = []
+        for shot in plan["shots"]:
+            clip = Path(workdir) / f"{shot['id']}.mp4"
+            clip.write_bytes(b"offline-avatar-iv")
+            clips.append(clip)
+        return SimpleNamespace(
+            clips=tuple(clips),
+            plan=plan,
+            manifest={"shots": [{"status": "ready"} for _ in clips]},
+        )
+
+    cfg = _cfg("avatar")
+    cfg["master_audio"] = {"enabled": True}
+    cfg["avatar_islands"] = {"enabled": True}
+    res = pipeline.run_make(
+        cfg,
+        None,
+        0.0,
+        wd,
+        avatar_client=avatar,
+        synth_fn=fs,
+        ingest_fn=fi,
+        assemble_fn=fa,
+        master_audio_fn=fake_master,
+        avatar_render_fn=fake_render,
+    )
+
+    assert res["ok"] is True, res["error"]
+    assert avatar.calls == []  # no legacy block-level requests
+    assert len(rendered_plans) == 1
+    plan = rendered_plans[0]
+    assert plan["engine_scope"] == "photo_avatar_iv"
+    assert plan["validation"]["all_pass"] is True
+    assert captured["avatar_render_plan"] == plan
+    assert len(captured["avatar_render_plan"]["shots"]) == next(
+        call[2] for call in calls if call[0] == "assemble"
+    )
+    assert res["avatar_summary"] == plan["summary"]
 
 
 def test_avatar_со_вставками_ingest_вызывается(monkeypatch, tmp_path):

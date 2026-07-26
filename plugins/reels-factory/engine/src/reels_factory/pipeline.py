@@ -18,6 +18,7 @@ validator-approved full B-roll window может пометить блок ``ava
 false`` и заменить невидимый HeyGen дешёвым локальным placeholder. Revideo
 получает тот же документ и только проецирует его в runtime ``tz.json``.
 """
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -41,6 +42,13 @@ from reels_factory.editplan import (
     enrich_performance_with_llm,
     finalize_edit_plan as _finalize_edit_plan,
     save_edit_plan,
+)
+from reels_factory.avatar_islands import (
+    avatar_islands_enabled,
+    build_avatar_render_plan as _build_avatar_render_plan,
+    render_avatar_islands as _render_avatar_islands,
+    save_avatar_render_plan,
+    validate_photo_avatar_iv_config,
 )
 from reels_factory.llm import ClaudeCliRunner
 from reels_factory.verify import verify_reel
@@ -67,7 +75,8 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
              avatar_client=None, synth_fn=None, ingest_fn=None, assemble_fn=None,
              covered_block_fn=None, jump_cut_fn=None, precut_fn=None,
              master_audio_fn=None, edit_plan_fn=None,
-             finalize_edit_plan_fn=None, performance_runner=None) -> dict:
+             finalize_edit_plan_fn=None, performance_runner=None,
+             avatar_plan_fn=None, avatar_render_fn=None) -> dict:
     fmt = config.get("format", "split")
     wd = Path(workdir)
     wd.mkdir(parents=True, exist_ok=True)
@@ -79,6 +88,7 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
     jump_cut_fn = jump_cut_fn or _jump_cut_fragments
     edit_cfg = edit_settings(config)
     use_master_audio = master_audio_enabled(config)
+    use_avatar_islands = False
 
     def fail(stage, e):
         return {"ok": False, "workdir": str(wd), "mp4": None, "qa_pass": False,
@@ -162,6 +172,17 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
         save_edit_plan(edit_plan, wd)
         for line in edit_plan.get("log") or []:
             print(f"[plan] {line}", file=sys.stderr)
+        use_avatar_islands = avatar_islands_enabled(config)
+        if use_avatar_islands:
+            if fmt not in ("split", "avatar"):
+                raise RuntimeError(
+                    "avatar islands поддерживает только format=split|avatar"
+                )
+            if not use_master_audio:
+                raise RuntimeError(
+                    "avatar islands требует master_audio.enabled=true"
+                )
+            validate_photo_avatar_iv_config(config)
     except Exception as e:
         return fail("plan", e)
 
@@ -183,12 +204,17 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
     try:
         avatar_mp4s, voice_wavs = [], []
         master = None
+        avatar_render_plan = None
+        avatar_render_manifest = None
         cache_dir = WORK_ROOT / AVATAR_CACHE_DIRNAME
         if use_master_audio:
             master_audio_fn = master_audio_fn or _build_master_audio
             master = master_audio_fn(scenario, config, wd, voice_id=voice_id)
             block_wavs = list(master.block_wavs)
-            if len(block_wavs) != len(scenario["blocks"]):
+            if (
+                not use_avatar_islands
+                and len(block_wavs) != len(scenario["blocks"])
+            ):
                 raise RuntimeError(
                     f"master audio blocks {len(block_wavs)} != "
                     f"scenario blocks {len(scenario['blocks'])}"
@@ -215,19 +241,46 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
                 covered_block_indexes(edit_plan) if fmt == "avatar" else set()
             )
 
-        for i, (b, wav) in enumerate(zip(scenario["blocks"], block_wavs)):
-            if fmt in ("split", "avatar"):
-                role = b.get("role")
-                if role == "cta":
-                    mp4 = cached_generate(avatar_client, wav, cache_dir, role=role)
-                elif i in covered_blocks:
-                    mp4 = covered_block_fn(wav, wd / f"avatar_{i}.mp4")
+        if use_avatar_islands:
+            avatar_plan_fn = avatar_plan_fn or _build_avatar_render_plan
+            avatar_render_fn = avatar_render_fn or _render_avatar_islands
+            master_sha256 = hashlib.sha256(Path(master.wav).read_bytes()).hexdigest()
+            avatar_render_plan = avatar_plan_fn(
+                edit_plan,
+                config,
+                master_audio_sha256=master_sha256,
+            )
+            save_avatar_render_plan(avatar_render_plan, wd)
+            rendered = avatar_render_fn(
+                master.wav,
+                avatar_render_plan,
+                avatar_client,
+                wd,
+                cache_dir,
+                edit_plan=edit_plan,
+            )
+            avatar_mp4s = list(
+                rendered.clips if hasattr(rendered, "clips") else rendered
+            )
+            avatar_render_manifest = getattr(rendered, "manifest", None)
+        else:
+            for i, (b, wav) in enumerate(zip(scenario["blocks"], block_wavs)):
+                if fmt in ("split", "avatar"):
+                    role = b.get("role")
+                    if role == "cta":
+                        mp4 = cached_generate(
+                            avatar_client, wav, cache_dir, role=role
+                        )
+                    elif i in covered_blocks:
+                        mp4 = covered_block_fn(wav, wd / f"avatar_{i}.mp4")
+                    else:
+                        # role задаёт пластику: хук энергичный, payoff спокойный
+                        mp4 = avatar_client.generate(
+                            wav, wd / f"avatar_{i}.mp4", role=role
+                        )
+                    avatar_mp4s.append(mp4)
                 else:
-                    # role задаёт пластику: хук энергичный, payoff спокойный
-                    mp4 = avatar_client.generate(wav, wd / f"avatar_{i}.mp4", role=role)
-                avatar_mp4s.append(mp4)
-            else:
-                voice_wavs.append(wav)
+                    voice_wavs.append(wav)
     except Exception as e:
         return fail("voice", e)
 
@@ -272,7 +325,8 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
                           config=config,
                           master_audio=master.wav if master else None,
                           alignment_words=list(master.words) if master else None,
-                          master_timed_scenario=master.timed_scenario if master else None)
+                          master_timed_scenario=master.timed_scenario if master else None,
+                          avatar_render_plan=avatar_render_plan)
         mp4 = res["mp4"]
         timed = res["timed_scenario"]
         words = res.get("words_fixed")
@@ -286,5 +340,17 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
     except Exception as e:
         return fail("verify", e)
 
-    return {"ok": True, "workdir": str(wd), "mp4": mp4, "qa_pass": qa["all_pass"],
-            "gates": qa["gates"], "stage": None, "error": None}
+    return {
+        "ok": True,
+        "workdir": str(wd),
+        "mp4": mp4,
+        "qa_pass": qa["all_pass"],
+        "gates": qa["gates"],
+        "avatar_summary": (
+            avatar_render_plan.get("summary")
+            if avatar_render_plan is not None else None
+        ),
+        "avatar_render_manifest": avatar_render_manifest,
+        "stage": None,
+        "error": None,
+    }

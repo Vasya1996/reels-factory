@@ -12,6 +12,7 @@
 призыва из конфига (product.cta_phrase).
 """
 import json
+import math
 import re
 from pathlib import Path
 
@@ -28,6 +29,8 @@ _TAG_RE = re.compile(r"\[[^\]\n]*\]")
 
 WORD_LIMIT_HARD = 70   # валидатор: жёсткий предел (иначе ролик не влезет)
 WORD_LIMIT_SOFT = 60   # промпт: целевой предел
+WORDS_PER_SECOND_TARGET = 2.5
+MAX_SUPPORTED_DURATION_S = 90
 
 STYLE_GUIDE_PATH = FACTORY_DIR / "style-guide.md"
 
@@ -85,6 +88,41 @@ def _read_style_excerpt(max_chars: int = 1500) -> str:
     return text[:max_chars]
 
 
+def _duration_contract(hypothesis: dict | None) -> dict:
+    """Legacy CLI defaults stay compatible; an explicit target scales to 90s."""
+    hyp = hypothesis or {}
+    raw = hyp.get("target_duration_s", hyp.get("length_s"))
+    if raw in (None, ""):
+        return {
+            "target": 25.0,
+            "minimum": 14.0,
+            "maximum": 40.0,
+            "words_soft": WORD_LIMIT_SOFT,
+            "words_hard": WORD_LIMIT_HARD,
+            "explicit": False,
+        }
+    try:
+        target = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("target_duration_s должен быть числом") from exc
+    if not 14 <= target <= MAX_SUPPORTED_DURATION_S:
+        raise ValueError(
+            f"target_duration_s должен быть в диапазоне 14-"
+            f"{MAX_SUPPORTED_DURATION_S}с"
+        )
+    tolerance = max(3.0, target * 0.12)
+    return {
+        "target": target,
+        "minimum": max(14.0, target - tolerance),
+        "maximum": min(MAX_SUPPORTED_DURATION_S, target + tolerance),
+        "words_soft": max(30, round(target * WORDS_PER_SECOND_TARGET)),
+        "words_hard": max(
+            36, math.ceil(target * WORDS_PER_SECOND_TARGET * 1.12)
+        ),
+        "explicit": True,
+    }
+
+
 def build_prompt(hypothesis: dict) -> str:
     theme = hypothesis.get("theme", "")
     theme_spoken = hypothesis.get("theme_spoken") or theme
@@ -94,6 +132,13 @@ def build_prompt(hypothesis: dict) -> str:
     facts = hypothesis.get("facts")
     legend = hypothesis.get("legend") or ""
     cta_phrase = hypothesis.get("cta_phrase") or ""
+    duration = _duration_contract(hypothesis)
+    target = duration["target"]
+    hook_end = min(3.0, target * 0.10)
+    cta_seconds = min(5.0, max(3.0, target * 0.08))
+    payoff_seconds = max(5.0, target * 0.18)
+    payoff_start = target - cta_seconds - payoff_seconds
+    cta_start = target - cta_seconds
 
     persona = hypothesis.get("persona") or {}
     if not isinstance(persona, dict):
@@ -117,7 +162,8 @@ def build_prompt(hypothesis: dict) -> str:
         + persona_line
         + (f"\nЛЕГЕНДА ПРОДУКТА (контекст, не пересказывать в лоб): {legend}" if legend else ""),
 
-        "СКЕЛЕТ РОЛИКА (суммарная длительность 15-35 секунд). ПРЕДПОЧИТАЙ "
+        f"СКЕЛЕТ РОЛИКА (целевая длительность {target:g} секунд, допустимо "
+        f"{duration['minimum']:g}-{duration['maximum']:g}с). ПРЕДПОЧИТАЙ "
         "4-БЛОЧНЫЙ ВАРИАНТ (без context) — блоки hook, development, payoff, cta "
         "по порядку. Блок context (5 блоков: hook, context, development, payoff, "
         "cta) допустим, только если реально нужна короткая доп. завязка. "
@@ -145,9 +191,10 @@ def build_prompt(hypothesis: dict) -> str:
         "[sighs]. Используй их только когда тег естественен для персонажа; они "
         "не считаются словами при подсчёте лимита речи. SSML <break> не используй: "
         "Eleven v3 его не поддерживает; паузы задавай пунктуацией и многоточием.\n"
-        f"ЛИМИТ РЕЧИ (критично, иначе ролик не влезет): суммарно по всем speech — "
-        f"НЕ БОЛЕЕ {WORD_LIMIT_SOFT} слов; одна реплика — не более 14 слов. "
-        "Коротко и хлёстко.",
+        f"ЛИМИТ РЕЧИ (критично, иначе ролик не влезет): цель — около "
+        f"{duration['words_soft']} слов, жёсткий максимум "
+        f"{duration['words_hard']} слов суммарно; каждое предложение — не более "
+        "15 слов. Коротко и хлёстко.",
 
         f"ГИПОТЕЗА ДЛЯ ЭТОГО РОЛИКА: тема — {theme}, тип хука — {hook_type}."
         + (f" Кейс: {case}." if case else ""),
@@ -179,10 +226,14 @@ def build_prompt(hypothesis: dict) -> str:
         "(предпочтительный 4-блочный вариант, без context):\n"
         '{"theme": "...", "hook_type": "...", "premise": "...", "title": "...", '
         '"broll_query": "...", "blocks": ['
-        '{"role": "hook", "start": 0.0, "end": 3.0, "speech": "...", "pause_after": 0.5}, '
-        '{"role": "development", "start": 3.5, "end": 15.0, "speech": "..."}, '
-        '{"role": "payoff", "start": 15.0, "end": 22.0, "speech": "..."}, '
-        '{"role": "cta", "start": 22.0, "end": 25.0, "speech": "..."}'
+        f'{{"role": "hook", "start": 0.0, "end": {hook_end:.1f}, '
+        '"speech": "...", "pause_after": 0.5}, '
+        f'{{"role": "development", "start": {hook_end:.1f}, '
+        f'"end": {payoff_start:.1f}, "speech": "..."}}, '
+        f'{{"role": "payoff", "start": {payoff_start:.1f}, '
+        f'"end": {cta_start:.1f}, "speech": "..."}}, '
+        f'{{"role": "cta", "start": {cta_start:.1f}, '
+        f'"end": {target:.1f}, "speech": "..."}}'
         ']}\n'
         "Роли блоков — ровно hook, development, payoff, cta по порядку (или "
         "hook, context, development, payoff, cta, если context правда нужен). "
@@ -266,15 +317,22 @@ def validate_scenario(sc: dict, hypothesis: dict | None = None) -> list[str]:
     if not _mentions_theme(first_phrases, sc.get("theme"), theme_spoken):
         errs.append("тема не упомянута в первых фразах (хук или development)")
 
+    duration = _duration_contract(hyp)
     n_words = sum(_wordcount(b.get("speech", "")) for b in blocks)
-    if n_words > WORD_LIMIT_HARD:
+    if n_words > duration["words_hard"]:
         errs.append(
-            f"речь слишком длинная: {n_words} слов (максимум {WORD_LIMIT_HARD})"
+            f"речь слишком длинная: {n_words} слов "
+            f"(максимум {duration['words_hard']})"
         )
 
     total = blocks[-1].get("end") if isinstance(blocks[-1].get("end"), (int, float)) else None
-    if total is not None and not (14 <= total <= 40):
-        errs.append(f"общая длительность {total}с вне 14-40с")
+    if total is not None and not (
+        duration["minimum"] <= total <= duration["maximum"]
+    ):
+        errs.append(
+            f"общая длительность {total}с вне "
+            f"{duration['minimum']:g}-{duration['maximum']:g}с"
+        )
 
     return errs
 

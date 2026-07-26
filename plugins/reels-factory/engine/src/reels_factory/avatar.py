@@ -46,6 +46,7 @@ aspect_ratio, и раз плагин целиком про вертикальн�
 """
 import hashlib
 import os
+import threading
 from pathlib import Path
 
 UPLOAD_URL = "https://api.heygen.com/v3/assets"
@@ -101,6 +102,8 @@ POLL_INTERVAL_S = 10
 POLL_MAX_ITERATIONS = 60  # 60 * 10с = 600с (10 мин)
 
 _FALLBACK_STATUSES = (403, 404)
+_CACHE_LOCKS: dict[str, threading.Lock] = {}
+_CACHE_LOCKS_GUARD = threading.Lock()
 
 
 class _Unavailable(Exception):
@@ -175,7 +178,8 @@ class HeyGenClient:
         return MOTION_PROMPT_BY_ROLE.get(role, self.motion_prompt)
 
     def generate(self, audio_wav: Path, out_mp4: Path, width: int = 1080,
-                 height: int = 672, role=None) -> Path:
+                 height: int = 672, role=None, motion_prompt=None,
+                 expressiveness=None) -> Path:
         if not self.api_key:
             raise RuntimeError(
                 "HeyGen API key не задан: передайте api_key в HeyGenClient "
@@ -188,7 +192,15 @@ class HeyGenClient:
 
         try:
             audio_asset_id = self._upload_audio_v3(audio_wav, headers)
-            video_url = self._generate_v3(audio_asset_id, headers, width, height, role)
+            video_url = self._generate_v3(
+                audio_asset_id,
+                headers,
+                width,
+                height,
+                role,
+                motion_prompt=motion_prompt,
+                expressiveness=expressiveness,
+            )
         except _Unavailable:
             if self.look_id:
                 # v2 умеет только talking_photo — двойника там не существует,
@@ -230,10 +242,15 @@ class HeyGenClient:
         return resp.json()["data"]["asset_id"]
 
     def _generate_v3(self, audio_asset_id: str, headers: dict, width: int,
-                     height: int, role=None) -> str:
-        motion_prompt = self.motion_prompt_for(role)
-        body = (self._body_twin(audio_asset_id, motion_prompt) if self.look_id
-                else self._body_photo(audio_asset_id, motion_prompt))
+                     height: int, role=None, motion_prompt=None,
+                     expressiveness=None) -> str:
+        motion_prompt = motion_prompt or self.motion_prompt_for(role)
+        expressiveness = expressiveness or self.expressiveness
+        body = (
+            self._body_twin(audio_asset_id, motion_prompt, expressiveness)
+            if self.look_id
+            else self._body_photo(audio_asset_id, motion_prompt, expressiveness)
+        )
         resp = self.http.post(CREATE_V3_URL, json=body, headers=headers, timeout=30)
         status_code = getattr(resp, "status_code", 200)
         if status_code in _FALLBACK_STATUSES:
@@ -242,7 +259,8 @@ class HeyGenClient:
         video_id = resp.json()["data"]["video_id"]
         return self._poll(headers, video_id, self._fetch_status_v3)
 
-    def _body_twin(self, audio_asset_id: str, motion_prompt: str) -> dict:
+    def _body_twin(self, audio_asset_id: str, motion_prompt: str,
+                   expressiveness: str | None = None) -> dict:
         """Digital Twin: идентичность держит сам аватар, сцену закреплять нечем
         и незачем (background от фото тут не нужен — фон уже снят на видео)."""
         body = {
@@ -256,10 +274,11 @@ class HeyGenClient:
         # Оба поля IV-only по API schema; Avatar V отклоняет extra inputs.
         if self.engine in _ENGINES_WITH_PERFORMANCE_CONTROLS:
             body["motion_prompt"] = motion_prompt
-            body["expressiveness"] = self.expressiveness
+            body["expressiveness"] = expressiveness or self.expressiveness
         return body
 
-    def _body_photo(self, audio_asset_id: str, motion_prompt: str) -> dict:
+    def _body_photo(self, audio_asset_id: str, motion_prompt: str,
+                    expressiveness: str | None = None) -> dict:
         body = {
             "type": "image",
             "image": {"type": "asset_id", "asset_id": self.avatar_id},
@@ -277,7 +296,7 @@ class HeyGenClient:
             "aspect_ratio": "9:16",
         }
         if self.engine in _ENGINES_WITH_PERFORMANCE_CONTROLS:
-            body["expressiveness"] = self.expressiveness
+            body["expressiveness"] = expressiveness or self.expressiveness
         return body
 
     def _generate_v2_legacy(self, audio_asset_id: str, headers: dict, width: int, height: int) -> str:
@@ -348,29 +367,66 @@ def render_covered_block(audio_wav: Path, out_mp4: Path, width: int = 1080, heig
     return out_mp4
 
 
-def cached_generate(client: HeyGenClient, audio_wav: Path, cache_dir: Path,
-                    role=None) -> Path:
-    cache_dir = Path(cache_dir)
-    cache_dir.mkdir(parents=True, exist_ok=True)
+def avatar_cache_key(client: HeyGenClient, audio_wav: Path, role=None,
+                     motion_prompt=None, expressiveness=None) -> str:
+    """Stable identity for one paid render input, including IV controls."""
     audio_wav = Path(audio_wav)
     audio_sha1 = hashlib.sha1(audio_wav.read_bytes()).hexdigest()
     # getattr — чтобы ключ считался и для облегчённых дублей клиента в тестах
-    motion_prompt = (client.motion_prompt_for(role)
-                     if hasattr(client, "motion_prompt_for") else client.motion_prompt)
+    effective_prompt = motion_prompt or (
+        client.motion_prompt_for(role)
+        if hasattr(client, "motion_prompt_for")
+        else client.motion_prompt
+    )
+    effective_expressiveness = expressiveness or getattr(
+        client, "expressiveness", DEFAULT_EXPRESSIVENESS
+    )
     supports_performance = (
         getattr(client, "engine", None) in _ENGINES_WITH_PERFORMANCE_CONTROLS
     )
     performance_key = (
-        f"{motion_prompt}|{client.expressiveness}"
+        f"{effective_prompt}|{effective_expressiveness}"
         if supports_performance else "provider-default-performance"
     )
-    key = hashlib.sha1(
+    return hashlib.sha1(
         f"{audio_sha1}|{client.avatar_id}|{getattr(client, 'look_id', None)}"
         f"|{getattr(client, 'engine', None)}|{getattr(client, 'resolution', None)}"
         f"|{performance_key}"
         .encode("utf-8")
     ).hexdigest()[:16]
+
+
+def cached_generate(client: HeyGenClient, audio_wav: Path, cache_dir: Path,
+                    role=None, motion_prompt=None, expressiveness=None) -> Path:
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    audio_wav = Path(audio_wav)
+    key = avatar_cache_key(
+        client,
+        audio_wav,
+        role=role,
+        motion_prompt=motion_prompt,
+        expressiveness=expressiveness,
+    )
     out_mp4 = cache_dir / f"{key}.mp4"
-    if out_mp4.exists():
+    with _CACHE_LOCKS_GUARD:
+        lock = _CACHE_LOCKS.setdefault(str(out_mp4.resolve()), threading.Lock())
+    with lock:
+        if out_mp4.exists():
+            return out_mp4
+        kwargs = {"role": role}
+        # Не передаём новые kwargs старым test doubles/legacy callers без нужды.
+        if motion_prompt is not None:
+            kwargs["motion_prompt"] = motion_prompt
+        if expressiveness is not None:
+            kwargs["expressiveness"] = expressiveness
+        temporary = cache_dir / f".{key}.{os.getpid()}.tmp.mp4"
+        try:
+            generated = Path(client.generate(audio_wav, temporary, **kwargs))
+            if not generated.is_file():
+                raise RuntimeError(f"HeyGen не создал cache output: {generated}")
+            generated.replace(out_mp4)
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
         return out_mp4
-    return client.generate(audio_wav, out_mp4, role=role)

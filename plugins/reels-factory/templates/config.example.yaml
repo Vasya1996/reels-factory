@@ -140,12 +140,27 @@ master_audio:
 
 # Canonical edit plan строится до платных стадий. Опциональный LLM-проход
 # рекомендует expressiveness/motion_prompt отдельно для каждой phrase.
-# Runtime применит phrase-level controls после перехода на avatar islands;
-# текущий block-level HeyGen сохраняет рекомендации в edit_plan.json.
 edit_plan:
   performance_llm:
     enabled: false
     timeout_s: 600
+
+# Производный render plan после master alignment. Только Photo Avatar IV:
+# Avatar V / heygen_look_id этим этапом сознательно не затрагиваются.
+# Включать вместе с master_audio после согласованного paid smoke.
+avatar_islands:
+  enabled: false
+  # Короткие края запроса дают безопасный trim на exact master timeline.
+  handle_seconds: 0.2
+  min_request_seconds: 3.0
+  # Совместимые phrase intents объединяются; значимая смена подачи, hook/CTA
+  # или этот предел создают новый performance shot.
+  target_shot_seconds: 10.0
+  max_shot_seconds: 18.0
+  max_shots_per_30_seconds: 5
+  max_parallel: 2
+  # Только прогноз до разрешения платного запуска; не источник биллинга.
+  estimated_cost_per_second_usd: 0.05
 
 # ElevenLabs Text-to-Speech with Timestamps.
 tts:
@@ -183,13 +198,11 @@ broll:
   # тему (плейлист/канал/локальная папка с материалами). Свободный текст.
   source_hint: "готовка эспрессо крупным планом; локальные файлы в broll/"
 
-# Лимиты сценария. Сейчас захардкожены в engine/src/reels_factory/scenario.py
-# (WORD_LIMIT_SOFT=60 слов — целевой предел в промпте, WORD_LIMIT_HARD=70 —
-# жёсткий предел валидатора; длительность ролика 14-40с — validate_scenario и
-# гейт D1 в verify.py). Здесь — только справочная заметка для скиллов
-# research/script при планировании сценария; config.py их НЕ читает.
+# Целевая длина legacy CLI-сценария. Telegram-путь получает length_s от
+# выбранной идеи и уже поддерживает короткий панч 20-40с и разбор 60-90с.
+# Для 30/60/90 меняется word budget, а islands автоматически масштабируют
+# число shots; фиксированного «один HeyGen на блок» больше нет.
 limits:
-  words_soft: 60
-  words_hard: 70
+  target_duration_s: 30
   duration_s_min: 14
-  duration_s_max: 40
+  duration_s_max: 90
