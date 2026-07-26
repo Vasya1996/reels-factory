@@ -157,6 +157,7 @@ from reels_factory.editplan import (
     covered_block_indexes,
     enrich_performance_with_llm,
     enrich_visuals_with_llm,
+    ensure_assetless_visual_coverage,
     finalize_edit_plan,
     save_edit_plan,
     validate_edit_plan,
@@ -782,6 +783,8 @@ def test_visual_llm_prompt_и_guardrails():
     enriched = enrich_visuals_with_llm(draft, runner)
 
     assert "Visual Director" in runner.prompt
+    assert "continuous seconds" in runner.prompt
+    assert "Leave at least one avatar or mixed phrase" in runner.prompt
     assert enriched["summary"]["built_in_visual_windows"] == 1
 
     invalid = _visual_recommendation(draft)
@@ -795,6 +798,204 @@ def test_visual_llm_prompt_и_guardrails():
     invalid["visuals"][0]["template"] = "invented_template"
     with pytest.raises(ValueError, match="template/variables"):
         apply_visual_recommendations(draft, invalid)
+
+
+def _adjacent_visual_llm_scenario():
+    return {
+        "theme": "выбор",
+        "blocks": [
+            {
+                "role": "hook",
+                "start": 0.0,
+                "end": 3.0,
+                "speech": "Сейчас покажу важную закономерность.",
+            },
+            {
+                "role": "context",
+                "start": 3.0,
+                "end": 9.0,
+                "speech": "Команда долго изучает исходные данные.",
+            },
+            {
+                "role": "development",
+                "start": 9.0,
+                "end": 15.0,
+                "speech": "Затем она выбирает рабочее решение.",
+            },
+            {
+                "role": "cta",
+                "start": 15.0,
+                "end": 18.0,
+                "speech": "Сохрани эту полезную схему.",
+            },
+        ],
+    }
+
+
+def test_visual_llm_tolerant_не_роняет_план_из_за_суммарных_10_секунд():
+    draft = build_edit_plan(
+        _adjacent_visual_llm_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+    context_id = next(
+        phrase["id"] for phrase in draft["phrases"] if phrase["role"] == "context"
+    )
+    development_id = next(
+        phrase["id"]
+        for phrase in draft["phrases"]
+        if phrase["role"] == "development"
+    )
+    recommendations = {
+        "visuals": [
+            {
+                "phrase_ids": [context_id],
+                "template": "concept_nodes",
+                "variables": {
+                    "title": "ИСХОДНЫЕ ДАННЫЕ",
+                    "items": ["ФАКТЫ", "КОНТЕКСТ"],
+                },
+                "rationale": "Объясняет этап анализа.",
+            },
+            {
+                "phrase_ids": [development_id],
+                "template": "sequence_flow",
+                "variables": {
+                    "title": "ВЫБОР РЕШЕНИЯ",
+                    "items": ["СРАВНИТЬ", "ВЫБРАТЬ"],
+                },
+                "rationale": "Объясняет следующий этап.",
+            },
+        ]
+    }
+
+    enriched = apply_visual_recommendations(
+        draft,
+        recommendations,
+        strict=False,
+    )
+
+    review = enriched["visual_director_reviews"][-1]
+    assert len(review["accepted"]) == 1
+    assert len(review["rejected"]) == 1
+    assert "лицо отсутствует дольше" in review["rejected"][0]["reason"]
+    assert enriched["validation"]["all_pass"] is True
+    assert next(
+        phrase for phrase in enriched["phrases"] if phrase["id"] == development_id
+    )["coverage"] == "avatar"
+
+
+def _hotel_comparison_scenario():
+    return {
+        "title": "Бутик-отели окупаются вдвое быстрее",
+        "language": "ru",
+        "blocks": [
+            {
+                "role": "hook",
+                "start": 0.0,
+                "end": 3.0,
+                "speech": (
+                    "Обычная гостиница окупа́ется за пятнадцать лет. "
+                    "Бутик-отель — вдвое быстрее."
+                ),
+            },
+            {
+                "role": "development",
+                "start": 3.0,
+                "end": 19.5,
+                "speech": (
+                    "Многие вкладывают в отели. И ждут прибыль десятилетиями. "
+                    "Но дело не в отелях, а в формате. Бутик-отели, санатории "
+                    "и медика́л спа окупа́ются всего за девять лет. Это почти "
+                    "вдвое быстрее обычной гостиницы. Там ждут пятнадцать лет."
+                ),
+            },
+            {
+                "role": "payoff",
+                "start": 19.5,
+                "end": 27.0,
+                "speech": (
+                    "Рентабе́льность обычной гостиницы — двадцать пять "
+                    "процентов. У бутик-отеля и спа — тридцать пять. "
+                    "Вот и вся разница в доходе на вло́женный рубль."
+                ),
+            },
+            {
+                "role": "cta",
+                "start": 27.0,
+                "end": 30.0,
+                "speech": (
+                    "Сохрани, если задумываешься об инвести́циях в отели."
+                ),
+            },
+        ],
+    }
+
+
+def test_assetless_fallback_иллюстрирует_отельные_сравнения_без_broll():
+    draft = build_edit_plan(
+        _hotel_comparison_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+
+    enriched = ensure_assetless_visual_coverage(draft)
+    visuals = [
+        window
+        for window in enriched["windows"]
+        if (
+            (window.get("effect") or {}).get("visual_director", {}).get("source")
+            == "assetless_fallback"
+        )
+    ]
+
+    assert len(visuals) == 3
+    assert any(
+        window["effect"]["hyperframes"]["block"] == "value_layers"
+        for window in visuals
+    )
+    value_layers = [
+        window["effect"]["hyperframes"]["variables"]
+        for window in visuals
+        if window["effect"]["hyperframes"]["block"] == "value_layers"
+    ]
+    assert any("ДЕВЯТЬ" in variables["offer"] for variables in value_layers)
+    assert any(
+        "ТРИДЦАТЬ ПЯТЬ" in variables["actual"]
+        for variables in value_layers
+    )
+    assert enriched["summary"]["avatar_visible_seconds"] < 20.0
+    assert enriched["validation"]["all_pass"] is True
+    review = enriched["visual_director_reviews"][-1]
+    assert review["source"] == "assetless_fallback"
+    assert len(review["accepted"]) == 3
+    assert review["rejected"] == []
+
+
+def test_visual_llm_invalid_json_мягко_переходит_на_assetless_fallback():
+    draft = build_edit_plan(
+        _hotel_comparison_scenario(),
+        _canonical_config(),
+        index={},
+        require_asset_files=False,
+    )
+
+    class Runner:
+        def run(self, _prompt):
+            return "not-json"
+
+    enriched = enrich_visuals_with_llm(draft, Runner())
+
+    assert enriched["validation"]["all_pass"] is True
+    assert enriched["visual_director_reviews"][0]["source"] == "llm"
+    assert enriched["visual_director_reviews"][0]["rejected"]
+    assert any(
+        (window.get("effect") or {}).get("visual_director", {}).get("source")
+        == "assetless_fallback"
+        for window in enriched["windows"]
+    )
 
 
 def test_save_canonical_пишет_только_edit_plan(tmp_path):

@@ -24,6 +24,7 @@ Visual Director компенсирует длинные talking-head участ�
 approved scenario
   -> deterministic Visual Director rules
   -> optional constrained visual LLM
+  -> deterministic assetless HyperFrames fallback
   -> optional per-phrase performance LLM
   -> validated edit_plan.json / draft
   -> master audio + alignment
@@ -33,8 +34,11 @@ approved scenario
 ```
 
 LLM не является обязательным для базового результата. Детерминированные
-триггеры полностью покрывают структурные конструкции, а optional LLM может
+триггеры покрывают известные структурные конструкции, а optional LLM может
 добавить максимум три окна только среди ещё не оформленных avatar-only фраз.
+После него обязательный assetless fallback проверяет оставшиеся длинные
+участки. Если B-roll не найден, он строит локальный `concept_nodes`, а для
+сравнения — `value_layers`; платный или внешний media API для этого не нужен.
 
 ## Настройки
 
@@ -46,6 +50,7 @@ edit_plan:
     max_seconds: 9.5
     max_per_30_seconds: 4
     max_llm_windows: 3
+    assetless_fallback_after_seconds: 6.0
     llm:
       enabled: false
       timeout_s: 600
@@ -75,12 +80,19 @@ edit_plan:
 
 - Built-in visual длится 3–9,5 секунды.
 - Непрерывное отсутствие лица не превышает 10 секунд.
+- Лимит 10 секунд считается суммарно по соседним B-roll и HyperFrames окнам,
+  а не отдельно для каждого окна.
 - Hook и CTA остаются с Photo Avatar IV.
 - Adjacent phrase IDs обязательны; пересечение semantic blocks запрещено.
 - Уже выбранные B-roll, HyperFrames и bubble окна не перезаписываются.
 - Captions внутри semantic visual всегда `hidden`.
 - На каждые начатые 30 секунд допускается до четырёх built-in окон.
 - Invalid template/variables/coverage отклоняются до платной стадии.
+- LLM-рекомендации применяются транзакционно по одной. Ошибка одного окна не
+  отменяет уже принятые окна и не останавливает pipeline; accepted/rejected и
+  точная причина сохраняются в `visual_director_reviews`.
+- Между соседними assetless fullscreen visuals сохраняется хотя бы одно
+  `avatar|mixed` окно для возврата eye contact.
 - Final alignment не запускает новый creative decision: выход за exact limits
   создаёт явную revision и avatar fallback.
 

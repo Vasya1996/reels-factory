@@ -769,6 +769,52 @@ def test_visual_director_llm_обогащает_canonical_plan_до_performance(
     assert visual["effect"]["hyperframes"]["block"] == "sequence_flow"
 
 
+def test_visual_director_llm_bad_item_не_роняет_pipeline(
+    monkeypatch, tmp_path
+):
+    calls = []
+    captured = {}
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+
+    class Runner:
+        def run(self, _prompt):
+            return json.dumps({
+                "visuals": [{
+                    "phrase_ids": ["unknown-phrase"],
+                    "template": "concept_nodes",
+                    "variables": {
+                        "title": "НЕВЕРНОЕ ОКНО",
+                        "items": ["ОДИН", "ДВА"],
+                    },
+                }]
+            })
+
+    cfg = _cfg("split")
+    cfg["edit_plan"] = {
+        "visual_director": {"llm": {"enabled": True}}
+    }
+
+    res = pipeline.run_make(
+        cfg,
+        "broll.mp4",
+        0.0,
+        wd,
+        avatar_client=avatar,
+        synth_fn=fs,
+        ingest_fn=fi,
+        assemble_fn=fa,
+        visual_runner=Runner(),
+    )
+
+    assert res["ok"] is True
+    review = captured["edit_plan"]["visual_director_reviews"][0]
+    assert review["source"] == "llm"
+    assert len(review["rejected"]) == 1
+    assert captured["edit_plan"]["validation"]["all_pass"] is True
+
+
 def test_явный_broll_plan_отключает_авто_precut(monkeypatch, tmp_path):
     calls = []
     fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)

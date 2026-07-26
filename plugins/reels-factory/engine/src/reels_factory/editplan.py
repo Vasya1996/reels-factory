@@ -251,6 +251,10 @@ VISUAL_DIRECTOR_DEFAULTS = {
     "max_seconds": 9.5,
     "max_per_30_seconds": 4,
     "max_llm_windows": 3,
+    # Если в оставшемся avatar-only участке нет подходящего B-roll и ни одно
+    # более сильное semantic rule/LLM решение не сработало, planner обязан
+    # разбить такой участок локальной HyperFrames-иллюстрацией.
+    "assetless_fallback_after_seconds": 6.0,
 }
 VISUAL_DIRECTOR_BLOCKS = {
     "complexity_cloud",
@@ -281,6 +285,8 @@ _LANGUAGE_COPY = {
         "foundation_items": ["КОМУ", "ЧТО", "КАК"],
         "sequence_title": "ВАЖЕН ПОРЯДОК",
         "sequence_items": ["КТО", "ЧТО", "КАК"],
+        "comparison_title": "СРАВНЕНИЕ",
+        "explanation_title": "КЛЮЧЕВАЯ МЫСЛЬ",
         "payoff_hint": "крупный план, атмосфера",
         "automation_hint": "технологии, абстрактный фон",
         "instruction_hint": "рабочий стол, заметки",
@@ -299,6 +305,8 @@ _LANGUAGE_COPY = {
         "foundation_items": ["КІМГЕ", "НЕ", "ҚАЛАЙ"],
         "sequence_title": "РЕТІ МАҢЫЗДЫ",
         "sequence_items": ["КІМ", "НЕ", "ҚАЛАЙ"],
+        "comparison_title": "САЛЫСТЫРУ",
+        "explanation_title": "НЕГІЗГІ ОЙ",
         "payoff_hint": "ірі план, атмосфера",
         "automation_hint": "технологиялар, абстрактілі фон",
         "instruction_hint": "жұмыс үстелі, жазбалар",
@@ -356,6 +364,11 @@ _LANGUAGE_RULES = {
         "script_item": re.compile(r"скрипт", re.IGNORECASE),
         "phrase_item": re.compile(r"фраз", re.IGNORECASE),
         "list_split": re.compile(r"[,;]|\s+и\s+", re.IGNORECASE),
+        "comparison": re.compile(
+            r"\b(?:вдвое|втрое|быстрее|медленнее|больше|меньше|"
+            r"процент\w*|лет|года?|разниц\w*|против)\b",
+            re.IGNORECASE,
+        ),
     },
     "kk": {
         "sequence_head": re.compile(
@@ -410,6 +423,11 @@ _LANGUAGE_RULES = {
         "script_item": re.compile(r"скрипт", re.IGNORECASE),
         "phrase_item": re.compile(r"сөз|тіркес", re.IGNORECASE),
         "list_split": re.compile(r"[,;]|\s+(?:және|мен)\s+", re.IGNORECASE),
+        "comparison": re.compile(
+            r"\b(?:екі\s+есе|үш\s+есе|жылдам|баяу|көбірек|азырақ|"
+            r"пайыз\w*|жыл|айырмашылық\w*|қарсы)\b",
+            re.IGNORECASE,
+        ),
     },
 }
 
@@ -848,6 +866,9 @@ def _visual_director_settings(config: dict, duration: float) -> dict:
         settings["max_seconds"] = float(settings["max_seconds"])
         settings["max_per_30_seconds"] = int(settings["max_per_30_seconds"])
         settings["max_llm_windows"] = int(settings["max_llm_windows"])
+        settings["assetless_fallback_after_seconds"] = float(
+            settings["assetless_fallback_after_seconds"]
+        )
     except (TypeError, ValueError) as exc:
         raise ValueError("edit_plan.visual_director содержит нечисловой лимит") from exc
     if not (
@@ -864,6 +885,11 @@ def _visual_director_settings(config: dict, duration: float) -> dict:
     if settings["max_per_30_seconds"] < 0 or settings["max_llm_windows"] < 0:
         raise ValueError(
             "edit_plan.visual_director frequency limits должны быть >= 0"
+        )
+    if settings["assetless_fallback_after_seconds"] < settings["min_seconds"]:
+        raise ValueError(
+            "edit_plan.visual_director.assetless_fallback_after_seconds "
+            "должен быть не меньше min_seconds"
         )
     periods = max(1, math.ceil(max(0.0, float(duration)) / 30.0 - 1e-9))
     settings["max_count"] = (
@@ -2670,8 +2696,14 @@ def visual_analysis_prompt(plan: dict) -> str:
         "must last between "
         f"{constraints.get('min_seconds', 3.0)} and "
         f"{constraints.get('max_seconds', 9.5)} seconds, and must not touch hook "
-        "or CTA. Prefer a visual only when it materially explains the words; "
-        "otherwise omit it. Use at most "
+        "or CTA. IMPORTANT: adjacent fullscreen recommendations accumulate. "
+        "Across full_broll and hyperframes windows combined, the presenter may "
+        "not be absent for more than "
+        f"{(plan.get('constraints') or {}).get('max_face_absence_seconds', MAX_FACE_ABSENCE_S)} "
+        "continuous seconds. Leave at least one avatar or mixed phrase between "
+        "recommendations whenever that cumulative limit would be exceeded. "
+        "Zero recommendations is better than an unsafe timeline. Prefer a visual "
+        "only when it materially explains the words; otherwise omit it. Use at most "
         f"{constraints.get('max_llm_windows', 3)} windows. Variables contract: "
         "complexity_cloud={title,items[2..5],resolution}; "
         "persona_card={title,items[2..5]}; "
@@ -2699,31 +2731,17 @@ def _reindex_edit_windows(plan: dict) -> None:
             phrase_by_id[phrase_id]["window_id"] = window["id"]
 
 
-def apply_visual_recommendations(
+def _apply_one_visual_recommendation(
     plan: dict,
-    recommendations: dict | list,
+    item: dict,
     *,
-    source: str = "llm",
-) -> dict:
-    """Replace only safe avatar-only windows with validated built-in visuals."""
+    source: str,
+    used_phrase_ids: set[str],
+) -> tuple[dict, dict]:
+    """Apply one recommendation transactionally and validate the whole timeline."""
     result = copy.deepcopy(plan)
-    items = (
-        recommendations.get("visuals")
-        if isinstance(recommendations, dict)
-        else recommendations
-    )
-    if not isinstance(items, list):
-        raise ValueError("visual recommendations.visuals должен быть списком")
-    constraints = (result.get("constraints") or {}).get("visual_director") or {}
-    max_items = int(
-        constraints.get(
-            "max_llm_windows", VISUAL_DIRECTOR_DEFAULTS["max_llm_windows"]
-        )
-    )
-    if len(items) > max_items:
-        raise ValueError(
-            f"visual recommendations превышают лимит: {len(items)}>{max_items}"
-        )
+    if not isinstance(item, dict):
+        raise ValueError("каждая visual recommendation должна быть object")
     phrase_by_id = {
         phrase["id"]: phrase for phrase in result.get("phrases") or []
     }
@@ -2731,106 +2749,92 @@ def apply_visual_recommendations(
         phrase["id"]: index
         for index, phrase in enumerate(result.get("phrases") or [])
     }
-    used_phrase_ids: set[str] = set()
+    phrase_ids = item.get("phrase_ids")
+    if (
+        not isinstance(phrase_ids, list)
+        or not phrase_ids
+        or any(phrase_id not in phrase_by_id for phrase_id in phrase_ids)
+    ):
+        raise ValueError("visual recommendation содержит неизвестные phrase IDs")
+    if (
+        len(set(phrase_ids)) != len(phrase_ids)
+        or used_phrase_ids.intersection(phrase_ids)
+    ):
+        raise ValueError("visual recommendation phrase IDs дублируются")
+    indexes = [phrase_order[phrase_id] for phrase_id in phrase_ids]
+    if indexes != list(range(indexes[0], indexes[-1] + 1)):
+        raise ValueError("visual recommendation phrase IDs должны быть смежными")
+    selected = [phrase_by_id[phrase_id] for phrase_id in phrase_ids]
+    if len({phrase["block_index"] for phrase in selected}) != 1:
+        raise ValueError("visual recommendation не может пересекать blocks")
+    if any(phrase.get("role") in {"hook", "cta"} for phrase in selected):
+        raise ValueError("visual recommendation не может закрывать hook/CTA")
 
-    for item in items:
-        if not isinstance(item, dict):
-            raise ValueError("каждая visual recommendation должна быть object")
-        phrase_ids = item.get("phrase_ids")
+    constraints = (result.get("constraints") or {}).get("visual_director") or {}
+    duration = _visual_duration(selected)
+    visual_min = float(
+        constraints.get("min_seconds", VISUAL_DIRECTOR_DEFAULTS["min_seconds"])
+    )
+    visual_max = float(
+        constraints.get("max_seconds", VISUAL_DIRECTOR_DEFAULTS["max_seconds"])
+    )
+    if not visual_min <= duration <= visual_max:
+        raise ValueError(
+            f"visual recommendation duration {duration:.2f}с вне "
+            f"{visual_min:.1f}–{visual_max:.1f}с"
+        )
+
+    window_by_id = {
+        window["id"]: window for window in result.get("windows") or []
+    }
+    source_windows = {phrase["window_id"] for phrase in selected}
+    selected_set = set(phrase_ids)
+    for window_id in source_windows:
+        window = window_by_id[window_id]
+        effect = window.get("effect") or {}
         if (
-            not isinstance(phrase_ids, list)
-            or not phrase_ids
-            or any(phrase_id not in phrase_by_id for phrase_id in phrase_ids)
+            window.get("coverage") != "avatar"
+            or effect.get("type") != "none"
+            or not set(window.get("phrase_ids") or []).issubset(selected_set)
         ):
-            raise ValueError("visual recommendation содержит неизвестные phrase IDs")
-        if len(set(phrase_ids)) != len(phrase_ids) or used_phrase_ids.intersection(
-            phrase_ids
-        ):
-            raise ValueError("visual recommendation phrase IDs дублируются")
-        indexes = [phrase_order[phrase_id] for phrase_id in phrase_ids]
-        if indexes != list(range(indexes[0], indexes[-1] + 1)):
-            raise ValueError("visual recommendation phrase IDs должны быть смежными")
-        selected = [phrase_by_id[phrase_id] for phrase_id in phrase_ids]
-        if len({phrase["block_index"] for phrase in selected}) != 1:
-            raise ValueError("visual recommendation не может пересекать blocks")
-        if any(phrase.get("role") in {"hook", "cta"} for phrase in selected):
-            raise ValueError("visual recommendation не может закрывать hook/CTA")
-        duration = _visual_duration(selected)
-        visual_min = float(
-            constraints.get(
-                "min_seconds", VISUAL_DIRECTOR_DEFAULTS["min_seconds"]
-            )
-        )
-        visual_max = float(
-            constraints.get(
-                "max_seconds", VISUAL_DIRECTOR_DEFAULTS["max_seconds"]
-            )
-        )
-        if not visual_min <= duration <= visual_max:
             raise ValueError(
-                f"visual recommendation duration {duration:.2f}с вне "
-                f"{visual_min:.1f}–{visual_max:.1f}с"
+                "visual LLM может заменять только целые avatar-only windows"
             )
-        window_by_id = {
-            window["id"]: window for window in result.get("windows") or []
-        }
-        source_windows = {
-            phrase["window_id"] for phrase in selected
-        }
-        selected_set = set(phrase_ids)
-        for window_id in source_windows:
-            window = window_by_id[window_id]
-            effect = window.get("effect") or {}
-            if (
-                window.get("coverage") != "avatar"
-                or effect.get("type") != "none"
-                or not set(window.get("phrase_ids") or []).issubset(selected_set)
-            ):
-                raise ValueError(
-                    "visual LLM может заменять только целые avatar-only windows"
-                )
-        template = str(item.get("template") or "")
-        variables = item.get("variables")
-        if template not in VISUAL_DIRECTOR_BLOCKS or not isinstance(variables, dict):
-            raise ValueError("visual recommendation template/variables invalid")
-        effect = _visual_director_effect(
-            template,
-            variables,
-            source=source,
-        )
-        effect["visual_director"]["rationale"] = str(
-            item.get("rationale") or ""
-        ).strip()
-        visual_error = _visual_director_effect_error(effect)
-        if visual_error:
-            raise ValueError(f"visual recommendation invalid: {visual_error}")
-        result["windows"] = [
-            window
-            for window in result["windows"]
-            if window["id"] not in source_windows
-        ]
-        _assign_window(
-            result["windows"],
-            result["phrases"],
-            selected,
-            coverage="hyperframes",
-            visual_intent=f"LLM Visual Director: {template}.",
-            reason=(
-                str(item.get("rationale") or "").strip()
-                or "Visual Director recommendation."
-            ),
-            effect=effect,
-            camera="hold",
-            transition="zoom_blur",
-            caption="hidden",
-        )
-        _reindex_edit_windows(result)
-        used_phrase_ids.update(phrase_ids)
 
-    if items:
-        result.setdefault("log", []).append(
-            f"Visual Director LLM добавил встроенных окон: {len(items)}."
-        )
+    template = str(item.get("template") or "")
+    variables = item.get("variables")
+    if template not in VISUAL_DIRECTOR_BLOCKS or not isinstance(variables, dict):
+        raise ValueError("visual recommendation template/variables invalid")
+    effect = _visual_director_effect(template, variables, source=source)
+    rationale = str(item.get("rationale") or "").strip()
+    effect["visual_director"]["rationale"] = rationale
+    visual_error = _visual_director_effect_error(effect)
+    if visual_error:
+        raise ValueError(f"visual recommendation invalid: {visual_error}")
+
+    result["windows"] = [
+        window
+        for window in result["windows"]
+        if window["id"] not in source_windows
+    ]
+    intent_source = (
+        "Assetless HyperFrames fallback"
+        if source == "assetless_fallback"
+        else "LLM Visual Director"
+    )
+    _assign_window(
+        result["windows"],
+        result["phrases"],
+        selected,
+        coverage="hyperframes",
+        visual_intent=f"{intent_source}: {template}.",
+        reason=rationale or "Visual Director recommendation.",
+        effect=effect,
+        camera="hold",
+        transition="zoom_blur",
+        caption="hidden",
+    )
+    _reindex_edit_windows(result)
     _refresh_blocks_and_summary(result)
     report = validate_edit_plan(result, require_asset_files=False)
     result["validation"] = report
@@ -2839,15 +2843,417 @@ def apply_visual_recommendations(
             "LLM visual enrichment invalid: "
             + "; ".join(report["errors"][:5])
         )
+    return result, {
+        "phrase_ids": list(phrase_ids),
+        "template": template,
+        "rationale": rationale,
+    }
+
+
+def apply_visual_recommendations(
+    plan: dict,
+    recommendations: dict | list,
+    *,
+    source: str = "llm",
+    strict: bool = True,
+    max_recommendations: int | None = None,
+) -> dict:
+    """Apply safe visuals; tolerant LLM mode rejects only the unsafe item.
+
+    ``strict=True`` remains the contract for explicit/programmatic input.
+    The optional LLM boundary uses ``strict=False`` so one bad recommendation
+    cannot discard valid recommendations or stop the paid pipeline.
+    """
+    result = copy.deepcopy(plan)
+    items = (
+        recommendations.get("visuals")
+        if isinstance(recommendations, dict)
+        else recommendations
+    )
+    review = {
+        "source": source,
+        "mode": "strict" if strict else "tolerant",
+        "requested": len(items) if isinstance(items, list) else 0,
+        "accepted": [],
+        "rejected": [],
+    }
+    if not isinstance(items, list):
+        error = "visual recommendations.visuals должен быть списком"
+        if strict:
+            raise ValueError(error)
+        review["rejected"].append({"index": None, "reason": error})
+        result.setdefault("visual_director_reviews", []).append(review)
+        result.setdefault("log", []).append(
+            f"Visual Director {source}: ответ отклонён ({error})."
+        )
+        return result
+
+    constraints = (result.get("constraints") or {}).get("visual_director") or {}
+    max_items = (
+        int(max_recommendations)
+        if max_recommendations is not None
+        else int(
+            constraints.get(
+                "max_llm_windows", VISUAL_DIRECTOR_DEFAULTS["max_llm_windows"]
+            )
+        )
+    )
+    if len(items) > max_items and strict:
+        raise ValueError(
+            f"visual recommendations превышают лимит: {len(items)}>{max_items}"
+        )
+
+    used_phrase_ids: set[str] = set()
+    for index, item in enumerate(items):
+        if index >= max_items:
+            review["rejected"].append({
+                "index": index,
+                "phrase_ids": (
+                    list(item.get("phrase_ids") or [])
+                    if isinstance(item, dict)
+                    else []
+                ),
+                "template": (
+                    str(item.get("template") or "")
+                    if isinstance(item, dict)
+                    else ""
+                ),
+                "reason": f"превышен лимит рекомендаций {max_items}",
+            })
+            continue
+        try:
+            candidate, accepted = _apply_one_visual_recommendation(
+                result,
+                item,
+                source=source,
+                used_phrase_ids=used_phrase_ids,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            if strict:
+                raise
+            review["rejected"].append({
+                "index": index,
+                "phrase_ids": (
+                    list(item.get("phrase_ids") or [])
+                    if isinstance(item, dict)
+                    else []
+                ),
+                "template": (
+                    str(item.get("template") or "")
+                    if isinstance(item, dict)
+                    else ""
+                ),
+                "reason": str(exc),
+            })
+            continue
+        result = candidate
+        used_phrase_ids.update(accepted["phrase_ids"])
+        review["accepted"].append({"index": index, **accepted})
+
+    result.setdefault("visual_director_reviews", []).append(review)
+    result.setdefault("log", []).append(
+        f"Visual Director {source}: принято {len(review['accepted'])}, "
+        f"отклонено {len(review['rejected'])}."
+    )
+    _refresh_blocks_and_summary(result)
+    report = validate_edit_plan(result, require_asset_files=False)
+    result["validation"] = report
+    if not report["all_pass"]:
+        raise ValueError(
+            "visual enrichment internal invariant failed: "
+            + "; ".join(report["errors"][:5])
+        )
     return result
 
 
-def enrich_visuals_with_llm(plan: dict, runner) -> dict:
-    """Run injected Visual Director LLM; tests use an offline fake runner."""
-    reply = runner.run(visual_analysis_prompt(plan))
-    return apply_visual_recommendations(
-        plan, _extract_json_object(reply), source="llm"
+def _assetless_visual_item(
+    phrases: list[dict],
+    *,
+    language: str,
+) -> dict:
+    copy_text = _language_copy(language)
+    labels = [
+        _visual_label(phrase["text"], words=7, chars=58).upper()
+        for phrase in phrases
+        if _visual_label(phrase["text"], words=7, chars=58)
+    ]
+    if len(labels) < 2:
+        words = str(phrases[0]["text"] if phrases else "").split()
+        split_at = max(1, len(words) // 2)
+        labels = [
+            _visual_label(" ".join(words[:split_at]), words=7, chars=58).upper(),
+            _visual_label(" ".join(words[split_at:]), words=7, chars=58).upper(),
+        ]
+    labels = [label for label in dict.fromkeys(labels) if label][:5]
+    if len(labels) < 2:
+        labels = [copy_text["explanation_title"], "ДЕТАЛИ"]
+        if _language_code(language) == "kk":
+            labels[-1] = "ЕГЖЕЙ-ТЕГЖЕЙ"
+
+    combined = " ".join(phrase["text"] for phrase in phrases)
+    if _language_rules(language)["comparison"].search(combined):
+        template = "value_layers"
+        variables = {
+            "title": copy_text["comparison_title"],
+            "offer": labels[0],
+            "actual": labels[-1],
+        }
+        rationale = (
+            "B-roll отсутствует; сравнение показано локальной "
+            "HyperFrames-композицией."
+        )
+    else:
+        template = "concept_nodes"
+        variables = {
+            "title": copy_text["explanation_title"],
+            "items": labels,
+        }
+        rationale = (
+            "B-roll отсутствует; длинный talking-head участок разбит "
+            "локальной смысловой HyperFrames-иллюстрацией."
+        )
+    return {
+        "phrase_ids": [phrase["id"] for phrase in phrases],
+        "template": template,
+        "variables": variables,
+        "rationale": rationale,
+    }
+
+
+def _assetless_visual_recommendations(plan: dict, limit: int) -> list[dict]:
+    constraints = (plan.get("constraints") or {}).get("visual_director") or {}
+    minimum = float(
+        constraints.get("min_seconds", VISUAL_DIRECTOR_DEFAULTS["min_seconds"])
     )
+    maximum = float(
+        constraints.get("max_seconds", VISUAL_DIRECTOR_DEFAULTS["max_seconds"])
+    )
+    trigger = float(
+        constraints.get(
+            "assetless_fallback_after_seconds",
+            VISUAL_DIRECTOR_DEFAULTS["assetless_fallback_after_seconds"],
+        )
+    )
+    phrase_by_id = {
+        phrase["id"]: phrase for phrase in plan.get("phrases") or []
+    }
+    groups: list[list[dict]] = []
+    current: list[dict] = []
+    for window in sorted(
+        plan.get("windows") or [],
+        key=lambda item: item["estimated_timing"]["start"],
+    ):
+        effect = window.get("effect") or {}
+        eligible = (
+            window.get("coverage") == "avatar"
+            and effect.get("type") == "none"
+            and window.get("role") in {"context", "development", "payoff"}
+        )
+        contiguous = (
+            current
+            and current[-1].get("block_index") == window.get("block_index")
+            and abs(
+                float(current[-1]["estimated_timing"]["end"])
+                - float(window["estimated_timing"]["start"])
+            )
+            <= 0.002
+        )
+        if not eligible:
+            if current:
+                groups.append(current)
+                current = []
+            continue
+        if current and not contiguous:
+            groups.append(current)
+            current = []
+        current.append(window)
+    if current:
+        groups.append(current)
+
+    recommendations: list[dict] = []
+    language = str((plan.get("script") or {}).get("language") or "ru")
+    comparison_rule = _language_rules(language)["comparison"]
+
+    def range_duration(group: list[dict], start: int, end: int) -> float:
+        return (
+            float(group[end]["estimated_timing"]["end"])
+            - float(group[start]["estimated_timing"]["start"])
+        )
+
+    def range_phrases(group: list[dict], start: int, end: int) -> list[dict]:
+        return [
+            phrase_by_id[phrase_id]
+            for window in group[start:end + 1]
+            for phrase_id in window.get("phrase_ids") or []
+        ]
+
+    for group in groups:
+        if range_duration(group, 0, len(group) - 1) + 0.001 < trigger:
+            continue
+
+        # Сначала резервируем наиболее информативные сравнительные фрагменты,
+        # а generic concept_nodes используем только в оставшихся длинных дырах.
+        # Так «25% против 35%» не теряется из-за механического выбора первых
+        # трёх секунд блока.
+        matching = [
+            bool(comparison_rule.search(
+                " ".join(
+                    phrase_by_id[phrase_id]["text"]
+                    for phrase_id in window.get("phrase_ids") or []
+                )
+            ))
+            for window in group
+        ]
+        comparison_ranges: list[tuple[int, int]] = []
+        index = 0
+        while index < len(group):
+            if not matching[index]:
+                index += 1
+                continue
+            start = index
+            while index + 1 < len(group) and matching[index + 1]:
+                index += 1
+            end = index
+            # Одно предыдущее окно обычно содержит первый объект сравнения:
+            # «обычная гостиница — 25», затем «у бутик-отеля — 35».
+            if start > 0 and range_duration(group, start - 1, end) <= maximum:
+                start -= 1
+            while (
+                range_duration(group, start, end) + 0.001 < minimum
+                and end + 1 < len(group)
+                and range_duration(group, start, end + 1) <= maximum
+            ):
+                end += 1
+            # Не заканчивать semantic block полноэкранным fallback, если
+            # можно оставить последнюю фразу ведущему. Иначе visual следующего
+            # semantic block окажется соседним и два окна сложатся >10 секунд.
+            if (
+                end == len(group) - 1
+                and end > start
+                and range_duration(group, start, end - 1) >= minimum
+            ):
+                end -= 1
+            duration = range_duration(group, start, end)
+            if minimum <= duration <= maximum:
+                if (
+                    comparison_ranges
+                    and start <= comparison_ranges[-1][1] + 1
+                ):
+                    previous_start, previous_end = comparison_ranges[-1]
+                    if range_duration(group, previous_start, end) <= maximum:
+                        comparison_ranges[-1] = (previous_start, end)
+                else:
+                    comparison_ranges.append((start, end))
+            index += 1
+
+        def append_generic(start: int, end: int, *, force: bool = False) -> None:
+            cursor = start
+            while cursor <= end and len(recommendations) < limit:
+                remaining = range_duration(group, cursor, end)
+                if remaining + 0.001 < trigger and not (
+                    force and remaining + 0.001 >= minimum
+                ):
+                    break
+                selected_end = cursor
+                while (
+                    selected_end <= end
+                    and range_duration(group, cursor, selected_end) < minimum
+                ):
+                    selected_end += 1
+                if (
+                    selected_end > end
+                    or range_duration(group, cursor, selected_end) > maximum
+                ):
+                    break
+                recommendations.append(
+                    _assetless_visual_item(
+                        range_phrases(group, cursor, selected_end),
+                        language=language,
+                    )
+                )
+                # Одно avatar-окно между assetless visuals возвращает eye
+                # contact и сбрасывает cumulative face-absence interval.
+                cursor = selected_end + 2
+
+        cursor = 0
+        for comparison_start, comparison_end in comparison_ranges:
+            # Оставляем одно avatar-окно непосредственно перед сравнением.
+            gap_to_comparison = (
+                range_duration(group, cursor, comparison_start - 1)
+                if cursor < comparison_start
+                else 0.0
+            )
+            append_generic(
+                cursor,
+                comparison_start - 2,
+                force=gap_to_comparison + 0.001 >= trigger,
+            )
+            if len(recommendations) >= limit:
+                break
+            recommendations.append(
+                _assetless_visual_item(
+                    range_phrases(group, comparison_start, comparison_end),
+                    language=language,
+                )
+            )
+            cursor = comparison_end + 2
+        if len(recommendations) < limit:
+            append_generic(cursor, len(group) - 1)
+    return recommendations
+
+
+def ensure_assetless_visual_coverage(plan: dict) -> dict:
+    """Fill long no-B-roll talking-head gaps with safe local HyperFrames."""
+    result = copy.deepcopy(plan)
+    constraints = (result.get("constraints") or {}).get("visual_director") or {}
+    if not constraints.get("enabled", True):
+        return result
+    existing = sum(
+        1
+        for window in result.get("windows") or []
+        if (window.get("effect") or {}).get("visual_director")
+    )
+    available = max(0, int(constraints.get("max_count") or 0) - existing)
+    if not available:
+        return result
+    recommendations = _assetless_visual_recommendations(result, available)
+    if not recommendations:
+        return result
+    return apply_visual_recommendations(
+        result,
+        {"visuals": recommendations},
+        source="assetless_fallback",
+        strict=False,
+        max_recommendations=available,
+    )
+
+
+def enrich_visuals_with_llm(plan: dict, runner) -> dict:
+    """Run optional Visual Director LLM and degrade safely to HyperFrames."""
+    try:
+        reply = runner.run(visual_analysis_prompt(plan))
+        parsed = _extract_json_object(reply)
+    except Exception as exc:
+        result = copy.deepcopy(plan)
+        result.setdefault("visual_director_reviews", []).append({
+            "source": "llm",
+            "mode": "tolerant",
+            "requested": 0,
+            "accepted": [],
+            "rejected": [{"index": None, "reason": str(exc)}],
+        })
+        result.setdefault("log", []).append(
+            "Visual Director LLM недоступен/невалиден; "
+            "использован локальный HyperFrames fallback."
+        )
+        return ensure_assetless_visual_coverage(result)
+    enriched = apply_visual_recommendations(
+        plan,
+        parsed,
+        source="llm",
+        strict=False,
+    )
+    return ensure_assetless_visual_coverage(enriched)
 
 
 def apply_performance_recommendations(

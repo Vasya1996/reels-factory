@@ -102,7 +102,20 @@ Quality gates:
 только оставшиеся `avatar + effect:none` кандидаты и может заменить только
 целые безопасные окна одним из пяти разрешённых templates. Он не может менять
 текст, timing, hook/CTA, существующий B-roll, bubble или уже выбранный visual.
-По умолчанию этот проход выключен.
+По умолчанию этот проход выключен. Рекомендации применяются по одной с полной
+валидацией всего накопленного timeline: поэтому два допустимых по отдельности
+fullscreen-окна не могут суммарно скрыть лицо дольше 10 секунд. Небезопасное
+окно отклоняется отдельно, а accepted/rejected audit сохраняется в
+`visual_director_reviews`; optional LLM больше не является single point of
+failure для стадии `plan`.
+
+После optional LLM pipeline всегда запускает idempotent assetless fallback.
+Оставшийся avatar-only участок длительностью от
+`assetless_fallback_after_seconds` (default 6 секунд) без B-roll превращается
+в локальный HyperFrames `concept_nodes` или, если текст содержит сравнение,
+`value_layers`. Между соседними fallback-визуалами сохраняется фраза с лицом.
+Поэтому отсутствие подходящего media asset означает «проиллюстрировать
+локально», а не «оставить 10–15 секунд одной головы».
 
 HyperFrames render использует самостоятельные seek-safe GSAP compositions.
 Если он недоступен, Revideo рисует тот же semantic effect локально по тем же

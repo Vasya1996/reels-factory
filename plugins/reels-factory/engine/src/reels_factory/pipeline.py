@@ -41,6 +41,7 @@ from reels_factory.editplan import (
     covered_block_indexes,
     enrich_performance_with_llm,
     enrich_visuals_with_llm,
+    ensure_assetless_visual_coverage,
     finalize_edit_plan as _finalize_edit_plan,
     save_edit_plan,
 )
@@ -172,6 +173,10 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
                 timeout_s=int(visual_cfg.get("timeout_s") or 600)
             )
             edit_plan = enrich_visuals_with_llm(edit_plan, runner)
+        # Даже при выключенном/недоступном Visual LLM длинный участок без
+        # подходящего B-roll не должен оставаться одной talking head сценой.
+        # Функция идемпотентна и заполняет только свободные avatar-only окна.
+        edit_plan = ensure_assetless_visual_coverage(edit_plan)
         performance_cfg = (
             ((config.get("edit_plan") or {}).get("performance_llm") or {})
         )
