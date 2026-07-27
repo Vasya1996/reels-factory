@@ -872,3 +872,29 @@ def test_падение_precut_даёт_stage_plan(monkeypatch, tmp_path):
 
     assert res["ok"] is False and res["stage"] == "plan"
     assert "индекс" in res["error"]
+
+
+class _FakeMeter:
+    def __init__(self):
+        self.heygen_calls = []
+        self.eleven_calls = []
+
+    def heygen(self, seconds, *, cached=False, twin=False):
+        self.heygen_calls.append((seconds, cached, twin))
+
+    def elevenlabs(self, chars):
+        self.eleven_calls.append(chars)
+
+
+def test_кэшированный_фрагмент_не_тарифицируется():
+    meter = _FakeMeter()
+    meter.heygen(12.0, cached=True, twin=False)
+    meter.heygen(30.0, cached=False, twin=False)
+    billable = [s for s, cached, _ in meter.heygen_calls if not cached]
+    assert billable == [30.0]
+
+
+def test_run_make_принимает_meter():
+    import inspect
+    from reels_factory.pipeline import run_make
+    assert "meter" in inspect.signature(run_make).parameters
