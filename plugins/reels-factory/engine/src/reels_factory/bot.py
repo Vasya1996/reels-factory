@@ -32,7 +32,7 @@ from reels_factory.billing import (
     LedgerStore, apply_markup, claude_cost_micro, estimate_micro,
 )
 from reels_factory.config import (
-    ConfigError, OUT_H, OUT_W, WORK_ROOT, load_billing_config, load_config,
+    OUT_H, OUT_W, WORK_ROOT, load_billing_config, load_config,
 )
 from reels_factory.jobs import BuildJob, JobStore
 from reels_factory.language import (
@@ -579,6 +579,7 @@ def enqueue_build(
     """Подготовить immutable scenario/config и лишь затем показать job worker."""
     from reels_factory.avatar_islands import avatar_islands_enabled
     from reels_factory.clients import load_client
+    from reels_factory.master_audio import master_audio_enabled
 
     billing = _billing()
     if billing["enabled"]:
@@ -589,15 +590,27 @@ def enqueue_build(
             len(b.get("speech") or "") for b in (scenario.get("blocks") or [])
         )
         # Профиль клиента может отсутствовать/быть битым (например, в этом же
-        # вызове дальше это честно всплывёт своей ошибкой) — тогда для оценки
-        # считаем как есть avatar_islands_enabled(None): по умолчанию выключено,
-        # но переменную окружения он всё равно учитывает.
+        # вызове дальше это честно всплывёт своей ошибкой), а его настройки
+        # avatar_islands — вне допустимого диапазона (avatar_islands_enabled
+        # зовёт avatar_islands_settings, который для этого поднимает голый
+        # ValueError — конфиг-лоадер такое не проверяет). Это лишь оценка ДО
+        # платного шага — она не должна быть причиной, по которой сборку не
+        # удаётся поставить в очередь, поэтому ловим широко и откатываемся на
+        # консервативную оценку по полной цене.
+        estimate_kwargs = {}
         try:
             profile_for_estimate = load_client(str(chat_id))
-        except ConfigError:
-            profile_for_estimate = None
-        estimate_kwargs = {}
-        if avatar_islands_enabled(profile_for_estimate):
+            # run_make берёт island-путь только когда включены оба флага —
+            # avatar_islands и master_audio; тем же условием сверяем и здесь,
+            # чтобы не показывать урезанную оценку для пути, который не
+            # запустится.
+            use_islands_estimate = (
+                avatar_islands_enabled(profile_for_estimate)
+                and master_audio_enabled(profile_for_estimate)
+            )
+        except Exception:
+            use_islands_estimate = False
+        if use_islands_estimate:
             # С островами HeyGen в кадре не весь ролик — без доли оценка
             # завышена и может отказать в сборке тем, кому денег хватало.
             estimate_kwargs["avatar_share"] = billing["rates"]["avatar_visible_share"]

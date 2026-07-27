@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -483,6 +484,89 @@ def test_упавший_шот_не_тарифицируется_успешны�
 
     assert len(meter.calls) == len(plan["shots"]) - 1
     assert sum(seconds for seconds, _, _ in meter.calls) == 4.0 * (len(plan["shots"]) - 1)
+
+
+def test_упавший_meter_не_роняет_готовый_шот_и_не_роняет_сборку(
+    tmp_path, monkeypatch, capsys
+):
+    """Fix 1: сбой самого метра (contention с ботом за sqlite-ledger,
+    запертый/битый файл) не должен превращать уже оплаченный и доставленный
+    HeyGen clip в failed shot. Раньше meter() звался ВНУТРИ try/except,
+    который классифицирует шот, — его исключение переписывало status на
+    failed, шот попадал в failures, и вся сборка падала, хотя рендер уже
+    состоялся и был оплачен HeyGen'ом."""
+    import reels_factory.render as render_mod
+    monkeypatch.setattr(render_mod, "media_dur", lambda path: 5.0)
+
+    edit_plan = _final_edit_plan(30)
+    master = tmp_path / "voice_master.wav"
+    master.write_bytes(b"offline-master-audio")
+    master_sha = hashlib.sha256(master.read_bytes()).hexdigest()
+    plan = build_avatar_render_plan(
+        edit_plan, _config(), master_audio_sha256=master_sha
+    )
+    client = _FakePhotoAvatarIV()
+
+    def broken_meter(seconds, *, cached=False, twin=False):
+        raise sqlite3.OperationalError("database is locked")
+
+    result = render_avatar_islands(
+        master, plan, client, tmp_path / "job", tmp_path / "cache",
+        edit_plan=edit_plan, run_cmd=_fake_run_slices, meter=broken_meter,
+    )
+
+    assert len(result.clips) == len(plan["shots"])
+    manifest = json.loads(
+        (tmp_path / "job" / RENDER_MANIFEST_FILENAME).read_text(encoding="utf-8")
+    )
+    assert all(item["status"] == "ready" for item in manifest["shots"])
+    assert all(item["error"] is None for item in manifest["shots"])
+    err = capsys.readouterr().err
+    assert "database is locked" in err
+    assert "не тарифицирован" in err
+
+
+def test_кэш_хит_не_вызывает_ffprobe(tmp_path, monkeypatch, capsys):
+    """Fix 2: попадание в кэш денег не стоит (JobMeter.heygen игнорирует
+    duration при cached=True), значит мерить длительность клипа на кэш-хите
+    незачем — это лишний ffprobe subprocess на каждый закэшированный шот, а
+    при сбое пробы вводит оператора в заблуждение, будто деньги ушли в
+    никуда, хотя списания вообще не было. media_dur не должен звонить на
+    кэш-хите вовсе — даже если он бы упал, тарификация должна тихо пройти с
+    cached=True/seconds=0.0."""
+    import reels_factory.render as render_mod
+    monkeypatch.setattr(render_mod, "media_dur", lambda path: 5.0)
+
+    edit_plan = _final_edit_plan(30)
+    master = tmp_path / "voice_master.wav"
+    master.write_bytes(b"offline-master-audio")
+    master_sha = hashlib.sha256(master.read_bytes()).hexdigest()
+    plan = build_avatar_render_plan(
+        edit_plan, _config(), master_audio_sha256=master_sha
+    )
+    client = _FakePhotoAvatarIV()
+
+    # Прогрев кэша — первый прогон реально рендерит и мерит каждый шот.
+    render_avatar_islands(
+        master, plan, client, tmp_path / "job", tmp_path / "cache",
+        edit_plan=edit_plan, run_cmd=_fake_run_slices, meter=_FakeMeter(),
+    )
+
+    def exploding_media_dur(path):
+        raise RuntimeError("ffprobe не должен звонить на кэш-хите")
+
+    monkeypatch.setattr(render_mod, "media_dur", exploding_media_dur)
+    meter = _FakeMeter()
+    render_avatar_islands(
+        master, plan, client, tmp_path / "job", tmp_path / "cache",
+        edit_plan=edit_plan, run_cmd=_fake_run_slices, meter=meter,
+    )
+
+    assert len(meter.calls) == len(plan["shots"])
+    assert all(
+        cached is True and seconds == 0.0 for seconds, cached, _ in meter.calls
+    )
+    assert "ffprobe" not in capsys.readouterr().err
 
 
 def test_validator_detects_duplicate_visible_phrase():

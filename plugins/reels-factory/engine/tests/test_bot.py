@@ -1548,14 +1548,21 @@ def test_с_islands_оценка_меньше_и_хватает_там_где_б
     """Реальная проверка интеграции: аватар в кадре не весь ролик, если
     острова включены, значит оценка должна быть ниже. Баланс подобран строго
     между двумя оценками — со включёнными островами сборка проходит,
-    без них тот же баланс не пропускает InsufficientBalance."""
+    без них тот же баланс не пропускает InsufficientBalance.
+    master_audio тоже должен быть включён: run_make берёт island-путь только
+    когда оба флага на (см. test_islands_без_master_audio_даёт_полную_оценку
+    на случай, когда это не так)."""
     monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
     monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
     clients_mod.register_client(
         "1", _client_base_cfg(), voice_id="voice-1", asset_id="asset-1",
     )
     clients_mod.register_client(
-        "2", _client_base_cfg(avatar_islands={"enabled": True}),
+        "2",
+        _client_base_cfg(
+            avatar_islands={"enabled": True},
+            master_audio={"enabled": True},
+        ),
         voice_id="voice-1", asset_id="asset-1",
     )
     баланс = 350_000  # между оценкой без островов (~386k) и с ними (~303k)
@@ -1570,6 +1577,56 @@ def test_с_islands_оценка_меньше_и_хватает_там_где_б
 
     job = bot.enqueue_build(2, SCENARIO, language="ru", voice_id="voice-1")
     assert job.status == "queued"
+
+
+def test_islands_без_master_audio_даёт_полную_оценку(work, tmp_path, monkeypatch):
+    """Fix 5: run_make берёт island-путь только когда включены ОБА флага —
+    avatar_islands и master_audio (см. pipeline.run_make). Профиль с
+    islands включёнными, но master_audio выключенным, не может пойти по
+    island-пути, значит оценка не должна притворяться, что может: тот же
+    баланс, которого не хватает без островов вообще, не должен хватать и
+    здесь."""
+    monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
+    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
+    clients_mod.register_client(
+        "3", _client_base_cfg(avatar_islands={"enabled": True}),
+        voice_id="voice-1", asset_id="asset-1",
+    )
+    баланс = 350_000  # хватает только на урезанную (islands) оценку, не на полную
+    bot._ledger().credit(
+        3, баланс, purchase_id="islands-no-master-audio",
+        amount_minor=баланс, currency="usd",
+    )
+
+    with pytest.raises(bot.InsufficientBalance):
+        bot.enqueue_build(3, SCENARIO, language="ru", voice_id="voice-1")
+
+
+def test_битые_avatar_islands_settings_не_ломают_оценку_при_enqueue_build(
+        work, tmp_path, monkeypatch):
+    """Fix 4: avatar_islands_enabled зовёт avatar_islands_settings, который
+    поднимает голый ValueError для диапазонов, что load_config не проверяет
+    (например min_request_seconds > max_shot_seconds). Раньше это ронялось
+    прямо из enqueue_build общей ошибкой постановки в очередь; это только
+    оценка ДО платного шага — она не должна мешать очереди вовсе, поэтому
+    ожидаем откат на полную оценку и обычную InsufficientBalance, а не
+    ValueError."""
+    monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
+    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
+    clients_mod.register_client(
+        "4",
+        _client_base_cfg(
+            avatar_islands={
+                "enabled": True,
+                "min_request_seconds": 20.0,
+                "max_shot_seconds": 5.0,
+            },
+        ),
+        voice_id="voice-1", asset_id="asset-1",
+    )
+
+    with pytest.raises(bot.InsufficientBalance):
+        bot.enqueue_build(4, SCENARIO, language="ru", voice_id="voice-1")
 
 
 def test_кнопки_пополнения_ведут_на_tribute():

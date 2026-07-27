@@ -341,9 +341,13 @@ class JobMeter:
         self.run_id = run_id if run_id is not None else uuid4().hex[:8]
         self._step = 0
         self._charged = 0
-        # avatar_islands рендерит шоты параллельно (ThreadPoolExecutor), и
-        # несколько потоков могут звать _record одновременно — лок держится
-        # ровно вокруг выдачи номера шага и изменения self._charged.
+        # avatar_islands рендерит шоты параллельно (ThreadPoolExecutor), но
+        # сегодня _record зовётся из потока, что разбирает as_completed
+        # (вызывающий поток), а не из рабочих потоков — гонки на self._step
+        # сейчас нет. Лок — задел на случай, если метринг когда-нибудь
+        # переедет в воркер: тогда несколько потоков смогут звать _record
+        # одновременно, и он должен уже держать выдачу номера шага и
+        # изменение self._charged.
         self._lock = threading.Lock()
 
     def _record(self, provider: str, unit: str, quantity: float,

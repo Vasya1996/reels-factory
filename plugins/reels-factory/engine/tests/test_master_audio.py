@@ -235,6 +235,43 @@ def test_build_master_audio_упавший_request_не_тарифицирует
     assert meter_calls == []
 
 
+def test_build_master_audio_упавший_meter_не_роняет_уже_оплаченный_request(
+    tmp_path, capsys
+):
+    """ElevenLabs-запрос уже оплачен и результат уже получен к моменту вызова
+    meter(); сбой самого метра (contention с ботом за sqlite-ledger и т.п.)
+    не должен ронять всю сборку — он честно логируется в stderr, но
+    build_master_audio возвращает нормальный результат."""
+    fixture = _fixture()
+    response = fixture["response"]
+
+    class Provider:
+        def convert_with_timestamps(self, text, **kwargs):
+            return TimestampedSpeech(
+                audio=b"fake-mp3",
+                alignment=response["alignment"],
+                normalized_alignment=response["normalized_alignment"],
+                request_id=response["request_id"],
+            )
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"generated")
+
+    def broken_meter(chars):
+        raise RuntimeError("database is locked")
+
+    result = build_master_audio(
+        _scenario(), {"language": "ru", "voice_id": "v1"}, tmp_path,
+        provider=Provider(), run_cmd=fake_run, duration_fn=lambda _: 1.3,
+        meter=broken_meter,
+    )
+
+    assert isinstance(result, MasterAudioArtifacts)
+    err = capsys.readouterr().err
+    assert "database is locked" in err
+    assert "не тарифицирован" in err
+
+
 def test_master_audio_feature_flag_safe_default(monkeypatch):
     monkeypatch.delenv("RF_MASTER_AUDIO_ENABLED", raising=False)
     assert master_audio_enabled({}) is False

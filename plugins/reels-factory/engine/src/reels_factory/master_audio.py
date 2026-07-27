@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
@@ -317,7 +318,17 @@ def build_master_audio(
     # запроса. После convert_with_timestamps (внутри уже raise_for_status):
     # за упавший запрос платить не за что.
     if meter is not None:
-        meter(len(canonical["text"]))
+        try:
+            meter(len(canonical["text"]))
+        except Exception as exc:
+            # Запрос ElevenLabs уже оплачен и результат уже получен — сбой
+            # самого метра (contention с ботом за sqlite-ledger и т.п.) не
+            # должен восприниматься как повод считать этот шаг неудачным.
+            print(
+                f"[billing] master_audio: meter упал, ElevenLabs-запрос "
+                f"оплачен, но не тарифицирован: {exc}",
+                file=sys.stderr,
+            )
 
     mp3 = wd / "voice_master.mp3"
     wav = wd / "voice_master.wav"

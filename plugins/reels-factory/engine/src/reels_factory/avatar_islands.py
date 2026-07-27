@@ -22,6 +22,7 @@ import hashlib
 import json
 import math
 import os
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -756,25 +757,37 @@ def render_avatar_islands(
                     "clip_path": str(clip),
                     "clip_sha256": hashlib.sha256(clip.read_bytes()).hexdigest(),
                 })
-                if meter is not None:
-                    # Owner: bill the full duration of the delivered clip,
-                    # not just the visible slice — HeyGen renders and bills
-                    # the whole handle-padded request, so the ledger has to
-                    # match. Measure the actual output mp4, never the
-                    # planned request_timing. twin is always False here:
-                    # Stage 3 only allows Photo Avatar IV, there is no
-                    # Digital Twin rate to apply. A cache hit is still
-                    # reported (cached=True) rather than skipped, so every
-                    # successful shot goes through the same single call and
-                    # the meter itself decides not to charge for it.
-                    meter(
-                        billable_seconds(clip),
-                        cached=cache_hits[shot_id],
-                        twin=False,
-                    )
             except Exception as exc:
                 item.update({"status": "failed", "error": str(exc)[:500]})
                 failures.append((shot["id"], exc))
+                _save_json_atomic(manifest_path, manifest)
+                continue
+            if meter is not None:
+                # Owner: bill the full duration of the delivered clip, not
+                # just the visible slice — HeyGen renders and bills the
+                # whole handle-padded request, so the ledger has to match.
+                # Measure the actual output mp4, never the planned
+                # request_timing — but only on a real render: a cache hit
+                # never gets charged (see JobMeter.heygen), so probing its
+                # duration would only burn an ffprobe call for nothing. twin
+                # is always False here: Stage 3 only allows Photo Avatar IV,
+                # there is no Digital Twin rate to apply.
+                cached = cache_hits[shot_id]
+                seconds = 0.0 if cached else billable_seconds(clip)
+                try:
+                    meter(seconds, cached=cached, twin=False)
+                except Exception as exc:
+                    # Метр — бухгалтерия ПОСЛЕ уже оплаченного и доставленного
+                    # HeyGen-рендера (contention с ботом за sqlite-ledger,
+                    # запертый/битый файл). Сбой здесь не должен превращать
+                    # готовый shot в failed и ронять всю сборку — деньги уже
+                    # потрачены, просто эта секунда не будет учтена.
+                    print(
+                        f"[billing] avatar_islands: meter упал для "
+                        f"{shot_id}, клип отрендерен, но не тарифицирован: "
+                        f"{exc}",
+                        file=sys.stderr,
+                    )
             _save_json_atomic(manifest_path, manifest)
     if failures:
         raise RuntimeError(
