@@ -204,6 +204,10 @@ BILLING_DEFAULTS = {
         "elevenlabs_usd_per_1k_chars": 0.10,
         "chars_per_second": 14.0,
         "claude_flat_usd_per_reel": 0.05,
+        # Ожидаемая доля ролика, где аватар в кадре, при включённых avatar
+        # islands. Только для предварительной оценки перед сборкой — не
+        # источник биллинга.
+        "avatar_visible_share": 0.7,
     },
     "fx": {"usd": 1.0, "eur": 1.08, "rub": 0.011},
 }

@@ -577,7 +577,9 @@ def enqueue_build(
     voice_id: str | None = None,
 ) -> BuildJob:
     """Подготовить immutable scenario/config и лишь затем показать job worker."""
+    from reels_factory.avatar_islands import avatar_islands_enabled
     from reels_factory.clients import load_client
+    from reels_factory.master_audio import master_audio_enabled
 
     billing = _billing()
     if billing["enabled"]:
@@ -587,7 +589,34 @@ def enqueue_build(
         chars = sum(
             len(b.get("speech") or "") for b in (scenario.get("blocks") or [])
         )
-        need = estimate_micro(chars, billing["rates"], billing["markup"])
+        # Профиль клиента может отсутствовать/быть битым (например, в этом же
+        # вызове дальше это честно всплывёт своей ошибкой), а его настройки
+        # avatar_islands — вне допустимого диапазона (avatar_islands_enabled
+        # зовёт avatar_islands_settings, который для этого поднимает голый
+        # ValueError — конфиг-лоадер такое не проверяет). Это лишь оценка ДО
+        # платного шага — она не должна быть причиной, по которой сборку не
+        # удаётся поставить в очередь, поэтому ловим широко и откатываемся на
+        # консервативную оценку по полной цене.
+        estimate_kwargs = {}
+        try:
+            profile_for_estimate = load_client(str(chat_id))
+            # run_make берёт island-путь только когда включены оба флага —
+            # avatar_islands и master_audio; тем же условием сверяем и здесь,
+            # чтобы не показывать урезанную оценку для пути, который не
+            # запустится.
+            use_islands_estimate = (
+                avatar_islands_enabled(profile_for_estimate)
+                and master_audio_enabled(profile_for_estimate)
+            )
+        except Exception:
+            use_islands_estimate = False
+        if use_islands_estimate:
+            # С островами HeyGen в кадре не весь ролик — без доли оценка
+            # завышена и может отказать в сборке тем, кому денег хватало.
+            estimate_kwargs["avatar_share"] = billing["rates"]["avatar_visible_share"]
+        need = estimate_micro(
+            chars, billing["rates"], billing["markup"], **estimate_kwargs
+        )
         have = _ledger().balance(chat_id)
         if have < need:
             raise InsufficientBalance(need=need, have=have)
@@ -1143,7 +1172,8 @@ def topup_text(need: int | None, have: int, *, exhausted: bool = False) -> str:
         lines.append("Пополните — и сможете продолжить с того же места.")
     elif need is not None:
         lines.append(
-            f"На этот ролик не хватает — нужно примерно {format_usd(need)}."
+            f"На этот ролик не хватает — нужно примерно {format_usd(need)} "
+            "(это ориентировочно, спишется по факту)."
         )
     lines.append("")
     lines.append("Пополнить — кнопкой ниже. Баланс обновится сам после оплаты.")

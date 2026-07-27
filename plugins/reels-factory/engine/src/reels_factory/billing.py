@@ -13,8 +13,11 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+import sys
+import threading
 import time
 from pathlib import Path
+from uuid import uuid4
 
 MICRO = 1_000_000
 
@@ -260,6 +263,28 @@ def heygen_cost_micro(seconds: float, rates: dict, *, twin: bool = False) -> int
     return to_micro(float(seconds) * float(rates[key]))
 
 
+def billable_seconds(path) -> float:
+    """Длительность готового mp4 — то, за что HeyGen берёт деньги.
+
+    Меряем факт, а не оценку: цена привязана к секундам выданного видео, а не
+    к запрошенным. Сбой замера не должен ронять сборку — она уже оплачена,
+    просто не учтётся.
+
+    Общий помощник для block-by-block ветки (pipeline.py) и avatar islands
+    (avatar_islands.py); живёт здесь, а не в pipeline.py, чтобы избежать
+    цикла импорта (pipeline импортирует avatar_islands).
+    """
+    from reels_factory.render import media_dur
+    try:
+        return float(media_dur(path))
+    except Exception as e:
+        # Сборка уже оплачена — не роняем её, но и не молчим: без лога
+        # оператор не узнает, что HeyGen списал деньги, а метр этого не увидел.
+        print(f"[billing] billable_seconds: не удалось измерить {path}: {e}",
+              file=sys.stderr)
+        return 0.0
+
+
 def elevenlabs_cost_micro(chars: int, rates: dict) -> int:
     return to_micro(int(chars) / 1000.0 * float(rates["elevenlabs_usd_per_1k_chars"]))
 
@@ -273,15 +298,22 @@ def apply_markup(cost_micro: int, markup: float) -> int:
     return int(math.ceil(int(cost_micro) * float(markup) - 1e-9))
 
 
-def estimate_micro(chars: int, rates: dict, markup: float, *, twin: bool = False) -> int:
+def estimate_micro(chars: int, rates: dict, markup: float, *, twin: bool = False,
+                    avatar_share: float = 1.0) -> int:
     """Грубая оценка до первого платного шага.
 
     Задача оценки — не угадать цену, а не пустить в рендер с пустым балансом,
     поэтому Клод учитывается плоской добавкой, а секунды считаются из символов.
+
+    avatar_share уменьшает только секунды HeyGen: с avatar islands аватар в
+    кадре не весь ролик, остальное закрыто B-roll. ElevenLabs всё равно
+    озвучивает полный текст независимо от того, виден ли аватар, поэтому
+    считается от chars без поправки. По умолчанию 1.0 — прежнее поведение.
     """
     seconds = int(chars) / float(rates["chars_per_second"])
+    avatar_seconds = seconds * float(avatar_share)
     cost = (
-        heygen_cost_micro(seconds, rates, twin=twin)
+        heygen_cost_micro(avatar_seconds, rates, twin=twin)
         + elevenlabs_cost_micro(chars, rates)
         + to_micro(rates["claude_flat_usd_per_reel"])
     )
@@ -297,27 +329,41 @@ class JobMeter:
     """
 
     def __init__(self, store: LedgerStore, *, chat_id: int, job_id: str,
-                 rates: dict, markup: float):
+                 rates: dict, markup: float, run_id: str | None = None):
         self.store = store
         self.chat_id = int(chat_id)
         self.job_id = job_id
         self.rates = rates
         self.markup = float(markup)
+        # Метка конкретного запуска сборки: у повторного ручного запуска того
+        # же job_id она другая, поэтому entry_id не совпадёт с прошлым
+        # запуском и второй расход не потеряется как «дубль».
+        self.run_id = run_id if run_id is not None else uuid4().hex[:8]
         self._step = 0
         self._charged = 0
+        # avatar_islands рендерит шоты параллельно (ThreadPoolExecutor), но
+        # сегодня _record зовётся из потока, что разбирает as_completed
+        # (вызывающий поток), а не из рабочих потоков — гонки на self._step
+        # сейчас нет. Лок — задел на случай, если метринг когда-нибудь
+        # переедет в воркер: тогда несколько потоков смогут звать _record
+        # одновременно, и он должен уже держать выдачу номера шага и
+        # изменение self._charged.
+        self._lock = threading.Lock()
 
     def _record(self, provider: str, unit: str, quantity: float,
                 unit_price_micro: int, cost_micro: int) -> None:
         charged = apply_markup(cost_micro, self.markup)
-        entry_id = f"{self.job_id}:{provider}:{self._step}"
-        self._step += 1
+        with self._lock:
+            entry_id = f"{self.job_id}:{self.run_id}:{provider}:{self._step}"
+            self._step += 1
         if self.store.charge(
             self.chat_id, entry_id=entry_id, job_id=self.job_id,
             provider=provider, unit=unit, quantity=quantity,
             unit_price_micro=unit_price_micro, cost_micro=cost_micro,
             charged_micro=charged,
         ):
-            self._charged += charged
+            with self._lock:
+                self._charged += charged
 
     def heygen(self, seconds: float, *, cached: bool = False, twin: bool = False) -> None:
         # Попадание в кэш денег не стоит — фрагмент уже отрендерен раньше.

@@ -170,6 +170,108 @@ def test_build_master_audio_один_provider_request_и_полный_contract(t
     assert "api_key" not in manifest_text.lower()
 
 
+def test_build_master_audio_meter_считает_canonical_text_один_раз(tmp_path):
+    fixture = _fixture()
+    response = fixture["response"]
+
+    class Provider:
+        def convert_with_timestamps(self, text, **kwargs):
+            return TimestampedSpeech(
+                audio=b"fake-mp3",
+                alignment=response["alignment"],
+                normalized_alignment=response["normalized_alignment"],
+                request_id=response["request_id"],
+            )
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"generated")
+
+    meter_calls = []
+    result = build_master_audio(
+        _scenario(), {"language": "ru", "voice_id": "v1"}, tmp_path,
+        provider=Provider(), run_cmd=fake_run, duration_fn=lambda _: 1.3,
+        meter=meter_calls.append,
+    )
+
+    assert meter_calls == [len(result.canonical["text"])]
+
+
+def test_build_master_audio_без_meter_работает_как_раньше(tmp_path):
+    fixture = _fixture()
+    response = fixture["response"]
+
+    class Provider:
+        def convert_with_timestamps(self, text, **kwargs):
+            return TimestampedSpeech(
+                audio=b"fake-mp3",
+                alignment=response["alignment"],
+                normalized_alignment=response["normalized_alignment"],
+                request_id=response["request_id"],
+            )
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"generated")
+
+    result = build_master_audio(
+        _scenario(), {"language": "ru", "voice_id": "v1"}, tmp_path,
+        provider=Provider(), run_cmd=fake_run, duration_fn=lambda _: 1.3,
+    )
+
+    assert isinstance(result, MasterAudioArtifacts)
+
+
+def test_build_master_audio_упавший_request_не_тарифицируется(tmp_path):
+    class FailingProvider:
+        def convert_with_timestamps(self, text, **kwargs):
+            raise RuntimeError("elevenlabs упал")
+
+    meter_calls = []
+    with pytest.raises(RuntimeError, match="elevenlabs упал"):
+        build_master_audio(
+            _scenario(), {"language": "ru", "voice_id": "v1"}, tmp_path,
+            provider=FailingProvider(), meter=meter_calls.append,
+        )
+
+    assert meter_calls == []
+
+
+def test_build_master_audio_упавший_meter_не_роняет_уже_оплаченный_request(
+    tmp_path, capsys
+):
+    """ElevenLabs-запрос уже оплачен и результат уже получен к моменту вызова
+    meter(); сбой самого метра (contention с ботом за sqlite-ledger и т.п.)
+    не должен ронять всю сборку — он честно логируется в stderr, но
+    build_master_audio возвращает нормальный результат."""
+    fixture = _fixture()
+    response = fixture["response"]
+
+    class Provider:
+        def convert_with_timestamps(self, text, **kwargs):
+            return TimestampedSpeech(
+                audio=b"fake-mp3",
+                alignment=response["alignment"],
+                normalized_alignment=response["normalized_alignment"],
+                request_id=response["request_id"],
+            )
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"generated")
+
+    def broken_meter(chars):
+        raise RuntimeError("database is locked")
+
+    result = build_master_audio(
+        _scenario(), {"language": "ru", "voice_id": "v1"}, tmp_path,
+        provider=Provider(), run_cmd=fake_run, duration_fn=lambda _: 1.3,
+        meter=broken_meter,
+    )
+
+    assert isinstance(result, MasterAudioArtifacts)
+    err = capsys.readouterr().err
+    assert "database is locked" in err
+    assert "не тарифицирован" in err
+
+
 def test_master_audio_feature_flag_safe_default(monkeypatch):
     monkeypatch.delenv("RF_MASTER_AUDIO_ENABLED", raising=False)
     assert master_audio_enabled({}) is False

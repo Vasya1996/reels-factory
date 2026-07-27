@@ -576,3 +576,37 @@ def test_script_idea_missing_file_json_error(capsys, tmp_path):
     assert exc.value.code == 1
     out = json.loads(capsys.readouterr().out.strip())
     assert out["ok"] is False
+
+
+# Диагностика провала скилла: «bad json» без причины не отлаживается.
+
+def test_не_json_от_скилла_сохраняется_и_виден_в_ошибке(tmp_path):
+    from reels_factory.scenario import ScenarioError
+    import pytest as _pytest
+
+    proza = "Не могу выполнить: не нашёл файл задания."
+    runner = FakeSkillRunner([proza, proza])
+    with _pytest.raises(ScenarioError) as exc:
+        run_generated_path(tmp_path, IDEA, runner, language="ru")
+
+    assert "не нашёл файл задания" in str(exc.value)
+    saved = tmp_path / "writing-scenario_reply.txt"
+    assert saved.read_text(encoding="utf-8") == proza
+
+
+def test_не_json_от_скилла_переспрашивается_один_раз(tmp_path):
+    runner = FakeSkillRunner(["просто текст", _gen_reply(), *_polish_pass_replies()])
+    res = run_generated_path(tmp_path, IDEA, runner, language="ru")
+    assert res["ok"] is True
+    assert [c[0] for c in runner.calls][:2] == ["writing-scenario", "writing-scenario"]
+
+
+def test_не_json_от_скилла_идей_виден_в_ошибке(tmp_path):
+    from reels_factory.scenario import ScenarioError
+    import pytest as _pytest
+
+    runner = FakeSkillRunner(["транскрипт пустой, идей нет", "и снова текст"])
+    with _pytest.raises(ScenarioError) as exc:
+        run_ideas(tmp_path, "сырьё", runner, "ru")
+    assert "и снова текст" in str(exc.value)  # в ошибке — последняя попытка
+    assert (tmp_path / "extracting-ideas_reply.txt").exists()

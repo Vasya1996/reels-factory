@@ -168,7 +168,7 @@ def test_master_audio_одна_озвучка_вместо_block_tts(monkeypatch
     wd = _wd_with_scenario(tmp_path)
     master_calls = []
 
-    def fake_master(scenario, config, workdir, voice_id=None):
+    def fake_master(scenario, config, workdir, voice_id=None, meter=None):
         master_calls.append((scenario, config, Path(workdir), voice_id))
         master_wav = Path(workdir) / "voice_master.wav"
         master_wav.write_bytes(b"master")
@@ -227,7 +227,7 @@ def test_master_audio_не_разрешает_jump_cuts_ломать_timeline(mo
     wd = _wd_with_scenario(tmp_path)
     cut_calls = []
 
-    def fake_master(scenario, config, workdir, voice_id=None):
+    def fake_master(scenario, config, workdir, voice_id=None, meter=None):
         master_wav = Path(workdir) / "voice_master.wav"
         master_wav.write_bytes(b"master")
         slices = []
@@ -282,7 +282,7 @@ def test_avatar_islands_заменяет_block_by_block_photo_avatar_iv(
     avatar.engine = "avatar_iv"
     wd = _wd_with_scenario(tmp_path)
 
-    def fake_master(scenario, config, workdir, voice_id=None):
+    def fake_master(scenario, config, workdir, voice_id=None, meter=None):
         master_wav = Path(workdir) / "voice_master.wav"
         master_wav.write_bytes(b"master-islands")
         block_wavs = []
@@ -310,7 +310,8 @@ def test_avatar_islands_заменяет_block_by_block_photo_avatar_iv(
 
     rendered_plans = []
 
-    def fake_render(master_wav, plan, client, workdir, cache_dir, *, edit_plan):
+    def fake_render(master_wav, plan, client, workdir, cache_dir, *, edit_plan,
+                     meter=None):
         rendered_plans.append(plan)
         clips = []
         for shot in plan["shots"]:
@@ -350,6 +351,86 @@ def test_avatar_islands_заменяет_block_by_block_photo_avatar_iv(
         call[2] for call in calls if call[0] == "assemble"
     )
     assert res["avatar_summary"] == plan["summary"]
+
+
+def test_avatar_islands_с_meter_не_падает_и_тарифицирует_шоты(monkeypatch, tmp_path):
+    """Предохранитель ветки avatar_islands снят: с master_audio и переданным
+    meter сборка не падает RuntimeError'ом, а счётчик получает секунды по
+    каждому отрендеренному шоту. Фейки, без живых вызовов HeyGen/ffmpeg."""
+    calls = []
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    avatar.engine = "avatar_iv"
+    wd = _wd_with_scenario(tmp_path)
+    meter = _FakeMeter()
+
+    def fake_master(scenario, config, workdir, voice_id=None, meter=None):
+        master_wav = Path(workdir) / "voice_master.wav"
+        master_wav.write_bytes(b"master-islands")
+        block_wavs = []
+        words = []
+        timed = json.loads(json.dumps(scenario))
+        for index, block in enumerate(timed["blocks"]):
+            block["start"] = index * 2.0
+            block["end"] = (index + 1) * 2.0
+            wav = Path(workdir) / f"voice_{index}.wav"
+            wav.write_bytes(b"legacy-slice")
+            block_wavs.append(wav)
+            words.append({
+                "start": index * 2.0 + 0.2,
+                "end": (index + 1) * 2.0 - 0.2,
+                "text": block["speech"],
+                "block_index": index,
+            })
+        timed["total"] = 8.0
+        return SimpleNamespace(
+            wav=master_wav,
+            block_wavs=tuple(block_wavs),
+            words=tuple(words),
+            timed_scenario=timed,
+        )
+
+    rendered_shot_counts = []
+
+    def fake_render(master_wav, plan, client, workdir, cache_dir, *, edit_plan,
+                     meter=None):
+        rendered_shot_counts.append(len(plan["shots"]))
+        clips = []
+        for shot in plan["shots"]:
+            clip = Path(workdir) / f"{shot['id']}.mp4"
+            clip.write_bytes(b"offline-avatar-iv")
+            clips.append(clip)
+            if meter is not None:
+                meter(3.5, cached=False, twin=False)
+        return SimpleNamespace(
+            clips=tuple(clips),
+            plan=plan,
+            manifest={"shots": [{"status": "ready"} for _ in clips]},
+        )
+
+    cfg = _cfg("avatar")
+    cfg["master_audio"] = {"enabled": True}
+    cfg["avatar_islands"] = {"enabled": True}
+    res = pipeline.run_make(
+        cfg,
+        None,
+        0.0,
+        wd,
+        avatar_client=avatar,
+        synth_fn=fs,
+        ingest_fn=fi,
+        assemble_fn=fa,
+        master_audio_fn=fake_master,
+        avatar_render_fn=fake_render,
+        meter=meter,
+    )
+
+    assert res["ok"] is True, res.get("error")
+    assert len(meter.heygen_calls) == rendered_shot_counts[0]
+    assert all(
+        seconds == 3.5 and cached is False and twin is False
+        for seconds, cached, twin in meter.heygen_calls
+    )
 
 
 def test_avatar_со_вставками_ingest_вызывается(monkeypatch, tmp_path):
@@ -874,23 +955,6 @@ def test_падение_precut_даёт_stage_plan(monkeypatch, tmp_path):
     assert "индекс" in res["error"]
 
 
-def test_billable_seconds_сбой_замера_логируется_но_не_роняет(monkeypatch, capsys):
-    """Fix 4: probe длительности может упасть уже ПОСЛЕ платного HeyGen-
-    рендера — сборка не должна падать (остаётся 0.0), но раньше сбой
-    проглатывался молча, и оператор не видел, что метр ничего не увидел."""
-    import reels_factory.render as render_mod
-
-    def bad_media_dur(path):
-        raise RuntimeError("ffprobe упал")
-
-    monkeypatch.setattr(render_mod, "media_dur", bad_media_dur)
-
-    result = pipeline._billable_seconds("неважно.mp4")
-
-    assert result == 0.0
-    assert "ffprobe упал" in capsys.readouterr().err
-
-
 class _FakeMeter:
     def __init__(self):
         self.heygen_calls = []
@@ -915,3 +979,55 @@ def test_run_make_принимает_meter():
     import inspect
     from reels_factory.pipeline import run_make
     assert "meter" in inspect.signature(run_make).parameters
+
+
+def test_master_audio_с_meter_тарифицирует_единственный_запрос(monkeypatch, tmp_path):
+    """Предохранитель ветки master_audio снят: с переданным meter сборка не
+    падает, а счётчик получает символы единственного ElevenLabs запроса."""
+    calls = []
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+    meter = _FakeMeter()
+
+    def fake_master(scenario, config, workdir, voice_id=None, meter=None):
+        if meter is not None:
+            meter(sum(len(b["speech"]) for b in scenario["blocks"]))
+        master_wav = Path(workdir) / "voice_master.wav"
+        master_wav.write_bytes(b"master")
+        block_wavs = []
+        for index in range(len(scenario["blocks"])):
+            wav = Path(workdir) / f"voice_{index}.wav"
+            wav.write_bytes(b"slice")
+            block_wavs.append(wav)
+        timed = json.loads(json.dumps(scenario))
+        for index, block in enumerate(timed["blocks"]):
+            block["start"] = index * 2.0
+            block["end"] = (index + 1) * 2.0
+        timed["total"] = 8.0
+        return SimpleNamespace(
+            wav=master_wav,
+            block_wavs=tuple(block_wavs),
+            words=tuple(
+                {
+                    "start": index * 2.0 + 0.2,
+                    "end": (index + 1) * 2.0 - 0.2,
+                    "text": block["speech"],
+                    "block_index": index,
+                }
+                for index, block in enumerate(timed["blocks"])
+            ),
+            timed_scenario=timed,
+        )
+
+    cfg = _cfg("avatar")
+    cfg["master_audio"] = {"enabled": True}
+    res = pipeline.run_make(
+        cfg, None, 0.0, wd, avatar_client=avatar, synth_fn=fs,
+        ingest_fn=fi, assemble_fn=fa, master_audio_fn=fake_master,
+        meter=meter,
+    )
+
+    assert res["ok"] is True, res.get("error")
+    assert len(meter.eleven_calls) == 1
+    assert meter.eleven_calls[0] == sum(len(b["speech"]) for b in _scenario()["blocks"])

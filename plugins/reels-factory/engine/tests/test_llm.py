@@ -180,3 +180,50 @@ def test_невалидный_json_падает_понятной_ошибкой(
         assert "JSON" in str(exc)
     else:
         raise AssertionError("ожидали RuntimeError")
+
+
+def test_ошибка_выполнения_не_уезжает_как_ответ_скилла(monkeypatch, tmp_path):
+    """is_error=True при коде 0: текст ошибки CLI — не сценарий."""
+    envelope = json.dumps({
+        "type": "result", "subtype": "success", "is_error": True,
+        "result": "Failed to authenticate: OAuth session expired",
+        "total_cost_usd": 0.0,
+    })
+    monkeypatch.setattr(
+        "reels_factory.llm.subprocess.run",
+        lambda *a, **kw: SimpleNamespace(returncode=0, stdout=envelope, stderr=""),
+    )
+    runner = ClaudeSkillRunner(config_dir=tmp_path / "profile")
+    with pytest.raises(RuntimeError, match="OAuth session expired"):
+        runner.run_skill("writing-scenario", "p.json")
+
+
+def test_отказ_инструмента_виден_в_ошибке(monkeypatch, tmp_path):
+    envelope = json.dumps({
+        "subtype": "error_max_turns", "is_error": True,
+        "permission_denials": [{"tool_name": "Read"}],
+        "total_cost_usd": 0.02,
+    })
+    monkeypatch.setattr(
+        "reels_factory.llm.subprocess.run",
+        lambda *a, **kw: SimpleNamespace(returncode=0, stdout=envelope, stderr=""),
+    )
+    runner = ClaudeSkillRunner(config_dir=tmp_path / "profile")
+    with pytest.raises(RuntimeError) as exc:
+        runner.run_skill("writing-scenario", "p.json")
+    assert "error_max_turns" in str(exc.value)
+    assert "Read" in str(exc.value)
+    # вызов всё равно оплачен — трата должна попасть в журнал
+    assert runner.total_cost_usd == 0.02
+
+
+def test_конверт_без_result_падает(monkeypatch, tmp_path):
+    envelope = json.dumps({"subtype": "success", "is_error": False,
+                           "total_cost_usd": 0.01})
+    monkeypatch.setattr(
+        "reels_factory.llm.subprocess.run",
+        lambda *a, **kw: SimpleNamespace(returncode=0, stdout=envelope, stderr=""),
+    )
+    runner = ClaudeSkillRunner(config_dir=tmp_path / "profile")
+    with pytest.raises(RuntimeError, match="без поля result"):
+        runner.run_skill("writing-scenario", "p.json")

@@ -248,11 +248,33 @@ def _extract_json(text: str) -> dict:
     start = text.find("{")
     end = text.rfind("}")
     if start == -1 or end == -1 or end < start:
-        raise ScenarioError("bad json: no JSON object found in reply")
+        # Без куска ответа непонятно, что вообще пришло вместо сценария.
+        raise ScenarioError(
+            "bad json: no JSON object found in reply: "
+            + repr(str(text or "").strip()[:300])
+        )
     try:
         return json.loads(text[start:end + 1])
     except json.JSONDecodeError as e:
         raise ScenarioError(f"bad json: {e}") from e
+
+
+def _skill_json(runner, skill: str, payload_path, workdir, retries: int = 1) -> dict:
+    """Ответ скилла -> dict; сырой ответ ложится рядом с заданием.
+
+    Файл ответа — единственный след, по которому потом видно, что пришло
+    вместо JSON. Проза вместо схемы бывает случайной, поэтому один повтор.
+    """
+    workdir = Path(workdir)
+    last = None
+    for _ in range(retries + 1):
+        reply = runner.run_skill(skill, payload_path)
+        (workdir / f"{skill}_reply.txt").write_text(reply or "", encoding="utf-8")
+        try:
+            return _extract_json(reply)
+        except ScenarioError as e:
+            last = e
+    raise last
 
 
 def validate_scenario(sc: dict, hypothesis: dict | None = None) -> list[str]:
@@ -508,8 +530,7 @@ def run_generated_path(workdir, idea: dict, skill_runner, language: str) -> dict
     payload.write_text(json.dumps(task, ensure_ascii=False, indent=1),
                        encoding="utf-8")
 
-    reply = skill_runner.run_skill("writing-scenario", payload)
-    draft = _extract_json(reply)
+    draft = _skill_json(skill_runner, "writing-scenario", payload, workdir)
     errs = validate_integrity(draft)
     if errs:
         raise ScenarioError(f"черновик генерации: {errs}")
@@ -550,8 +571,7 @@ def run_ideas(workdir, source_text: str, skill_runner, language: str) -> dict:
     payload = workdir / "ideas_task.json"
     payload.write_text(json.dumps({"language": language, "transcript": source_text},
                                   ensure_ascii=False, indent=1), encoding="utf-8")
-    reply = skill_runner.run_skill("extracting-ideas", payload)
-    data = _extract_json(reply)
+    data = _skill_json(skill_runner, "extracting-ideas", payload, workdir)
     ideas = data.get("ideas")
     if not isinstance(ideas, list) or not (2 <= len(ideas) <= 3):
         raise ScenarioError(f"ожидалось 2–3 идеи, получено: {ideas!r}")
