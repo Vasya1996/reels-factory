@@ -128,7 +128,21 @@ class ClaudeSkillRunner:
         self.last_cost_usd = float(cost) if cost is not None else None
         if self.last_cost_usd:
             self.total_cost_usd += self.last_cost_usd
-        return obj.get("result", "")
+        # Свою ошибку (протухший вход, упёршийся лимит ходов, отказ) CLI кладёт
+        # в то же поле result и не всегда меняет код возврата. Без этой проверки
+        # текст ошибки уезжает дальше как ответ скилла, и вызывающий код
+        # жалуется на «bad json» вместо настоящей причины.
+        if obj.get("is_error"):
+            denials = obj.get("permission_denials") or []
+            raise RuntimeError(
+                f"claude -p /{skill} вернул ошибку ({obj.get('subtype')}): "
+                f"{str(obj.get('result') or '')[:500]}"
+                + (f" отказано инструментам: {denials}" if denials else "")
+            )
+        if "result" not in obj:
+            raise RuntimeError(
+                f"claude -p /{skill}: ответ без поля result: {str(obj)[:300]}")
+        return obj["result"]
 
 
 class FakeSkillRunner:
