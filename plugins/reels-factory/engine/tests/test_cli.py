@@ -244,6 +244,37 @@ def test_make_avatar_без_broll_допустимо(monkeypatch, tmp_path, caps
     assert out["ok"] is True
 
 
+def test_build_meter_с_испорченным_job_input_печатает_предупреждение(
+    monkeypatch, tmp_path, capsys
+):
+    """Fix 3: job.input.json ЕСТЬ, но неразбираем (чужая job, не ручной
+    прогон разработчика) — раньше _build_meter тихо возвращал None, и
+    run_make рендерил бы за реальные деньги без единой строчки в журнале."""
+    monkeypatch.setattr(cfgmod, "CONFIG_PATH", tmp_path / "нет-файла.yaml")
+    wd = tmp_path / "job1"
+    wd.mkdir()
+    (wd / "job.input.json").write_text("не json совсем", encoding="utf-8")
+
+    meter = cli._build_meter(wd)
+
+    assert meter is None
+    err = capsys.readouterr().err
+    assert "job.input.json" in err
+
+
+def test_build_meter_без_файла_молчит(monkeypatch, tmp_path, capsys):
+    """Ручной прогон разработчика без job.input.json — платить некому,
+    тишина здесь остаётся ожидаемым (не багом)."""
+    monkeypatch.setattr(cfgmod, "CONFIG_PATH", tmp_path / "нет-файла.yaml")
+    wd = tmp_path / "job2"
+    wd.mkdir()
+
+    meter = cli._build_meter(wd)
+
+    assert meter is None
+    assert capsys.readouterr().err == ""
+
+
 def test_verify_с_scenario_timed_работает(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(cli, "WORK_ROOT", tmp_path)
     wd = tmp_path / "demo"

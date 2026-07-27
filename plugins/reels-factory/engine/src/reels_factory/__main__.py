@@ -71,11 +71,22 @@ def _build_meter(wd):
     billing = load_billing_config()
     if not billing["enabled"]:
         return None
+    input_path = Path(wd) / "job.input.json"
     try:
-        doc = json.loads((Path(wd) / "job.input.json").read_text(encoding="utf-8"))
+        doc = json.loads(input_path.read_text(encoding="utf-8"))
         chat_id = int(doc["user_id"])
         job_id = str(doc["job_id"])
-    except (OSError, KeyError, ValueError, json.JSONDecodeError):
+    except FileNotFoundError:
+        # Ручной прогон разработчика без job.input.json — платить некому,
+        # тишина здесь ожидаема и должна остаться такой.
+        return None
+    except (OSError, KeyError, ValueError, json.JSONDecodeError) as e:
+        # Файл ЕСТЬ, но нечитаем/битый: это чужая job, а не ручной прогон —
+        # render всё равно продолжится и спишет реальные деньги без журнала.
+        # Молчание здесь было основной находкой ревью — печатаем в stderr,
+        # чтобы попасть в journalctl.
+        print(f"[make] job.input.json повреждён, учёт трат отключён: {e}",
+              file=sys.stderr)
         return None
     return JobMeter(
         LedgerStore(WORK_ROOT / "billing.sqlite3"),
