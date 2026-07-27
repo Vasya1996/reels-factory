@@ -147,6 +147,30 @@ def test_оценка_рилса_включает_обоих_провайдер�
     assert estimate_micro(420, RATES, 2.0) == 3_184_000
 
 
+def test_оценка_с_долей_аватара_уменьшает_только_heygen():
+    # Та же основа: 420 символов -> 30 секунд. С долей 0.7 в HeyGen идут
+    # только 21 сек: heygen $1.05 + eleven $0.042 (от полного текста) +
+    # claude $0.05 = $1.142, с наценкой 2.0 -> $2.284.
+    rates = {**RATES, "avatar_visible_share": 0.7}
+    без_доли = estimate_micro(420, RATES, 2.0)
+    с_долей = estimate_micro(420, rates, 2.0, avatar_share=rates["avatar_visible_share"])
+    assert с_долей == 2_284_000
+    # heygen-часть при доле 0.7 ровно на 30% меньше полной
+    heygen_без_доли = heygen_cost_micro(30.0, RATES)
+    heygen_с_долей = heygen_cost_micro(30.0 * 0.7, RATES)
+    assert heygen_с_долей == round(heygen_без_доли * 0.7)
+    # eleven и claude не меняются от доли
+    assert с_долей != без_доли
+    прочее_без_доли = elevenlabs_cost_micro(420, RATES) + claude_cost_micro(0.05)
+    прочее_с_долей = elevenlabs_cost_micro(420, RATES) + claude_cost_micro(0.05)
+    assert прочее_без_доли == прочее_с_долей
+
+
+def test_оценка_без_доли_аватара_не_меняется():
+    # avatar_share по умолчанию 1.0 — старое поведение для тех, кто его не передаёт.
+    assert estimate_micro(420, RATES, 2.0) == estimate_micro(420, RATES, 2.0, avatar_share=1.0)
+
+
 def test_конфиг_биллинга_отдаёт_дефолты_без_файла(tmp_path, monkeypatch):
     # Подменяем сам CONFIG_PATH, а не cwd: путь вычисляется один раз при
     # импорте модуля, и monkeypatch.chdir на него уже не влияет — тест
@@ -157,6 +181,7 @@ def test_конфиг_биллинга_отдаёт_дефолты_без_фай
     cfg = load_billing_config()
     assert cfg["markup"] == 2.0
     assert cfg["rates"]["heygen_usd_per_second"] == 0.05
+    assert cfg["rates"]["avatar_visible_share"] == 0.7
     assert cfg["enabled"] is True
 
 
@@ -164,7 +189,8 @@ def test_конфиг_биллинга_накладывает_значения_�
     import reels_factory.config as cfg_mod
     path = tmp_path / "config.yaml"
     path.write_text(
-        "billing:\n  markup: 3.0\n  rates:\n    heygen_usd_per_second: 0.07\n",
+        "billing:\n  markup: 3.0\n  rates:\n    heygen_usd_per_second: 0.07\n"
+        "    avatar_visible_share: 0.5\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(cfg_mod, "CONFIG_PATH", path)
@@ -172,6 +198,7 @@ def test_конфиг_биллинга_накладывает_значения_�
     cfg = load_billing_config()
     assert cfg["markup"] == 3.0
     assert cfg["rates"]["heygen_usd_per_second"] == 0.07
+    assert cfg["rates"]["avatar_visible_share"] == 0.5
     # не заданное в файле остаётся дефолтным
     assert cfg["rates"]["elevenlabs_usd_per_1k_chars"] == 0.10
     assert cfg["fx"]["rub"] == 0.011

@@ -298,15 +298,22 @@ def apply_markup(cost_micro: int, markup: float) -> int:
     return int(math.ceil(int(cost_micro) * float(markup) - 1e-9))
 
 
-def estimate_micro(chars: int, rates: dict, markup: float, *, twin: bool = False) -> int:
+def estimate_micro(chars: int, rates: dict, markup: float, *, twin: bool = False,
+                    avatar_share: float = 1.0) -> int:
     """Грубая оценка до первого платного шага.
 
     Задача оценки — не угадать цену, а не пустить в рендер с пустым балансом,
     поэтому Клод учитывается плоской добавкой, а секунды считаются из символов.
+
+    avatar_share уменьшает только секунды HeyGen: с avatar islands аватар в
+    кадре не весь ролик, остальное закрыто B-roll. ElevenLabs всё равно
+    озвучивает полный текст независимо от того, виден ли аватар, поэтому
+    считается от chars без поправки. По умолчанию 1.0 — прежнее поведение.
     """
     seconds = int(chars) / float(rates["chars_per_second"])
+    avatar_seconds = seconds * float(avatar_share)
     cost = (
-        heygen_cost_micro(seconds, rates, twin=twin)
+        heygen_cost_micro(avatar_seconds, rates, twin=twin)
         + elevenlabs_cost_micro(chars, rates)
         + to_micro(rates["claude_flat_usd_per_reel"])
     )

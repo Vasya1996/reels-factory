@@ -32,7 +32,7 @@ from reels_factory.billing import (
     LedgerStore, apply_markup, claude_cost_micro, estimate_micro,
 )
 from reels_factory.config import (
-    OUT_H, OUT_W, WORK_ROOT, load_billing_config, load_config,
+    ConfigError, OUT_H, OUT_W, WORK_ROOT, load_billing_config, load_config,
 )
 from reels_factory.jobs import BuildJob, JobStore
 from reels_factory.language import (
@@ -577,6 +577,7 @@ def enqueue_build(
     voice_id: str | None = None,
 ) -> BuildJob:
     """Подготовить immutable scenario/config и лишь затем показать job worker."""
+    from reels_factory.avatar_islands import avatar_islands_enabled
     from reels_factory.clients import load_client
 
     billing = _billing()
@@ -587,7 +588,22 @@ def enqueue_build(
         chars = sum(
             len(b.get("speech") or "") for b in (scenario.get("blocks") or [])
         )
-        need = estimate_micro(chars, billing["rates"], billing["markup"])
+        # Профиль клиента может отсутствовать/быть битым (например, в этом же
+        # вызове дальше это честно всплывёт своей ошибкой) — тогда для оценки
+        # считаем как есть avatar_islands_enabled(None): по умолчанию выключено,
+        # но переменную окружения он всё равно учитывает.
+        try:
+            profile_for_estimate = load_client(str(chat_id))
+        except ConfigError:
+            profile_for_estimate = None
+        estimate_kwargs = {}
+        if avatar_islands_enabled(profile_for_estimate):
+            # С островами HeyGen в кадре не весь ролик — без доли оценка
+            # завышена и может отказать в сборке тем, кому денег хватало.
+            estimate_kwargs["avatar_share"] = billing["rates"]["avatar_visible_share"]
+        need = estimate_micro(
+            chars, billing["rates"], billing["markup"], **estimate_kwargs
+        )
         have = _ledger().balance(chat_id)
         if have < need:
             raise InsufficientBalance(need=need, have=have)
@@ -1143,7 +1159,8 @@ def topup_text(need: int | None, have: int, *, exhausted: bool = False) -> str:
         lines.append("Пополните — и сможете продолжить с того же места.")
     elif need is not None:
         lines.append(
-            f"На этот ролик не хватает — нужно примерно {format_usd(need)}."
+            f"На этот ролик не хватает — нужно примерно {format_usd(need)} "
+            "(это ориентировочно, спишется по факту)."
         )
     lines.append("")
     lines.append("Пополнить — кнопкой ниже. Баланс обновится сам после оплаты.")

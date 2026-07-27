@@ -1543,6 +1543,35 @@ def test_нехватки_баланса_блокирует_enqueue_build_и_н�
     assert not jobs_root.exists()
 
 
+def test_с_islands_оценка_меньше_и_хватает_там_где_без_них_не_хватит(
+        work, tmp_path, monkeypatch):
+    """Реальная проверка интеграции: аватар в кадре не весь ролик, если
+    острова включены, значит оценка должна быть ниже. Баланс подобран строго
+    между двумя оценками — со включёнными островами сборка проходит,
+    без них тот же баланс не пропускает InsufficientBalance."""
+    monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
+    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
+    clients_mod.register_client(
+        "1", _client_base_cfg(), voice_id="voice-1", asset_id="asset-1",
+    )
+    clients_mod.register_client(
+        "2", _client_base_cfg(avatar_islands={"enabled": True}),
+        voice_id="voice-1", asset_id="asset-1",
+    )
+    баланс = 350_000  # между оценкой без островов (~386k) и с ними (~303k)
+    for chat_id in (1, 2):
+        bot._ledger().credit(
+            chat_id, баланс, purchase_id=f"islands-estimate-{chat_id}",
+            amount_minor=баланс, currency="usd",
+        )
+
+    with pytest.raises(bot.InsufficientBalance):
+        bot.enqueue_build(1, SCENARIO, language="ru", voice_id="voice-1")
+
+    job = bot.enqueue_build(2, SCENARIO, language="ru", voice_id="voice-1")
+    assert job.status == "queued"
+
+
 def test_кнопки_пополнения_ведут_на_tribute():
     from reels_factory.bot import TOPUP_PRODUCTS, topup_keyboard
     assert len(TOPUP_PRODUCTS) == 7
@@ -1562,6 +1591,15 @@ def test_текст_пополнения_при_нехватке_показыв�
     text = topup_text(need=3_184_000, have=1_000_000)
     assert "$3.18" in text
     assert "$1.00" in text
+
+
+def test_текст_пополнения_при_нехватке_помечает_сумму_как_ориентировочную():
+    # Оценка до сборки — не точная цена: с avatar islands факт может быть
+    # меньше. Пользователь должен видеть, что спишется по факту, а не ровно
+    # показанную сумму.
+    from reels_factory.bot import topup_text
+    text = topup_text(need=3_184_000, have=1_000_000)
+    assert "ориентировочн" in text.lower()
 
 
 def test_текст_пополнения_без_нехватки_показывает_только_баланс():
