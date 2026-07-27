@@ -13,8 +13,10 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+import threading
 import time
 from pathlib import Path
+from uuid import uuid4
 
 MICRO = 1_000_000
 
@@ -297,27 +299,37 @@ class JobMeter:
     """
 
     def __init__(self, store: LedgerStore, *, chat_id: int, job_id: str,
-                 rates: dict, markup: float):
+                 rates: dict, markup: float, run_id: str | None = None):
         self.store = store
         self.chat_id = int(chat_id)
         self.job_id = job_id
         self.rates = rates
         self.markup = float(markup)
+        # Метка конкретного запуска сборки: у повторного ручного запуска того
+        # же job_id она другая, поэтому entry_id не совпадёт с прошлым
+        # запуском и второй расход не потеряется как «дубль».
+        self.run_id = run_id if run_id is not None else uuid4().hex[:8]
         self._step = 0
         self._charged = 0
+        # avatar_islands рендерит шоты параллельно (ThreadPoolExecutor), и
+        # несколько потоков могут звать _record одновременно — лок держится
+        # ровно вокруг выдачи номера шага и изменения self._charged.
+        self._lock = threading.Lock()
 
     def _record(self, provider: str, unit: str, quantity: float,
                 unit_price_micro: int, cost_micro: int) -> None:
         charged = apply_markup(cost_micro, self.markup)
-        entry_id = f"{self.job_id}:{provider}:{self._step}"
-        self._step += 1
+        with self._lock:
+            entry_id = f"{self.job_id}:{self.run_id}:{provider}:{self._step}"
+            self._step += 1
         if self.store.charge(
             self.chat_id, entry_id=entry_id, job_id=self.job_id,
             provider=provider, unit=unit, quantity=quantity,
             unit_price_micro=unit_price_micro, cost_micro=cost_micro,
             charged_micro=charged,
         ):
-            self._charged += charged
+            with self._lock:
+                self._charged += charged
 
     def heygen(self, seconds: float, *, cached: bool = False, twin: bool = False) -> None:
         # Попадание в кэш денег не стоит — фрагмент уже отрендерен раньше.

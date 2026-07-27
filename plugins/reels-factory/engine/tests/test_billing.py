@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from reels_factory.billing import LedgerStore, from_micro, to_micro
@@ -211,3 +213,101 @@ def test_meter_считает_все_три_провайдера(store):
         "elevenlabs": 200_000,
         "claude": 40_000,
     }
+
+
+class _МедленноеЧисло(int):
+    """int, который специально тормозит при форматировании в f-строку.
+
+    Голая гонка на self._step (прочитать -> сформировать entry_id ->
+    увеличить) на практике почти никогда не ловится обычным threading:
+    GIL сериализует это крошечное окно быстрее, чем ОС успевает переключить
+    поток именно между чтением и записью. Чтобы тест был воспроизводим, а не
+    иногда-зелёным, окно гонки расширяется искусственно — но через реальный
+    код _record, без подмены его логики: счётчик шагов просто на старте
+    заводится этим типом, а __add__ сохраняет тип при инкременте, так что
+    задержка сохраняется на каждом шаге.
+    """
+
+    def __format__(self, spec):
+        time.sleep(0.001)
+        return super().__format__(spec)
+
+    def __add__(self, other):
+        return _МедленноеЧисло(int(self) + other)
+
+
+def test_meter_потокобезопасен_под_параллельной_нагрузкой(store):
+    # avatar_islands рендерит шоты параллельно (ThreadPoolExecutor). Без лока
+    # вокруг выдачи номера шага два потока читают один self._step, строят
+    # одинаковый entry_id, и store.charge вторую запись молча отбрасывает —
+    # оплаченный рендер HeyGen пропадает из журнала.
+    import threading
+
+    threads_n = 8
+    per_thread = 20
+    meter = JobMeter(store, chat_id=777, job_id="job1", rates=RATES, markup=2.0)
+    meter._step = _МедленноеЧисло(meter._step)
+
+    def worker():
+        for _ in range(per_thread):
+            meter.heygen(1.0)
+
+    threads = [threading.Thread(target=worker) for _ in range(threads_n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    rows = store.job_breakdown("job1")
+    expected_total = threads_n * per_thread * to_micro(RATES["heygen_usd_per_second"] * 2.0)
+    assert rows["heygen"] == expected_total
+    assert meter.total_charged() == expected_total
+
+    with store._connect() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) AS n FROM spend_log WHERE job_id = ?", ("job1",)
+        ).fetchone()["n"]
+    assert count == threads_n * per_thread
+
+
+def test_meter_повтор_сборки_с_тем_же_job_id_списывает_второй_раз(store):
+    # Владелец решил: повторный ручной запуск упавшей сборки должен честно
+    # показать второй расход, а не спрятать его дедупликацией по job_id.
+    store.credit(777, 20_000_000, purchase_id="p1", amount_minor=2000, currency="usd")
+
+    meter1 = JobMeter(store, chat_id=777, job_id="job1", rates=RATES, markup=2.0)
+    meter1.elevenlabs(1000)
+
+    meter2 = JobMeter(store, chat_id=777, job_id="job1", rates=RATES, markup=2.0)
+    meter2.elevenlabs(1000)
+
+    with store._connect() as conn:
+        rows = conn.execute(
+            "SELECT entry_id FROM spend_log WHERE job_id = ?", ("job1",)
+        ).fetchall()
+    assert len(rows) == 2
+    assert rows[0]["entry_id"] != rows[1]["entry_id"]
+    assert store.balance(777) == 20_000_000 - 2 * 200_000
+
+
+def test_meter_защита_от_дубля_внутри_одного_запуска_сохраняется(store):
+    meter = JobMeter(store, chat_id=777, job_id="job1", rates=RATES, markup=2.0)
+    meter.heygen(30.0)
+    meter.heygen(30.0)
+
+    with store._connect() as conn:
+        rows = conn.execute(
+            "SELECT entry_id FROM spend_log WHERE job_id = ?", ("job1",)
+        ).fetchall()
+    assert len(rows) == 2
+    entry_ids = {row["entry_id"] for row in rows}
+    assert len(entry_ids) == 2
+
+    # А прямая повторная запись тем же ключом через store.charge всё ещё
+    # отклоняется — дедупликация внутри одного запуска никуда не делась.
+    same_entry_id = rows[0]["entry_id"]
+    assert store.charge(
+        777, entry_id=same_entry_id, job_id="job1", provider="heygen",
+        unit="seconds", quantity=30.0, unit_price_micro=50_000,
+        cost_micro=1_500_000, charged_micro=3_000_000,
+    ) is False
