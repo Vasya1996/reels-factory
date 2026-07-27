@@ -832,14 +832,21 @@ def _client_base_cfg(**over):
 
 
 @pytest.fixture
-def клиент(tmp_path, monkeypatch):
+def клиент(work, tmp_path, monkeypatch):
     """Изолированный реестр клиентов + готовый профиль клиента чата 7.
     save_client_profile сам по себе читает общий factory/config.yaml как базу —
-    в тестах его нет и не нужен, профиль уже зарегистрирован напрямую."""
+    в тестах его нет и не нужен, профиль уже зарегистрирован напрямую.
+    Баланс пополняем с запасом: billing включён по умолчанию (Task 7 проверяет
+    его в enqueue_build), а фикстуре нужен клиент, готовый платить, а не
+    отдельный тест на нехватку денег — для того есть test_нехватки_баланса."""
     monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
     monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
     clients_mod.register_client("7", _client_base_cfg(), voice_id="voice-1",
                                 asset_id="asset-1")
+    bot._ledger().credit(
+        7, 1_000_000_000,
+        purchase_id="клиент-fixture", amount_minor=1_000_000_00, currency="usd",
+    )
     return tmp_path
 
 
@@ -1216,3 +1223,31 @@ def test_сбой_статусного_сообщения_не_теряет_dura
     job = bot._job_store().latest_for_chat(7)
     assert job.status == "queued"
     assert bot.load_session(7)["current_job_id"] == job.job_id
+
+
+# --- биллинг: оценка до рендера и блокировка -----------------------------------
+
+def test_форматирование_баланса():
+    from reels_factory.bot import format_usd
+    assert format_usd(3_184_000) == "$3.18"
+    assert format_usd(0) == "$0.00"
+    assert format_usd(-100_000) == "-$0.10"
+
+
+def test_ledger_переиспользуется_между_вызовами(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    import importlib
+    from reels_factory import bot as bot_mod
+    importlib.reload(bot_mod)
+    assert bot_mod._ledger() is bot_mod._ledger()
+
+
+def test_нехватки_баланса_достаточно_чтобы_не_создавать_job(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    import importlib
+    from reels_factory import bot as bot_mod
+    importlib.reload(bot_mod)
+    cfg = bot_mod._billing()
+    from reels_factory.billing import estimate_micro
+    need = estimate_micro(500, cfg["rates"], cfg["markup"])
+    assert bot_mod._ledger().balance(777) < need

@@ -24,10 +24,16 @@ import logging
 import os
 import subprocess
 import sys
+import uuid
 from contextlib import suppress
 from pathlib import Path
 
-from reels_factory.config import OUT_H, OUT_W, WORK_ROOT, load_config
+from reels_factory.billing import (
+    LedgerStore, apply_markup, claude_cost_micro, estimate_micro,
+)
+from reels_factory.config import (
+    OUT_H, OUT_W, WORK_ROOT, load_billing_config, load_config,
+)
 from reels_factory.jobs import BuildJob, JobStore
 from reels_factory.language import (
     SUPPORTED_LANGUAGES,
@@ -264,6 +270,64 @@ def _job_store() -> JobStore:
     return _job_store_cache[1]
 
 
+_ledger_cache: tuple[Path, LedgerStore] | None = None
+
+
+def _ledger() -> LedgerStore:
+    """Журнал трат и балансов. Кэшируем как _job_store: путь зависит от cwd."""
+    global _ledger_cache
+    db_path = (WORK_ROOT / "billing.sqlite3").resolve()
+    if _ledger_cache is None or _ledger_cache[0] != db_path:
+        _ledger_cache = (db_path, LedgerStore(db_path))
+    return _ledger_cache[1]
+
+
+def _billing() -> dict:
+    return load_billing_config()
+
+
+def format_usd(micro: int) -> str:
+    """Микродоллары -> строка для пользователя."""
+    sign = "-" if micro < 0 else ""
+    return f"{sign}${abs(micro) / 1_000_000:.2f}"
+
+
+class InsufficientBalance(Exception):
+    """Баланса не хватает на оценку сборки — платный рендер не начинаем."""
+
+    def __init__(self, *, need: int, have: int):
+        super().__init__(f"нужно {need}, есть {have}")
+        self.need = need
+        self.have = have
+
+
+def _charge_claude(chat_id: int, runner: ClaudeSkillRunner) -> None:
+    """Списать стоимость вызовов Клода за подготовку сценария.
+
+    Списываем сумму по runner, а не последний вызов: за один проход скиллов
+    отрабатывают генерация, хуманизатор и судья.
+
+    job_id=None — сборки ещё нет и может не быть вовсе (человек передумает).
+    Деньги при этом уже потрачены, поэтому запись всё равно нужна.
+    entry_id случайный: каждое нажатие — новая генерация, склеивать нечего.
+    """
+    billing = _billing()
+    if not billing["enabled"] or not runner.total_cost_usd:
+        return
+    cost = claude_cost_micro(runner.total_cost_usd)
+    _ledger().charge(
+        chat_id,
+        entry_id=f"claude:{uuid.uuid4().hex}",
+        job_id=None,
+        provider="claude",
+        unit="usd",
+        quantity=runner.total_cost_usd,
+        unit_price_micro=0,
+        cost_micro=cost,
+        charged_micro=apply_markup(cost, billing["markup"]),
+    )
+
+
 def load_session(chat_id: int) -> dict:
     p = session_dir(chat_id) / "session.json"
     if not p.exists():
@@ -351,23 +415,30 @@ def _activate_language_voice(session: dict, language: str) -> str | None:
 
 
 def step_verbatim(chat_id: int, text: str, language: str) -> dict:
-    res = run_verbatim_path(session_dir(chat_id), text, ClaudeSkillRunner(),
+    runner = ClaudeSkillRunner()
+    res = run_verbatim_path(session_dir(chat_id), text, runner,
                             language=normalize_profile_language(language))
+    _charge_claude(chat_id, runner)
     return res["scenario"]
 
 
 def step_ideas(chat_id: int, text: str, language: str) -> list:
-    return run_ideas(
+    runner = ClaudeSkillRunner()
+    res = run_ideas(
         session_dir(chat_id),
         text,
-        ClaudeSkillRunner(),
+        runner,
         normalize_profile_language(language),
-    )["ideas"]
+    )
+    _charge_claude(chat_id, runner)
+    return res["ideas"]
 
 
 def step_scenario(chat_id: int, idea: dict, language: str) -> dict:
-    res = run_generated_path(session_dir(chat_id), idea, ClaudeSkillRunner(),
+    runner = ClaudeSkillRunner()
+    res = run_generated_path(session_dir(chat_id), idea, runner,
                              language=normalize_profile_language(language))
+    _charge_claude(chat_id, runner)
     return res["scenario"]
 
 
@@ -496,6 +567,19 @@ def enqueue_build(
 ) -> BuildJob:
     """Подготовить immutable scenario/config и лишь затем показать job worker."""
     from reels_factory.clients import load_client
+
+    billing = _billing()
+    if billing["enabled"]:
+        # Оценка ДО первого платного шага: после него деньги уже не вернуть.
+        # Символы берём из тех же блоков, что уйдут в синтез речи
+        # (pipeline.run_make озвучивает scenario["blocks"][i]["speech"]).
+        chars = sum(
+            len(b.get("speech") or "") for b in (scenario.get("blocks") or [])
+        )
+        need = estimate_micro(chars, billing["rates"], billing["markup"])
+        have = _ledger().balance(chat_id)
+        if have < need:
+            raise InsufficientBalance(need=need, have=have)
 
     store = _job_store()
     job_id = store.new_id()
@@ -996,6 +1080,11 @@ async def _finish_voice(msg, chat_id: int, s: dict):
     await msg.reply_text(READY_MSG, reply_markup=_kb_ready())
 
 
+async def _show_topup(msg, chat_id, **kw):
+    """Заглушка: экран пополнения строит Task 10, здесь — короткое сообщение."""
+    await msg.reply_text("Баланса не хватает")
+
+
 async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
     """Поставить job в durable FIFO; платный pipeline здесь не запускается."""
     try:
@@ -1005,6 +1094,11 @@ async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
             language=_reel_language(s),
             voice_id=s.get("voice_id"),
         )
+    except InsufficientBalance as exc:
+        # Раньше общего except: иначе нехватка баланса покажется как
+        # техническая ошибка, без кнопок пополнения.
+        await _show_topup(msg, chat_id, need=exc.need, have=exc.have)
+        return None
     except Exception as e:
         await msg.reply_text(f"Не удалось поставить ролик в очередь: {str(e)[:200]}")
         return None
@@ -1143,6 +1237,18 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         return
 
     store.finish(job.job_id, "completed", result=result, stage="delivery")
+    breakdown = _ledger().job_breakdown(job.job_id)
+    if breakdown:
+        parts = ", ".join(
+            f"{name} {format_usd(value)}" for name, value in sorted(breakdown.items())
+        )
+        total = sum(breakdown.values())
+        await _safe_job_message(
+            bot_api,
+            job.chat_id,
+            f"Списано {format_usd(total)} ({parts}).\n"
+            f"Остаток баланса: {format_usd(_ledger().balance(job.chat_id))}",
+        )
     _update_session_after_job(job.chat_id, job.job_id, DONE)
 
 
