@@ -229,7 +229,7 @@ def test_make_без_broll_для_split_чистая_ошибка(capsys):
 def test_make_avatar_без_broll_допустимо(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(cli, "WORK_ROOT", tmp_path)
 
-    def fake_run_make(cfg, broll, offset, wd, broll_plan=None):
+    def fake_run_make(cfg, broll, offset, wd, broll_plan=None, meter=None):
         return {"ok": True, "workdir": str(wd), "mp4": "reel.mp4", "qa_pass": True,
                 "gates": {}, "stage": None, "error": None}
 
