@@ -72,9 +72,15 @@ def handle_webhook(store: LedgerStore, raw: bytes, signature: str, *,
         return {"credited": False, "reason": "no_purchase_id"}
     try:
         micro = credited_micro(payload.get("amount") or 0, payload.get("currency") or "usd", fx)
-    except ValueError:
-        # Неизвестная валюта или некорректная сумма — отклоняем как обычный отказ.
-        return {"credited": False, "reason": "invalid_amount_or_currency"}
+    except ValueError as e:
+        error_msg = str(e)
+        if "unknown currency" in error_msg:
+            # Неизвестная валюта — не угадываем курс 1:1, это переплата в нашу пользу.
+            reason = "unknown_currency"
+        else:
+            # Ноль и отрицательные суммы бессмысленны, а отрицательная тихо спишет баланс.
+            reason = "invalid_amount"
+        return {"credited": False, "reason": reason}
     credited = store.credit(
         chat_id, micro, purchase_id=purchase_id,
         amount_minor=int(payload.get("amount") or 0),

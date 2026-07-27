@@ -110,7 +110,7 @@ def test_неизвестная_валюта_не_зачисляется(store):
     raw = body(currency="kzt")
     res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
     assert res["credited"] is False
-    assert res["reason"] == "invalid_amount_or_currency"
+    assert res["reason"] == "unknown_currency"
     assert store.balance(777) == 0
 
 
@@ -119,6 +119,7 @@ def test_отрицательная_сумма_не_зачисляется(store
     raw = body(amount=-1000)
     res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
     assert res["credited"] is False
+    assert res["reason"] == "invalid_amount"
     assert store.balance(777) == 0
 
 
@@ -126,6 +127,7 @@ def test_нулевая_сумма_не_зачисляется(store):
     raw = body(amount=0)
     res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
     assert res["credited"] is False
+    assert res["reason"] == "invalid_amount"
     assert store.balance(777) == 0
 
 
