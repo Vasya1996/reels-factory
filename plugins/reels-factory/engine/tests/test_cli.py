@@ -191,19 +191,8 @@ def test_verify_без_scenario_timed_чистая_ошибка(monkeypatch, tmp
     assert "reels_factory make" in out["error"]
 
 
-def test_make_help_упоминает_punch(monkeypatch, capsys):
-    monkeypatch.setattr("sys.argv", ["reels_factory", "make", "--help"])
-
-    with pytest.raises(SystemExit) as exc:
-        cli.main()
-
-    assert exc.value.code == 0
-    out = capsys.readouterr().out
-    assert "punch" in out
-
-
 def test_make_формат_fullscreen_не_поддерживается(capsys):
-    args = SimpleNamespace(workdir="demo", broll_plan=None)
+    args = SimpleNamespace(workdir="demo")
 
     with pytest.raises(SystemExit) as exc:
         cli._cmd_make(args, {"format": "fullscreen"})
@@ -212,10 +201,11 @@ def test_make_формат_fullscreen_не_поддерживается(capsys):
     out = json.loads(capsys.readouterr().out)
     assert out["ok"] is False
     assert "avatar" in out["error"]
+    assert "archive/console-broll-workflow" in out["error"]
 
 
 def test_make_формат_split_не_поддерживается(capsys):
-    args = SimpleNamespace(workdir="demo", broll_plan=None)
+    args = SimpleNamespace(workdir="demo")
 
     with pytest.raises(SystemExit) as exc:
         cli._cmd_make(args, {"format": "split"})
@@ -224,17 +214,18 @@ def test_make_формат_split_не_поддерживается(capsys):
     out = json.loads(capsys.readouterr().out)
     assert out["ok"] is False
     assert "avatar" in out["error"]
+    assert "archive/console-broll-workflow" in out["error"]
 
 
-def test_make_avatar_без_broll_plan_допустимо(monkeypatch, tmp_path, capsys):
+def test_make_avatar_проходит(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(cli, "WORK_ROOT", tmp_path)
 
-    def fake_run_make(cfg, wd, broll_plan=None, meter=None):
+    def fake_run_make(cfg, wd, meter=None):
         return {"ok": True, "workdir": str(wd), "mp4": "reel.mp4", "qa_pass": True,
                 "gates": {}, "stage": None, "error": None}
 
     monkeypatch.setattr("reels_factory.pipeline.run_make", fake_run_make)
-    args = SimpleNamespace(workdir="demo", broll_plan=None)
+    args = SimpleNamespace(workdir="demo")
 
     with pytest.raises(SystemExit) as exc:
         cli._cmd_make(args, {"format": "avatar"})
@@ -242,61 +233,6 @@ def test_make_avatar_без_broll_plan_допустимо(monkeypatch, tmp_path,
     assert exc.value.code == 0
     out = json.loads(capsys.readouterr().out)
     assert out["ok"] is True
-
-
-def test_make_broll_plan_вставка_без_clip_отвергается_до_run_make(
-    monkeypatch, tmp_path, capsys
-):
-    """'insert' без 'clip' раньше означало внешний источник (--broll, теперь
-    убран) — план сгенерировал бы окно на broll.mp4, которого никто не
-    положит, и в ролике была бы пустота при зелёных тестах. Отказ должен
-    случиться до run_make (до платных шагов)."""
-    monkeypatch.setattr(cli, "WORK_ROOT", tmp_path)
-
-    def boom(*a, **kw):
-        raise AssertionError("run_make не должен вызываться")
-
-    monkeypatch.setattr("reels_factory.pipeline.run_make", boom)
-    plan_path = tmp_path / "plan.json"
-    plan_path.write_text(json.dumps(
-        {"segments": [{"role": "development", "offset": 40.0, "insert": True}]}),
-        encoding="utf-8")
-    args = SimpleNamespace(workdir="demo", broll_plan=str(plan_path))
-
-    with pytest.raises(SystemExit) as exc:
-        cli._cmd_make(args, {"format": "avatar"})
-
-    assert exc.value.code == 1
-    out = json.loads(capsys.readouterr().out)
-    assert out["ok"] is False
-    assert "clip" in out["error"]
-
-
-def test_make_broll_plan_вставка_с_clip_из_библиотеки_проходит(
-    monkeypatch, tmp_path, capsys
-):
-    """Вставки из библиотеки клипов (сегмент с 'clip') этим не задеты."""
-    monkeypatch.setattr(cli, "WORK_ROOT", tmp_path)
-    calls = []
-
-    def fake_run_make(cfg, wd, broll_plan=None, meter=None):
-        calls.append(broll_plan)
-        return {"ok": True, "workdir": str(wd), "mp4": "reel.mp4", "qa_pass": True,
-                "gates": {}, "stage": None, "error": None}
-
-    monkeypatch.setattr("reels_factory.pipeline.run_make", fake_run_make)
-    plan_path = tmp_path / "plan.json"
-    plan_path.write_text(json.dumps(
-        {"segments": [{"role": "development", "offset": 0.0, "insert": True,
-                       "clip": "lib.mp4"}]}),
-        encoding="utf-8")
-    args = SimpleNamespace(workdir="demo", broll_plan=str(plan_path))
-
-    with pytest.raises(SystemExit) as exc:
-        cli._cmd_make(args, {"format": "avatar"})
-
-    assert exc.value.code == 0
-    assert len(calls) == 1 and calls[0]["segments"][0]["clip"] == "lib.mp4"
 
 
 def test_build_meter_с_испорченным_job_input_печатает_предупреждение(

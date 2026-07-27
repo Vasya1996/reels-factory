@@ -19,10 +19,10 @@ description: Этап 4 продуктового цикла — собирает
 пользователю перепройти шаг 4 `/reels-factory:setup`.
 
 Ручной сценарий с непрерывным видеорядом (контактные листы по скачанному
-файлу, `broll_plan.json` с offset в него, `--broll`) вынесен в архив — ветка
-`archive/console-broll-workflow` (там же описано, из чего он состоит и как
-вернуть). Вставки поверх аватара теперь берутся только из локальной
-библиотеки клипов (`broll_plan` сегмент с `"insert": true` и `"clip"`).
+файлу, `broll_plan.json` с offset в него, `--broll`/`--broll-plan`) вынесен в
+архив — ветка `archive/console-broll-workflow` (там же описано, из чего он
+состоит и как вернуть). Вставки поверх аватара теперь подбираются движком
+автоматически из локальной библиотеки клипов, без ручного плана.
 
 ## Шаг 4. ГЕЙТ ПРАВДЫ (до сборки — пока бесплатно)
 
@@ -37,14 +37,11 @@ description: Этап 4 продуктового цикла — собирает
 ## Шаг 5. Сборка
 
 ```powershell
-$env:PYTHONUTF8="1"; .venv\Scripts\python.exe -m reels_factory make --workdir <имя> --broll-plan work/<имя>/broll_plan.json
+$env:PYTHONUTF8="1"; .venv\Scripts\python.exe -m reels_factory make --workdir <имя>
 ```
 
 (`PYTHONUTF8=1` — иначе русский текст в JSON-выводе (например причина
 провала гейта) в stdout PowerShell читается абракадаброй.)
-
-Без вставок `--broll-plan` можно опустить (`... make --workdir <имя>`) —
-аватар соберётся с одним голосом.
 
 При включённом `master_audio.enabled` движок делает один ElevenLabs v3
 `with-timestamps` request на весь утверждённый сценарий. Артефакты

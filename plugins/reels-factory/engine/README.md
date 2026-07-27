@@ -176,7 +176,6 @@ python -m reels_factory edit --input мой.mp4 --output out.mp4 --jump-cuts --g
 ```bash
 python -m reels_factory script --workdir demo1            # сценарий -> scenario.json
 python -m reels_factory make   --workdir demo1            # только format: avatar
-python -m reels_factory make   --workdir demo1 --broll-plan plan.json
 python -m reels_factory verify --workdir demo1            # перепроверить 7 гейтов
 ```
 
@@ -215,8 +214,10 @@ python -m reels_factory verify --workdir demo1            # перепровер
   в ветке `archive/console-broll-workflow`).
 - **avatar** — единственный рабочий формат. Аватар-ведущий от HeyGen на весь
   кадр (1080×1920); в master-path речь идёт только из `voice_master.wav`;
-  видеоряд опционален — вставки поверх аватара (`broll_plan` сегменты с
-  `"insert": true` и `"clip"` из библиотеки клипов), либо вовсе без видеоряда.
+  видеоряд опционален — вставки поверх аватара подбираются автоматически из
+  локальной библиотеки клипов, либо вовсе без видеоряда. Ручной консольный
+  план (`--broll-plan`) убран вместе с `--broll` — см. `docs/archive/console-broll-workflow.md`
+  в ветке `archive/console-broll-workflow`.
 
 ## Telegram: очередь и изоляция jobs
 

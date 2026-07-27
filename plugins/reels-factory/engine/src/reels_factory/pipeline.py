@@ -75,7 +75,7 @@ def _fixes_hypothesis(config: dict) -> dict:
 
 
 def run_make(config: dict, workdir,
-             broll_plan: dict | None = None, scenario: dict | None = None,
+             scenario: dict | None = None,
              avatar_client=None, synth_fn=None, assemble_fn=None,
              covered_block_fn=None, jump_cut_fn=None, precut_fn=None,
              master_audio_fn=None, edit_plan_fn=None,
@@ -156,8 +156,8 @@ def run_make(config: dict, workdir,
     # совместимости тестов/CLI; решения всё равно нормализует editplan.py.
     _log("plan")
     try:
-        legacy_plan = broll_plan
-        if legacy_plan is None and precut_fn is not None and fmt == "avatar":
+        legacy_plan = None
+        if precut_fn is not None and fmt == "avatar":
             legacy_plan = precut_fn(scenario, config)
         edit_plan_fn = edit_plan_fn or _build_edit_plan
         edit_plan = edit_plan_fn(

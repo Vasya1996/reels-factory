@@ -103,29 +103,12 @@ def _cmd_make(args, cfg):
         print(json.dumps(
             {"ok": False, "error": f"формат {fmt!r} не поддерживается: непрерывный "
              "видеоряд под всем роликом убран из движка, работает только "
-             "format: avatar"},
+             "format: avatar (см. ветку archive/console-broll-workflow)"},
             ensure_ascii=False))
         sys.exit(1)
 
-    broll_plan = None
-    if args.broll_plan:
-        broll_plan = json.loads(Path(args.broll_plan).read_text(encoding="utf-8"))
-        # Сегмент "insert" без "clip" раньше означал вставку из внешнего файла
-        # (--broll, теперь убран) — план сгенерирует окно на broll.mp4, которого
-        # никто не положит, и в ролике будет пустота. Вставки из библиотеки
-        # клипов (с "clip") этим не затронуты.
-        for seg in broll_plan.get("segments") or []:
-            if seg.get("insert") and not seg.get("clip"):
-                print(json.dumps(
-                    {"ok": False, "error": f"вставка роли {seg.get('role')!r} без "
-                     "'clip' больше не поддерживается: внешний источник видеоряда "
-                     "убран, вставки берутся только из библиотеки клипов — укажи "
-                     "'clip' в сегменте"},
-                    ensure_ascii=False))
-                sys.exit(1)
-
     wd = _resolve_workdir(args.workdir)
-    result = run_make(cfg, wd, broll_plan=broll_plan, meter=_build_meter(wd))
+    result = run_make(cfg, wd, meter=_build_meter(wd))
     print(json.dumps(result, ensure_ascii=False))
     if not result["ok"]:
         sys.exit(1)
@@ -500,9 +483,6 @@ def main():
 
     p_m = sub.add_parser("make", help="сборка рилса из scenario.json + QA-гейты")
     p_m.add_argument("--workdir", required=True)
-    p_m.add_argument("--broll-plan", default=None, dest="broll_plan",
-                     help="JSON {segments:[{role,offset,slow?}], punch:[[start,dur],...], ...} "
-                          "— мультисегментный низ + панч-окна (наезд на килл/пик-моментах)")
     make_profile = p_m.add_mutually_exclusive_group()
     make_profile.add_argument(
         "--client",

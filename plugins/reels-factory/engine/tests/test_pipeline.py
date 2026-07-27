@@ -427,12 +427,14 @@ def test_avatar_блок_на_100pct_закрытый_вставкой_не_дё
     fs, fa = _fakes(monkeypatch, tmp_path, calls)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
-    broll_plan = {"segments": [{"role": "development", "offset": 30.0, "insert": True}],
-                  "facts": {}}
+
+    def fake_precut(scenario, config):
+        return {"segments": [{"role": "development", "offset": 30.0, "insert": True}],
+                "facts": {}, "log": []}
 
     covered_calls = []
 
-    res = pipeline.run_make(_cfg("avatar"), wd, broll_plan=broll_plan,
+    res = pipeline.run_make(_cfg("avatar"), wd, precut_fn=fake_precut,
                             avatar_client=avatar, synth_fn=fs, assemble_fn=fa,
                             covered_block_fn=_fake_covered_block(covered_calls))
 
@@ -511,15 +513,14 @@ def test_голос_другого_языка_останавливает_pipelin
     assert calls == []
 
 
-def test_caption_fixes_и_broll_plan_прокидываются(monkeypatch, tmp_path):
+def test_caption_fixes_прокидываются(monkeypatch, tmp_path):
     calls = []
     captured = {}
     fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
-    broll_plan = {"segments": [{"role": "hook", "offset": 30.0}], "facts": {}}
 
-    res = pipeline.run_make(_cfg("split"), wd, broll_plan=broll_plan,
+    res = pipeline.run_make(_cfg("split"), wd,
                             avatar_client=avatar, synth_fn=fs, assemble_fn=fa)
 
     assert res["ok"] is True
@@ -527,23 +528,6 @@ def test_caption_fixes_и_broll_plan_прокидываются(monkeypatch, tmp
     assert "кофе" in captured["caption_fixes"]
     assert captured["broll_segments"] is None
     assert captured["edit_plan"]["format_version"] == 1
-
-
-def test_punch_из_broll_plan_прокидывается_в_assemble(monkeypatch, tmp_path):
-    calls = []
-    captured = {}
-    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
-    avatar = _FakeAvatar()
-    wd = _wd_with_scenario(tmp_path)
-    broll_plan = {"segments": [{"role": "hook", "offset": 30.0}],
-                  "punch": [[15.0, 0.5], [20.0, 0.6]], "facts": {}}
-
-    res = pipeline.run_make(_cfg("split"), wd, broll_plan=broll_plan,
-                            avatar_client=avatar, synth_fn=fs, assemble_fn=fa)
-
-    assert res["ok"] is True
-    assert captured["punch_windows"] is None
-    assert captured["edit_plan"]["events"]["punch"] == broll_plan["punch"]
 
 
 def test_без_broll_plan_punch_windows_none(monkeypatch, tmp_path):
@@ -840,28 +824,6 @@ def test_visual_director_llm_bad_item_не_роняет_pipeline(
     assert review["source"] == "llm"
     assert len(review["rejected"]) == 1
     assert captured["edit_plan"]["validation"]["all_pass"] is True
-
-
-def test_явный_broll_plan_отключает_авто_precut(monkeypatch, tmp_path):
-    calls = []
-    fs, fa = _fakes(monkeypatch, tmp_path, calls)
-    avatar = _FakeAvatar()
-    wd = _wd_with_scenario(tmp_path)
-    precut_calls = []
-
-    def fake_precut(scenario, config):
-        precut_calls.append(1)
-        return {"segments": [], "log": []}
-
-    broll_plan = {"segments": [{"role": "development", "offset": 30.0, "insert": True}],
-                  "facts": {}}
-    res = pipeline.run_make(_cfg("avatar"), wd, broll_plan=broll_plan,
-                            avatar_client=avatar, synth_fn=fs,
-                            assemble_fn=fa, precut_fn=fake_precut,
-                            covered_block_fn=_fake_covered_block())
-
-    assert res["ok"] is True
-    assert precut_calls == []  # ручной план главнее
 
 
 def test_precut_не_запускается_для_split(monkeypatch, tmp_path):
