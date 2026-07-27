@@ -962,6 +962,8 @@ async def on_button(update, context):
             await _ask(q.message, chat_id, s, WAIT_TEXT, ASK_TEXT)
     elif data.startswith("idea:"):
         idea = (s.get("ideas") or [])[int(data.split(":")[1])]
+        if await _blocked_by_negative_balance(q.message, chat_id):
+            return
         await q.message.reply_text(WORKING)
         try:
             sc = await asyncio.to_thread(
@@ -1122,10 +1124,15 @@ def topup_keyboard():
     return InlineKeyboardMarkup(rows)
 
 
-def topup_text(need: int | None, have: int) -> str:
-    """Экран пополнения. need=None — пользователь открыл его сам, а не упёрся."""
+def topup_text(need: int | None, have: int, *, exhausted: bool = False) -> str:
+    """Экран пополнения. need=None — пользователь открыл его сам, а не упёрся.
+    exhausted=True — баланс ушёл в минус: до оценки стоимости рендера дело ещё
+    не дошло, поэтому need тут не при чём, а строка своя."""
     lines = [f"Баланс: {format_usd(have)}"]
-    if need is not None:
+    if exhausted:
+        lines.append("Баланс исчерпан, генерация сценария приостановлена.")
+        lines.append("Пополните — и сможете продолжить с того же места.")
+    elif need is not None:
         lines.append(
             f"На этот ролик не хватает — нужно примерно {format_usd(need)}."
         )
@@ -1135,17 +1142,34 @@ def topup_text(need: int | None, have: int) -> str:
 
 
 async def _show_topup(msg, chat_id: int, *, need: int | None = None,
-                      have: int | None = None) -> None:
+                      have: int | None = None, exhausted: bool = False) -> None:
     """Экран пополнения. Принимает telegram-сообщение, а не update/context:
     зовётся и из обработчика команды, и из _enqueue_build, где есть только msg."""
     balance = _ledger().balance(chat_id) if have is None else have
     await msg.reply_text(
-        topup_text(need, balance), reply_markup=topup_keyboard()
+        topup_text(need, balance, exhausted=exhausted), reply_markup=topup_keyboard()
     )
 
 
 async def cmd_balance(update, context) -> None:
     await _show_topup(update.message, update.effective_chat.id)
+
+
+async def _blocked_by_negative_balance(msg, chat_id: int) -> bool:
+    """Гейт перед платной генерацией сценария (Клод в step_verbatim/step_ideas/
+    step_scenario). Порог — строго «меньше нуля», а не «меньше либо равно»:
+    свежий пользователь стартует с балансом 0 и должен пройти бесплатный
+    пробный сценарий — иначе трейл сломан. Блокируем только когда баланс УЖЕ
+    ушёл в минус, иначе получится бесконечный бесплатный цикл генераций
+    в убыток заведению."""
+    billing = _billing()
+    if not billing["enabled"]:
+        return False
+    balance = _ledger().balance(chat_id)
+    if balance >= 0:
+        return False
+    await _show_topup(msg, chat_id, have=balance, exhausted=True)
+    return True
 
 
 async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
@@ -1450,6 +1474,8 @@ async def on_message(update, context):
                 reply_markup=_kb_language_mismatch(),
             )
             return
+        if await _blocked_by_negative_balance(msg, chat_id):
+            return
         await msg.reply_text(WORKING)
         try:
             sc = await asyncio.to_thread(
@@ -1462,6 +1488,8 @@ async def on_message(update, context):
         await _show_review(msg, chat_id, s)
 
     elif step == WAIT_RAW:
+        if await _blocked_by_negative_balance(msg, chat_id):
+            return
         await msg.reply_text(WORKING)
         try:
             ideas = await asyncio.to_thread(

@@ -1484,3 +1484,92 @@ def test_текст_пополнения_без_нехватки_показыв�
     text = topup_text(need=None, have=1_000_000)
     assert "$1.00" in text
     assert "не хватает" not in text.lower()
+
+
+# --- гейт: генерация сценария (Клод) блокируется при отрицательном балансе ----
+
+def _charge_flat(chat_id: int, micro: int) -> None:
+    """Загнать баланс в минус тестовым списанием — провайдер тут не важен."""
+    bot._ledger().charge(
+        chat_id,
+        entry_id=f"test:{chat_id}:{micro}",
+        job_id=None,
+        provider="test",
+        unit="usd",
+        quantity=1,
+        unit_price_micro=0,
+        cost_micro=micro,
+        charged_micro=micro,
+    )
+
+
+def test_отрицательный_баланс_блокирует_готовый_текст(work):
+    _charge_flat(7, 1)  # -0.000001$, но уже < 0 — этого достаточно для гейта
+    bot.save_session(7, {"step": bot.WAIT_TEXT, "language": "ru"})
+
+    msg = _Msg("Мой текст.")
+    asyncio.run(bot.on_message(_Update(msg), None))
+
+    assert "исчерпан" in msg.replies[-1].lower()
+    assert len(msg.markups[-1].inline_keyboard) == len(bot.TOPUP_PRODUCTS)
+    assert bot.WORKING not in msg.replies  # генерация не запускалась
+    assert bot.load_session(7)["step"] == bot.WAIT_TEXT  # шаг не сдвинулся
+
+
+def test_отрицательный_баланс_блокирует_сырьё(work):
+    _charge_flat(7, 1)
+    bot.save_session(7, {"step": bot.WAIT_RAW, "language": "ru"})
+
+    msg = _Msg("Длинное сырьё про продажи.")
+    asyncio.run(bot.on_message(_Update(msg), None))
+
+    assert "исчерпан" in msg.replies[-1].lower()
+    assert bot.WORKING not in msg.replies
+    assert bot.load_session(7)["step"] == bot.WAIT_RAW
+
+
+def test_отрицательный_баланс_блокирует_выбор_идеи(work):
+    _charge_flat(7, 1)
+    bot.save_session(7, {
+        "step": bot.CHOOSING_IDEA, "language": "ru",
+        "ideas": [{"idea": "Раз", "draft_hook": "Хук раз"}],
+    })
+
+    msg = _Msg()
+    _press("idea:0", msg)
+
+    assert "исчерпан" in msg.replies[-1].lower()
+    assert bot.WORKING not in msg.replies
+    assert bot.load_session(7)["step"] == bot.CHOOSING_IDEA
+
+
+def test_нулевой_баланс_не_блокирует_пробную_генерацию(work, monkeypatch):
+    """Ровно 0 — старт бесплатного триала, не «уже потрачено больше, чем было».
+    Порог намеренно «< 0», а не «<= 0»: тут регрессия сломала бы пробу новичку."""
+    monkeypatch.setattr(
+        bot, "step_verbatim", lambda chat_id, text, language: SCENARIO
+    )
+    assert bot._ledger().balance(7) == 0
+    bot.save_session(7, {"step": bot.WAIT_TEXT, "language": "ru"})
+
+    msg = _Msg("Мой текст.")
+    asyncio.run(bot.on_message(_Update(msg), None))
+
+    assert msg.replies[0] == bot.WORKING
+    assert bot.load_session(7)["step"] == bot.REVIEW
+
+
+def test_биллинг_выключен_не_блокирует_даже_при_минусе(work, monkeypatch):
+    _charge_flat(7, 1)
+    billing_on = bot._billing()
+    monkeypatch.setattr(bot, "_billing", lambda: {**billing_on, "enabled": False})
+    monkeypatch.setattr(
+        bot, "step_verbatim", lambda chat_id, text, language: SCENARIO
+    )
+    bot.save_session(7, {"step": bot.WAIT_TEXT, "language": "ru"})
+
+    msg = _Msg("Мой текст.")
+    asyncio.run(bot.on_message(_Update(msg), None))
+
+    assert msg.replies[0] == bot.WORKING
+    assert bot.load_session(7)["step"] == bot.REVIEW
