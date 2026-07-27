@@ -1370,7 +1370,15 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         return
 
     store.finish(job.job_id, "completed", result=result, stage="delivery")
-    breakdown = _ledger().job_breakdown(job.job_id)
+    # Чтение бухгалтерии вне защиты _safe_job_message — видео уже доставлено,
+    # повторов не будет. Если SQLite заблокирован или битый, чтение не должно
+    # уронить обновление сессии: доставленный ролик без чека — это приемлемая
+    # потеря, а застрявшая сессия — это тикет в поддержку.
+    try:
+        breakdown = _ledger().job_breakdown(job.job_id)
+    except Exception as e:
+        log.warning("не удалось прочитать breakdown для job %s: %s", job.job_id, e)
+        breakdown = None
     if breakdown:
         parts = ", ".join(
             f"{name} {format_usd(value)}" for name, value in sorted(breakdown.items())

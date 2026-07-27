@@ -1412,6 +1412,37 @@ def test_qa_провал_с_битым_breakdown_всё_равно_достав�
     assert "database is locked" in caplog.text
 
 
+def test_успешная_доставка_с_битым_breakdown_всё_равно_обновляет_сессию(
+    work, клиент, monkeypatch, caplog
+):
+    """Fix C: чтение breakdown вне защиты _safe_job_message — видео уже
+    доставлено, повторов не будет. Раньше упавшее чтение SQLite (заблокирован/
+    битый) роняло бы _process_job целиком, и сессия осталась бы в BUILDING,
+    хотя пользователь уже получил ролик. Теперь чтение защищено: пропускаем
+    чек, но обновление сессии гарантировано."""
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    def падающий_breakdown(self, job_id):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(bot.LedgerStore, "job_breakdown", падающий_breakdown)
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build", _Msg())
+    job = _claim_job()
+    _зачесть_расход_на_job(job.job_id)
+    api = _BotAPI()
+
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert bot.load_session(7)["step"] == bot.DONE
+    assert "database is locked" in caplog.text
+
+
 def test_receipt_называет_сумму_рендером_а_не_общим_списанием(work, клиент):
     """Fix 7: _charge_claude пишет свои строки с job_id=None, поэтому
     job_breakdown никогда не содержит траты на подготовку сценария — сумма
