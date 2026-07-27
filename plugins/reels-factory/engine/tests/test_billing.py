@@ -100,3 +100,76 @@ def test_разбивка_по_провайдерам(store):
         cost_micro=1_500_000, charged_micro=3_000_000,
     )
     assert store.job_breakdown("job1") == {"elevenlabs": 100_000, "heygen": 3_000_000}
+
+
+from reels_factory.billing import (
+    apply_markup, claude_cost_micro, elevenlabs_cost_micro,
+    estimate_micro, heygen_cost_micro,
+)
+from reels_factory.config import load_billing_config
+
+RATES = {
+    "heygen_usd_per_second": 0.05,
+    "heygen_twin_usd_per_second": 0.0667,
+    "elevenlabs_usd_per_1k_chars": 0.10,
+    "chars_per_second": 14.0,
+    "claude_flat_usd_per_reel": 0.05,
+}
+
+
+def test_стоимость_heygen_по_секундам():
+    # 30 секунд Photo Avatar по $0.05/сек = $1.50
+    assert heygen_cost_micro(30.0, RATES) == 1_500_000
+
+
+def test_стоимость_heygen_digital_twin_дороже():
+    assert heygen_cost_micro(30.0, RATES, twin=True) == 2_001_000
+
+
+def test_стоимость_elevenlabs_по_символам():
+    # 1000 символов по $0.10/1000 = $0.10
+    assert elevenlabs_cost_micro(1000, RATES) == 100_000
+
+
+def test_стоимость_клода_из_долларов():
+    assert claude_cost_micro(0.0342) == 34_200
+
+
+def test_наценка_удваивает():
+    assert apply_markup(1_500_000, 2.0) == 3_000_000
+
+
+def test_оценка_рилса_включает_обоих_провайдеров_и_наценку():
+    # 420 символов -> 30 секунд; heygen $1.50 + eleven $0.042 + claude $0.05
+    # = $1.592, с наценкой 2.0 -> $3.184
+    assert estimate_micro(420, RATES, 2.0) == 3_184_000
+
+
+def test_конфиг_биллинга_отдаёт_дефолты_без_файла(tmp_path, monkeypatch):
+    # Подменяем сам CONFIG_PATH, а не cwd: путь вычисляется один раз при
+    # импорте модуля, и monkeypatch.chdir на него уже не влияет — тест
+    # молча читал бы реальный конфиг машины.
+    import reels_factory.config as cfg_mod
+    monkeypatch.setattr(cfg_mod, "CONFIG_PATH", tmp_path / "config.yaml")
+
+    cfg = load_billing_config()
+    assert cfg["markup"] == 2.0
+    assert cfg["rates"]["heygen_usd_per_second"] == 0.05
+    assert cfg["enabled"] is True
+
+
+def test_конфиг_биллинга_накладывает_значения_поверх_дефолтов(tmp_path, monkeypatch):
+    import reels_factory.config as cfg_mod
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "billing:\n  markup: 3.0\n  rates:\n    heygen_usd_per_second: 0.07\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cfg_mod, "CONFIG_PATH", path)
+
+    cfg = load_billing_config()
+    assert cfg["markup"] == 3.0
+    assert cfg["rates"]["heygen_usd_per_second"] == 0.07
+    # не заданное в файле остаётся дефолтным
+    assert cfg["rates"]["elevenlabs_usd_per_1k_chars"] == 0.10
+    assert cfg["fx"]["rub"] == 0.011

@@ -248,3 +248,41 @@ class LedgerStore:
                 (job_id,),
             ).fetchall()
         return {row["provider"]: int(row["total"]) for row in rows}
+
+
+def heygen_cost_micro(seconds: float, rates: dict, *, twin: bool = False) -> int:
+    """Стоимость рендера HeyGen.
+
+    Ветка бота шлёт type:"image" (Photo Avatar) — она дешевле. Digital Twin
+    включается, только когда в конфиге клиента задан heygen_look_id.
+    """
+    key = "heygen_twin_usd_per_second" if twin else "heygen_usd_per_second"
+    return to_micro(float(seconds) * float(rates[key]))
+
+
+def elevenlabs_cost_micro(chars: int, rates: dict) -> int:
+    return to_micro(int(chars) / 1000.0 * float(rates["elevenlabs_usd_per_1k_chars"]))
+
+
+def claude_cost_micro(usd: float) -> int:
+    """Claude Code сам сообщает стоимость вызова в долларах."""
+    return to_micro(usd)
+
+
+def apply_markup(cost_micro: int, markup: float) -> int:
+    return int(math.ceil(int(cost_micro) * float(markup) - 1e-9))
+
+
+def estimate_micro(chars: int, rates: dict, markup: float, *, twin: bool = False) -> int:
+    """Грубая оценка до первого платного шага.
+
+    Задача оценки — не угадать цену, а не пустить в рендер с пустым балансом,
+    поэтому Клод учитывается плоской добавкой, а секунды считаются из символов.
+    """
+    seconds = int(chars) / float(rates["chars_per_second"])
+    cost = (
+        heygen_cost_micro(seconds, rates, twin=twin)
+        + elevenlabs_cost_micro(chars, rates)
+        + to_micro(rates["claude_flat_usd_per_reel"])
+    )
+    return apply_markup(cost, markup)

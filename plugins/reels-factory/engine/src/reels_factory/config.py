@@ -191,3 +191,44 @@ def load_config(path=None) -> dict:
                     "avatar_islands сейчас поддерживает только engine: avatar_iv."
                 )
     return cfg
+
+
+# Биллинг: ставки провайдеров и наценка. Обновляются руками при смене прайса
+# провайдера — автоматического источника цен для HeyGen/ElevenLabs не существует.
+BILLING_DEFAULTS = {
+    "enabled": True,
+    "markup": 2.0,
+    "rates": {
+        "heygen_usd_per_second": 0.05,
+        "heygen_twin_usd_per_second": 0.0667,
+        "elevenlabs_usd_per_1k_chars": 0.10,
+        "chars_per_second": 14.0,
+        "claude_flat_usd_per_reel": 0.05,
+    },
+    "fx": {"usd": 1.0, "eur": 1.08, "rub": 0.011},
+}
+
+
+def load_billing_config() -> dict:
+    """Секция billing из factory/config.yaml поверх дефолтов.
+
+    Отсутствие файла — не ошибка: биллинг должен работать и на чистой машине.
+    """
+    merged = {
+        "enabled": BILLING_DEFAULTS["enabled"],
+        "markup": BILLING_DEFAULTS["markup"],
+        "rates": dict(BILLING_DEFAULTS["rates"]),
+        "fx": dict(BILLING_DEFAULTS["fx"]),
+    }
+    try:
+        raw = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    except FileNotFoundError:
+        return merged
+    section = raw.get("billing") or {}
+    if "enabled" in section:
+        merged["enabled"] = bool(section["enabled"])
+    if "markup" in section:
+        merged["markup"] = float(section["markup"])
+    merged["rates"].update(section.get("rates") or {})
+    merged["fx"].update(section.get("fx") or {})
+    return merged
