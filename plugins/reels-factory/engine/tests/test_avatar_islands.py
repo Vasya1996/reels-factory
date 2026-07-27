@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from reels_factory.avatar import cached_generate
 from reels_factory.avatar_islands import (
     RENDER_MANIFEST_FILENAME,
     RENDER_PLAN_FILENAME,
@@ -351,6 +352,137 @@ def test_render_slices_parallel_cache_and_durable_manifest(tmp_path):
     assert all(item["status"] == "ready" for item in manifest["shots"])
     assert all(item["cache_key"] for item in manifest["shots"])
     assert all(item["clip_sha256"] for item in manifest["shots"])
+
+
+class _FakeMeter:
+    """Колбэк с сигнатурой JobMeter.heygen — модуль про биллинг ничего не
+    знает, ему передают именно такой колбэк."""
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, seconds, *, cached=False, twin=False):
+        self.calls.append((seconds, cached, twin))
+
+
+def _fake_run_slices(cmd):
+    output = Path(cmd[-1])
+    start = cmd[cmd.index("-ss") + 1]
+    duration = cmd[cmd.index("-t") + 1]
+    output.write_bytes(f"slice:{start}:{duration}".encode())
+
+
+def test_каждый_готовый_шот_тарифицируется_по_факту_файла(tmp_path, monkeypatch):
+    """Owner: списываем длительность ВЫДАННОГО клипа, меряя факт mp4, а не
+    плановую request_timing. Длина фейкового клипа зависит от содержимого
+    audio-среза (текст "slice:start:duration"), которое заведомо не равно
+    числовой длительности из плана — это доказывает, что в meter уходит
+    длительность фактического файла, а не плановое значение."""
+    import reels_factory.render as render_mod
+    monkeypatch.setattr(
+        render_mod, "media_dur",
+        lambda path: float(len(Path(path).read_bytes())),
+    )
+
+    edit_plan = _final_edit_plan(30)
+    master = tmp_path / "voice_master.wav"
+    master.write_bytes(b"offline-master-audio")
+    master_sha = hashlib.sha256(master.read_bytes()).hexdigest()
+    plan = build_avatar_render_plan(
+        edit_plan, _config(), master_audio_sha256=master_sha
+    )
+    client = _FakePhotoAvatarIV()
+    meter = _FakeMeter()
+
+    result = render_avatar_islands(
+        master, plan, client, tmp_path / "job", tmp_path / "cache",
+        edit_plan=edit_plan, run_cmd=_fake_run_slices, meter=meter,
+    )
+
+    assert len(meter.calls) == len(plan["shots"])
+    # twin наружу всегда False — Stage 3 запрещает Digital Twin, ставку
+    # применять неоткуда.
+    assert all(cached is False and twin is False for _, cached, twin in meter.calls)
+    expected_total = sum(len(clip.read_bytes()) for clip in result.clips)
+    assert sum(seconds for seconds, _, _ in meter.calls) == expected_total
+    planned_total = sum(shot["request_timing"]["duration"] for shot in plan["shots"])
+    assert sum(seconds for seconds, _, _ in meter.calls) != planned_total
+
+
+def test_шот_из_кэша_не_тарифицируется(tmp_path, monkeypatch):
+    """Owner: попадание в кэш денег не стоит, и хит определяется ДО вызова
+    генерации — по существованию cache_dir/{cache_key}.mp4. Второй прогон
+    того же плана — все шоты из кэша, HeyGen повторно не вызывается."""
+    import reels_factory.render as render_mod
+    monkeypatch.setattr(render_mod, "media_dur", lambda path: 5.0)
+
+    edit_plan = _final_edit_plan(30)
+    master = tmp_path / "voice_master.wav"
+    master.write_bytes(b"offline-master-audio")
+    master_sha = hashlib.sha256(master.read_bytes()).hexdigest()
+    plan = build_avatar_render_plan(
+        edit_plan, _config(), master_audio_sha256=master_sha
+    )
+    client = _FakePhotoAvatarIV()
+
+    first_meter = _FakeMeter()
+    render_avatar_islands(
+        master, plan, client, tmp_path / "job", tmp_path / "cache",
+        edit_plan=edit_plan, run_cmd=_fake_run_slices, meter=first_meter,
+    )
+    assert all(cached is False for _, cached, _ in first_meter.calls)
+    calls_after_first = len(client.calls)
+
+    second_meter = _FakeMeter()
+    render_avatar_islands(
+        master, plan, client, tmp_path / "job", tmp_path / "cache",
+        edit_plan=edit_plan, run_cmd=_fake_run_slices, meter=second_meter,
+    )
+
+    assert len(client.calls) == calls_after_first  # HeyGen не вызван повторно
+    assert len(second_meter.calls) == len(plan["shots"])
+    assert all(cached is True for _, cached, _ in second_meter.calls)
+
+
+def test_упавший_шот_не_тарифицируется_успешные_из_прогона_тарифицируются(
+    tmp_path, monkeypatch
+):
+    """Owner: шоты рендерятся параллельно, часть может упасть, а функция всё
+    равно проходит по всем и кидает исключение в конце (частичный провал).
+    Счётчик должен увидеть успешные шоты именно этого прогона, а не потерять
+    их из-за итогового исключения; упавший шот тарифицироваться не должен."""
+    import reels_factory.render as render_mod
+    monkeypatch.setattr(render_mod, "media_dur", lambda path: 4.0)
+
+    edit_plan = _final_edit_plan(30)
+    master = tmp_path / "voice_master.wav"
+    master.write_bytes(b"offline-master-audio")
+    master_sha = hashlib.sha256(master.read_bytes()).hexdigest()
+    plan = build_avatar_render_plan(
+        edit_plan, _config(), master_audio_sha256=master_sha
+    )
+    client = _FakePhotoAvatarIV()
+    meter = _FakeMeter()
+    failing_shot_id = plan["shots"][2]["id"]
+
+    def flaky_generate(client, audio_wav, cache_dir, motion_prompt=None,
+                        expressiveness=None, role=None):
+        if failing_shot_id in str(audio_wav):
+            raise RuntimeError("HeyGen отказал")
+        return cached_generate(
+            client, audio_wav, cache_dir, role=role,
+            motion_prompt=motion_prompt, expressiveness=expressiveness,
+        )
+
+    with pytest.raises(RuntimeError, match="avatar island render failed"):
+        render_avatar_islands(
+            master, plan, client, tmp_path / "job", tmp_path / "cache",
+            edit_plan=edit_plan, run_cmd=_fake_run_slices, meter=meter,
+            generate_fn=flaky_generate,
+        )
+
+    assert len(meter.calls) == len(plan["shots"]) - 1
+    assert sum(seconds for seconds, _, _ in meter.calls) == 4.0 * (len(plan["shots"]) - 1)
 
 
 def test_validator_detects_duplicate_visible_phrase():

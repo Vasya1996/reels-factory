@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+import sys
 import threading
 import time
 from pathlib import Path
@@ -260,6 +261,28 @@ def heygen_cost_micro(seconds: float, rates: dict, *, twin: bool = False) -> int
     """
     key = "heygen_twin_usd_per_second" if twin else "heygen_usd_per_second"
     return to_micro(float(seconds) * float(rates[key]))
+
+
+def billable_seconds(path) -> float:
+    """Длительность готового mp4 — то, за что HeyGen берёт деньги.
+
+    Меряем факт, а не оценку: цена привязана к секундам выданного видео, а не
+    к запрошенным. Сбой замера не должен ронять сборку — она уже оплачена,
+    просто не учтётся.
+
+    Общий помощник для block-by-block ветки (pipeline.py) и avatar islands
+    (avatar_islands.py); живёт здесь, а не в pipeline.py, чтобы избежать
+    цикла импорта (pipeline импортирует avatar_islands).
+    """
+    from reels_factory.render import media_dur
+    try:
+        return float(media_dur(path))
+    except Exception as e:
+        # Сборка уже оплачена — не роняем её, но и не молчим: без лога
+        # оператор не узнает, что HeyGen списал деньги, а метр этого не увидел.
+        print(f"[billing] billable_seconds: не удалось измерить {path}: {e}",
+              file=sys.stderr)
+        return 0.0
 
 
 def elevenlabs_cost_micro(chars: int, rates: dict) -> int:

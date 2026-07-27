@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Callable
 
 from reels_factory.avatar import avatar_cache_key, cached_generate
+from reels_factory.billing import billable_seconds
 from reels_factory.config import FFMPEG
 from reels_factory.editplan import validate_edit_plan
 
@@ -636,6 +637,7 @@ def render_avatar_islands(
     edit_plan: dict,
     run_cmd: Callable | None = None,
     generate_fn: Callable | None = None,
+    meter: Callable | None = None,
 ) -> AvatarIslandArtifacts:
     """Slice master audio and render/cache Photo Avatar IV shots in parallel."""
     report = validate_avatar_render_plan(plan, edit_plan)
@@ -669,6 +671,10 @@ def render_avatar_islands(
     _ = plan_path
 
     audio_paths: dict[str, Path] = {}
+    # Whether each shot's cache key already has a file on disk, checked here
+    # before any render call. After cached_generate/generate_fn runs the file
+    # exists either way, so a hit can no longer be told apart from a miss.
+    cache_hits: dict[str, bool] = {}
     manifest = {
         "format_version": FORMAT_VERSION,
         "engine_scope": "photo_avatar_iv",
@@ -687,6 +693,7 @@ def render_avatar_islands(
             motion_prompt=performance["motion_prompt"],
             expressiveness=performance["expressiveness"],
         )
+        cache_hits[shot["id"]] = (cache_dir / f"{cache_key}.mp4").exists()
         manifest["shots"].append({
             "shot_id": shot["id"],
             "idempotency_key": shot["idempotency_key"],
@@ -749,6 +756,22 @@ def render_avatar_islands(
                     "clip_path": str(clip),
                     "clip_sha256": hashlib.sha256(clip.read_bytes()).hexdigest(),
                 })
+                if meter is not None:
+                    # Owner: bill the full duration of the delivered clip,
+                    # not just the visible slice — HeyGen renders and bills
+                    # the whole handle-padded request, so the ledger has to
+                    # match. Measure the actual output mp4, never the
+                    # planned request_timing. twin is always False here:
+                    # Stage 3 only allows Photo Avatar IV, there is no
+                    # Digital Twin rate to apply. A cache hit is still
+                    # reported (cached=True) rather than skipped, so every
+                    # successful shot goes through the same single call and
+                    # the meter itself decides not to charge for it.
+                    meter(
+                        billable_seconds(clip),
+                        cached=cache_hits[shot_id],
+                        twin=False,
+                    )
             except Exception as exc:
                 item.update({"status": "failed", "error": str(exc)[:500]})
                 failures.append((shot["id"], exc))

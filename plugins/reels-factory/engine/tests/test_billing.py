@@ -177,6 +177,28 @@ def test_конфиг_биллинга_накладывает_значения_�
     assert cfg["fx"]["rub"] == 0.011
 
 
+from reels_factory.billing import billable_seconds
+
+
+def test_billable_seconds_сбой_замера_логируется_но_не_роняет(monkeypatch, capsys):
+    """Probe длительности может упасть уже ПОСЛЕ платного HeyGen-рендера —
+    сборка не должна падать (остаётся 0.0), но раньше сбой проглатывался
+    молча, и оператор не видел, что метр ничего не увидел. Живёт в billing.py
+    (не в pipeline.py), чтобы им мог пользоваться и avatar_islands.py без
+    цикла импорта."""
+    import reels_factory.render as render_mod
+
+    def bad_media_dur(path):
+        raise RuntimeError("ffprobe упал")
+
+    monkeypatch.setattr(render_mod, "media_dur", bad_media_dur)
+
+    result = billable_seconds("неважно.mp4")
+
+    assert result == 0.0
+    assert "ffprobe упал" in capsys.readouterr().err
+
+
 from reels_factory.billing import JobMeter
 
 
