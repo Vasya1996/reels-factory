@@ -44,6 +44,7 @@ from reels_factory.language import (
 from reels_factory.llm import ClaudeSkillRunner
 from reels_factory.scenario import (ScenarioError, run_generated_path, run_ideas,
                                     run_verbatim_path, split_verbatim)
+from reels_factory.tribute import start_webhook_server
 
 log = logging.getLogger(__name__)
 
@@ -1431,6 +1432,15 @@ async def _post_init(app):
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
         await _safe_job_message(
             app.bot, job.chat_id, f"{INTERRUPTED_MSG}\nID: {job.job_id[:8]}"
+        )
+
+    tribute_key = os.environ.get("TRIBUTE_API_KEY")
+    if tribute_key:
+        billing = _billing()
+        start_webhook_server(
+            _ledger(), api_key=tribute_key, fx=billing["fx"],
+            port=int(os.environ.get("TRIBUTE_WEBHOOK_PORT", "8099")),
+            on_credit=lambda ev: None,
         )
 
     global _job_wakeup, _worker_task

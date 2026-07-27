@@ -12,6 +12,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from reels_factory.billing import LedgerStore, to_micro
 
@@ -99,3 +101,65 @@ def handle_webhook(store: LedgerStore, raw: bytes, signature: str, *,
         "chat_id": chat_id,
         "micro": micro,
     }
+
+
+WEBHOOK_PATH = "/tribute"
+MAX_BODY_BYTES = 1_000_000
+
+
+def start_webhook_server(store: LedgerStore, *, api_key: str, fx: dict,
+                         port: int, on_credit=None) -> ThreadingHTTPServer:
+    """Поднять слушатель вебхука в демон-потоке.
+
+    ThreadingHTTPServer из стандартной библиотеки, а не веб-фреймворк: новых
+    зависимостей ради одного эндпоинта не вводим, а SQLite потокобезопасен при
+    connection-per-call. Снаружи HTTPS терминирует Caddy.
+    """
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 — имя задано базовым классом
+            if self.path.rstrip("/") != WEBHOOK_PATH:
+                self.send_error(404)
+                return
+            length = int(self.headers.get("Content-Length") or 0)
+            if length <= 0 or length > MAX_BODY_BYTES:
+                self.send_error(400)
+                return
+            raw = self.rfile.read(length)
+            signature = self.headers.get("trbt-signature", "")
+            try:
+                result = handle_webhook(
+                    store, raw, signature, api_key=api_key, fx=fx
+                )
+            except PermissionError:
+                self.send_error(401)
+                return
+            except Exception:
+                # Отдаём 500 намеренно: Tribute повторит доставку, а событие
+                # идемпотентно — дубль не зачислится.
+                self.send_error(500)
+                return
+            if result.get("credited"):
+                if on_credit is not None:
+                    try:
+                        on_credit(result)
+                    except Exception:
+                        pass
+            else:
+                # Незачисленный платёж должен быть заметен: дубль ретрая —
+                # норма, а вот no_telegram_user_id означает застрявшие деньги.
+                print(f"[tribute] не зачислено: {result.get('reason')}", flush=True)
+            payload = json.dumps({"status": "ok"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *args):  # тишина в stdout бота
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", int(port)), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server

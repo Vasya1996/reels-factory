@@ -1,6 +1,8 @@
 import hashlib
 import hmac
 import json
+import urllib.error
+import urllib.request
 
 import pytest
 
@@ -136,3 +138,45 @@ def test_нечисловой_telegram_user_id_не_роняет_обработ�
     res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
     assert res["credited"] is False
     assert res["reason"] == "invalid_telegram_user_id"
+
+
+def test_сервер_принимает_подписанный_вебхук(store):
+    from reels_factory.tribute import start_webhook_server
+
+    got = []
+    srv = start_webhook_server(
+        store, api_key=KEY, fx=FX, port=0, on_credit=lambda ev: got.append(ev)
+    )
+    try:
+        port = srv.server_address[1]
+        raw = body()
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/tribute",
+            data=raw, method="POST",
+            headers={"trbt-signature": sign(raw), "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            assert resp.status == 200
+        assert store.balance(777) == 10_000_000
+        assert got and got[0]["chat_id"] == 777
+    finally:
+        srv.shutdown()
+
+
+def test_сервер_отвергает_плохую_подпись(store):
+    from reels_factory.tribute import start_webhook_server
+
+    srv = start_webhook_server(store, api_key=KEY, fx=FX, port=0)
+    try:
+        port = srv.server_address[1]
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/tribute",
+            data=body(), method="POST",
+            headers={"trbt-signature": "deadbeef"},
+        )
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            urllib.request.urlopen(req, timeout=5)
+        assert exc.value.code == 401
+        assert store.balance(777) == 0
+    finally:
+        srv.shutdown()
