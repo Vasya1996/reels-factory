@@ -1081,9 +1081,61 @@ async def _finish_voice(msg, chat_id: int, s: dict):
     await msg.reply_text(READY_MSG, reply_markup=_kb_ready())
 
 
-async def _show_topup(msg, chat_id, **kw):
-    """Заглушка: экран пополнения строит Task 10, здесь — короткое сообщение."""
-    await msg.reply_text("Баланса не хватает")
+# Ссылки на инфопродукты Tribute. Товары создаются вручную в дашборде —
+# API для их создания у Tribute нет, поэтому список статичный.
+#
+# Берём поле link (оплата ОТКРЫВАЕТСЯ ВНУТРИ ТЕЛЕГРАМА), а не webLink
+# (страница в браузере). Разница принципиальная: в браузере покупатель может
+# войти по почте, тогда в вебхуке не будет telegram_user_id и зачислять будет
+# некому. Внутри Телеграма пользователь опознан всегда.
+# Актуальные значения обоих полей: GET /api/v1/products с ключом Tribute.
+TOPUP_PRODUCTS = (
+    ("$1 (тест)", "https://t.me/tribute/app?startapp=pAHq"),
+    ("$10", "https://t.me/tribute/app?startapp=pAH1"),
+    ("$25", "https://t.me/tribute/app?startapp=pAHh"),
+    ("$50", "https://t.me/tribute/app?startapp=pAHj"),
+    ("1000 ₽", "https://t.me/tribute/app?startapp=pAHm"),
+    ("2500 ₽", "https://t.me/tribute/app?startapp=pAHn"),
+    ("5000 ₽", "https://t.me/tribute/app?startapp=pAHo"),
+)
+
+
+def topup_keyboard():
+    # Импорт локальный и аннотации возврата нет — в bot.py telegram-классы
+    # везде импортируются внутри функций, на уровне модуля этих имён не существует.
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    rows = [
+        [InlineKeyboardButton(label, url=url)]
+        for label, url in TOPUP_PRODUCTS
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+def topup_text(need: int | None, have: int) -> str:
+    """Экран пополнения. need=None — пользователь открыл его сам, а не упёрся."""
+    lines = [f"Баланс: {format_usd(have)}"]
+    if need is not None:
+        lines.append(
+            f"На этот ролик не хватает — нужно примерно {format_usd(need)}."
+        )
+    lines.append("")
+    lines.append("Пополнить — кнопкой ниже. Баланс обновится сам после оплаты.")
+    return "\n".join(lines)
+
+
+async def _show_topup(msg, chat_id: int, *, need: int | None = None,
+                      have: int | None = None) -> None:
+    """Экран пополнения. Принимает telegram-сообщение, а не update/context:
+    зовётся и из обработчика команды, и из _enqueue_build, где есть только msg."""
+    balance = _ledger().balance(chat_id) if have is None else have
+    await msg.reply_text(
+        topup_text(need, balance), reply_markup=topup_keyboard()
+    )
+
+
+async def cmd_balance(update, context) -> None:
+    await _show_topup(update.message, update.effective_chat.id)
 
 
 async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
@@ -1425,6 +1477,7 @@ async def _post_init(app):
         [
             BotCommand("new", "Новый ролик"),
             BotCommand("status", "Статус сборки"),
+            BotCommand("balance", "Баланс и пополнение"),
         ]
     )
     interrupted = await asyncio.to_thread(_job_store().mark_running_interrupted)
@@ -1476,6 +1529,7 @@ def main():
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("new", cmd_new))
     app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("balance", cmd_balance))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(MessageHandler(~filters.COMMAND, on_message))
     app.run_polling()

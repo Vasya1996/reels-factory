@@ -1278,3 +1278,31 @@ def test_нехватки_баланса_блокирует_enqueue_build_и_н�
 
     # workdir так и не появился — отказ не оставил следов на диске.
     assert not jobs_root.exists()
+
+
+def test_кнопки_пополнения_ведут_на_tribute():
+    from reels_factory.bot import TOPUP_PRODUCTS, topup_keyboard
+    assert len(TOPUP_PRODUCTS) == 7
+    for label, url in TOPUP_PRODUCTS:
+        # Только внутрителеграмная ссылка: с веб-страницы может прийти оплата
+        # без telegram_user_id, и зачислить её будет некому.
+        assert url.startswith("https://t.me/tribute/app?startapp=")
+        assert "web.tribute.tg" not in url
+        assert label
+    rows = topup_keyboard().inline_keyboard
+    urls = [btn.url for row in rows for btn in row if btn.url]
+    assert len(urls) == 7
+
+
+def test_текст_пополнения_при_нехватке_показывает_обе_суммы():
+    from reels_factory.bot import topup_text
+    text = topup_text(need=3_184_000, have=1_000_000)
+    assert "$3.18" in text
+    assert "$1.00" in text
+
+
+def test_текст_пополнения_без_нехватки_показывает_только_баланс():
+    from reels_factory.bot import topup_text
+    text = topup_text(need=None, have=1_000_000)
+    assert "$1.00" in text
+    assert "не хватает" not in text.lower()
