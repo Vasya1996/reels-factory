@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import pytest
 from reels_factory.llm import FakeRunner, ClaudeCliRunner, ClaudeSkillRunner, FakeSkillRunner
 
@@ -23,7 +24,7 @@ def test_claude_skill_runner_builds_command(monkeypatch, tmp_path):
 
     class P:
         returncode = 0
-        stdout = '{"ok": true}'
+        stdout = '{"result": "{\\"ok\\": true}", "total_cost_usd": 0.01}'
         stderr = ""
 
     def fake_run(cmd, **kw):
@@ -54,7 +55,7 @@ def test_скилл_зовётся_в_изоляции(monkeypatch, tmp_path):
 
     class P:
         returncode = 0
-        stdout = "ok"
+        stdout = '{"result": "ok", "total_cost_usd": 0.01}'
         stderr = ""
 
     def fake_run(cmd, **kw):
@@ -101,3 +102,81 @@ def test_fake_skill_runner_records_calls(tmp_path):
     out = f.run_skill("judging-script", tmp_path / "x.json")
     assert json.loads(out) == {"a": 1}
     assert f.calls == [("judging-script", tmp_path / "x.json")]
+
+
+def test_скилл_возвращает_текст_из_json(monkeypatch, tmp_path):
+    payload = json.dumps({
+        "type": "result", "subtype": "success", "is_error": False,
+        "result": "готовый текст сценария",
+        "total_cost_usd": 0.0342,
+    })
+    monkeypatch.setattr(
+        "reels_factory.llm.subprocess.run",
+        lambda *a, **kw: SimpleNamespace(returncode=0, stdout=payload, stderr=""),
+    )
+    runner = ClaudeSkillRunner(config_dir=tmp_path / "profile")
+    assert runner.run_skill("script", "payload.json") == "готовый текст сценария"
+    assert runner.last_cost_usd == 0.0342
+
+
+def test_скилл_просит_json_формат(monkeypatch, tmp_path):
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"result": "ок", "total_cost_usd": 0.01}),
+            stderr="",
+        )
+
+    monkeypatch.setattr("reels_factory.llm.subprocess.run", fake_run)
+    ClaudeSkillRunner(config_dir=tmp_path / "profile").run_skill("script", "p.json")
+    assert "--output-format" in seen["cmd"]
+    assert seen["cmd"][seen["cmd"].index("--output-format") + 1] == "json"
+
+
+def test_шум_перед_json_не_ломает_разбор(monkeypatch, tmp_path):
+    # node и прочие подпроцессы пишут в тот же stdout; берём последний
+    # JSON-объект, а не весь поток целиком.
+    noisy = 'npm warn something\n' + json.dumps({"result": "ок", "total_cost_usd": 0.02})
+    monkeypatch.setattr(
+        "reels_factory.llm.subprocess.run",
+        lambda *a, **kw: SimpleNamespace(returncode=0, stdout=noisy, stderr=""),
+    )
+    runner = ClaudeSkillRunner(config_dir=tmp_path / "profile")
+    assert runner.run_skill("script", "p.json") == "ок"
+    assert runner.last_cost_usd == 0.02
+
+
+def test_стоимость_нескольких_вызовов_суммируется(monkeypatch, tmp_path):
+    # Один runner обслуживает генерацию, хуманизатор и судью подряд —
+    # по last_cost_usd видно только последний вызов.
+    monkeypatch.setattr(
+        "reels_factory.llm.subprocess.run",
+        lambda *a, **kw: SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"result": "ок", "total_cost_usd": 0.01}),
+            stderr="",
+        ),
+    )
+    runner = ClaudeSkillRunner(config_dir=tmp_path / "profile")
+    runner.run_skill("script", "p.json")
+    runner.run_skill("humanizing-speech", "p.json")
+    runner.run_skill("judge", "p.json")
+    assert runner.last_cost_usd == 0.01
+    assert round(runner.total_cost_usd, 4) == 0.03
+
+
+def test_невалидный_json_падает_понятной_ошибкой(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "reels_factory.llm.subprocess.run",
+        lambda *a, **kw: SimpleNamespace(returncode=0, stdout="не json вовсе", stderr=""),
+    )
+    runner = ClaudeSkillRunner(config_dir=tmp_path / "profile")
+    try:
+        runner.run_skill("script", "p.json")
+    except RuntimeError as exc:
+        assert "JSON" in str(exc)
+    else:
+        raise AssertionError("ожидали RuntimeError")
