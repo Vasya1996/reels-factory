@@ -33,8 +33,16 @@ def credited_micro(amount_minor: int, currency: str, fx: dict) -> int:
     amount приходит в минимальных единицах (центы, копейки), поэтому делим
     на 100 и умножаем на курс к доллару.
     """
-    rate = float(fx.get((currency or "usd").lower(), 1.0))
-    return to_micro(int(amount_minor) / 100.0 * rate)
+    key = (currency or "usd").lower()
+    if key not in fx:
+        # Неизвестная валюта — не угадываем курс 1:1, это переплата в нашу пользу.
+        raise ValueError(f"unknown currency: {currency!r}")
+    rate = float(fx[key])
+    amount = int(amount_minor)
+    if amount <= 0:
+        # Ноль и отрицательные суммы бессмысленны, а отрицательная тихо спишет баланс.
+        raise ValueError(f"non-positive amount: {amount_minor!r}")
+    return to_micro(amount / 100.0 * rate)
 
 
 def handle_webhook(store: LedgerStore, raw: bytes, signature: str, *,
@@ -54,18 +62,27 @@ def handle_webhook(store: LedgerStore, raw: bytes, signature: str, *,
     if not chat_id:
         # Покупка через веб без входа по Telegram — не знаем, кому зачислять.
         return {"credited": False, "reason": "no_telegram_user_id"}
+    try:
+        chat_id = int(chat_id)
+    except (TypeError, ValueError):
+        # Нечисловой telegram_user_id — не даём int() уронить обработчик 500-й.
+        return {"credited": False, "reason": "invalid_telegram_user_id"}
     purchase_id = str(payload.get("purchase_id") or payload.get("transaction_id") or "")
     if not purchase_id:
         return {"credited": False, "reason": "no_purchase_id"}
-    micro = credited_micro(payload.get("amount") or 0, payload.get("currency") or "usd", fx)
+    try:
+        micro = credited_micro(payload.get("amount") or 0, payload.get("currency") or "usd", fx)
+    except ValueError:
+        # Неизвестная валюта или некорректная сумма — отклоняем как обычный отказ.
+        return {"credited": False, "reason": "invalid_amount_or_currency"}
     credited = store.credit(
-        int(chat_id), micro, purchase_id=purchase_id,
+        chat_id, micro, purchase_id=purchase_id,
         amount_minor=int(payload.get("amount") or 0),
         currency=str(payload.get("currency") or "usd"), raw=event,
     )
     return {
         "credited": credited,
         "reason": "ok" if credited else "duplicate",
-        "chat_id": int(chat_id),
+        "chat_id": chat_id,
         "micro": micro,
     }

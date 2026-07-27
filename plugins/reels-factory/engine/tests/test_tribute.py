@@ -95,3 +95,42 @@ def test_чужое_событие_игнорируется(store):
     res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
     assert res["credited"] is False
     assert res["reason"] == "ignored_event"
+
+
+def test_нет_purchase_id_и_transaction_id_не_зачисляется(store):
+    raw = body(purchase_id=None, transaction_id=None)
+    res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
+    assert res["credited"] is False
+    assert res["reason"] == "no_purchase_id"
+    assert store.balance(777) == 0
+
+
+def test_неизвестная_валюта_не_зачисляется(store):
+    # В fx нет "kzt" — угадывать курс 1:1 к доллару нельзя, это переплата.
+    raw = body(currency="kzt")
+    res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
+    assert res["credited"] is False
+    assert res["reason"] == "invalid_amount_or_currency"
+    assert store.balance(777) == 0
+
+
+def test_отрицательная_сумма_не_зачисляется(store):
+    # Отрицательный amount иначе тихо спишет баланс, а credited будет True.
+    raw = body(amount=-1000)
+    res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
+    assert res["credited"] is False
+    assert store.balance(777) == 0
+
+
+def test_нулевая_сумма_не_зачисляется(store):
+    raw = body(amount=0)
+    res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
+    assert res["credited"] is False
+    assert store.balance(777) == 0
+
+
+def test_нечисловой_telegram_user_id_не_роняет_обработчик(store):
+    raw = body(telegram_user_id="abc")
+    res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
+    assert res["credited"] is False
+    assert res["reason"] == "invalid_telegram_user_id"
