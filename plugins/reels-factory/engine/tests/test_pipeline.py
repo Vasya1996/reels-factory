@@ -57,11 +57,6 @@ class _FakeAvatar:
 def _fakes(monkeypatch, tmp_path, calls, captured=None):
     monkeypatch.setattr(pipeline, "WORK_ROOT", tmp_path)
 
-    def fake_ingest(source, workdir):
-        calls.append(("ingest", source))
-        p = Path(workdir) / "broll.mp4"; p.write_bytes(b"")
-        return {"video_path": str(p)}
-
     def fake_synth(text, out_wav, *a, **kw):
         calls.append(("synth", text, kw.get("voice_id")))
         Path(out_wav).write_bytes(b"")
@@ -91,7 +86,7 @@ def _fakes(monkeypatch, tmp_path, calls, captured=None):
         return {"all_pass": True, "gates": {}}
 
     monkeypatch.setattr(pipeline, "verify_reel", fake_verify)
-    return fake_ingest, fake_synth, fake_assemble
+    return fake_synth, fake_assemble
 
 
 def _wd_with_scenario(tmp_path):
@@ -102,16 +97,16 @@ def _wd_with_scenario(tmp_path):
 
 def test_split_happy_path(monkeypatch, tmp_path):
     calls = []
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
 
-    res = pipeline.run_make(_cfg("split"), "broll.mp4", 30.0, wd,
-                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi, assemble_fn=fa)
+    res = pipeline.run_make(_cfg("split"), wd,
+                            avatar_client=avatar, synth_fn=fs, assemble_fn=fa)
 
     assert res["ok"] is True and res["qa_pass"] is True
     stages = [c[0] for c in calls]
-    assert stages == ["synth", "synth", "synth", "synth", "ingest", "assemble", "verify"]
+    assert stages == ["synth", "synth", "synth", "synth", "assemble", "verify"]
     # 4 блока -> 4 генерации аватара (cta через cached_generate тоже завершается generate)
     assert len(avatar.calls) == 4
     assemble_call = next(c for c in calls if c[0] == "assemble")
@@ -125,11 +120,11 @@ def test_split_happy_path(monkeypatch, tmp_path):
 
 def test_fullscreen_без_аватара(monkeypatch, tmp_path):
     calls = []
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
     wd = _wd_with_scenario(tmp_path)
 
-    res = pipeline.run_make(_cfg("fullscreen"), "broll.mp4", 30.0, wd,
-                            synth_fn=fs, ingest_fn=fi, assemble_fn=fa)
+    res = pipeline.run_make(_cfg("fullscreen"), wd,
+                            synth_fn=fs, assemble_fn=fa)
 
     assert res["ok"] is True
     assemble_call = next(c for c in calls if c[0] == "assemble")
@@ -141,17 +136,15 @@ def test_fullscreen_без_аватара(monkeypatch, tmp_path):
 def test_avatar_с_аватаром_без_broll(monkeypatch, tmp_path):
     calls = []
     captured = {}
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
 
-    # broll_source=None: для avatar видеоряд опционален (нет вставок)
-    res = pipeline.run_make(_cfg("avatar"), None, 0.0, wd,
-                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi, assemble_fn=fa)
+    # avatar собирается и без низового видеоряда вовсе (нет вставок)
+    res = pipeline.run_make(_cfg("avatar"), wd,
+                            avatar_client=avatar, synth_fn=fs, assemble_fn=fa)
 
     assert res["ok"] is True and res["qa_pass"] is True
-    # ingest пропущен (нет источника видеоряда)
-    assert not any(c[0] == "ingest" for c in calls)
     # аватар генерируется на каждый блок (как split)
     assert len(avatar.calls) == 4
     assemble_call = next(c for c in calls if c[0] == "assemble")
@@ -163,7 +156,7 @@ def test_avatar_с_аватаром_без_broll(monkeypatch, tmp_path):
 def test_master_audio_одна_озвучка_вместо_block_tts(monkeypatch, tmp_path):
     calls = []
     captured = {}
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
     master_calls = []
@@ -200,8 +193,8 @@ def test_master_audio_одна_озвучка_вместо_block_tts(monkeypatch
     cfg = _cfg("avatar")
     cfg["master_audio"] = {"enabled": True}
     res = pipeline.run_make(
-        cfg, None, 0.0, wd, avatar_client=avatar, synth_fn=fs,
-        ingest_fn=fi, assemble_fn=fa, master_audio_fn=fake_master,
+        cfg, wd, avatar_client=avatar, synth_fn=fs,
+        assemble_fn=fa, master_audio_fn=fake_master,
     )
 
     assert res["ok"] is True
@@ -222,7 +215,7 @@ def test_master_audio_одна_озвучка_вместо_block_tts(monkeypatch
 
 def test_master_audio_не_разрешает_jump_cuts_ломать_timeline(monkeypatch, tmp_path):
     calls = []
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
     cut_calls = []
@@ -263,8 +256,8 @@ def test_master_audio_не_разрешает_jump_cuts_ломать_timeline(mo
     cfg["master_audio"] = {"enabled": True}
     cfg["edit"] = {"jump_cuts": True}
     res = pipeline.run_make(
-        cfg, None, 0.0, wd, avatar_client=avatar, synth_fn=fs,
-        ingest_fn=fi, assemble_fn=fa, master_audio_fn=fake_master,
+        cfg, wd, avatar_client=avatar, synth_fn=fs,
+        assemble_fn=fa, master_audio_fn=fake_master,
         jump_cut_fn=fake_cut,
     )
 
@@ -277,7 +270,7 @@ def test_avatar_islands_заменяет_block_by_block_photo_avatar_iv(
 ):
     calls = []
     captured = {}
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
     avatar = _FakeAvatar()
     avatar.engine = "avatar_iv"
     wd = _wd_with_scenario(tmp_path)
@@ -329,12 +322,9 @@ def test_avatar_islands_заменяет_block_by_block_photo_avatar_iv(
     cfg["avatar_islands"] = {"enabled": True}
     res = pipeline.run_make(
         cfg,
-        None,
-        0.0,
         wd,
         avatar_client=avatar,
         synth_fn=fs,
-        ingest_fn=fi,
         assemble_fn=fa,
         master_audio_fn=fake_master,
         avatar_render_fn=fake_render,
@@ -358,7 +348,7 @@ def test_avatar_islands_с_meter_не_падает_и_тарифицирует_�
     meter сборка не падает RuntimeError'ом, а счётчик получает секунды по
     каждому отрендеренному шоту. Фейки, без живых вызовов HeyGen/ffmpeg."""
     calls = []
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
     avatar = _FakeAvatar()
     avatar.engine = "avatar_iv"
     wd = _wd_with_scenario(tmp_path)
@@ -413,12 +403,9 @@ def test_avatar_islands_с_meter_не_падает_и_тарифицирует_�
     cfg["avatar_islands"] = {"enabled": True}
     res = pipeline.run_make(
         cfg,
-        None,
-        0.0,
         wd,
         avatar_client=avatar,
         synth_fn=fs,
-        ingest_fn=fi,
         assemble_fn=fa,
         master_audio_fn=fake_master,
         avatar_render_fn=fake_render,
@@ -433,30 +420,11 @@ def test_avatar_islands_с_meter_не_падает_и_тарифицирует_�
     )
 
 
-def test_avatar_со_вставками_ingest_вызывается(monkeypatch, tmp_path):
-    calls = []
-    captured = {}
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
-    avatar = _FakeAvatar()
-    wd = _wd_with_scenario(tmp_path)
-    broll_plan = {"segments": [{"role": "development", "offset": 30.0, "insert": True}],
-                  "facts": {}}
-
-    res = pipeline.run_make(_cfg("avatar"), "broll.mp4", 0.0, wd, broll_plan=broll_plan,
-                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi, assemble_fn=fa,
-                            covered_block_fn=_fake_covered_block())
-
-    assert res["ok"] is True
-    assert any(c[0] == "ingest" for c in calls)  # источник вставок скачивается
-    assert captured["broll_segments"] is None
-    assert captured["edit_plan"]["summary"]["covered_block_indexes"] == [1]
-
-
 def test_avatar_блок_на_100pct_закрытый_вставкой_не_дёргает_heygen(monkeypatch, tmp_path):
     """development на 100% под вставкой (insert=True) -> HeyGen не рендерит его,
     вместо этого дешёвый локальный covered_block_fn (голос поверх чёрного кадра)."""
     calls = []
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
     broll_plan = {"segments": [{"role": "development", "offset": 30.0, "insert": True}],
@@ -464,8 +432,8 @@ def test_avatar_блок_на_100pct_закрытый_вставкой_не_дё
 
     covered_calls = []
 
-    res = pipeline.run_make(_cfg("avatar"), "broll.mp4", 0.0, wd, broll_plan=broll_plan,
-                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi, assemble_fn=fa,
+    res = pipeline.run_make(_cfg("avatar"), wd, broll_plan=broll_plan,
+                            avatar_client=avatar, synth_fn=fs, assemble_fn=fa,
                             covered_block_fn=_fake_covered_block(covered_calls))
 
     assert res["ok"] is True
@@ -480,36 +448,20 @@ def test_avatar_блок_на_100pct_закрытый_вставкой_не_дё
     assert assemble_call[2] == 4
 
 
-def test_провал_ingest_даёт_stage_ingest(monkeypatch, tmp_path):
-    calls = []
-    _, fs, fa = _fakes(monkeypatch, tmp_path, calls)
-    avatar = _FakeAvatar()
-    wd = _wd_with_scenario(tmp_path)
-
-    def broken(source, workdir):
-        raise RuntimeError("сеть недоступна")
-
-    res = pipeline.run_make(_cfg("split"), "broll.mp4", 30.0, wd,
-                            avatar_client=avatar, synth_fn=fs, ingest_fn=broken, assemble_fn=fa)
-
-    assert res["ok"] is False and res["stage"] == "ingest"
-    assert res["error"] == "сеть недоступна"
-
-
 def test_нет_scenario_даёт_stage_scenario(monkeypatch, tmp_path):
     calls = []
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
     wd = tmp_path / "wd"; wd.mkdir()  # scenario.json отсутствует
 
-    res = pipeline.run_make(_cfg("fullscreen"), "broll.mp4", 30.0, wd,
-                            synth_fn=fs, ingest_fn=fi, assemble_fn=fa)
+    res = pipeline.run_make(_cfg("fullscreen"), wd,
+                            synth_fn=fs, assemble_fn=fa)
 
     assert res["ok"] is False and res["stage"] == "scenario"
 
 
 def test_несовпадение_языка_останавливает_pipeline_до_tts(monkeypatch, tmp_path):
     calls = []
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
     scenario = _scenario()
     scenario["language"] = "kk"
     wd = tmp_path / "wd"
@@ -523,8 +475,8 @@ def test_несовпадение_языка_останавливает_pipeline
     cfg["tts"] = {"language_code": "ru"}
 
     res = pipeline.run_make(
-        cfg, "broll.mp4", 30.0, wd,
-        synth_fn=fs, ingest_fn=fi, assemble_fn=fa,
+        cfg, wd,
+        synth_fn=fs, assemble_fn=fa,
     )
 
     assert res["ok"] is False and res["stage"] == "language"
@@ -533,7 +485,7 @@ def test_несовпадение_языка_останавливает_pipeline
 
 def test_голос_другого_языка_останавливает_pipeline_до_tts(monkeypatch, tmp_path):
     calls = []
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
     scenario = _scenario()
     scenario["language"] = "kk"
     wd = tmp_path / "wd"
@@ -551,8 +503,8 @@ def test_голос_другого_языка_останавливает_pipelin
     })
 
     res = pipeline.run_make(
-        cfg, "broll.mp4", 30.0, wd,
-        synth_fn=fs, ingest_fn=fi, assemble_fn=fa,
+        cfg, wd,
+        synth_fn=fs, assemble_fn=fa,
     )
 
     assert res["ok"] is False and res["stage"] == "language"
@@ -562,13 +514,13 @@ def test_голос_другого_языка_останавливает_pipelin
 def test_caption_fixes_и_broll_plan_прокидываются(monkeypatch, tmp_path):
     calls = []
     captured = {}
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
     broll_plan = {"segments": [{"role": "hook", "offset": 30.0}], "facts": {}}
 
-    res = pipeline.run_make(_cfg("split"), "broll.mp4", 0.0, wd, broll_plan=broll_plan,
-                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi, assemble_fn=fa)
+    res = pipeline.run_make(_cfg("split"), wd, broll_plan=broll_plan,
+                            avatar_client=avatar, synth_fn=fs, assemble_fn=fa)
 
     assert res["ok"] is True
     assert "Гайд" in captured["caption_fixes"]
@@ -580,14 +532,14 @@ def test_caption_fixes_и_broll_plan_прокидываются(monkeypatch, tmp
 def test_punch_из_broll_plan_прокидывается_в_assemble(monkeypatch, tmp_path):
     calls = []
     captured = {}
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
     broll_plan = {"segments": [{"role": "hook", "offset": 30.0}],
                   "punch": [[15.0, 0.5], [20.0, 0.6]], "facts": {}}
 
-    res = pipeline.run_make(_cfg("split"), "broll.mp4", 0.0, wd, broll_plan=broll_plan,
-                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi, assemble_fn=fa)
+    res = pipeline.run_make(_cfg("split"), wd, broll_plan=broll_plan,
+                            avatar_client=avatar, synth_fn=fs, assemble_fn=fa)
 
     assert res["ok"] is True
     assert captured["punch_windows"] is None
@@ -597,12 +549,12 @@ def test_punch_из_broll_plan_прокидывается_в_assemble(monkeypatc
 def test_без_broll_plan_punch_windows_none(monkeypatch, tmp_path):
     calls = []
     captured = {}
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
 
-    res = pipeline.run_make(_cfg("split"), "broll.mp4", 30.0, wd,
-                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi, assemble_fn=fa)
+    res = pipeline.run_make(_cfg("split"), wd,
+                            avatar_client=avatar, synth_fn=fs, assemble_fn=fa)
 
     assert res["ok"] is True
     assert captured["punch_windows"] is None
@@ -610,7 +562,7 @@ def test_без_broll_plan_punch_windows_none(monkeypatch, tmp_path):
 
 def test_джамп_каты_выключены_по_умолчанию(monkeypatch, tmp_path):
     calls = []
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
     cut_calls = []
@@ -619,8 +571,8 @@ def test_джамп_каты_выключены_по_умолчанию(monkeypa
         cut_calls.append(list(frags))
         return frags
 
-    res = pipeline.run_make(_cfg("avatar"), None, 0.0, wd, avatar_client=avatar,
-                            synth_fn=fs, ingest_fn=fi, assemble_fn=fa,
+    res = pipeline.run_make(_cfg("avatar"), wd, avatar_client=avatar,
+                            synth_fn=fs, assemble_fn=fa,
                             jump_cut_fn=fake_cut)
 
     assert res["ok"] is True
@@ -629,7 +581,7 @@ def test_джамп_каты_выключены_по_умолчанию(monkeypa
 
 def test_флаг_включает_джамп_каты_до_сборки(monkeypatch, tmp_path):
     calls = []
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
     cut_calls = []
@@ -641,8 +593,8 @@ def test_флаг_включает_джамп_каты_до_сборки(monkeyp
     cfg = _cfg("avatar")
     cfg["edit"] = {"jump_cuts": True}
 
-    res = pipeline.run_make(cfg, None, 0.0, wd, avatar_client=avatar,
-                            synth_fn=fs, ingest_fn=fi, assemble_fn=fa,
+    res = pipeline.run_make(cfg, wd, avatar_client=avatar,
+                            synth_fn=fs, assemble_fn=fa,
                             jump_cut_fn=fake_cut)
 
     assert res["ok"] is True
@@ -653,7 +605,7 @@ def test_флаг_включает_джамп_каты_до_сборки(monkeyp
 
 def test_падение_джамп_катов_не_роняет_молча(monkeypatch, tmp_path):
     calls = []
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
 
@@ -663,8 +615,8 @@ def test_падение_джамп_катов_не_роняет_молча(monke
     cfg = _cfg("avatar")
     cfg["edit"] = {"jump_cuts": True}
 
-    res = pipeline.run_make(cfg, None, 0.0, wd, avatar_client=avatar,
-                            synth_fn=fs, ingest_fn=fi, assemble_fn=fa,
+    res = pipeline.run_make(cfg, wd, avatar_client=avatar,
+                            synth_fn=fs, assemble_fn=fa,
                             jump_cut_fn=broken_cut)
 
     assert res["ok"] is False
@@ -675,7 +627,7 @@ def test_падение_джамп_катов_не_роняет_молча(monke
 def test_грейд_и_зерно_прокидываются_в_сборку(monkeypatch, tmp_path):
     calls = []
     captured = {}
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
 
@@ -689,8 +641,8 @@ def test_грейд_и_зерно_прокидываются_в_сборку(mon
     cfg = _cfg("avatar")
     cfg["edit"] = {"grade": True, "grain": True}
 
-    pipeline.run_make(cfg, None, 0.0, wd, avatar_client=avatar,
-                      synth_fn=fs, ingest_fn=fi, assemble_fn=fa2)
+    pipeline.run_make(cfg, wd, avatar_client=avatar,
+                      synth_fn=fs, assemble_fn=fa2)
 
     assert seen == {"grade": True, "grain": True}
 
@@ -700,7 +652,7 @@ def test_precut_план_строится_и_экономит_heygen(monkeypatch
     HeyGen для него не вызывается, canonical-план сохраняется в edit_plan.json."""
     calls = []
     captured = {}
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
     covered_calls = []
@@ -713,8 +665,8 @@ def test_precut_план_строится_и_экономит_heygen(monkeypatch
                               "query": "молол мелко", "duration": 20.0}],
                 "est": {"covered_s": 10.0, "total_s": 23.0}, "log": ["ок"]}
 
-    res = pipeline.run_make(_cfg("avatar"), None, 0.0, wd,
-                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi,
+    res = pipeline.run_make(_cfg("avatar"), wd,
+                            avatar_client=avatar, synth_fn=fs,
                             assemble_fn=fa, precut_fn=fake_precut,
                             covered_block_fn=_fake_covered_block(covered_calls))
 
@@ -731,15 +683,15 @@ def test_precut_план_строится_и_экономит_heygen(monkeypatch
 
 def test_precut_пустой_план_пайплайн_как_раньше(monkeypatch, tmp_path):
     calls = []
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
 
     def fake_precut(scenario, config):
         return {"segments": [], "est": {"covered_s": 0.0, "total_s": 25.0}, "log": []}
 
-    res = pipeline.run_make(_cfg("avatar"), None, 0.0, wd,
-                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi,
+    res = pipeline.run_make(_cfg("avatar"), wd,
+                            avatar_client=avatar, synth_fn=fs,
                             assemble_fn=fa, precut_fn=fake_precut)
 
     assert res["ok"] is True
@@ -751,7 +703,7 @@ def test_per_phrase_performance_llm_обогащает_canonical_plan(
 ):
     calls = []
     captured = {}
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
 
@@ -779,8 +731,8 @@ def test_per_phrase_performance_llm_обогащает_canonical_plan(
     cfg["edit_plan"] = {"performance_llm": {"enabled": True}}
 
     res = pipeline.run_make(
-        cfg, "broll.mp4", 0.0, wd,
-        avatar_client=avatar, synth_fn=fs, ingest_fn=fi, assemble_fn=fa,
+        cfg, wd,
+        avatar_client=avatar, synth_fn=fs, assemble_fn=fa,
         performance_runner=runner,
     )
 
@@ -797,7 +749,7 @@ def test_visual_director_llm_обогащает_canonical_plan_до_performance(
 ):
     calls = []
     captured = {}
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
 
@@ -828,12 +780,9 @@ def test_visual_director_llm_обогащает_canonical_plan_до_performance(
 
     res = pipeline.run_make(
         cfg,
-        "broll.mp4",
-        0.0,
         wd,
         avatar_client=avatar,
         synth_fn=fs,
-        ingest_fn=fi,
         assemble_fn=fa,
         visual_runner=runner,
     )
@@ -855,7 +804,7 @@ def test_visual_director_llm_bad_item_не_роняет_pipeline(
 ):
     calls = []
     captured = {}
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
 
@@ -879,12 +828,9 @@ def test_visual_director_llm_bad_item_не_роняет_pipeline(
 
     res = pipeline.run_make(
         cfg,
-        "broll.mp4",
-        0.0,
         wd,
         avatar_client=avatar,
         synth_fn=fs,
-        ingest_fn=fi,
         assemble_fn=fa,
         visual_runner=Runner(),
     )
@@ -898,7 +844,7 @@ def test_visual_director_llm_bad_item_не_роняет_pipeline(
 
 def test_явный_broll_plan_отключает_авто_precut(monkeypatch, tmp_path):
     calls = []
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
     precut_calls = []
@@ -909,8 +855,8 @@ def test_явный_broll_plan_отключает_авто_precut(monkeypatch, t
 
     broll_plan = {"segments": [{"role": "development", "offset": 30.0, "insert": True}],
                   "facts": {}}
-    res = pipeline.run_make(_cfg("avatar"), "broll.mp4", 0.0, wd, broll_plan=broll_plan,
-                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi,
+    res = pipeline.run_make(_cfg("avatar"), wd, broll_plan=broll_plan,
+                            avatar_client=avatar, synth_fn=fs,
                             assemble_fn=fa, precut_fn=fake_precut,
                             covered_block_fn=_fake_covered_block())
 
@@ -921,7 +867,7 @@ def test_явный_broll_plan_отключает_авто_precut(monkeypatch, t
 def test_precut_не_запускается_для_split(monkeypatch, tmp_path):
     """split: аватар всегда виден в верхней половине — покрытие неприменимо."""
     calls = []
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
     precut_calls = []
@@ -930,8 +876,8 @@ def test_precut_не_запускается_для_split(monkeypatch, tmp_path):
         precut_calls.append(1)
         return {"segments": [], "log": []}
 
-    res = pipeline.run_make(_cfg("split"), "broll.mp4", 30.0, wd,
-                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi,
+    res = pipeline.run_make(_cfg("split"), wd,
+                            avatar_client=avatar, synth_fn=fs,
                             assemble_fn=fa, precut_fn=fake_precut)
 
     assert res["ok"] is True
@@ -940,15 +886,15 @@ def test_precut_не_запускается_для_split(monkeypatch, tmp_path):
 
 def test_падение_precut_даёт_stage_plan(monkeypatch, tmp_path):
     calls = []
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
 
     def broken_precut(scenario, config):
         raise RuntimeError("индекс битый")
 
-    res = pipeline.run_make(_cfg("avatar"), None, 0.0, wd,
-                            avatar_client=avatar, synth_fn=fs, ingest_fn=fi,
+    res = pipeline.run_make(_cfg("avatar"), wd,
+                            avatar_client=avatar, synth_fn=fs,
                             assemble_fn=fa, precut_fn=broken_precut)
 
     assert res["ok"] is False and res["stage"] == "plan"
@@ -985,7 +931,7 @@ def test_master_audio_с_meter_тарифицирует_единственный
     """Предохранитель ветки master_audio снят: с переданным meter сборка не
     падает, а счётчик получает символы единственного ElevenLabs запроса."""
     calls = []
-    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
     meter = _FakeMeter()
@@ -1023,8 +969,8 @@ def test_master_audio_с_meter_тарифицирует_единственный
     cfg = _cfg("avatar")
     cfg["master_audio"] = {"enabled": True}
     res = pipeline.run_make(
-        cfg, None, 0.0, wd, avatar_client=avatar, synth_fn=fs,
-        ingest_fn=fi, assemble_fn=fa, master_audio_fn=fake_master,
+        cfg, wd, avatar_client=avatar, synth_fn=fs,
+        assemble_fn=fa, master_audio_fn=fake_master,
         meter=meter,
     )
 

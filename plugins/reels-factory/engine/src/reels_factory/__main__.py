@@ -99,29 +99,33 @@ def _cmd_make(args, cfg):
     from reels_factory.pipeline import run_make
 
     fmt = cfg.get("format", "split")
-    if fmt != "avatar" and not args.broll:
+    if fmt != "avatar":
         print(json.dumps(
-            {"ok": False, "error": f"нужен --broll: формат {fmt!r} требует "
-             "непрерывный видеоряд (обязателен для split/fullscreen)"},
+            {"ok": False, "error": f"формат {fmt!r} не поддерживается: непрерывный "
+             "видеоряд под всем роликом убран из движка, работает только "
+             "format: avatar"},
             ensure_ascii=False))
         sys.exit(1)
 
     broll_plan = None
     if args.broll_plan:
         broll_plan = json.loads(Path(args.broll_plan).read_text(encoding="utf-8"))
-    offset = args.offset
-    if offset is None:
-        # avatar собирается и без низового видеоряда (вставки — по broll-plan);
-        # split/fullscreen нужен непрерывный низ, значит offset или broll-plan
-        if fmt != "avatar" and broll_plan is None:
-            print(json.dumps({"ok": False, "error": "нужен --offset либо --broll-plan"},
-                             ensure_ascii=False))
-            sys.exit(1)
-        offset = 0.0
+        # Сегмент "insert" без "clip" раньше означал вставку из внешнего файла
+        # (--broll, теперь убран) — план сгенерирует окно на broll.mp4, которого
+        # никто не положит, и в ролике будет пустота. Вставки из библиотеки
+        # клипов (с "clip") этим не затронуты.
+        for seg in broll_plan.get("segments") or []:
+            if seg.get("insert") and not seg.get("clip"):
+                print(json.dumps(
+                    {"ok": False, "error": f"вставка роли {seg.get('role')!r} без "
+                     "'clip' больше не поддерживается: внешний источник видеоряда "
+                     "убран, вставки берутся только из библиотеки клипов — укажи "
+                     "'clip' в сегменте"},
+                    ensure_ascii=False))
+                sys.exit(1)
 
     wd = _resolve_workdir(args.workdir)
-    result = run_make(cfg, args.broll, offset, wd, broll_plan=broll_plan,
-                      meter=_build_meter(wd))
+    result = run_make(cfg, wd, broll_plan=broll_plan, meter=_build_meter(wd))
     print(json.dumps(result, ensure_ascii=False))
     if not result["ok"]:
         sys.exit(1)
@@ -496,11 +500,6 @@ def main():
 
     p_m = sub.add_parser("make", help="сборка рилса из scenario.json + QA-гейты")
     p_m.add_argument("--workdir", required=True)
-    p_m.add_argument("--broll", default=None,
-                     help="ссылка на видеоряд или локальный файл (для avatar-формата "
-                          "без вставок можно опустить)")
-    p_m.add_argument("--offset", type=float, default=None,
-                     help="один offset на весь ролик (без --broll-plan)")
     p_m.add_argument("--broll-plan", default=None, dest="broll_plan",
                      help="JSON {segments:[{role,offset,slow?}], punch:[[start,dur],...], ...} "
                           "— мультисегментный низ + панч-окна (наезд на килл/пик-моментах)")
