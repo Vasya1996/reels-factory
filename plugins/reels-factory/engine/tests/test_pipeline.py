@@ -168,7 +168,7 @@ def test_master_audio_одна_озвучка_вместо_block_tts(monkeypatch
     wd = _wd_with_scenario(tmp_path)
     master_calls = []
 
-    def fake_master(scenario, config, workdir, voice_id=None):
+    def fake_master(scenario, config, workdir, voice_id=None, meter=None):
         master_calls.append((scenario, config, Path(workdir), voice_id))
         master_wav = Path(workdir) / "voice_master.wav"
         master_wav.write_bytes(b"master")
@@ -227,7 +227,7 @@ def test_master_audio_не_разрешает_jump_cuts_ломать_timeline(mo
     wd = _wd_with_scenario(tmp_path)
     cut_calls = []
 
-    def fake_master(scenario, config, workdir, voice_id=None):
+    def fake_master(scenario, config, workdir, voice_id=None, meter=None):
         master_wav = Path(workdir) / "voice_master.wav"
         master_wav.write_bytes(b"master")
         slices = []
@@ -282,7 +282,7 @@ def test_avatar_islands_заменяет_block_by_block_photo_avatar_iv(
     avatar.engine = "avatar_iv"
     wd = _wd_with_scenario(tmp_path)
 
-    def fake_master(scenario, config, workdir, voice_id=None):
+    def fake_master(scenario, config, workdir, voice_id=None, meter=None):
         master_wav = Path(workdir) / "voice_master.wav"
         master_wav.write_bytes(b"master-islands")
         block_wavs = []
@@ -915,3 +915,55 @@ def test_run_make_принимает_meter():
     import inspect
     from reels_factory.pipeline import run_make
     assert "meter" in inspect.signature(run_make).parameters
+
+
+def test_master_audio_с_meter_тарифицирует_единственный_запрос(monkeypatch, tmp_path):
+    """Предохранитель ветки master_audio снят: с переданным meter сборка не
+    падает, а счётчик получает символы единственного ElevenLabs запроса."""
+    calls = []
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+    meter = _FakeMeter()
+
+    def fake_master(scenario, config, workdir, voice_id=None, meter=None):
+        if meter is not None:
+            meter(sum(len(b["speech"]) for b in scenario["blocks"]))
+        master_wav = Path(workdir) / "voice_master.wav"
+        master_wav.write_bytes(b"master")
+        block_wavs = []
+        for index in range(len(scenario["blocks"])):
+            wav = Path(workdir) / f"voice_{index}.wav"
+            wav.write_bytes(b"slice")
+            block_wavs.append(wav)
+        timed = json.loads(json.dumps(scenario))
+        for index, block in enumerate(timed["blocks"]):
+            block["start"] = index * 2.0
+            block["end"] = (index + 1) * 2.0
+        timed["total"] = 8.0
+        return SimpleNamespace(
+            wav=master_wav,
+            block_wavs=tuple(block_wavs),
+            words=tuple(
+                {
+                    "start": index * 2.0 + 0.2,
+                    "end": (index + 1) * 2.0 - 0.2,
+                    "text": block["speech"],
+                    "block_index": index,
+                }
+                for index, block in enumerate(timed["blocks"])
+            ),
+            timed_scenario=timed,
+        )
+
+    cfg = _cfg("avatar")
+    cfg["master_audio"] = {"enabled": True}
+    res = pipeline.run_make(
+        cfg, None, 0.0, wd, avatar_client=avatar, synth_fn=fs,
+        ingest_fn=fi, assemble_fn=fa, master_audio_fn=fake_master,
+        meter=meter,
+    )
+
+    assert res["ok"] is True, res.get("error")
+    assert len(meter.eleven_calls) == 1
+    assert meter.eleven_calls[0] == sum(len(b["speech"]) for b in _scenario()["blocks"])

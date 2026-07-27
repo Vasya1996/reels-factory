@@ -294,6 +294,7 @@ def build_master_audio(
     provider: ElevenLabsClient | None = None,
     run_cmd: Callable | None = None,
     duration_fn: Callable[[str], float] | None = None,
+    meter: Callable[[int], None] | None = None,
 ) -> MasterAudioArtifacts:
     wd = Path(workdir)
     wd.mkdir(parents=True, exist_ok=True)
@@ -312,6 +313,11 @@ def build_master_audio(
     result = provider.convert_with_timestamps(
         canonical["text"], voice_id=voice_id, **options
     )
+    # Считаем ровно то, за что берёт деньги ElevenLabs — символы единственного
+    # запроса. После convert_with_timestamps (внутри уже raise_for_status):
+    # за упавший запрос платить не за что.
+    if meter is not None:
+        meter(len(canonical["text"]))
 
     mp3 = wd / "voice_master.mp3"
     wav = wd / "voice_master.wav"

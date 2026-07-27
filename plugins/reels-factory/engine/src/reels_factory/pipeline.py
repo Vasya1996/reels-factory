@@ -242,15 +242,11 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
         avatar_render_manifest = None
         cache_dir = WORK_ROOT / AVATAR_CACHE_DIRNAME
         if use_master_audio:
-            # Предохранитель от безбилетных трат: платный ElevenLabs
-            # request без учёта через меритель.
-            if meter is not None:
-                raise RuntimeError(
-                    "учёт трат не поддерживает ветку master audio: "
-                    "отключите master_audio.enabled или снимите биллинг"
-                )
             master_audio_fn = master_audio_fn or _build_master_audio
-            master = master_audio_fn(scenario, config, wd, voice_id=voice_id)
+            master = master_audio_fn(
+                scenario, config, wd, voice_id=voice_id,
+                meter=(meter.elevenlabs if meter is not None else None),
+            )
             block_wavs = list(master.block_wavs)
             if (
                 not use_avatar_islands
