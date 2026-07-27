@@ -641,6 +641,28 @@ def test_post_init_регистрирует_new_в_меню():
     assert "new" in names
 
 
+def test_post_init_без_tribute_key_громко_предупреждает_но_не_падает(
+    work, monkeypatch, caplog
+):
+    """Fix 6: без TRIBUTE_API_KEY вебхук не поднимается, но кнопки пополнения
+    остаются активны — Tribute всё равно спишет деньги пользователя и будет
+    ретраить недоставленный вебхук ~сутки, после чего платёж зависает без
+    ручной сверки. Бот не должен упасть, но обязан заметно предупредить."""
+    monkeypatch.delenv("TRIBUTE_API_KEY", raising=False)
+
+    class FakeBot:
+        async def set_my_commands(self, commands):
+            pass
+
+    class FakeApp:
+        bot = FakeBot()
+
+    with caplog.at_level(logging.ERROR):
+        asyncio.run(bot._post_init(FakeApp()))
+
+    assert "TRIBUTE_API_KEY" in caplog.text
+
+
 # --- шаг 5/6: профиль (фото + голос) -------------------------------------------
 
 @pytest.fixture
@@ -814,6 +836,61 @@ def test_сбой_движка_не_роняет_разговор(work, monkeypa
     assert bot.load_session(7)["step"] == bot.WAIT_TEXT
 
 
+def _ожидаемое_списание_клода(usd: float) -> int:
+    from reels_factory.billing import apply_markup, claude_cost_micro
+    cfg = bot._billing()
+    return apply_markup(claude_cost_micro(usd), cfg["markup"])
+
+
+def test_провал_step_verbatim_после_ретраев_всё_равно_списывает_клода(
+    work, monkeypatch
+):
+    """Fix 1: раньше _charge_claude звался ТОЛЬКО после успешного возврата.
+    scenario.py поднимает ScenarioError после исчерпанных ретраев — а ретраи
+    жгут Клода больше, чем успех. Такой провал должен списаться так же, как
+    и успех, иначе трата остаётся вне журнала."""
+    def fake_run_verbatim_path(workdir, text, runner, language):
+        runner.total_cost_usd = 0.04  # деньги на Клод уже потрачены
+        raise bot.ScenarioError("исчерпаны ретраи (2): судья не пропустил")
+
+    monkeypatch.setattr(bot, "run_verbatim_path", fake_run_verbatim_path)
+
+    with pytest.raises(bot.ScenarioError):
+        bot.step_verbatim(7, "текст", "ru")
+
+    assert bot._ledger().balance(7) == -_ожидаемое_списание_клода(0.04)
+
+
+def test_провал_step_ideas_после_ретраев_всё_равно_списывает_клода(
+    work, monkeypatch
+):
+    def fake_run_ideas(workdir, text, runner, language):
+        runner.total_cost_usd = 0.02
+        raise bot.ScenarioError("ожидалось 2-3 идеи, получено: []")
+
+    monkeypatch.setattr(bot, "run_ideas", fake_run_ideas)
+
+    with pytest.raises(bot.ScenarioError):
+        bot.step_ideas(7, "сырьё", "ru")
+
+    assert bot._ledger().balance(7) == -_ожидаемое_списание_клода(0.02)
+
+
+def test_провал_step_scenario_после_ретраев_всё_равно_списывает_клода(
+    work, monkeypatch
+):
+    def fake_run_generated_path(workdir, idea, runner, language):
+        runner.total_cost_usd = 0.03
+        raise bot.ScenarioError("целостность после полировки: [...]")
+
+    monkeypatch.setattr(bot, "run_generated_path", fake_run_generated_path)
+
+    with pytest.raises(bot.ScenarioError):
+        bot.step_scenario(7, {"idea": "тема"}, "ru")
+
+    assert bot._ledger().balance(7) == -_ожидаемое_списание_клода(0.03)
+
+
 # --- шаг 7/8: готовность и повторный цикл --------------------------------------
 
 def _client_base_cfg(**over):
@@ -832,14 +909,21 @@ def _client_base_cfg(**over):
 
 
 @pytest.fixture
-def клиент(tmp_path, monkeypatch):
+def клиент(work, tmp_path, monkeypatch):
     """Изолированный реестр клиентов + готовый профиль клиента чата 7.
     save_client_profile сам по себе читает общий factory/config.yaml как базу —
-    в тестах его нет и не нужен, профиль уже зарегистрирован напрямую."""
+    в тестах его нет и не нужен, профиль уже зарегистрирован напрямую.
+    Баланс пополняем с запасом: billing включён по умолчанию (Task 7 проверяет
+    его в enqueue_build), а фикстуре нужен клиент, готовый платить, а не
+    отдельный тест на нехватку денег — для того есть test_нехватки_баланса."""
     monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
     monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
     clients_mod.register_client("7", _client_base_cfg(), voice_id="voice-1",
                                 asset_id="asset-1")
+    bot._ledger().credit(
+        7, 1_000_000_000,
+        purchase_id="клиент-fixture", amount_minor=1_000_000_00, currency="usd",
+    )
     return tmp_path
 
 
@@ -972,6 +1056,27 @@ def test_run_build_разбирает_json_среди_шума_рендера(tm
     result = bot.run_build(7, tmp_path / "wd")
 
     assert result == {"ok": True, "mp4": "x", "qa_pass": True}
+
+
+def test_run_build_логирует_stderr_движка_даже_при_успехе(tmp_path, monkeypatch, caplog):
+    """До фикса run_build читал p.stderr только на ветке разбора неудачного
+    JSON — оба денежных предупреждения (_build_meter, _billable_seconds)
+    пишутся в stderr движка и терялись при успешной сборке, потому что их
+    никто не читал. Теперь стадийные логи и предупреждения обязаны попасть
+    в логгер бота, даже если сборка ok."""
+    class Completed:
+        stdout = json.dumps({"ok": True, "mp4": "x", "qa_pass": True})
+        stderr = ("[make] job.input.json повреждён, учёт трат отключён: "
+                   "boom\n[make] assemble")
+
+    monkeypatch.setattr(bot.subprocess, "run", lambda cmd, **kw: Completed())
+
+    with caplog.at_level(logging.WARNING):
+        result = bot.run_build(7, tmp_path / "wd")
+
+    assert result == {"ok": True, "mp4": "x", "qa_pass": True}
+    assert "job.input.json повреждён" in caplog.text
+    assert "[make] assemble" in caplog.text
 
 
 def test_профиль_клиента_готов(tmp_path, monkeypatch):
@@ -1197,6 +1302,171 @@ def test_ролик_больше_50мб_не_отправляется(work, кл
     assert bot._job_store().get(job.job_id).status == "delivery_failed"
 
 
+def _зачесть_расход_на_job(job_id: str) -> None:
+    """Сымитировать реальный платный шаг сборки: build-субпроцесс уже
+    списал деньги через свой собственный LedgerStore до провала QA/доставки."""
+    bot._ledger().charge(
+        7, entry_id=f"heygen:{job_id}", job_id=job_id, provider="heygen",
+        unit="seconds", quantity=10.0, unit_price_micro=50_000,
+        cost_micro=500_000, charged_micro=1_000_000,
+    )
+
+
+def test_qa_провал_сообщает_сколько_уже_стоил_рендер(work, клиент):
+    """Fix 8: build-субпроцесс уже списал деньги до провала QA — баланс
+    просел, а бот раньше говорил только «остановлен проверкой качества»,
+    не упоминая списание. Формулировка выровнена с квитанцией (Fix C):
+    не «списано», а «стоил сам рендер» — без Клода, который тратится
+    отдельно и в этот breakdown не входит."""
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": False}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build", _Msg())
+    job = _claim_job()
+    _зачесть_расход_на_job(job.job_id)
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert "уже стоил" in api.messages[-1][1]
+    assert "$1.00" in api.messages[-1][1]
+
+
+def test_слишком_большой_файл_сообщает_сколько_уже_стоил_рендер(work, клиент, monkeypatch):
+    monkeypatch.setattr(bot, "MAX_TG_VIDEO_BYTES", 3)
+
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"1234567890")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build", _Msg())
+    job = _claim_job()
+    _зачесть_расход_на_job(job.job_id)
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert "уже стоил" in api.messages[-1][1]
+    assert "$1.00" in api.messages[-1][1]
+
+
+def test_отказ_telegram_принять_файл_сообщает_сколько_уже_стоил_рендер(
+    work, клиент
+):
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    class _ОтказывающийАпи(_BotAPI):
+        async def send_video(self, chat_id, video, caption=None,
+                             reply_markup=None, width=None, height=None):
+            raise RuntimeError("Telegram отверг файл")
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build", _Msg())
+    job = _claim_job()
+    _зачесть_расход_на_job(job.job_id)
+    api = _ОтказывающийАпи()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert "уже стоил" in api.messages[-1][1]
+    assert "$1.00" in api.messages[-1][1]
+    assert bot._job_store().get(job.job_id).status == "delivery_failed"
+
+
+def test_qa_провал_с_битым_breakdown_всё_равно_доставляет_отказ(
+    work, клиент, monkeypatch, caplog
+):
+    """Fix B: _charged_but_undelivered_notice раньше звалась вне защиты
+    _safe_job_message — упавшее чтение SQLite (заблокирован/битый) роняло
+    бы _process_job целиком, и пользователь не получил бы вообще ничего,
+    хотя job уже finished и повторов не будет. Теперь чтение breakdown
+    защищено само по себе: пустое уведомление, но голый текст отказа
+    доходит."""
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": False}
+
+    def падающий_breakdown(self, job_id):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(bot.LedgerStore, "job_breakdown", падающий_breakdown)
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build", _Msg())
+    job = _claim_job()
+    api = _BotAPI()
+
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert bot.QA_FAIL_MSG in api.messages[-1][1]
+    assert "database is locked" in caplog.text
+
+
+def test_успешная_доставка_с_битым_breakdown_всё_равно_обновляет_сессию(
+    work, клиент, monkeypatch, caplog
+):
+    """Fix C: чтение breakdown вне защиты _safe_job_message — видео уже
+    доставлено, повторов не будет. Раньше упавшее чтение SQLite (заблокирован/
+    битый) роняло бы _process_job целиком, и сессия осталась бы в BUILDING,
+    хотя пользователь уже получил ролик. Теперь чтение защищено: пропускаем
+    чек, но обновление сессии гарантировано."""
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    def падающий_breakdown(self, job_id):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(bot.LedgerStore, "job_breakdown", падающий_breakdown)
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build", _Msg())
+    job = _claim_job()
+    _зачесть_расход_на_job(job.job_id)
+    api = _BotAPI()
+
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert bot.load_session(7)["step"] == bot.DONE
+    assert "database is locked" in caplog.text
+
+
+def test_receipt_называет_сумму_рендером_а_не_общим_списанием(work, клиент):
+    """Fix 7: _charge_claude пишет свои строки с job_id=None, поэтому
+    job_breakdown никогда не содержит траты на подготовку сценария — сумма
+    в квитанции не должна выдавать себя за «списано всего»."""
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build", _Msg())
+    job = _claim_job()
+    _зачесть_расход_на_job(job.job_id)
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    text = api.messages[-1][1]
+    assert "Списано" not in text  # больше не звучит как «итог за ролик»
+    assert "рендер" in text.lower()
+    assert "Баланс" in text
+    assert "$1.00" in text
+
+
 def test_сбой_статусного_сообщения_не_теряет_durable_job(work, клиент):
     """После INSERT job уже принадлежит очереди, даже если Telegram временно
     не принял служебное сообщение о постановке."""
@@ -1216,3 +1486,175 @@ def test_сбой_статусного_сообщения_не_теряет_dura
     job = bot._job_store().latest_for_chat(7)
     assert job.status == "queued"
     assert bot.load_session(7)["current_job_id"] == job.job_id
+
+
+# --- биллинг: оценка до рендера и блокировка -----------------------------------
+
+def test_форматирование_баланса():
+    from reels_factory.bot import format_usd
+    assert format_usd(3_184_000) == "$3.18"
+    assert format_usd(0) == "$0.00"
+    assert format_usd(-100_000) == "-$0.10"
+
+
+def test_ledger_переиспользуется_между_вызовами(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    import importlib
+    from reels_factory import bot as bot_mod
+    importlib.reload(bot_mod)
+    assert bot_mod._ledger() is bot_mod._ledger()
+
+
+def test_нехватки_баланса_достаточно_чтобы_не_создавать_job(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    import importlib
+    from reels_factory import bot as bot_mod
+    importlib.reload(bot_mod)
+    cfg = bot_mod._billing()
+    from reels_factory.billing import estimate_micro
+    need = estimate_micro(500, cfg["rates"], cfg["markup"])
+    assert bot_mod._ledger().balance(777) < need
+
+
+def test_нехватки_баланса_блокирует_enqueue_build_и_не_оставляет_workdir(work):
+    """Настоящая проверка гварда: без денег enqueue_build должен и поднять
+    InsufficientBalance с верными need/have, и не создать рабочую папку job —
+    именно ради этого проверка баланса стоит в коде ДО workdir.mkdir."""
+    chat_id = 777
+    have = bot._ledger().balance(chat_id)
+    assert have == 0  # свежий чат, начислений не было
+
+    jobs_root = bot.WORK_ROOT / "jobs"
+    assert not jobs_root.exists()  # до вызова папки job ещё нет
+
+    with pytest.raises(bot.InsufficientBalance) as exc:
+        bot.enqueue_build(chat_id, SCENARIO, language="ru", voice_id="voice-1")
+
+    from reels_factory.billing import estimate_micro
+    cfg = bot._billing()
+    chars = sum(len(b["speech"]) for b in SCENARIO["blocks"])
+    expected_need = estimate_micro(chars, cfg["rates"], cfg["markup"])
+
+    assert exc.value.need == expected_need
+    assert exc.value.have == have
+    assert exc.value.need > exc.value.have
+
+    # workdir так и не появился — отказ не оставил следов на диске.
+    assert not jobs_root.exists()
+
+
+def test_кнопки_пополнения_ведут_на_tribute():
+    from reels_factory.bot import TOPUP_PRODUCTS, topup_keyboard
+    assert len(TOPUP_PRODUCTS) == 7
+    for label, url in TOPUP_PRODUCTS:
+        # Только внутрителеграмная ссылка: с веб-страницы может прийти оплата
+        # без telegram_user_id, и зачислить её будет некому.
+        assert url.startswith("https://t.me/tribute/app?startapp=")
+        assert "web.tribute.tg" not in url
+        assert label
+    rows = topup_keyboard().inline_keyboard
+    urls = [btn.url for row in rows for btn in row if btn.url]
+    assert len(urls) == 7
+
+
+def test_текст_пополнения_при_нехватке_показывает_обе_суммы():
+    from reels_factory.bot import topup_text
+    text = topup_text(need=3_184_000, have=1_000_000)
+    assert "$3.18" in text
+    assert "$1.00" in text
+
+
+def test_текст_пополнения_без_нехватки_показывает_только_баланс():
+    from reels_factory.bot import topup_text
+    text = topup_text(need=None, have=1_000_000)
+    assert "$1.00" in text
+    assert "не хватает" not in text.lower()
+
+
+# --- гейт: генерация сценария (Клод) блокируется при отрицательном балансе ----
+
+def _charge_flat(chat_id: int, micro: int) -> None:
+    """Загнать баланс в минус тестовым списанием — провайдер тут не важен."""
+    bot._ledger().charge(
+        chat_id,
+        entry_id=f"test:{chat_id}:{micro}",
+        job_id=None,
+        provider="test",
+        unit="usd",
+        quantity=1,
+        unit_price_micro=0,
+        cost_micro=micro,
+        charged_micro=micro,
+    )
+
+
+def test_отрицательный_баланс_блокирует_готовый_текст(work):
+    _charge_flat(7, 1)  # -0.000001$, но уже < 0 — этого достаточно для гейта
+    bot.save_session(7, {"step": bot.WAIT_TEXT, "language": "ru"})
+
+    msg = _Msg("Мой текст.")
+    asyncio.run(bot.on_message(_Update(msg), None))
+
+    assert "исчерпан" in msg.replies[-1].lower()
+    assert len(msg.markups[-1].inline_keyboard) == len(bot.TOPUP_PRODUCTS)
+    assert bot.WORKING not in msg.replies  # генерация не запускалась
+    assert bot.load_session(7)["step"] == bot.WAIT_TEXT  # шаг не сдвинулся
+
+
+def test_отрицательный_баланс_блокирует_сырьё(work):
+    _charge_flat(7, 1)
+    bot.save_session(7, {"step": bot.WAIT_RAW, "language": "ru"})
+
+    msg = _Msg("Длинное сырьё про продажи.")
+    asyncio.run(bot.on_message(_Update(msg), None))
+
+    assert "исчерпан" in msg.replies[-1].lower()
+    assert bot.WORKING not in msg.replies
+    assert bot.load_session(7)["step"] == bot.WAIT_RAW
+
+
+def test_отрицательный_баланс_блокирует_выбор_идеи(work):
+    _charge_flat(7, 1)
+    bot.save_session(7, {
+        "step": bot.CHOOSING_IDEA, "language": "ru",
+        "ideas": [{"idea": "Раз", "draft_hook": "Хук раз"}],
+    })
+
+    msg = _Msg()
+    _press("idea:0", msg)
+
+    assert "исчерпан" in msg.replies[-1].lower()
+    assert bot.WORKING not in msg.replies
+    assert bot.load_session(7)["step"] == bot.CHOOSING_IDEA
+
+
+def test_нулевой_баланс_не_блокирует_пробную_генерацию(work, monkeypatch):
+    """Ровно 0 — старт бесплатного триала, не «уже потрачено больше, чем было».
+    Порог намеренно «< 0», а не «<= 0»: тут регрессия сломала бы пробу новичку."""
+    monkeypatch.setattr(
+        bot, "step_verbatim", lambda chat_id, text, language: SCENARIO
+    )
+    assert bot._ledger().balance(7) == 0
+    bot.save_session(7, {"step": bot.WAIT_TEXT, "language": "ru"})
+
+    msg = _Msg("Мой текст.")
+    asyncio.run(bot.on_message(_Update(msg), None))
+
+    assert msg.replies[0] == bot.WORKING
+    assert bot.load_session(7)["step"] == bot.REVIEW
+
+
+def test_биллинг_выключен_не_блокирует_даже_при_минусе(work, monkeypatch):
+    _charge_flat(7, 1)
+    billing_on = bot._billing()
+    monkeypatch.setattr(bot, "_billing", lambda: {**billing_on, "enabled": False})
+    monkeypatch.setattr(
+        bot, "step_verbatim", lambda chat_id, text, language: SCENARIO
+    )
+    bot.save_session(7, {"step": bot.WAIT_TEXT, "language": "ru"})
+
+    msg = _Msg("Мой текст.")
+    asyncio.run(bot.on_message(_Update(msg), None))
+
+    assert msg.replies[0] == bot.WORKING
+    assert bot.load_session(7)["step"] == bot.REVIEW

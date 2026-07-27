@@ -228,3 +228,19 @@ limits:
   target_duration_s: 30
   duration_s_min: 14
   duration_s_max: 90
+
+# Биллинг: себестоимость рилса и наценка на пользователя.
+# Ставки сверять с прайсом провайдера при изменении — автообновления нет.
+billing:
+  enabled: true
+  markup: 2.0            # 2.0 = наценка 100%
+  rates:
+    heygen_usd_per_second: 0.05        # Avatar IV Photo Avatar (ветка бота)
+    heygen_twin_usd_per_second: 0.0667 # Digital Twin (когда задан look_id)
+    elevenlabs_usd_per_1k_chars: 0.10  # pay-as-you-go Multilingual v2/v3
+    chars_per_second: 14.0             # для оценки длительности до рендера
+    claude_flat_usd_per_reel: 0.05     # плоская добавка в оценку
+  fx:                    # курсы для зачисления пополнений, приходящих не в USD
+    usd: 1.0
+    eur: 1.08
+    rub: 0.011

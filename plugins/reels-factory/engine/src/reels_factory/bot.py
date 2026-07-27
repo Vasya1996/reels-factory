@@ -24,10 +24,16 @@ import logging
 import os
 import subprocess
 import sys
+import uuid
 from contextlib import suppress
 from pathlib import Path
 
-from reels_factory.config import OUT_H, OUT_W, WORK_ROOT, load_config
+from reels_factory.billing import (
+    LedgerStore, apply_markup, claude_cost_micro, estimate_micro,
+)
+from reels_factory.config import (
+    OUT_H, OUT_W, WORK_ROOT, load_billing_config, load_config,
+)
 from reels_factory.jobs import BuildJob, JobStore
 from reels_factory.language import (
     SUPPORTED_LANGUAGES,
@@ -38,6 +44,7 @@ from reels_factory.language import (
 from reels_factory.llm import ClaudeSkillRunner
 from reels_factory.scenario import (ScenarioError, run_generated_path, run_ideas,
                                     run_verbatim_path, split_verbatim)
+from reels_factory.tribute import start_webhook_server
 
 log = logging.getLogger(__name__)
 
@@ -264,6 +271,64 @@ def _job_store() -> JobStore:
     return _job_store_cache[1]
 
 
+_ledger_cache: tuple[Path, LedgerStore] | None = None
+
+
+def _ledger() -> LedgerStore:
+    """Журнал трат и балансов. Кэшируем как _job_store: путь зависит от cwd."""
+    global _ledger_cache
+    db_path = (WORK_ROOT / "billing.sqlite3").resolve()
+    if _ledger_cache is None or _ledger_cache[0] != db_path:
+        _ledger_cache = (db_path, LedgerStore(db_path))
+    return _ledger_cache[1]
+
+
+def _billing() -> dict:
+    return load_billing_config()
+
+
+def format_usd(micro: int) -> str:
+    """Микродоллары -> строка для пользователя."""
+    sign = "-" if micro < 0 else ""
+    return f"{sign}${abs(micro) / 1_000_000:.2f}"
+
+
+class InsufficientBalance(Exception):
+    """Баланса не хватает на оценку сборки — платный рендер не начинаем."""
+
+    def __init__(self, *, need: int, have: int):
+        super().__init__(f"нужно {need}, есть {have}")
+        self.need = need
+        self.have = have
+
+
+def _charge_claude(chat_id: int, runner: ClaudeSkillRunner) -> None:
+    """Списать стоимость вызовов Клода за подготовку сценария.
+
+    Списываем сумму по runner, а не последний вызов: за один проход скиллов
+    отрабатывают генерация, хуманизатор и судья.
+
+    job_id=None — сборки ещё нет и может не быть вовсе (человек передумает).
+    Деньги при этом уже потрачены, поэтому запись всё равно нужна.
+    entry_id случайный: каждое нажатие — новая генерация, склеивать нечего.
+    """
+    billing = _billing()
+    if not billing["enabled"] or not runner.total_cost_usd:
+        return
+    cost = claude_cost_micro(runner.total_cost_usd)
+    _ledger().charge(
+        chat_id,
+        entry_id=f"claude:{uuid.uuid4().hex}",
+        job_id=None,
+        provider="claude",
+        unit="usd",
+        quantity=runner.total_cost_usd,
+        unit_price_micro=0,
+        cost_micro=cost,
+        charged_micro=apply_markup(cost, billing["markup"]),
+    )
+
+
 def load_session(chat_id: int) -> dict:
     p = session_dir(chat_id) / "session.json"
     if not p.exists():
@@ -351,23 +416,40 @@ def _activate_language_voice(session: dict, language: str) -> str | None:
 
 
 def step_verbatim(chat_id: int, text: str, language: str) -> dict:
-    res = run_verbatim_path(session_dir(chat_id), text, ClaudeSkillRunner(),
-                            language=normalize_profile_language(language))
+    runner = ClaudeSkillRunner()
+    # Ретраи, исчерпанные без успеха (ScenarioError), жгут Клода не меньше
+    # успеха — списываем и на исключении, иначе трата не попадёт в журнал.
+    try:
+        res = run_verbatim_path(session_dir(chat_id), text, runner,
+                                language=normalize_profile_language(language))
+    finally:
+        _charge_claude(chat_id, runner)
     return res["scenario"]
 
 
 def step_ideas(chat_id: int, text: str, language: str) -> list:
-    return run_ideas(
-        session_dir(chat_id),
-        text,
-        ClaudeSkillRunner(),
-        normalize_profile_language(language),
-    )["ideas"]
+    runner = ClaudeSkillRunner()
+    # См. step_verbatim: провал тоже платный, списываем в finally.
+    try:
+        res = run_ideas(
+            session_dir(chat_id),
+            text,
+            runner,
+            normalize_profile_language(language),
+        )
+    finally:
+        _charge_claude(chat_id, runner)
+    return res["ideas"]
 
 
 def step_scenario(chat_id: int, idea: dict, language: str) -> dict:
-    res = run_generated_path(session_dir(chat_id), idea, ClaudeSkillRunner(),
-                             language=normalize_profile_language(language))
+    runner = ClaudeSkillRunner()
+    # См. step_verbatim: провал тоже платный, списываем в finally.
+    try:
+        res = run_generated_path(session_dir(chat_id), idea, runner,
+                                 language=normalize_profile_language(language))
+    finally:
+        _charge_claude(chat_id, runner)
     return res["scenario"]
 
 
@@ -497,6 +579,19 @@ def enqueue_build(
     """Подготовить immutable scenario/config и лишь затем показать job worker."""
     from reels_factory.clients import load_client
 
+    billing = _billing()
+    if billing["enabled"]:
+        # Оценка ДО первого платного шага: после него деньги уже не вернуть.
+        # Символы берём из тех же блоков, что уйдут в синтез речи
+        # (pipeline.run_make озвучивает scenario["blocks"][i]["speech"]).
+        chars = sum(
+            len(b.get("speech") or "") for b in (scenario.get("blocks") or [])
+        )
+        need = estimate_micro(chars, billing["rates"], billing["markup"])
+        have = _ledger().balance(chat_id)
+        if have < need:
+            raise InsufficientBalance(need=need, have=have)
+
     store = _job_store()
     job_id = store.new_id()
     workdir = store.workdir_for(job_id)
@@ -587,6 +682,15 @@ def run_build(chat_id: int, workdir: Path) -> dict:
         [sys.executable, "-m", "reels_factory", "make",
          "--workdir", str(workdir), *config_args],
         capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if p.stderr:
+        # Движок пишет туда и штатные stage-логи, и предупреждения о деньгах
+        # без учёта (job.input.json нечитаем, сбой замера длительности для
+        # HeyGen). Раньше при успешной сборке этот stderr никто не читал —
+        # предупреждения терялись. warning, а не info: без настроенных
+        # хендлеров logging по умолчанию печатает только WARNING и выше —
+        # иначе строка снова не попадёт в journalctl. Хвост достаточно
+        # длинный, чтобы не обрезать сообщение, но не раздувать журнал.
+        log.warning("движок (chat_id=%s): %s", chat_id, p.stderr[-2000:])
     # node-рендер (vite) пишет свой прогресс в stdout движка, поэтому JSON-ответ
     # make — не весь stdout, а последняя разбираемая строка-объект
     for line in reversed((p.stdout or "").splitlines()):
@@ -867,6 +971,8 @@ async def on_button(update, context):
             await _ask(q.message, chat_id, s, WAIT_TEXT, ASK_TEXT)
     elif data.startswith("idea:"):
         idea = (s.get("ideas") or [])[int(data.split(":")[1])]
+        if await _blocked_by_negative_balance(q.message, chat_id):
+            return
         await q.message.reply_text(WORKING)
         try:
             sc = await asyncio.to_thread(
@@ -996,6 +1102,85 @@ async def _finish_voice(msg, chat_id: int, s: dict):
     await msg.reply_text(READY_MSG, reply_markup=_kb_ready())
 
 
+# Ссылки на инфопродукты Tribute. Товары создаются вручную в дашборде —
+# API для их создания у Tribute нет, поэтому список статичный.
+#
+# Берём поле link (оплата ОТКРЫВАЕТСЯ ВНУТРИ ТЕЛЕГРАМА), а не webLink
+# (страница в браузере). Разница принципиальная: в браузере покупатель может
+# войти по почте, тогда в вебхуке не будет telegram_user_id и зачислять будет
+# некому. Внутри Телеграма пользователь опознан всегда.
+# Актуальные значения обоих полей: GET /api/v1/products с ключом Tribute.
+TOPUP_PRODUCTS = (
+    ("$1 (тест)", "https://t.me/tribute/app?startapp=pAHq"),
+    ("$10", "https://t.me/tribute/app?startapp=pAH1"),
+    ("$25", "https://t.me/tribute/app?startapp=pAHh"),
+    ("$50", "https://t.me/tribute/app?startapp=pAHj"),
+    ("1000 ₽", "https://t.me/tribute/app?startapp=pAHm"),
+    ("2500 ₽", "https://t.me/tribute/app?startapp=pAHn"),
+    ("5000 ₽", "https://t.me/tribute/app?startapp=pAHo"),
+)
+
+
+def topup_keyboard():
+    # Импорт локальный и аннотации возврата нет — в bot.py telegram-классы
+    # везде импортируются внутри функций, на уровне модуля этих имён не существует.
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    rows = [
+        [InlineKeyboardButton(label, url=url)]
+        for label, url in TOPUP_PRODUCTS
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+def topup_text(need: int | None, have: int, *, exhausted: bool = False) -> str:
+    """Экран пополнения. need=None — пользователь открыл его сам, а не упёрся.
+    exhausted=True — баланс ушёл в минус: до оценки стоимости рендера дело ещё
+    не дошло, поэтому need тут не при чём, а строка своя."""
+    lines = [f"Баланс: {format_usd(have)}"]
+    if exhausted:
+        lines.append("Баланс исчерпан, генерация сценария приостановлена.")
+        lines.append("Пополните — и сможете продолжить с того же места.")
+    elif need is not None:
+        lines.append(
+            f"На этот ролик не хватает — нужно примерно {format_usd(need)}."
+        )
+    lines.append("")
+    lines.append("Пополнить — кнопкой ниже. Баланс обновится сам после оплаты.")
+    return "\n".join(lines)
+
+
+async def _show_topup(msg, chat_id: int, *, need: int | None = None,
+                      have: int | None = None, exhausted: bool = False) -> None:
+    """Экран пополнения. Принимает telegram-сообщение, а не update/context:
+    зовётся и из обработчика команды, и из _enqueue_build, где есть только msg."""
+    balance = _ledger().balance(chat_id) if have is None else have
+    await msg.reply_text(
+        topup_text(need, balance, exhausted=exhausted), reply_markup=topup_keyboard()
+    )
+
+
+async def cmd_balance(update, context) -> None:
+    await _show_topup(update.message, update.effective_chat.id)
+
+
+async def _blocked_by_negative_balance(msg, chat_id: int) -> bool:
+    """Гейт перед платной генерацией сценария (Клод в step_verbatim/step_ideas/
+    step_scenario). Порог — строго «меньше нуля», а не «меньше либо равно»:
+    свежий пользователь стартует с балансом 0 и должен пройти бесплатный
+    пробный сценарий — иначе трейл сломан. Блокируем только когда баланс УЖЕ
+    ушёл в минус, иначе получится бесконечный бесплатный цикл генераций
+    в убыток заведению."""
+    billing = _billing()
+    if not billing["enabled"]:
+        return False
+    balance = _ledger().balance(chat_id)
+    if balance >= 0:
+        return False
+    await _show_topup(msg, chat_id, have=balance, exhausted=True)
+    return True
+
+
 async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
     """Поставить job в durable FIFO; платный pipeline здесь не запускается."""
     try:
@@ -1005,6 +1190,11 @@ async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
             language=_reel_language(s),
             voice_id=s.get("voice_id"),
         )
+    except InsufficientBalance as exc:
+        # Раньше общего except: иначе нехватка баланса покажется как
+        # техническая ошибка, без кнопок пополнения.
+        await _show_topup(msg, chat_id, need=exc.need, have=exc.have)
+        return None
     except Exception as e:
         await msg.reply_text(f"Не удалось поставить ролик в очередь: {str(e)[:200]}")
         return None
@@ -1041,6 +1231,36 @@ async def _safe_job_message(bot_api, chat_id: int, text: str) -> None:
         await bot_api.send_message(chat_id=chat_id, text=text)
     except Exception as e:
         log.warning("не удалось отправить статус job в чат %s: %s", chat_id, e)
+
+
+def _charged_but_undelivered_notice(job_id: str) -> str:
+    """QA/размер/доставка провалились ПОСЛЕ платного рендера — баланс уже
+    просел, а автоматических возвратов нет (осознанно вне плана). Пользователь
+    должен узнать сумму из того же сообщения, а не заметить её сам в /balance.
+
+    Вызывается вне защиты _safe_job_message — job уже завершён, повторов не
+    будет, поэтому чтение бухгалтерии не должно уметь уронить обработчик:
+    если SQLite заблокирован или битый, пользователь обязан получить хотя бы
+    голый текст ошибки, а не остаться без всякого сообщения.
+    """
+    try:
+        breakdown = _ledger().job_breakdown(job_id)
+    except Exception as e:
+        log.warning("не удалось прочитать breakdown для job %s: %s", job_id, e)
+        return ""
+    if not breakdown:
+        return ""
+    parts = ", ".join(
+        f"{name} {format_usd(value)}" for name, value in sorted(breakdown.items())
+    )
+    total = sum(breakdown.values())
+    # Как и в чеке успешной доставки: total — это стоимость самого рендера
+    # (job_id проставлен), подготовка сценария Клодом сюда не входит и
+    # списывается отдельно — не называем total «списано за попытку целиком».
+    return (
+        f"\n\nСам рендер уже стоил {format_usd(total)} ({parts}) — "
+        "разберёмся вручную."
+    )
 
 
 async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
@@ -1095,7 +1315,9 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
         await _safe_job_message(
-            bot_api, job.chat_id, f"{QA_FAIL_MSG}\nID: {job.job_id[:8]}"
+            bot_api, job.chat_id,
+            f"{QA_FAIL_MSG}\nID: {job.job_id[:8]}"
+            f"{_charged_but_undelivered_notice(job.job_id)}",
         )
         return
 
@@ -1112,7 +1334,11 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
             error=error,
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
-        await _safe_job_message(bot_api, job.chat_id, error)
+        await _safe_job_message(
+            bot_api,
+            job.chat_id,
+            error + _charged_but_undelivered_notice(job.job_id),
+        )
         return
 
     try:
@@ -1138,11 +1364,35 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
             bot_api,
             job.chat_id,
             "Ролик готов и прошёл QA, но Telegram не принял файл. "
-            f"Он сохранён для повторной отправки.\nID: {job.job_id[:8]}",
+            f"Он сохранён для повторной отправки.\nID: {job.job_id[:8]}"
+            f"{_charged_but_undelivered_notice(job.job_id)}",
         )
         return
 
     store.finish(job.job_id, "completed", result=result, stage="delivery")
+    # Чтение бухгалтерии вне защиты _safe_job_message — видео уже доставлено,
+    # повторов не будет. Если SQLite заблокирован или битый, чтение не должно
+    # уронить обновление сессии: доставленный ролик без чека — это приемлемая
+    # потеря, а застрявшая сессия — это тикет в поддержку.
+    try:
+        breakdown = _ledger().job_breakdown(job.job_id)
+    except Exception as e:
+        log.warning("не удалось прочитать breakdown для job %s: %s", job.job_id, e)
+        breakdown = None
+    if breakdown:
+        parts = ", ".join(
+            f"{name} {format_usd(value)}" for name, value in sorted(breakdown.items())
+        )
+        total = sum(breakdown.values())
+        # Это стоимость самого рендера (job_id проставлен): подготовка
+        # сценария Клодом списывается отдельно, без job_id, и сюда не входит —
+        # поэтому не называем total «списано за ролик», баланс ниже точнее.
+        await _safe_job_message(
+            bot_api,
+            job.chat_id,
+            f"Сам рендер стоил {format_usd(total)} ({parts}).\n"
+            f"Баланс: {format_usd(_ledger().balance(job.chat_id))}",
+        )
     _update_session_after_job(job.chat_id, job.job_id, DONE)
 
 
@@ -1253,6 +1503,8 @@ async def on_message(update, context):
                 reply_markup=_kb_language_mismatch(),
             )
             return
+        if await _blocked_by_negative_balance(msg, chat_id):
+            return
         await msg.reply_text(WORKING)
         try:
             sc = await asyncio.to_thread(
@@ -1265,6 +1517,8 @@ async def on_message(update, context):
         await _show_review(msg, chat_id, s)
 
     elif step == WAIT_RAW:
+        if await _blocked_by_negative_balance(msg, chat_id):
+            return
         await msg.reply_text(WORKING)
         try:
             ideas = await asyncio.to_thread(
@@ -1318,6 +1572,7 @@ async def _post_init(app):
         [
             BotCommand("new", "Новый ролик"),
             BotCommand("status", "Статус сборки"),
+            BotCommand("balance", "Баланс и пополнение"),
         ]
     )
     interrupted = await asyncio.to_thread(_job_store().mark_running_interrupted)
@@ -1325,6 +1580,23 @@ async def _post_init(app):
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
         await _safe_job_message(
             app.bot, job.chat_id, f"{INTERRUPTED_MSG}\nID: {job.job_id[:8]}"
+        )
+
+    tribute_key = os.environ.get("TRIBUTE_API_KEY")
+    billing = _billing()
+    if tribute_key:
+        start_webhook_server(
+            _ledger(), api_key=tribute_key, fx=billing["fx"],
+            port=int(os.environ.get("TRIBUTE_WEBHOOK_PORT", "8099")),
+            on_credit=lambda ev: None,
+        )
+    elif billing["enabled"]:
+        # Кнопки пополнения остаются активны и без ключа: Tribute всё равно
+        # спишет деньги и будет ретраить вебхук ~сутки против мёртвого
+        # эндпоинта — без слушателя платёж потом виснет без автосверки.
+        log.error(
+            "TRIBUTE_API_KEY не задан: пополнения Tribute не будут "
+            "зачисляться, хотя биллинг включён"
         )
 
     global _job_wakeup, _worker_task
@@ -1360,6 +1632,7 @@ def main():
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("new", cmd_new))
     app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("balance", cmd_balance))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(MessageHandler(~filters.COMMAND, on_message))
     app.run_polling()

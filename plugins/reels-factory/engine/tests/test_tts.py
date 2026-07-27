@@ -212,3 +212,22 @@ def test_delete_voice_без_ключа_ошибка(monkeypatch):
     monkeypatch.setenv("ELEVENLABS_API_KEY", "")
     with pytest.raises(RuntimeError):
         delete_voice("v123", http=object())
+
+
+def test_synth_voice_сообщает_число_символов(tmp_path, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "k")
+    seen = []
+    text = "Привет, это тестовая фраза для озвучки."
+
+    synth_voice(text, tmp_path / "g.wav", voice_id="v1", http=_FakeHttp(),
+                run_cmd=lambda *a, **kw: None, meter=seen.append)
+
+    assert seen == [len(text)]
+
+
+def test_synth_voice_без_meter_работает_как_раньше(tmp_path, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "k")
+    # meter необязателен: движок зовут и вручную, там учёта нет.
+    out = synth_voice("текст", tmp_path / "g.wav", voice_id="v1",
+                      http=_FakeHttp(), run_cmd=lambda *a, **kw: None)
+    assert out == tmp_path / "g.wav"

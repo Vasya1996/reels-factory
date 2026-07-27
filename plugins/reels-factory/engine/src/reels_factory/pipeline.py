@@ -24,7 +24,9 @@ import sys
 from pathlib import Path
 
 from reels_factory.config import WORK_ROOT, edit_settings
-from reels_factory.avatar import HeyGenClient, cached_generate, render_covered_block
+from reels_factory.avatar import (
+    HeyGenClient, avatar_cache_key, cached_generate, render_covered_block,
+)
 from reels_factory.tts import synth_voice as _synth_voice
 from reels_factory.master_audio import (
     build_master_audio as _build_master_audio,
@@ -62,6 +64,22 @@ def _log(stage: str) -> None:
     print(f"[make] {stage}", file=sys.stderr)
 
 
+def _billable_seconds(path) -> float:
+    """Длительность готового mp4 — то, за что HeyGen берёт деньги.
+
+    Меряем факт, а не оценку: цена привязана к секундам выданного видео.
+    Сбой замера не должен ронять сборку — она уже оплачена, просто не учтётся.
+    """
+    from reels_factory.render import media_dur
+    try:
+        return float(media_dur(path))
+    except Exception as e:
+        # Сборка уже оплачена — не роняем её, но и не молчим: без лога
+        # оператор не узнает, что HeyGen списал деньги, а метр этого не увидел.
+        _log(f"billable_seconds: не удалось измерить {path}: {e}")
+        return 0.0
+
+
 def _fixes_hypothesis(config: dict) -> dict:
     product = config.get("product") or {}
     return {
@@ -79,7 +97,7 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
              master_audio_fn=None, edit_plan_fn=None,
              finalize_edit_plan_fn=None, visual_runner=None,
              performance_runner=None,
-             avatar_plan_fn=None, avatar_render_fn=None) -> dict:
+             avatar_plan_fn=None, avatar_render_fn=None, meter=None) -> dict:
     fmt = config.get("format", "split")
     wd = Path(workdir)
     wd.mkdir(parents=True, exist_ok=True)
@@ -224,6 +242,13 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
         avatar_render_manifest = None
         cache_dir = WORK_ROOT / AVATAR_CACHE_DIRNAME
         if use_master_audio:
+            # Предохранитель от безбилетных трат: платный ElevenLabs
+            # request без учёта через меритель.
+            if meter is not None:
+                raise RuntimeError(
+                    "учёт трат не поддерживает ветку master audio: "
+                    "отключите master_audio.enabled или снимите биллинг"
+                )
             master_audio_fn = master_audio_fn or _build_master_audio
             master = master_audio_fn(scenario, config, wd, voice_id=voice_id)
             block_wavs = list(master.block_wavs)
@@ -242,7 +267,10 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
                 if not text:
                     raise RuntimeError(f"блок {i} ({b.get('role')}): пустой speech")
                 wav = wd / f"voice_{i}.wav"
-                synth_fn(text, wav, voice_id=voice_id)
+                synth_fn(
+                    text, wav, voice_id=voice_id,
+                    meter=(meter.elevenlabs if meter is not None else None),
+                )
                 block_wavs.append(wav)
 
         if master is not None:
@@ -258,6 +286,23 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
             )
 
         if use_avatar_islands:
+            # Предохранитель от безбилетных трат: платный HeyGen-рендер этой
+            # ветки не поддерживает учёт через meter. Валим ДО рендера, а не
+            # после — иначе деньги уже потрачены, и валва ничего не защищает
+            # (как и сосед — master audio валва чуть выше).
+            #
+            # Не покрыто отдельным тестом: avatar islands требует
+            # master_audio.enabled=true (см. "plan" выше), а при
+            # master_audio.enabled=true и заданном meter соседняя
+            # master-audio валва (чуть выше) уже раскидывает исключение —
+            # эта ветка структурно недостижима с ненулевым meter, пока это
+            # ограничение в силе. Валва оставлена как defense-in-depth на
+            # случай, если требование master_audio когда-нибудь снимут.
+            if meter is not None:
+                raise RuntimeError(
+                    "учёт трат не поддерживает ветку avatar islands: "
+                    "включите master_audio.enabled=false или снимите биллинг"
+                )
             avatar_plan_fn = avatar_plan_fn or _build_avatar_render_plan
             avatar_render_fn = avatar_render_fn or _render_avatar_islands
             master_sha256 = hashlib.sha256(Path(master.wav).read_bytes()).hexdigest()
@@ -283,16 +328,29 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
             for i, (b, wav) in enumerate(zip(scenario["blocks"], block_wavs)):
                 if fmt in ("split", "avatar"):
                     role = b.get("role")
+                    billable = True
                     if role == "cta":
+                        # Попадание в кэш проверяем ДО вызова: сам
+                        # cached_generate возвращает путь одинаково в обоих
+                        # случаях, и по нему хит от промаха не отличить.
+                        key = avatar_cache_key(avatar_client, wav, role=role)
+                        billable = not (cache_dir / f"{key}.mp4").exists()
                         mp4 = cached_generate(
                             avatar_client, wav, cache_dir, role=role
                         )
                     elif i in covered_blocks:
+                        # Локальный ffmpeg, HeyGen не вызывается — не платно.
+                        billable = False
                         mp4 = covered_block_fn(wav, wd / f"avatar_{i}.mp4")
                     else:
                         # role задаёт пластику: хук энергичный, payoff спокойный
                         mp4 = avatar_client.generate(
                             wav, wd / f"avatar_{i}.mp4", role=role
+                        )
+                    if meter is not None and billable:
+                        meter.heygen(
+                            _billable_seconds(mp4),
+                            twin=bool(getattr(avatar_client, "look_id", None)),
                         )
                     avatar_mp4s.append(mp4)
                 else:

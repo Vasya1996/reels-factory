@@ -872,3 +872,46 @@ def test_падение_precut_даёт_stage_plan(monkeypatch, tmp_path):
 
     assert res["ok"] is False and res["stage"] == "plan"
     assert "индекс" in res["error"]
+
+
+def test_billable_seconds_сбой_замера_логируется_но_не_роняет(monkeypatch, capsys):
+    """Fix 4: probe длительности может упасть уже ПОСЛЕ платного HeyGen-
+    рендера — сборка не должна падать (остаётся 0.0), но раньше сбой
+    проглатывался молча, и оператор не видел, что метр ничего не увидел."""
+    import reels_factory.render as render_mod
+
+    def bad_media_dur(path):
+        raise RuntimeError("ffprobe упал")
+
+    monkeypatch.setattr(render_mod, "media_dur", bad_media_dur)
+
+    result = pipeline._billable_seconds("неважно.mp4")
+
+    assert result == 0.0
+    assert "ffprobe упал" in capsys.readouterr().err
+
+
+class _FakeMeter:
+    def __init__(self):
+        self.heygen_calls = []
+        self.eleven_calls = []
+
+    def heygen(self, seconds, *, cached=False, twin=False):
+        self.heygen_calls.append((seconds, cached, twin))
+
+    def elevenlabs(self, chars):
+        self.eleven_calls.append(chars)
+
+
+def test_кэшированный_фрагмент_не_тарифицируется():
+    meter = _FakeMeter()
+    meter.heygen(12.0, cached=True, twin=False)
+    meter.heygen(30.0, cached=False, twin=False)
+    billable = [s for s, cached, _ in meter.heygen_calls if not cached]
+    assert billable == [30.0]
+
+
+def test_run_make_принимает_meter():
+    import inspect
+    from reels_factory.pipeline import run_make
+    assert "meter" in inspect.signature(run_make).parameters
