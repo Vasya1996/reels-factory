@@ -1251,3 +1251,30 @@ def test_нехватки_баланса_достаточно_чтобы_не_с
     from reels_factory.billing import estimate_micro
     need = estimate_micro(500, cfg["rates"], cfg["markup"])
     assert bot_mod._ledger().balance(777) < need
+
+
+def test_нехватки_баланса_блокирует_enqueue_build_и_не_оставляет_workdir(work):
+    """Настоящая проверка гварда: без денег enqueue_build должен и поднять
+    InsufficientBalance с верными need/have, и не создать рабочую папку job —
+    именно ради этого проверка баланса стоит в коде ДО workdir.mkdir."""
+    chat_id = 777
+    have = bot._ledger().balance(chat_id)
+    assert have == 0  # свежий чат, начислений не было
+
+    jobs_root = bot.WORK_ROOT / "jobs"
+    assert not jobs_root.exists()  # до вызова папки job ещё нет
+
+    with pytest.raises(bot.InsufficientBalance) as exc:
+        bot.enqueue_build(chat_id, SCENARIO, language="ru", voice_id="voice-1")
+
+    from reels_factory.billing import estimate_micro
+    cfg = bot._billing()
+    chars = sum(len(b["speech"]) for b in SCENARIO["blocks"])
+    expected_need = estimate_micro(chars, cfg["rates"], cfg["markup"])
+
+    assert exc.value.need == expected_need
+    assert exc.value.have == have
+    assert exc.value.need > exc.value.have
+
+    # workdir так и не появился — отказ не оставил следов на диске.
+    assert not jobs_root.exists()
