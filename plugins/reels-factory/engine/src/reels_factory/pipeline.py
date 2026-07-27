@@ -73,7 +73,10 @@ def _billable_seconds(path) -> float:
     from reels_factory.render import media_dur
     try:
         return float(media_dur(path))
-    except Exception:
+    except Exception as e:
+        # Сборка уже оплачена — не роняем её, но и не молчим: без лога
+        # оператор не узнает, что HeyGen списал деньги, а метр этого не увидел.
+        _log(f"billable_seconds: не удалось измерить {path}: {e}")
         return 0.0
 
 
@@ -283,6 +286,15 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
             )
 
         if use_avatar_islands:
+            # Предохранитель от безбилетных трат: платный HeyGen-рендер этой
+            # ветки не поддерживает учёт через meter. Валим ДО рендера, а не
+            # после — иначе деньги уже потрачены, и валва ничего не защищает
+            # (как и сосед — master audio валва чуть выше).
+            if meter is not None:
+                raise RuntimeError(
+                    "учёт трат не поддерживает ветку avatar islands: "
+                    "включите master_audio.enabled=false или снимите биллинг"
+                )
             avatar_plan_fn = avatar_plan_fn or _build_avatar_render_plan
             avatar_render_fn = avatar_render_fn or _render_avatar_islands
             master_sha256 = hashlib.sha256(Path(master.wav).read_bytes()).hexdigest()
@@ -303,11 +315,6 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
             avatar_mp4s = list(
                 rendered.clips if hasattr(rendered, "clips") else rendered
             )
-            if meter is not None:
-                raise RuntimeError(
-                    "учёт трат не поддерживает ветку avatar islands: "
-                    "включите master_audio.enabled=false или снимите биллинг"
-                )
             avatar_render_manifest = getattr(rendered, "manifest", None)
         else:
             for i, (b, wav) in enumerate(zip(scenario["blocks"], block_wavs)):

@@ -352,6 +352,51 @@ def test_avatar_islands_заменяет_block_by_block_photo_avatar_iv(
     assert res["avatar_summary"] == plan["summary"]
 
 
+def test_avatar_islands_валва_блокирует_meter_до_платного_рендера(monkeypatch, tmp_path):
+    """Fix 5: `if meter is not None: raise` для ветки avatar islands раньше
+    стоял ПОСЛЕ avatar_render_fn (платный HeyGen-рендер) — валва не защищала
+    ничего, она просто фиксировала уже потраченные деньги. Теперь она стоит
+    раньше avatar_plan_fn/avatar_render_fn, как и соседняя master-audio валва.
+
+    На практике avatar islands требует master_audio.enabled=true (см. gate
+    в "plan"), и его собственная meter-валва (чуть выше по коду) тоже
+    срабатывает первой — так что здесь фиксируем главное наблюдаемое
+    следствие обоих валв разом: ни avatar_plan_fn, ни avatar_render_fn
+    (платный рендер) не вызываются, если задан meter."""
+    calls = []
+    fi, fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+
+    def fake_master(scenario, config, workdir, voice_id=None):
+        calls.append(("master_audio",))
+        raise AssertionError("ElevenLabs master audio не должен звониться платно")
+
+    def fake_plan(*a, **kw):
+        calls.append(("avatar_plan_fn",))
+        raise AssertionError("avatar_plan_fn не должен звониться с активным meter")
+
+    def fake_render(*a, **kw):
+        calls.append(("avatar_render_fn",))
+        raise AssertionError("платный avatar_render_fn не должен звониться с meter")
+
+    cfg = _cfg("avatar")
+    cfg["master_audio"] = {"enabled": True}
+    cfg["avatar_islands"] = {"enabled": True}
+
+    res = pipeline.run_make(
+        cfg, None, 0.0, wd,
+        avatar_client=avatar, synth_fn=fs, ingest_fn=fi, assemble_fn=fa,
+        master_audio_fn=fake_master, avatar_plan_fn=fake_plan,
+        avatar_render_fn=fake_render, meter=object(),
+    )
+
+    assert res["ok"] is False
+    assert res["stage"] == "voice"
+    assert "не поддерживает" in res["error"]
+    assert not any(c[0] in ("avatar_plan_fn", "avatar_render_fn") for c in calls)
+
+
 def test_avatar_со_вставками_ingest_вызывается(monkeypatch, tmp_path):
     calls = []
     captured = {}
@@ -872,6 +917,23 @@ def test_падение_precut_даёт_stage_plan(monkeypatch, tmp_path):
 
     assert res["ok"] is False and res["stage"] == "plan"
     assert "индекс" in res["error"]
+
+
+def test_billable_seconds_сбой_замера_логируется_но_не_роняет(monkeypatch, capsys):
+    """Fix 4: probe длительности может упасть уже ПОСЛЕ платного HeyGen-
+    рендера — сборка не должна падать (остаётся 0.0), но раньше сбой
+    проглатывался молча, и оператор не видел, что метр ничего не увидел."""
+    import reels_factory.render as render_mod
+
+    def bad_media_dur(path):
+        raise RuntimeError("ffprobe упал")
+
+    monkeypatch.setattr(render_mod, "media_dur", bad_media_dur)
+
+    result = pipeline._billable_seconds("неважно.mp4")
+
+    assert result == 0.0
+    assert "ffprobe упал" in capsys.readouterr().err
 
 
 class _FakeMeter:
