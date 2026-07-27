@@ -191,19 +191,8 @@ def test_verify_без_scenario_timed_чистая_ошибка(monkeypatch, tmp
     assert "reels_factory make" in out["error"]
 
 
-def test_make_help_упоминает_punch(monkeypatch, capsys):
-    monkeypatch.setattr("sys.argv", ["reels_factory", "make", "--help"])
-
-    with pytest.raises(SystemExit) as exc:
-        cli.main()
-
-    assert exc.value.code == 0
-    out = capsys.readouterr().out
-    assert "punch" in out
-
-
-def test_make_без_broll_для_fullscreen_чистая_ошибка(capsys):
-    args = SimpleNamespace(workdir="demo", broll=None, offset=None, broll_plan=None)
+def test_make_формат_fullscreen_не_поддерживается(capsys):
+    args = SimpleNamespace(workdir="demo")
 
     with pytest.raises(SystemExit) as exc:
         cli._cmd_make(args, {"format": "fullscreen"})
@@ -211,11 +200,12 @@ def test_make_без_broll_для_fullscreen_чистая_ошибка(capsys):
     assert exc.value.code == 1
     out = json.loads(capsys.readouterr().out)
     assert out["ok"] is False
-    assert "--broll" in out["error"]
+    assert "avatar" in out["error"]
+    assert "archive/console-broll-workflow" in out["error"]
 
 
-def test_make_без_broll_для_split_чистая_ошибка(capsys):
-    args = SimpleNamespace(workdir="demo", broll=None, offset=None, broll_plan=None)
+def test_make_формат_split_не_поддерживается(capsys):
+    args = SimpleNamespace(workdir="demo")
 
     with pytest.raises(SystemExit) as exc:
         cli._cmd_make(args, {"format": "split"})
@@ -223,18 +213,19 @@ def test_make_без_broll_для_split_чистая_ошибка(capsys):
     assert exc.value.code == 1
     out = json.loads(capsys.readouterr().out)
     assert out["ok"] is False
-    assert "--broll" in out["error"]
+    assert "avatar" in out["error"]
+    assert "archive/console-broll-workflow" in out["error"]
 
 
-def test_make_avatar_без_broll_допустимо(monkeypatch, tmp_path, capsys):
+def test_make_avatar_проходит(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(cli, "WORK_ROOT", tmp_path)
 
-    def fake_run_make(cfg, broll, offset, wd, broll_plan=None, meter=None):
+    def fake_run_make(cfg, wd, meter=None):
         return {"ok": True, "workdir": str(wd), "mp4": "reel.mp4", "qa_pass": True,
                 "gates": {}, "stage": None, "error": None}
 
     monkeypatch.setattr("reels_factory.pipeline.run_make", fake_run_make)
-    args = SimpleNamespace(workdir="demo", broll=None, offset=None, broll_plan=None)
+    args = SimpleNamespace(workdir="demo")
 
     with pytest.raises(SystemExit) as exc:
         cli._cmd_make(args, {"format": "avatar"})

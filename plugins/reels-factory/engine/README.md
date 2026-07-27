@@ -175,8 +175,7 @@ python -m reels_factory edit --input мой.mp4 --output out.mp4 --jump-cuts --g
 
 ```bash
 python -m reels_factory script --workdir demo1            # сценарий -> scenario.json
-python -m reels_factory make   --workdir demo1 --broll <url|file> --offset 30
-python -m reels_factory make   --workdir demo1 --broll <url|file> --broll-plan plan.json
+python -m reels_factory make   --workdir demo1            # только format: avatar
 python -m reels_factory verify --workdir demo1            # перепроверить 7 гейтов
 ```
 
@@ -209,14 +208,16 @@ python -m reels_factory verify --workdir demo1            # перепровер
 
 ## Форматы
 
-- **split** — аватар-ведущий от HeyGen сверху (1080×672) + видеоряд снизу
-  (1080×1248); в master-path HeyGen — беззвучный визуальный слой.
-- **fullscreen** — видеоряд на весь кадр, голос ведущего за кадром (только TTS,
-  HeyGen не рендерится — вдвое дешевле).
-- **avatar** — аватар-ведущий от HeyGen на весь кадр (1080×1920);
-  в master-path речь идёт только из `voice_master.wav`;
-  видеоряд опционален — вставки поверх аватара (`broll_plan` сегменты с
-  `"insert": true`), либо вовсе без видеоряда.
+- **split** и **fullscreen** — оставлены в схеме конфига и в опроснике
+  установки, но команда `make` для них честно отказывает: источника
+  непрерывного видеоряда под ними больше нет (см. `docs/archive/console-broll-workflow.md`
+  в ветке `archive/console-broll-workflow`).
+- **avatar** — единственный рабочий формат. Аватар-ведущий от HeyGen на весь
+  кадр (1080×1920); в master-path речь идёт только из `voice_master.wav`;
+  видеоряд опционален — вставки поверх аватара подбираются автоматически из
+  локальной библиотеки клипов, либо вовсе без видеоряда. Ручной консольный
+  план (`--broll-plan`) убран вместе с `--broll` — см. `docs/archive/console-broll-workflow.md`
+  в ветке `archive/console-broll-workflow`.
 
 ## Telegram: очередь и изоляция jobs
 

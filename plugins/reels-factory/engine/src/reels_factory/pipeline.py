@@ -4,7 +4,7 @@
 
 run_make() гонит стадии подряд; при исключении на любой стадии останавливается и
 возвращает {"ok": False, "workdir", "mp4": None, "qa_pass": False, "stage",
-"error"}. DI на внешние ресурсы (synth/ingest/avatar/assemble/covered_block) —
+"error"}. DI на внешние ресурсы (synth/avatar/assemble/covered_block) —
 тестируемо без сети/ffmpeg. verify_reel не параметр (детерминированная QA-логика).
 
 При ``RF_MASTER_AUDIO_ENABLED=1`` (либо ``master_audio.enabled: true``) весь
@@ -33,7 +33,6 @@ from reels_factory.master_audio import (
     build_master_audio as _build_master_audio,
     master_audio_enabled,
 )
-from reels_factory.ingest import ingest as _ingest
 from reels_factory.compose import build_caption_fixes
 # Рендер-слой: Revideo (единственный рендерер). Совместим по контракту с
 # compose.assemble ({"mp4","timed_scenario","words_fixed"}).
@@ -75,9 +74,9 @@ def _fixes_hypothesis(config: dict) -> dict:
     }
 
 
-def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
-             broll_plan: dict | None = None, scenario: dict | None = None,
-             avatar_client=None, synth_fn=None, ingest_fn=None, assemble_fn=None,
+def run_make(config: dict, workdir,
+             scenario: dict | None = None,
+             avatar_client=None, synth_fn=None, assemble_fn=None,
              covered_block_fn=None, jump_cut_fn=None, precut_fn=None,
              master_audio_fn=None, edit_plan_fn=None,
              finalize_edit_plan_fn=None, visual_runner=None,
@@ -88,7 +87,6 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
     wd.mkdir(parents=True, exist_ok=True)
 
     synth_fn = synth_fn or _synth_voice
-    ingest_fn = ingest_fn or _ingest
     assemble_fn = assemble_fn or _assemble
     covered_block_fn = covered_block_fn or render_covered_block
     jump_cut_fn = jump_cut_fn or _jump_cut_fragments
@@ -158,8 +156,8 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
     # совместимости тестов/CLI; решения всё равно нормализует editplan.py.
     _log("plan")
     try:
-        legacy_plan = broll_plan
-        if legacy_plan is None and precut_fn is not None and fmt == "avatar":
+        legacy_plan = None
+        if precut_fn is not None and fmt == "avatar":
             legacy_plan = precut_fn(scenario, config)
         edit_plan_fn = edit_plan_fn or _build_edit_plan
         edit_plan = edit_plan_fn(
@@ -340,21 +338,12 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
             file=sys.stderr,
         )
 
-    _log("ingest")
-    try:
-        # для avatar-формата видеоряд опционален (вставки); без --broll — нет низа
-        if broll_source:
-            meta = ingest_fn(broll_source, wd)
-            broll_mp4 = meta["video_path"]
-        else:
-            broll_mp4 = None
-    except Exception as e:
-        return fail("ingest", e)
-
     _log("assemble")
     try:
         out_mp4 = wd / "reel.mp4"
-        res = assemble_fn(wd, scenario, broll_mp4, broll_offset_s, out_mp4,
+        # Непрерывный видеоряд-источник (ingest) убран: аватар — единственный
+        # формат, низовое видео сборщик больше не получает.
+        res = assemble_fn(wd, scenario, None, 0.0, out_mp4,
                           format=fmt, avatar_mp4s=avatar_mp4s or None,
                           voice_wavs=voice_wavs or None,
                           edit_plan=edit_plan,
