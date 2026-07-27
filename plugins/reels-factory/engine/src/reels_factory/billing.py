@@ -286,3 +286,63 @@ def estimate_micro(chars: int, rates: dict, markup: float, *, twin: bool = False
         + to_micro(rates["claude_flat_usd_per_reel"])
     )
     return apply_markup(cost, markup)
+
+
+class JobMeter:
+    """Учёт трат одной сборки: считает стоимость и сразу списывает.
+
+    Списание идёт по факту каждого платного шага, а не одной суммой в конце:
+    если конвейер упадёт посередине, деньги у провайдера уже потрачены и это
+    должно остаться в журнале. Возврат за упавшую сборку делает refund_job.
+    """
+
+    def __init__(self, store: LedgerStore, *, chat_id: int, job_id: str,
+                 rates: dict, markup: float):
+        self.store = store
+        self.chat_id = int(chat_id)
+        self.job_id = job_id
+        self.rates = rates
+        self.markup = float(markup)
+        self._step = 0
+        self._charged = 0
+
+    def _record(self, provider: str, unit: str, quantity: float,
+                unit_price_micro: int, cost_micro: int) -> None:
+        charged = apply_markup(cost_micro, self.markup)
+        entry_id = f"{self.job_id}:{provider}:{self._step}"
+        self._step += 1
+        if self.store.charge(
+            self.chat_id, entry_id=entry_id, job_id=self.job_id,
+            provider=provider, unit=unit, quantity=quantity,
+            unit_price_micro=unit_price_micro, cost_micro=cost_micro,
+            charged_micro=charged,
+        ):
+            self._charged += charged
+
+    def heygen(self, seconds: float, *, cached: bool = False, twin: bool = False) -> None:
+        # Попадание в кэш денег не стоит — фрагмент уже отрендерен раньше.
+        if cached or seconds <= 0:
+            return
+        key = "heygen_twin_usd_per_second" if twin else "heygen_usd_per_second"
+        self._record(
+            "heygen", "seconds", seconds,
+            to_micro(self.rates[key]),
+            heygen_cost_micro(seconds, self.rates, twin=twin),
+        )
+
+    def elevenlabs(self, chars: int) -> None:
+        if chars <= 0:
+            return
+        self._record(
+            "elevenlabs", "chars", chars,
+            to_micro(self.rates["elevenlabs_usd_per_1k_chars"] / 1000.0),
+            elevenlabs_cost_micro(chars, self.rates),
+        )
+
+    def claude(self, usd: float) -> None:
+        if not usd or usd <= 0:
+            return
+        self._record("claude", "usd", float(usd), 0, claude_cost_micro(usd))
+
+    def total_charged(self) -> int:
+        return self._charged

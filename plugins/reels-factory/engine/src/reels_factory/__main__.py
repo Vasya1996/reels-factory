@@ -56,6 +56,34 @@ def _cmd_script(args, cfg):
     print(json.dumps(sc, ensure_ascii=False))
 
 
+def _build_meter(wd):
+    """Учёт трат для этой сборки — или None, если считать не для кого.
+
+    chat_id и job_id лежат в job.input.json, который бот кладёт в workdir перед
+    постановкой в очередь (bot.py:enqueue_build). Ручной прогон движка из
+    консоли этого файла не имеет — там учёта нет, и это правильно: платит
+    разработчик, а не пользователь.
+    """
+    from reels_factory.billing import JobMeter, LedgerStore
+    from reels_factory.config import load_billing_config
+    # WORK_ROOT уже импортирован в __main__.py на уровне модуля (строка 11).
+
+    billing = load_billing_config()
+    if not billing["enabled"]:
+        return None
+    try:
+        doc = json.loads((Path(wd) / "job.input.json").read_text(encoding="utf-8"))
+        chat_id = int(doc["user_id"])
+        job_id = str(doc["job_id"])
+    except (OSError, KeyError, ValueError, json.JSONDecodeError):
+        return None
+    return JobMeter(
+        LedgerStore(WORK_ROOT / "billing.sqlite3"),
+        chat_id=chat_id, job_id=job_id,
+        rates=billing["rates"], markup=billing["markup"],
+    )
+
+
 def _cmd_make(args, cfg):
     from reels_factory.pipeline import run_make
 
@@ -81,7 +109,8 @@ def _cmd_make(args, cfg):
         offset = 0.0
 
     wd = _resolve_workdir(args.workdir)
-    result = run_make(cfg, args.broll, offset, wd, broll_plan=broll_plan)
+    result = run_make(cfg, args.broll, offset, wd, broll_plan=broll_plan,
+                      meter=_build_meter(wd))
     print(json.dumps(result, ensure_ascii=False))
     if not result["ok"]:
         sys.exit(1)

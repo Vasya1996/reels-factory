@@ -173,3 +173,41 @@ def test_конфиг_биллинга_накладывает_значения_�
     # не заданное в файле остаётся дефолтным
     assert cfg["rates"]["elevenlabs_usd_per_1k_chars"] == 0.10
     assert cfg["fx"]["rub"] == 0.011
+
+
+from reels_factory.billing import JobMeter
+
+
+def test_meter_списывает_с_наценкой(store):
+    store.credit(777, 20_000_000, purchase_id="p1", amount_minor=2000, currency="usd")
+    meter = JobMeter(store, chat_id=777, job_id="job1", rates=RATES, markup=2.0)
+    meter.heygen(30.0)
+    # $1.50 себестоимость -> $3.00 списано
+    assert store.balance(777) == 17_000_000
+    assert meter.total_charged() == 3_000_000
+
+
+def test_meter_не_тарифицирует_кэш(store):
+    meter = JobMeter(store, chat_id=777, job_id="job1", rates=RATES, markup=2.0)
+    meter.heygen(30.0, cached=True)
+    assert store.balance(777) == 0
+    assert meter.total_charged() == 0
+
+
+def test_meter_нумерует_шаги_и_не_схлопывает_одинаковые(store):
+    meter = JobMeter(store, chat_id=777, job_id="job1", rates=RATES, markup=2.0)
+    meter.heygen(30.0)
+    meter.heygen(30.0)
+    assert meter.total_charged() == 6_000_000
+
+
+def test_meter_считает_все_три_провайдера(store):
+    meter = JobMeter(store, chat_id=777, job_id="job1", rates=RATES, markup=2.0)
+    meter.heygen(30.0)
+    meter.elevenlabs(1000)
+    meter.claude(0.02)
+    assert store.job_breakdown("job1") == {
+        "heygen": 3_000_000,
+        "elevenlabs": 200_000,
+        "claude": 40_000,
+    }
