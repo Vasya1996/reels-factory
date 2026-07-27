@@ -682,6 +682,15 @@ def run_build(chat_id: int, workdir: Path) -> dict:
         [sys.executable, "-m", "reels_factory", "make",
          "--workdir", str(workdir), *config_args],
         capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if p.stderr:
+        # Движок пишет туда и штатные stage-логи, и предупреждения о деньгах
+        # без учёта (job.input.json нечитаем, сбой замера длительности для
+        # HeyGen). Раньше при успешной сборке этот stderr никто не читал —
+        # предупреждения терялись. warning, а не info: без настроенных
+        # хендлеров logging по умолчанию печатает только WARNING и выше —
+        # иначе строка снова не попадёт в journalctl. Хвост достаточно
+        # длинный, чтобы не обрезать сообщение, но не раздувать журнал.
+        log.warning("движок (chat_id=%s): %s", chat_id, p.stderr[-2000:])
     # node-рендер (vite) пишет свой прогресс в stdout движка, поэтому JSON-ответ
     # make — не весь stdout, а последняя разбираемая строка-объект
     for line in reversed((p.stdout or "").splitlines()):
@@ -1228,16 +1237,28 @@ def _charged_but_undelivered_notice(job_id: str) -> str:
     """QA/размер/доставка провалились ПОСЛЕ платного рендера — баланс уже
     просел, а автоматических возвратов нет (осознанно вне плана). Пользователь
     должен узнать сумму из того же сообщения, а не заметить её сам в /balance.
+
+    Вызывается вне защиты _safe_job_message — job уже завершён, повторов не
+    будет, поэтому чтение бухгалтерии не должно уметь уронить обработчик:
+    если SQLite заблокирован или битый, пользователь обязан получить хотя бы
+    голый текст ошибки, а не остаться без всякого сообщения.
     """
-    breakdown = _ledger().job_breakdown(job_id)
+    try:
+        breakdown = _ledger().job_breakdown(job_id)
+    except Exception as e:
+        log.warning("не удалось прочитать breakdown для job %s: %s", job_id, e)
+        return ""
     if not breakdown:
         return ""
     parts = ", ".join(
         f"{name} {format_usd(value)}" for name, value in sorted(breakdown.items())
     )
     total = sum(breakdown.values())
+    # Как и в чеке успешной доставки: total — это стоимость самого рендера
+    # (job_id проставлен), подготовка сценария Клодом сюда не входит и
+    # списывается отдельно — не называем total «списано за попытку целиком».
     return (
-        f"\n\nЗа эту попытку уже списано {format_usd(total)} ({parts}) — "
+        f"\n\nСам рендер уже стоил {format_usd(total)} ({parts}) — "
         "разберёмся вручную."
     )
 

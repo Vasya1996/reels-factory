@@ -290,6 +290,14 @@ def run_make(config: dict, broll_source: str, broll_offset_s: float, workdir,
             # ветки не поддерживает учёт через meter. Валим ДО рендера, а не
             # после — иначе деньги уже потрачены, и валва ничего не защищает
             # (как и сосед — master audio валва чуть выше).
+            #
+            # Не покрыто отдельным тестом: avatar islands требует
+            # master_audio.enabled=true (см. "plan" выше), а при
+            # master_audio.enabled=true и заданном meter соседняя
+            # master-audio валва (чуть выше) уже раскидывает исключение —
+            # эта ветка структурно недостижима с ненулевым meter, пока это
+            # ограничение в силе. Валва оставлена как defense-in-depth на
+            # случай, если требование master_audio когда-нибудь снимут.
             if meter is not None:
                 raise RuntimeError(
                     "учёт трат не поддерживает ветку avatar islands: "

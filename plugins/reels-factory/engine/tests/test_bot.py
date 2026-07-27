@@ -1058,6 +1058,27 @@ def test_run_build_разбирает_json_среди_шума_рендера(tm
     assert result == {"ok": True, "mp4": "x", "qa_pass": True}
 
 
+def test_run_build_логирует_stderr_движка_даже_при_успехе(tmp_path, monkeypatch, caplog):
+    """До фикса run_build читал p.stderr только на ветке разбора неудачного
+    JSON — оба денежных предупреждения (_build_meter, _billable_seconds)
+    пишутся в stderr движка и терялись при успешной сборке, потому что их
+    никто не читал. Теперь стадийные логи и предупреждения обязаны попасть
+    в логгер бота, даже если сборка ok."""
+    class Completed:
+        stdout = json.dumps({"ok": True, "mp4": "x", "qa_pass": True})
+        stderr = ("[make] job.input.json повреждён, учёт трат отключён: "
+                   "boom\n[make] assemble")
+
+    monkeypatch.setattr(bot.subprocess, "run", lambda cmd, **kw: Completed())
+
+    with caplog.at_level(logging.WARNING):
+        result = bot.run_build(7, tmp_path / "wd")
+
+    assert result == {"ok": True, "mp4": "x", "qa_pass": True}
+    assert "job.input.json повреждён" in caplog.text
+    assert "[make] assemble" in caplog.text
+
+
 def test_профиль_клиента_готов(tmp_path, monkeypatch):
     monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
     clients_mod.register_client("7", _client_base_cfg(), voice_id="voice-1", asset_id="asset-1")
@@ -1291,10 +1312,12 @@ def _зачесть_расход_на_job(job_id: str) -> None:
     )
 
 
-def test_qa_провал_сообщает_сколько_уже_списано(work, клиент):
+def test_qa_провал_сообщает_сколько_уже_стоил_рендер(work, клиент):
     """Fix 8: build-субпроцесс уже списал деньги до провала QA — баланс
     просел, а бот раньше говорил только «остановлен проверкой качества»,
-    не упоминая списание."""
+    не упоминая списание. Формулировка выровнена с квитанцией (Fix C):
+    не «списано», а «стоил сам рендер» — без Клода, который тратится
+    отдельно и в этот breakdown не входит."""
     def fake_run_build(chat_id, workdir):
         (workdir / "reel.mp4").write_bytes(b"x")
         return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": False}
@@ -1308,11 +1331,11 @@ def test_qa_провал_сообщает_сколько_уже_списано(w
 
     asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
 
-    assert "уже списано" in api.messages[-1][1]
+    assert "уже стоил" in api.messages[-1][1]
     assert "$1.00" in api.messages[-1][1]
 
 
-def test_слишком_большой_файл_сообщает_сколько_уже_списано(work, клиент, monkeypatch):
+def test_слишком_большой_файл_сообщает_сколько_уже_стоил_рендер(work, клиент, monkeypatch):
     monkeypatch.setattr(bot, "MAX_TG_VIDEO_BYTES", 3)
 
     def fake_run_build(chat_id, workdir):
@@ -1328,11 +1351,11 @@ def test_слишком_большой_файл_сообщает_сколько_
 
     asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
 
-    assert "уже списано" in api.messages[-1][1]
+    assert "уже стоил" in api.messages[-1][1]
     assert "$1.00" in api.messages[-1][1]
 
 
-def test_отказ_telegram_принять_файл_сообщает_сколько_уже_списано(
+def test_отказ_telegram_принять_файл_сообщает_сколько_уже_стоил_рендер(
     work, клиент
 ):
     def fake_run_build(chat_id, workdir):
@@ -1353,9 +1376,40 @@ def test_отказ_telegram_принять_файл_сообщает_сколь
 
     asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
 
-    assert "уже списано" in api.messages[-1][1]
+    assert "уже стоил" in api.messages[-1][1]
     assert "$1.00" in api.messages[-1][1]
     assert bot._job_store().get(job.job_id).status == "delivery_failed"
+
+
+def test_qa_провал_с_битым_breakdown_всё_равно_доставляет_отказ(
+    work, клиент, monkeypatch, caplog
+):
+    """Fix B: _charged_but_undelivered_notice раньше звалась вне защиты
+    _safe_job_message — упавшее чтение SQLite (заблокирован/битый) роняло
+    бы _process_job целиком, и пользователь не получил бы вообще ничего,
+    хотя job уже finished и повторов не будет. Теперь чтение breakdown
+    защищено само по себе: пустое уведомление, но голый текст отказа
+    доходит."""
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": False}
+
+    def падающий_breakdown(self, job_id):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(bot.LedgerStore, "job_breakdown", падающий_breakdown)
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build", _Msg())
+    job = _claim_job()
+    api = _BotAPI()
+
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert bot.QA_FAIL_MSG in api.messages[-1][1]
+    assert "database is locked" in caplog.text
 
 
 def test_receipt_называет_сумму_рендером_а_не_общим_списанием(work, клиент):
