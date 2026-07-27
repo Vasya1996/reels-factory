@@ -180,3 +180,42 @@ def test_сервер_отвергает_плохую_подпись(store):
         assert store.balance(777) == 0
     finally:
         srv.shutdown()
+
+
+def test_сервер_отвечает_400_на_битый_content_length(store):
+    """Fix 2: int(Content-Length) на нечисловом заголовке раньше поднимал
+    ValueError прямо из do_POST — сокет рвался вместо честного 400."""
+    from reels_factory.tribute import start_webhook_server
+
+    srv = start_webhook_server(store, api_key=KEY, fx=FX, port=0)
+    try:
+        port = srv.server_address[1]
+        raw = body()
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/tribute",
+            data=raw, method="POST",
+            headers={
+                "trbt-signature": sign(raw),
+                "Content-Length": "not-a-number",
+            },
+        )
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            urllib.request.urlopen(req, timeout=5)
+        assert exc.value.code == 400
+        assert store.balance(777) == 0
+    finally:
+        srv.shutdown()
+
+
+def test_обработчик_вебхука_ограничивает_время_чтения_соединения(store):
+    """Fix 2: без таймаута клиент с Content-Length и без тела держит поток и
+    сокет бесконечно — эндпоинт публично достижим через Caddy. Реального
+    зависшего клиента здесь не гоняем (небыстрый тест), фиксируем сам факт,
+    что socketserver применит таймаут к соединению (StreamRequestHandler)."""
+    from reels_factory.tribute import start_webhook_server
+
+    srv = start_webhook_server(store, api_key=KEY, fx=FX, port=0)
+    try:
+        assert srv.RequestHandlerClass.timeout == 30
+    finally:
+        srv.shutdown()

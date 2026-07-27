@@ -117,11 +117,24 @@ def start_webhook_server(store: LedgerStore, *, api_key: str, fx: dict,
     """
 
     class Handler(BaseHTTPRequestHandler):
+        # Клиент может прислать Content-Length и замолчать — rfile.read()
+        # блокируется бесконечно, а поток на соединение не освобождается.
+        # Эндпоинт публично достижим через Caddy, так что это безлимитное
+        # создание потоков снаружи без таймаута. socketserver сам применяет
+        # timeout к сокету соединения (StreamRequestHandler.setup).
+        timeout = 30
+
         def do_POST(self):  # noqa: N802 — имя задано базовым классом
             if self.path.rstrip("/") != WEBHOOK_PATH:
                 self.send_error(404)
                 return
-            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                # Битый заголовок иначе роняет int() наружу do_POST и рвёт
+                # соединение вместо честного 400.
+                self.send_error(400)
+                return
             if length <= 0 or length > MAX_BODY_BYTES:
                 self.send_error(400)
                 return
