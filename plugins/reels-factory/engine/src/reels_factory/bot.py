@@ -417,29 +417,39 @@ def _activate_language_voice(session: dict, language: str) -> str | None:
 
 def step_verbatim(chat_id: int, text: str, language: str) -> dict:
     runner = ClaudeSkillRunner()
-    res = run_verbatim_path(session_dir(chat_id), text, runner,
-                            language=normalize_profile_language(language))
-    _charge_claude(chat_id, runner)
+    # Ретраи, исчерпанные без успеха (ScenarioError), жгут Клода не меньше
+    # успеха — списываем и на исключении, иначе трата не попадёт в журнал.
+    try:
+        res = run_verbatim_path(session_dir(chat_id), text, runner,
+                                language=normalize_profile_language(language))
+    finally:
+        _charge_claude(chat_id, runner)
     return res["scenario"]
 
 
 def step_ideas(chat_id: int, text: str, language: str) -> list:
     runner = ClaudeSkillRunner()
-    res = run_ideas(
-        session_dir(chat_id),
-        text,
-        runner,
-        normalize_profile_language(language),
-    )
-    _charge_claude(chat_id, runner)
+    # См. step_verbatim: провал тоже платный, списываем в finally.
+    try:
+        res = run_ideas(
+            session_dir(chat_id),
+            text,
+            runner,
+            normalize_profile_language(language),
+        )
+    finally:
+        _charge_claude(chat_id, runner)
     return res["ideas"]
 
 
 def step_scenario(chat_id: int, idea: dict, language: str) -> dict:
     runner = ClaudeSkillRunner()
-    res = run_generated_path(session_dir(chat_id), idea, runner,
-                             language=normalize_profile_language(language))
-    _charge_claude(chat_id, runner)
+    # См. step_verbatim: провал тоже платный, списываем в finally.
+    try:
+        res = run_generated_path(session_dir(chat_id), idea, runner,
+                                 language=normalize_profile_language(language))
+    finally:
+        _charge_claude(chat_id, runner)
     return res["scenario"]
 
 
@@ -1190,6 +1200,24 @@ async def _safe_job_message(bot_api, chat_id: int, text: str) -> None:
         log.warning("не удалось отправить статус job в чат %s: %s", chat_id, e)
 
 
+def _charged_but_undelivered_notice(job_id: str) -> str:
+    """QA/размер/доставка провалились ПОСЛЕ платного рендера — баланс уже
+    просел, а автоматических возвратов нет (осознанно вне плана). Пользователь
+    должен узнать сумму из того же сообщения, а не заметить её сам в /balance.
+    """
+    breakdown = _ledger().job_breakdown(job_id)
+    if not breakdown:
+        return ""
+    parts = ", ".join(
+        f"{name} {format_usd(value)}" for name, value in sorted(breakdown.items())
+    )
+    total = sum(breakdown.values())
+    return (
+        f"\n\nЗа эту попытку уже списано {format_usd(total)} ({parts}) — "
+        "разберёмся вручную."
+    )
+
+
 async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
     """Исполнить уже claimed job и доставить только результат с QA PASS."""
     store = _job_store()
@@ -1242,7 +1270,9 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
         await _safe_job_message(
-            bot_api, job.chat_id, f"{QA_FAIL_MSG}\nID: {job.job_id[:8]}"
+            bot_api, job.chat_id,
+            f"{QA_FAIL_MSG}\nID: {job.job_id[:8]}"
+            f"{_charged_but_undelivered_notice(job.job_id)}",
         )
         return
 
@@ -1259,7 +1289,11 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
             error=error,
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
-        await _safe_job_message(bot_api, job.chat_id, error)
+        await _safe_job_message(
+            bot_api,
+            job.chat_id,
+            error + _charged_but_undelivered_notice(job.job_id),
+        )
         return
 
     try:
@@ -1285,7 +1319,8 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
             bot_api,
             job.chat_id,
             "Ролик готов и прошёл QA, но Telegram не принял файл. "
-            f"Он сохранён для повторной отправки.\nID: {job.job_id[:8]}",
+            f"Он сохранён для повторной отправки.\nID: {job.job_id[:8]}"
+            f"{_charged_but_undelivered_notice(job.job_id)}",
         )
         return
 
@@ -1296,11 +1331,14 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
             f"{name} {format_usd(value)}" for name, value in sorted(breakdown.items())
         )
         total = sum(breakdown.values())
+        # Это стоимость самого рендера (job_id проставлен): подготовка
+        # сценария Клодом списывается отдельно, без job_id, и сюда не входит —
+        # поэтому не называем total «списано за ролик», баланс ниже точнее.
         await _safe_job_message(
             bot_api,
             job.chat_id,
-            f"Списано {format_usd(total)} ({parts}).\n"
-            f"Остаток баланса: {format_usd(_ledger().balance(job.chat_id))}",
+            f"Сам рендер стоил {format_usd(total)} ({parts}).\n"
+            f"Баланс: {format_usd(_ledger().balance(job.chat_id))}",
         )
     _update_session_after_job(job.chat_id, job.job_id, DONE)
 
@@ -1488,12 +1526,20 @@ async def _post_init(app):
         )
 
     tribute_key = os.environ.get("TRIBUTE_API_KEY")
+    billing = _billing()
     if tribute_key:
-        billing = _billing()
         start_webhook_server(
             _ledger(), api_key=tribute_key, fx=billing["fx"],
             port=int(os.environ.get("TRIBUTE_WEBHOOK_PORT", "8099")),
             on_credit=lambda ev: None,
+        )
+    elif billing["enabled"]:
+        # Кнопки пополнения остаются активны и без ключа: Tribute всё равно
+        # спишет деньги и будет ретраить вебхук ~сутки против мёртвого
+        # эндпоинта — без слушателя платёж потом виснет без автосверки.
+        log.error(
+            "TRIBUTE_API_KEY не задан: пополнения Tribute не будут "
+            "зачисляться, хотя биллинг включён"
         )
 
     global _job_wakeup, _worker_task

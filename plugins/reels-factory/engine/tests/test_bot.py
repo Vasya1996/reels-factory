@@ -641,6 +641,28 @@ def test_post_init_регистрирует_new_в_меню():
     assert "new" in names
 
 
+def test_post_init_без_tribute_key_громко_предупреждает_но_не_падает(
+    work, monkeypatch, caplog
+):
+    """Fix 6: без TRIBUTE_API_KEY вебхук не поднимается, но кнопки пополнения
+    остаются активны — Tribute всё равно спишет деньги пользователя и будет
+    ретраить недоставленный вебхук ~сутки, после чего платёж зависает без
+    ручной сверки. Бот не должен упасть, но обязан заметно предупредить."""
+    monkeypatch.delenv("TRIBUTE_API_KEY", raising=False)
+
+    class FakeBot:
+        async def set_my_commands(self, commands):
+            pass
+
+    class FakeApp:
+        bot = FakeBot()
+
+    with caplog.at_level(logging.ERROR):
+        asyncio.run(bot._post_init(FakeApp()))
+
+    assert "TRIBUTE_API_KEY" in caplog.text
+
+
 # --- шаг 5/6: профиль (фото + голос) -------------------------------------------
 
 @pytest.fixture
@@ -812,6 +834,61 @@ def test_сбой_движка_не_роняет_разговор(work, monkeypa
 
     assert "claude -p упал" in msg.replies[-1]
     assert bot.load_session(7)["step"] == bot.WAIT_TEXT
+
+
+def _ожидаемое_списание_клода(usd: float) -> int:
+    from reels_factory.billing import apply_markup, claude_cost_micro
+    cfg = bot._billing()
+    return apply_markup(claude_cost_micro(usd), cfg["markup"])
+
+
+def test_провал_step_verbatim_после_ретраев_всё_равно_списывает_клода(
+    work, monkeypatch
+):
+    """Fix 1: раньше _charge_claude звался ТОЛЬКО после успешного возврата.
+    scenario.py поднимает ScenarioError после исчерпанных ретраев — а ретраи
+    жгут Клода больше, чем успех. Такой провал должен списаться так же, как
+    и успех, иначе трата остаётся вне журнала."""
+    def fake_run_verbatim_path(workdir, text, runner, language):
+        runner.total_cost_usd = 0.04  # деньги на Клод уже потрачены
+        raise bot.ScenarioError("исчерпаны ретраи (2): судья не пропустил")
+
+    monkeypatch.setattr(bot, "run_verbatim_path", fake_run_verbatim_path)
+
+    with pytest.raises(bot.ScenarioError):
+        bot.step_verbatim(7, "текст", "ru")
+
+    assert bot._ledger().balance(7) == -_ожидаемое_списание_клода(0.04)
+
+
+def test_провал_step_ideas_после_ретраев_всё_равно_списывает_клода(
+    work, monkeypatch
+):
+    def fake_run_ideas(workdir, text, runner, language):
+        runner.total_cost_usd = 0.02
+        raise bot.ScenarioError("ожидалось 2-3 идеи, получено: []")
+
+    monkeypatch.setattr(bot, "run_ideas", fake_run_ideas)
+
+    with pytest.raises(bot.ScenarioError):
+        bot.step_ideas(7, "сырьё", "ru")
+
+    assert bot._ledger().balance(7) == -_ожидаемое_списание_клода(0.02)
+
+
+def test_провал_step_scenario_после_ретраев_всё_равно_списывает_клода(
+    work, monkeypatch
+):
+    def fake_run_generated_path(workdir, idea, runner, language):
+        runner.total_cost_usd = 0.03
+        raise bot.ScenarioError("целостность после полировки: [...]")
+
+    monkeypatch.setattr(bot, "run_generated_path", fake_run_generated_path)
+
+    with pytest.raises(bot.ScenarioError):
+        bot.step_scenario(7, {"idea": "тема"}, "ru")
+
+    assert bot._ledger().balance(7) == -_ожидаемое_списание_клода(0.03)
 
 
 # --- шаг 7/8: готовность и повторный цикл --------------------------------------
@@ -1202,6 +1279,107 @@ def test_ролик_больше_50мб_не_отправляется(work, кл
     assert "50 МБ" in api.messages[-1][1]
     assert not api.videos
     assert bot._job_store().get(job.job_id).status == "delivery_failed"
+
+
+def _зачесть_расход_на_job(job_id: str) -> None:
+    """Сымитировать реальный платный шаг сборки: build-субпроцесс уже
+    списал деньги через свой собственный LedgerStore до провала QA/доставки."""
+    bot._ledger().charge(
+        7, entry_id=f"heygen:{job_id}", job_id=job_id, provider="heygen",
+        unit="seconds", quantity=10.0, unit_price_micro=50_000,
+        cost_micro=500_000, charged_micro=1_000_000,
+    )
+
+
+def test_qa_провал_сообщает_сколько_уже_списано(work, клиент):
+    """Fix 8: build-субпроцесс уже списал деньги до провала QA — баланс
+    просел, а бот раньше говорил только «остановлен проверкой качества»,
+    не упоминая списание."""
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": False}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build", _Msg())
+    job = _claim_job()
+    _зачесть_расход_на_job(job.job_id)
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert "уже списано" in api.messages[-1][1]
+    assert "$1.00" in api.messages[-1][1]
+
+
+def test_слишком_большой_файл_сообщает_сколько_уже_списано(work, клиент, monkeypatch):
+    monkeypatch.setattr(bot, "MAX_TG_VIDEO_BYTES", 3)
+
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"1234567890")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build", _Msg())
+    job = _claim_job()
+    _зачесть_расход_на_job(job.job_id)
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert "уже списано" in api.messages[-1][1]
+    assert "$1.00" in api.messages[-1][1]
+
+
+def test_отказ_telegram_принять_файл_сообщает_сколько_уже_списано(
+    work, клиент
+):
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    class _ОтказывающийАпи(_BotAPI):
+        async def send_video(self, chat_id, video, caption=None,
+                             reply_markup=None, width=None, height=None):
+            raise RuntimeError("Telegram отверг файл")
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build", _Msg())
+    job = _claim_job()
+    _зачесть_расход_на_job(job.job_id)
+    api = _ОтказывающийАпи()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert "уже списано" in api.messages[-1][1]
+    assert "$1.00" in api.messages[-1][1]
+    assert bot._job_store().get(job.job_id).status == "delivery_failed"
+
+
+def test_receipt_называет_сумму_рендером_а_не_общим_списанием(work, клиент):
+    """Fix 7: _charge_claude пишет свои строки с job_id=None, поэтому
+    job_breakdown никогда не содержит траты на подготовку сценария — сумма
+    в квитанции не должна выдавать себя за «списано всего»."""
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build", _Msg())
+    job = _claim_job()
+    _зачесть_расход_на_job(job.job_id)
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    text = api.messages[-1][1]
+    assert "Списано" not in text  # больше не звучит как «итог за ролик»
+    assert "рендер" in text.lower()
+    assert "Баланс" in text
+    assert "$1.00" in text
 
 
 def test_сбой_статусного_сообщения_не_теряет_durable_job(work, клиент):
