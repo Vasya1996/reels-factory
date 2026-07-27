@@ -169,7 +169,7 @@ class ElevenLabsClient:
 
 def synth_voice(text: str, out_wav: Path, voice_id: str | None = None,
                 model_id: str | None = None, stability: float | None = None,
-                http=None, run_cmd=None) -> Path:
+                http=None, run_cmd=None, meter=None) -> Path:
     voice_id = voice_id or os.environ.get("ELEVENLABS_VOICE_ID")
     if not voice_id:
         raise RuntimeError(
@@ -204,6 +204,10 @@ def synth_voice(text: str, out_wav: Path, voice_id: str | None = None,
         timeout=60,
     )
     resp.raise_for_status()
+    # Считаем ровно то, за что берёт деньги ElevenLabs — символы запроса.
+    # После raise_for_status: за упавший запрос платить не за что.
+    if meter is not None:
+        meter(len(text))
     mp3_tmp.write_bytes(resp.content)
 
     run_cmd([str(FFMPEG), "-y", "-i", str(mp3_tmp), "-ar", "48000", "-ac", "2", str(out_wav)])
