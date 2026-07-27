@@ -18,6 +18,16 @@ from reels_factory.billing import LedgerStore, to_micro
 TOPUP_EVENT = "new_digital_product"
 
 
+class UnknownCurrencyError(ValueError):
+    """Валюта события отсутствует в таблице курсов — не угадываем 1:1."""
+    pass
+
+
+class InvalidAmountError(ValueError):
+    """Сумма события нулевая или отрицательная — бессмысленна для пополнения."""
+    pass
+
+
 def verify_signature(raw: bytes, signature: str, api_key: str) -> bool:
     """HMAC-SHA256 тела запроса ключом API, заголовок trbt-signature.
 
@@ -36,12 +46,12 @@ def credited_micro(amount_minor: int, currency: str, fx: dict) -> int:
     key = (currency or "usd").lower()
     if key not in fx:
         # Неизвестная валюта — не угадываем курс 1:1, это переплата в нашу пользу.
-        raise ValueError(f"unknown currency: {currency!r}")
+        raise UnknownCurrencyError(f"unknown currency: {currency!r}")
     rate = float(fx[key])
     amount = int(amount_minor)
     if amount <= 0:
         # Ноль и отрицательные суммы бессмысленны, а отрицательная тихо спишет баланс.
-        raise ValueError(f"non-positive amount: {amount_minor!r}")
+        raise InvalidAmountError(f"non-positive amount: {amount_minor!r}")
     return to_micro(amount / 100.0 * rate)
 
 
@@ -72,15 +82,12 @@ def handle_webhook(store: LedgerStore, raw: bytes, signature: str, *,
         return {"credited": False, "reason": "no_purchase_id"}
     try:
         micro = credited_micro(payload.get("amount") or 0, payload.get("currency") or "usd", fx)
-    except ValueError as e:
-        error_msg = str(e)
-        if "unknown currency" in error_msg:
-            # Неизвестная валюта — не угадываем курс 1:1, это переплата в нашу пользу.
-            reason = "unknown_currency"
-        else:
-            # Ноль и отрицательные суммы бессмысленны, а отрицательная тихо спишет баланс.
-            reason = "invalid_amount"
-        return {"credited": False, "reason": reason}
+    except UnknownCurrencyError:
+        # Неизвестная валюта — не угадываем курс 1:1, это переплата в нашу пользу.
+        return {"credited": False, "reason": "unknown_currency"}
+    except InvalidAmountError:
+        # Ноль и отрицательные суммы бессмысленны, а отрицательная тихо спишет баланс.
+        return {"credited": False, "reason": "invalid_amount"}
     credited = store.credit(
         chat_id, micro, purchase_id=purchase_id,
         amount_minor=int(payload.get("amount") or 0),
