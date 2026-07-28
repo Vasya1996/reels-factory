@@ -691,7 +691,8 @@ def enforce_visual_grounding(plan: dict) -> dict:
 
         # Покрытие меняем и у окна, и у его фраз — иначе валидатор плана
         # поймает несовпадение и уронит finalize_edit_plan.
-        # Сбрасываем ровно то же, что штатный _downgrade_window (editplan.py:2102-2110):
+        # Сбрасываем то же, что штатный _downgrade_window (editplan.py:2102-2111),
+        # только камеру ставим безусловно в hold — окно всё равно без вставки:
         # иначе у окна останутся caption="hidden" и переход от снятой вставки,
         # и у вернувшихся ведущей фраз пропадут субтитры.
         window["effect"] = {"type": "none"}
@@ -853,7 +854,7 @@ git commit -m "feat(editplan): derive card zone from window meaning"
 ### Задача 6: Пропуск аватара под полноэкранной графикой
 
 **Файлы:**
-- Изменить: `plugins/reels-factory/engine/src/reels_factory/editplan.py` (`validate_edit_plan` `:2455-2461`, `_refresh_blocks_and_summary` `:1908-1916`, места создания окон `hyperframes`)
+- Изменить: `plugins/reels-factory/engine/src/reels_factory/editplan.py` (`validate_edit_plan` `:2456-2462`, `_refresh_blocks_and_summary` `:1908-1916`, места создания окон `hyperframes`)
 - Изменить: `plugins/reels-factory/engine/tests/test_editplan.py`
 
 **Зачем:** это и есть обещанная экономия. Сейчас пропуск аватара разрешён только под видеовставкой; под полноэкранной графикой ведущей в кадре тоже нет, но аватар всё равно заказывается и оплачивается.
