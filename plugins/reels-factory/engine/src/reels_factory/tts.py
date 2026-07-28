@@ -4,10 +4,9 @@
 один утверждённый сценарий -> один MP3 и character alignment. Оркестрация,
 нормализация alignment и job-артефакты находятся в ``master_audio.py``.
 
-Модель по умолчанию — ``eleven_v3``. Для неё намеренно передаётся только
-поддерживаемый voice setting ``stability``. Speed, similarity и speaker boost
-в Eleven v3 недоступны; темп и эмоция управляются текстом, пунктуацией и
-audio tags.
+Модель по умолчанию — ``eleven_multilingual_v2`` с зафиксированными
+production-настройками голоса. Для явного rollback на ``eleven_v3`` клиент
+по-прежнему отправляет только поддерживаемый этой моделью ``stability``.
 
 ``synth_voice`` сохранён для feature-flag rollback старого block-by-block пути.
 Ключ берётся только из ``ELEVENLABS_API_KEY`` и никогда не пишется в manifest.
@@ -27,9 +26,15 @@ TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 TTS_TIMESTAMPS_URL = TTS_URL + "/with-timestamps"
 VOICES_ADD_URL = "https://api.elevenlabs.io/v1/voices/add"
 VOICES_URL = "https://api.elevenlabs.io/v1/voices/{voice_id}"
-MODEL_ID = "eleven_v3"
+MODEL_ID = "eleven_multilingual_v2"
 V3_MAX_CHARACTERS = 5000
+MULTILINGUAL_V2_MAX_CHARACTERS = 10_000
 DEFAULT_OUTPUT_FORMAT = "mp3_44100_128"
+DEFAULT_SPEED = 1.1
+DEFAULT_STABILITY = 0.2
+DEFAULT_SIMILARITY_BOOST = 0.55
+DEFAULT_STYLE = 0.5
+DEFAULT_USE_SPEAKER_BOOST = False
 
 
 @dataclass(frozen=True)
@@ -50,7 +55,8 @@ def _api_key() -> str:
 
 
 def _validate_request(text: str, model_id: str, stability: float | None,
-                      seed: int | None, normalization: str,
+                      speed: float | None, similarity_boost: float | None,
+                      style: float | None, seed: int | None, normalization: str,
                       dictionaries: list[dict]) -> None:
     if not str(text or "").strip():
         raise ValueError("ElevenLabs: text не может быть пустым")
@@ -60,8 +66,23 @@ def _validate_request(text: str, model_id: str, stability: float | None,
             f"получено {len(text)}. Master audio не разбит: request stitching "
             "для eleven_v3 не поддерживается."
         )
+    if (
+        model_id == "eleven_multilingual_v2"
+        and len(text) > MULTILINGUAL_V2_MAX_CHARACTERS
+    ):
+        raise ValueError(
+            "Eleven Multilingual v2 принимает не более "
+            f"{MULTILINGUAL_V2_MAX_CHARACTERS} символов за запрос; "
+            f"получено {len(text)}."
+        )
     if stability is not None and not 0.0 <= float(stability) <= 1.0:
         raise ValueError("ElevenLabs stability должна быть в диапазоне 0..1")
+    if speed is not None and not 0.7 <= float(speed) <= 1.2:
+        raise ValueError("ElevenLabs speed должна быть в диапазоне 0.7..1.2")
+    if similarity_boost is not None and not 0.0 <= float(similarity_boost) <= 1.0:
+        raise ValueError("ElevenLabs similarity_boost должна быть в диапазоне 0..1")
+    if style is not None and not 0.0 <= float(style) <= 1.0:
+        raise ValueError("ElevenLabs style должна быть в диапазоне 0..1")
     if seed is not None and not 0 <= int(seed) <= 4_294_967_295:
         raise ValueError("ElevenLabs seed должна быть в диапазоне 0..4294967295")
     if normalization not in {"auto", "on", "off"}:
@@ -77,6 +98,30 @@ def _validate_request(text: str, model_id: str, stability: float | None,
                 "pronunciation dictionary требует pronunciation_dictionary_id "
                 "(или id) и version_id"
             )
+
+
+def _voice_settings(
+    model_id: str,
+    *,
+    stability: float | None,
+    speed: float | None,
+    similarity_boost: float | None,
+    style: float | None,
+    use_speaker_boost: bool | None,
+) -> dict[str, Any]:
+    settings: dict[str, Any] = {}
+    if stability is not None:
+        settings["stability"] = float(stability)
+    if model_id != "eleven_v3":
+        if speed is not None:
+            settings["speed"] = float(speed)
+        if similarity_boost is not None:
+            settings["similarity_boost"] = float(similarity_boost)
+        if style is not None:
+            settings["style"] = float(style)
+        if use_speaker_boost is not None:
+            settings["use_speaker_boost"] = bool(use_speaker_boost)
+    return settings
 
 
 class ElevenLabsClient:
@@ -95,7 +140,11 @@ class ElevenLabsClient:
         *,
         voice_id: str,
         model_id: str = MODEL_ID,
-        stability: float | None = 0.5,
+        stability: float | None = DEFAULT_STABILITY,
+        speed: float | None = DEFAULT_SPEED,
+        similarity_boost: float | None = DEFAULT_SIMILARITY_BOOST,
+        style: float | None = DEFAULT_STYLE,
+        use_speaker_boost: bool | None = DEFAULT_USE_SPEAKER_BOOST,
         seed: int | None = None,
         language_code: str | None = None,
         apply_text_normalization: str = "auto",
@@ -104,7 +153,15 @@ class ElevenLabsClient:
     ) -> TimestampedSpeech:
         dictionaries = list(pronunciation_dictionary_locators or [])
         _validate_request(
-            text, model_id, stability, seed, apply_text_normalization, dictionaries
+            text,
+            model_id,
+            stability,
+            speed,
+            similarity_boost,
+            style,
+            seed,
+            apply_text_normalization,
+            dictionaries,
         )
         if not voice_id:
             raise ValueError("ElevenLabs voice_id не задан")
@@ -119,12 +176,21 @@ class ElevenLabsClient:
             "model_id": model_id,
             "apply_text_normalization": apply_text_normalization,
         }
-        if language_code:
+        # Multilingual v2 определяет язык по самому тексту; language_code для
+        # этой модели provider игнорирует, поэтому не создаём ложное ощущение
+        # управляемости в request/manifest.
+        if language_code and model_id != "eleven_multilingual_v2":
             body["language_code"] = language_code
-        if stability is not None:
-            # Для v3 speed/similarity/style/speaker boost не добавляем:
-            # эти настройки либо недоступны, либо ухудшают стабильность.
-            body["voice_settings"] = {"stability": float(stability)}
+        voice_settings = _voice_settings(
+            model_id,
+            stability=stability,
+            speed=speed,
+            similarity_boost=similarity_boost,
+            style=style,
+            use_speaker_boost=use_speaker_boost,
+        )
+        if voice_settings:
+            body["voice_settings"] = voice_settings
         if seed is not None:
             body["seed"] = int(seed)
         if dictionaries:
@@ -169,6 +235,10 @@ class ElevenLabsClient:
 
 def synth_voice(text: str, out_wav: Path, voice_id: str | None = None,
                 model_id: str | None = None, stability: float | None = None,
+                speed: float | None = None,
+                similarity_boost: float | None = None,
+                style: float | None = None,
+                use_speaker_boost: bool | None = None,
                 http=None, run_cmd=None, meter=None) -> Path:
     voice_id = voice_id or os.environ.get("ELEVENLABS_VOICE_ID")
     if not voice_id:
@@ -178,10 +248,32 @@ def synth_voice(text: str, out_wav: Path, voice_id: str | None = None,
     api_key = _api_key()
 
     model_id = model_id or os.environ.get("ELEVENLABS_MODEL") or MODEL_ID
-    if stability is None and model_id == "eleven_v3":
-        stability = float(os.environ.get("ELEVENLABS_STABILITY") or 0.5)
-    if stability is not None and not 0.0 <= float(stability) <= 1.0:
-        raise ValueError("ElevenLabs stability должна быть в диапазоне 0..1")
+    if stability is None:
+        stability = float(
+            os.environ.get("ELEVENLABS_STABILITY")
+            or (0.5 if model_id == "eleven_v3" else DEFAULT_STABILITY)
+        )
+    if model_id != "eleven_v3":
+        if speed is None:
+            speed = float(os.environ.get("ELEVENLABS_SPEED") or DEFAULT_SPEED)
+        if similarity_boost is None:
+            similarity_boost = float(
+                os.environ.get("ELEVENLABS_SIMILARITY_BOOST")
+                or DEFAULT_SIMILARITY_BOOST
+            )
+        if style is None:
+            style = float(os.environ.get("ELEVENLABS_STYLE") or DEFAULT_STYLE)
+        if use_speaker_boost is None:
+            raw_boost = os.environ.get("ELEVENLABS_SPEAKER_BOOST")
+            use_speaker_boost = (
+                DEFAULT_USE_SPEAKER_BOOST
+                if raw_boost is None
+                else raw_boost.strip().lower() in {"1", "true", "yes", "on"}
+            )
+    _validate_request(
+        text, model_id, stability, speed, similarity_boost, style,
+        None, "auto", [],
+    )
 
     if http is None:
         import requests
@@ -193,9 +285,21 @@ def synth_voice(text: str, out_wav: Path, voice_id: str | None = None,
     out_wav = Path(out_wav)
     mp3_tmp = out_wav.with_suffix(".mp3")
 
-    body: dict[str, Any] = {"text": text, "model_id": model_id}
-    if stability is not None:
-        body["voice_settings"] = {"stability": float(stability)}
+    body: dict[str, Any] = {
+        "text": text,
+        "model_id": model_id,
+        "apply_text_normalization": "auto",
+    }
+    voice_settings = _voice_settings(
+        model_id,
+        stability=stability,
+        speed=speed,
+        similarity_boost=similarity_boost,
+        style=style,
+        use_speaker_boost=use_speaker_boost,
+    )
+    if voice_settings:
+        body["voice_settings"] = voice_settings
 
     resp = http.post(
         TTS_URL.format(voice_id=voice_id),

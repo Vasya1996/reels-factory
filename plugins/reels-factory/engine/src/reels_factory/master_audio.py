@@ -25,6 +25,11 @@ from reels_factory.config import FFMPEG
 from reels_factory.render import media_dur
 from reels_factory.tts import (
     DEFAULT_OUTPUT_FORMAT,
+    DEFAULT_SIMILARITY_BOOST,
+    DEFAULT_SPEED,
+    DEFAULT_STABILITY,
+    DEFAULT_STYLE,
+    DEFAULT_USE_SPEAKER_BOOST,
     MODEL_ID,
     ElevenLabsClient,
 )
@@ -272,7 +277,15 @@ def _tts_options(config: dict) -> dict:
     seed = tts.get("seed")
     return {
         "model_id": model_id,
-        "stability": float(tts.get("stability", 0.5)),
+        "speed": float(tts.get("speed", DEFAULT_SPEED)),
+        "stability": float(tts.get("stability", DEFAULT_STABILITY)),
+        "similarity_boost": float(
+            tts.get("similarity_boost", DEFAULT_SIMILARITY_BOOST)
+        ),
+        "style": float(tts.get("style", DEFAULT_STYLE)),
+        "use_speaker_boost": bool(
+            tts.get("use_speaker_boost", DEFAULT_USE_SPEAKER_BOOST)
+        ),
         "seed": None if seed in (None, "") else int(seed),
         "language_code": str(
             tts.get("language_code") or (config or {}).get("language") or "ru"
@@ -284,6 +297,25 @@ def _tts_options(config: dict) -> dict:
             list(tts.get("pronunciation_dictionary_locators") or []),
         "output_format": str(tts.get("output_format") or DEFAULT_OUTPUT_FORMAT),
     }
+
+
+def _tts_cache_key(
+    *,
+    voice_id: str,
+    input_sha256: str,
+    options: dict,
+) -> str:
+    """Stable, secret-free identity of the paid TTS input."""
+    identity = {
+        "provider": "elevenlabs",
+        "voice_id_sha256": _sha256_text(str(voice_id)),
+        "input_sha256": input_sha256,
+        "options": options,
+    }
+    packed = json.dumps(
+        identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return _sha256_text(packed)
 
 
 def build_master_audio(
@@ -386,12 +418,21 @@ def build_master_audio(
         "format_version": FORMAT_VERSION,
         "provider": "elevenlabs",
         "model_id": options["model_id"],
+        "cache_key": _tts_cache_key(
+            voice_id=str(voice_id),
+            input_sha256=canonical["text_sha256"],
+            options=options,
+        ),
         "voice_id_sha256": _sha256_text(str(voice_id)),
         "input_sha256": canonical["text_sha256"],
         "input_characters": len(canonical["text"]),
         "duration_seconds": duration,
         "settings": {
+            "speed": options["speed"],
             "stability": options["stability"],
+            "similarity_boost": options["similarity_boost"],
+            "style": options["style"],
+            "use_speaker_boost": options["use_speaker_boost"],
             "seed": options["seed"],
             "language_code": options["language_code"],
             "apply_text_normalization": options["apply_text_normalization"],
