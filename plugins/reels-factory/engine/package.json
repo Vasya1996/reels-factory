@@ -1,0 +1,8 @@
+{
+  "name": "reels-factory-engine-node",
+  "private": true,
+  "description": "Node-зависимости движка: браузерная автоматизация экранных маршрутов",
+  "dependencies": {
+    "puppeteer-core": "^23.0.0"
+  }
+}
