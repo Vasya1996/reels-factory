@@ -1186,3 +1186,40 @@ def test_даунгрейд_возвращает_зону_с_ведущим():
               "coverage": "hyperframes", "zone": "fullscreen"}
     _downgrade_window({"phrases": []}, window, "нет ассета")
     assert window["zone"] == "video-overlay"
+
+
+def test_полноэкранная_графика_разрешает_пропуск_аватара():
+    from reels_factory.editplan import validate_edit_plan
+
+    plan = {
+        "format_version": 1, "status": "draft",
+        "script": {"language": "ru"},
+        "timeline": {"final_duration_seconds": 6.0},
+        "blocks": [], "log": [],
+        "phrases": [{"id": "p1", "text": "три вопроса", "block_index": 0,
+                     "coverage": "hyperframes", "window_id": "w1"}],
+        "windows": [{"id": "w1", "phrase_ids": ["p1"], "block_index": 0,
+                     "coverage": "hyperframes", "zone": "fullscreen",
+                     "safe_to_skip_avatar": True,
+                     "effect": {"type": "chart_bars",
+                                "hyperframes": {"block": "task_list"}}}],
+    }
+    report = validate_edit_plan(plan, require_final=False, require_asset_files=False)
+    assert not any("HeyGen skip" in e for e in report["errors"])
+
+
+def test_блок_без_ведущего_помечается_как_не_требующий_аватара():
+    from reels_factory.editplan import _refresh_blocks_and_summary
+
+    plan = {
+        "blocks": [{"index": 0, "role": "development", "start": 0.0, "end": 6.0}],
+        "phrases": [{"id": "p1", "block_index": 0, "coverage": "hyperframes",
+                     "window_id": "w1"}],
+        "windows": [{"id": "w1", "phrase_ids": ["p1"], "block_index": 0,
+                     "coverage": "hyperframes", "zone": "fullscreen",
+                     "effect": {"type": "chart_bars"},
+                     "safe_to_skip_avatar": True}],
+        "summary": {},
+    }
+    _refresh_blocks_and_summary(plan)
+    assert plan["blocks"][0]["avatar_required"] is False

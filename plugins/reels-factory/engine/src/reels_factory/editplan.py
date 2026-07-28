@@ -1291,6 +1291,16 @@ def _zone_for(coverage: str) -> str:
     return "fullscreen" if coverage in _FACELESS_COVERAGE else "video-overlay"
 
 
+def _is_faceless(window: dict) -> bool:
+    """Окно, в котором ведущей нет в кадре: полноэкранная видеовставка или
+    полноэкранная графика. Только им разрешено не заказывать аватар."""
+    effect = window.get("effect") or {}
+    if window.get("coverage") == "full_broll" and effect.get("type") == "broll":
+        return True
+    return (window.get("coverage") == "hyperframes"
+            and window.get("zone") == "fullscreen")
+
+
 def _assign_window(
     windows: list[dict],
     phrases: list[dict],
@@ -1557,6 +1567,7 @@ def _plan_visual_windows(
                         "variables": before_after,
                     },
                 },
+                safe_to_skip_avatar=True,
             )
             continue
 
@@ -1594,6 +1605,7 @@ def _plan_visual_windows(
                     },
                 },
                 caption="hidden",
+                safe_to_skip_avatar=True,
             )
             continue
 
@@ -1740,6 +1752,7 @@ def _plan_visual_windows(
                                 "variables": stat,
                             },
                         },
+                        safe_to_skip_avatar=True,
                     )
                     local_index += len(selected)
                     continue
@@ -1918,7 +1931,7 @@ def _refresh_blocks_and_summary(plan: dict) -> None:
             phrase["window_id"] for phrase in own if phrase.get("window_id")
         }
         safe = bool(own) and all(
-            phrase["coverage"] == "full_broll"
+            _is_faceless(window_by_id[phrase["window_id"]])
             and window_by_id[phrase["window_id"]].get("safe_to_skip_avatar")
             for phrase in own
         )
@@ -2469,10 +2482,7 @@ def validate_edit_plan(
         duration = end - start
 
         coverage = window.get("coverage")
-        if window.get("safe_to_skip_avatar") and (
-            coverage != "full_broll"
-            or (window.get("effect") or {}).get("type") != "broll"
-        ):
+        if window.get("safe_to_skip_avatar") and not _is_faceless(window):
             errors.append(
                 f"{window.get('id')}: HeyGen skip разрешён не для full B-roll"
             )
@@ -2610,7 +2620,7 @@ def validate_edit_plan(
                 if window.get("block_index") == block.get("index")
             ]
             if not own or any(
-                window.get("coverage") != "full_broll"
+                not _is_faceless(window)
                 or not window.get("safe_to_skip_avatar")
                 for window in own
             ):
