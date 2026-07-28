@@ -3,13 +3,17 @@
 Разговор: /start или /new -> язык ролика -> выбор пути -> материал -> сценарий
 в чате -> правка текста руками или утверждение -> фото -> голос языка ролика
 -> готовность.
-После «Создать ролик» — экран с кнопкой «Новый ролик» (или команда /new):
-разговор начинается заново с языка. Фото и отдельные голоса ru/kk остаются,
-сценарий сбрасывается.
 
-По кнопке «Создать ролик» бот зовёт сборку (движок Юли — чёрный ящик, только
-через subprocess `python -m reels_factory make`) в отдельном потоке и присылает
-готовый mp4 в чат.
+По кнопке «Создать ролик» durable worker сначала создаёт только master audio и
+присылает его на проверку. Подтверждение продолжает ту же immutable job без
+повторного TTS. Отказ переводит job в ожидание одного Telegram voice со всем
+сценарием; эта запись становится master audio только текущего ролика и не
+заменяет языковой voice clone в профиле. Лишь после выбора дорожки worker зовёт
+`python -m reels_factory make` и присылает готовый mp4.
+
+После готового ролика экран с кнопкой «Новый ролик» (или команда /new) начинает
+разговор заново с языка. Фото и отдельные голоса ru/kk остаются, сценарий
+сбрасывается.
 
 Состояние чата — json-файл в <workdir>/bot/<chat_id>/session.json: перезапуск
 бота не теряет разговор, а рядом лежат рабочие файлы движка этого же чата.
@@ -62,7 +66,10 @@ WAIT_PHOTO = "wait_photo"
 CHOOSING_VOICE = "choosing_voice"    # голос уже есть: прежний или новый
 WAIT_VOICE = "wait_voice"
 READY = "ready"                      # сценарий утверждён, фото и голос собраны
-BUILDING = "building"                # job стоит в очереди или исполняется
+AUDIO_PREPARING = "audio_preparing"  # master TTS стоит в очереди или создаётся
+AUDIO_REVIEW = "audio_review"        # TTS отправлено, ждём approve/reject
+WAIT_FINAL_AUDIO = "wait_final_audio"  # ждём весь сценарий Telegram voice
+BUILDING = "building"                # утверждённое audio идёт в video render
 BUILD_FAILED = "build_failed"        # сборка/QA остановлены, видео не отправлено
 DONE = "done"                        # ролик заказан, ждём новый цикл
 
@@ -193,9 +200,33 @@ DONE_MSG = (
 )
 NOT_NOW = "Сначала выберите, с чего начать: /start"
 
-BUILDING_MSG = "Задание поставлено в очередь. Напишу, когда начну сборку."
+BUILDING_MSG = (
+    "Готовлю озвучку для проверки. Сам ролик начну собирать только после "
+    "вашего подтверждения."
+)
+PREPARING_AUDIO_MSG = "Создаю озвучку утверждённого сценария…"
+AUDIO_REVIEW_MSG = (
+    "Озвучка готова. Прослушайте её целиком — именно эта аудиодорожка "
+    "попадёт в ролик."
+)
+ASK_FINAL_AUDIO = (
+    "Запишите весь утверждённый сценарий одним голосовым сообщением прямо "
+    "в Telegram и отправьте его сюда.\n\n"
+    "Читайте в своём темпе и с живой интонацией. Запись попадёт в ролик "
+    "именно в таком виде — без нейроозвучки, склеек и дозаписей."
+)
+PROCESSING_FINAL_AUDIO = (
+    "Запись принял. Проверяю, что сценарий записан целиком, и готовлю тайминги…"
+)
+FINAL_AUDIO_ACCEPTED = (
+    "Использую именно это голосовое как финальную озвучку. Запускаю сборку ролика."
+)
+RENDER_QUEUED_MSG = (
+    "Озвучка утверждена. Запускаю генерацию ролика — повторно голос создавать не буду."
+)
+AUDIO_ACTION_STALE = "Эта кнопка уже не относится к текущему этапу ролика."
 RUNNING_MSG = "Начинаю сборку ролика. Это займёт несколько минут…"
-BUSY_MSG = "Уже собираю ролик — дождитесь, пришлю, как будет готово."
+BUSY_MSG = "Предыдущий ролик ещё не завершён — сначала закончим его текущий этап."
 CLIENT_NOT_FOUND_MSG = (
     "Не нашёл ваш профиль для сборки — похоже, что-то не сохранилось (например, "
     "не удалось склонировать голос). Пройдите шаги фото и голоса заново."
@@ -721,6 +752,12 @@ def enqueue_build(
         # Job получает только голос своего языка: поздняя смена профиля и
         # наличие второго голоса не могут повлиять на уже созданный snapshot.
         config["voices"] = {language: voice_id}
+        master_audio = dict(config.get("master_audio") or {})
+        master_audio["enabled"] = True
+        # Bot jobs обязаны пройти human audio review. Ручные/legacy make
+        # сохраняют прежний контракт, пока этот flag отсутствует.
+        master_audio["review_required"] = True
+        config["master_audio"] = master_audio
         tts = dict(config.get("tts") or {})
         tts["language_code"] = language
         config["tts"] = tts
@@ -742,7 +779,13 @@ def enqueue_build(
         input_path.write_text(
             json.dumps(input_doc, ensure_ascii=False, indent=1), encoding="utf-8"
         )
-        return store.enqueue_prepared(chat_id, job_id=job_id, workdir=workdir)
+        return store.enqueue_prepared(
+            chat_id,
+            job_id=job_id,
+            workdir=workdir,
+            initial_status="audio_queued",
+            initial_stage="audio_preview",
+        )
     except Exception:
         # Не удаляем непустую папку автоматически: scenario/input могут быть
         # полезны для диагностики. В БД такой job нет, worker её не увидит.
@@ -784,6 +827,101 @@ def run_build(chat_id: int, workdir: Path) -> dict:
             except json.JSONDecodeError:
                 continue
     return {"ok": False, "error": (p.stderr or p.stdout or "пустой ответ движка")[:500]}
+
+
+def _job_meter(chat_id: int, job_id: str):
+    """Meter preview-TTS тем же ledger/job_id, что и будущий render subprocess."""
+    from reels_factory.billing import JobMeter
+
+    billing = _billing()
+    if not billing["enabled"]:
+        return None
+    return JobMeter(
+        _ledger(),
+        chat_id=chat_id,
+        job_id=job_id,
+        rates=billing["rates"],
+        markup=billing["markup"],
+    )
+
+
+def run_audio_preview(chat_id: int, workdir: Path) -> dict:
+    """Сделать только ElevenLabs master audio, не вызывая HeyGen/render."""
+    from reels_factory.master_audio import build_master_audio
+
+    workdir = Path(workdir)
+    scenario = json.loads(
+        (workdir / "scenario.json").read_text(encoding="utf-8")
+    )
+    config = load_config(workdir / "build-config.yaml")
+    artifact_dir = workdir / "audio" / "tts"
+    meter = _job_meter(chat_id, workdir.name)
+    try:
+        artifacts = build_master_audio(
+            scenario,
+            config,
+            artifact_dir,
+            voice_id=config.get("voice_id"),
+            meter=(meter.elevenlabs if meter is not None else None),
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "stage": "audio_preview",
+            "error": str(exc)[:500],
+        }
+    return {
+        "ok": True,
+        "stage": "audio_review",
+        "audio": str(artifacts.mp3),
+        "duration_seconds": artifacts.manifest.get("duration_seconds"),
+        "input_sha256": artifacts.canonical.get("text_sha256"),
+    }
+
+
+def approve_tts_audio(workdir: Path) -> dict:
+    from reels_factory.master_audio import approve_master_audio
+
+    workdir = Path(workdir)
+    return approve_master_audio(
+        workdir,
+        workdir / "audio" / "tts",
+        source="elevenlabs_approved",
+    )
+
+
+def prepare_user_audio(workdir: Path, source_audio: Path) -> dict:
+    """Превратить Telegram voice в утверждённый master текущей immutable job."""
+    from reels_factory.master_audio import (
+        approve_master_audio,
+        build_user_master_audio,
+    )
+
+    workdir = Path(workdir)
+    scenario = json.loads(
+        (workdir / "scenario.json").read_text(encoding="utf-8")
+    )
+    config = load_config(workdir / "build-config.yaml")
+    artifact_dir = workdir / "audio" / "user"
+    artifacts = build_user_master_audio(
+        scenario,
+        config,
+        artifact_dir,
+        source_audio,
+    )
+    approval = approve_master_audio(
+        workdir,
+        artifact_dir,
+        source="telegram_user_audio",
+    )
+    return {
+        "ok": True,
+        "audio": str(artifacts.wav),
+        "approval": approval,
+        "duration_seconds": artifacts.manifest.get("duration_seconds"),
+        "transcript_match_ratio":
+            artifacts.manifest.get("transcript_match_ratio"),
+    }
 
 
 def transcribe(chat_id: int, media: Path, language: str) -> str:
@@ -901,6 +1039,30 @@ def _kb_ready():
     ])
 
 
+def _kb_audio_review(job_id: str):
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            "✅ Аудио подходит",
+            callback_data=f"audio_ok:{job_id}",
+        )],
+        [InlineKeyboardButton(
+            "🎙 Не подходит — запишу сам(а)",
+            callback_data=f"audio_self:{job_id}",
+        )],
+    ])
+
+
+def _kb_final_audio(job_id: str):
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            "📄 Показать текст сценария",
+            callback_data=f"audio_script:{job_id}",
+        )
+    ]])
+
+
 def _kb_done():
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     return InlineKeyboardMarkup([[InlineKeyboardButton("Новый ролик", callback_data="new_reel")]])
@@ -1007,18 +1169,29 @@ async def _go_back(msg, chat_id: int, s: dict):
 
 async def cmd_start(update, context):
     chat_id = update.effective_chat.id
+    if _job_store().active_for_chat(chat_id):
+        await update.message.reply_text(BUSY_MSG)
+        return
     await _show_start(update.message, chat_id, load_session(chat_id))
 
 
 async def cmd_new(update, context):
     """/new — новый язык и сценарий; фото и языковые голоса остаются."""
     chat_id = update.effective_chat.id
+    if _job_store().active_for_chat(chat_id):
+        await update.message.reply_text(BUSY_MSG)
+        return
     await _show_start(update.message, chat_id, load_session(chat_id), loop_session)
 
 
 _JOB_STATUS_RU = {
-    "queued": "в очереди",
-    "running": "собирается",
+    "audio_queued": "озвучка ждёт своей очереди",
+    "audio_running": "создаётся озвучка",
+    "awaiting_audio_approval": "озвучка ждёт вашего подтверждения",
+    "awaiting_user_audio": "ждёт ваше голосовое",
+    "user_audio_processing": "проверяется ваше голосовое",
+    "queued": "в очереди на генерацию видео",
+    "running": "собирается видео",
     "completed": "готов и отправлен",
     "qa_failed": "остановлен проверкой качества",
     "failed": "сборка завершилась ошибкой",
@@ -1040,6 +1213,27 @@ async def cmd_status(update, context):
         detail += f"\nОшибка: {job.error[:200]}"
     await update.message.reply_text(
         f"Последнее задание {job.job_id[:8]}: {status}.{detail}"
+    )
+
+
+def _callback_job(chat_id: int, session: dict, callback_data: str) -> BuildJob | None:
+    job_id = callback_data.split(":", 1)[1] if ":" in callback_data else ""
+    if not job_id or session.get("current_job_id") != job_id:
+        return None
+    job = _job_store().get(job_id)
+    if job is None or job.chat_id != int(chat_id):
+        return None
+    return job
+
+
+def _scenario_speech(job: BuildJob) -> str:
+    scenario = json.loads(
+        (job.workdir / "scenario.json").read_text(encoding="utf-8")
+    )
+    return "\n\n".join(
+        str(block.get("speech") or "").strip()
+        for block in scenario.get("blocks") or []
+        if str(block.get("speech") or "").strip()
     )
 
 
@@ -1130,6 +1324,56 @@ async def on_button(update, context):
             # сохранения нового. Профиль уже не должен разрешать paid build.
             clear_client_voice_profile(chat_id, language)
         await _ask_voice(q.message, chat_id, s, language)
+    elif data.startswith("audio_ok:"):
+        job = _callback_job(chat_id, s, data)
+        if job is None or job.status != "awaiting_audio_approval":
+            await q.message.reply_text(AUDIO_ACTION_STALE)
+            return
+        try:
+            await asyncio.to_thread(approve_tts_audio, job.workdir)
+            _job_store().transition(
+                job.job_id,
+                "queued",
+                expected="awaiting_audio_approval",
+                stage="build",
+            )
+        except Exception as exc:
+            await q.message.reply_text(
+                f"Не удалось утвердить озвучку: {str(exc)[:200]}"
+            )
+            return
+        s["step"] = BUILDING
+        save_session(chat_id, s)
+        if _job_wakeup is not None:
+            _job_wakeup.set()
+        await q.message.reply_text(RENDER_QUEUED_MSG)
+    elif data.startswith("audio_self:"):
+        job = _callback_job(chat_id, s, data)
+        if job is None or job.status != "awaiting_audio_approval":
+            await q.message.reply_text(AUDIO_ACTION_STALE)
+            return
+        try:
+            _job_store().transition(
+                job.job_id,
+                "awaiting_user_audio",
+                expected="awaiting_audio_approval",
+                stage="user_audio",
+            )
+        except RuntimeError:
+            await q.message.reply_text(AUDIO_ACTION_STALE)
+            return
+        s["step"] = WAIT_FINAL_AUDIO
+        save_session(chat_id, s)
+        await q.message.reply_text(
+            ASK_FINAL_AUDIO,
+            reply_markup=_kb_final_audio(job.job_id),
+        )
+    elif data.startswith("audio_script:"):
+        job = _callback_job(chat_id, s, data)
+        if job is None or job.status != "awaiting_user_audio":
+            await q.message.reply_text(AUDIO_ACTION_STALE)
+            return
+        await q.message.reply_text(_scenario_speech(job))
     elif data == "build":
         # инлайн-кнопки живут в истории чата вечно: тап по старому сообщению
         # READY после DONE не должен зазывать платную сборку заново
@@ -1152,6 +1396,9 @@ async def on_button(update, context):
             return
         await _enqueue_build(q.message, chat_id, s)
     elif data == "new_reel":
+        if _job_store().active_for_chat(chat_id):
+            await q.message.reply_text(BUSY_MSG)
+            return
         await _show_start(q.message, chat_id, s, loop_session)
 
 
@@ -1306,7 +1553,7 @@ async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
         await msg.reply_text(f"Не удалось поставить ролик в очередь: {str(e)[:200]}")
         return None
 
-    s["step"] = BUILDING
+    s["step"] = AUDIO_PREPARING
     s["current_job_id"] = job.job_id
     save_session(chat_id, s)
     ahead = _job_store().queued_ahead(job.job_id)
@@ -1333,11 +1580,110 @@ def _update_session_after_job(chat_id: int, job_id: str, step: str) -> None:
     save_session(chat_id, s)
 
 
+def _update_active_session_step(chat_id: int, job_id: str, step: str) -> None:
+    """Обновить паузу внутри job, не очищая current_job_id."""
+    s = load_session(chat_id)
+    if s.get("current_job_id") != job_id:
+        return
+    s["step"] = step
+    save_session(chat_id, s)
+
+
 async def _safe_job_message(bot_api, chat_id: int, text: str) -> None:
     try:
         await bot_api.send_message(chat_id=chat_id, text=text)
     except Exception as e:
         log.warning("не удалось отправить статус job в чат %s: %s", chat_id, e)
+
+
+async def _process_audio_job(bot_api, job: BuildJob, preview_fn=None) -> None:
+    """Создать и доставить только preview master audio, затем поставить job на паузу."""
+    store = _job_store()
+    preview_fn = preview_fn or run_audio_preview
+    await _safe_job_message(
+        bot_api,
+        job.chat_id,
+        f"{PREPARING_AUDIO_MSG}\nID: {job.job_id[:8]}",
+    )
+    try:
+        result = await asyncio.to_thread(
+            preview_fn, job.chat_id, job.workdir
+        )
+    except Exception as exc:
+        result = {
+            "ok": False,
+            "stage": "audio_preview",
+            "error": str(exc)[:500],
+        }
+    if not result.get("ok"):
+        error = result.get("error") or "неизвестная ошибка"
+        store.finish(
+            job.job_id,
+            "failed",
+            result=result,
+            stage="audio_preview",
+            error=error,
+        )
+        _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        await _safe_job_message(
+            bot_api,
+            job.chat_id,
+            f"Не получилось создать озвучку: {error}\nID: {job.job_id[:8]}",
+        )
+        return
+
+    audio = Path(result.get("audio") or "")
+    if not audio.is_file():
+        error = "Озвучка создана, но audio-файл не найден."
+        store.finish(
+            job.job_id,
+            "failed",
+            result=result,
+            stage="audio_delivery",
+            error=error,
+        )
+        _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        await _safe_job_message(bot_api, job.chat_id, error)
+        return
+
+    try:
+        with audio.open("rb") as file_obj:
+            await bot_api.send_audio(
+                chat_id=job.chat_id,
+                audio=file_obj,
+                caption=AUDIO_REVIEW_MSG,
+                reply_markup=_kb_audio_review(job.job_id),
+                title="Озвучка ролика",
+            )
+    except Exception as exc:
+        store.finish(
+            job.job_id,
+            "delivery_failed",
+            result=result,
+            stage="audio_delivery",
+            error=str(exc),
+        )
+        _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        await _safe_job_message(
+            bot_api,
+            job.chat_id,
+            "Озвучка готова, но Telegram не принял аудиофайл. "
+            f"Он сохранён для диагностики.\nID: {job.job_id[:8]}",
+        )
+        return
+
+    try:
+        store.transition(
+            job.job_id,
+            "awaiting_audio_approval",
+            expected="audio_running",
+            stage="audio_review",
+            result=result,
+        )
+    except RuntimeError:
+        log.exception("не удалось поставить audio preview job на паузу")
+        return
+    _update_active_session_step(job.chat_id, job.job_id, AUDIO_REVIEW)
 
 
 def _charged_but_undelivered_notice(job_id: str) -> str:
@@ -1517,7 +1863,10 @@ async def _job_worker(bot_api) -> None:
                 else:
                     await _job_wakeup.wait()
                 continue
-            await _process_job(bot_api, job)
+            if job.status == "audio_running":
+                await _process_audio_job(bot_api, job)
+            else:
+                await _process_job(bot_api, job)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -1533,6 +1882,69 @@ async def on_message(update, context):
 
     if step == CHOOSING_LANGUAGE:
         await msg.reply_text(ASK_LANGUAGE, reply_markup=_kb_language())
+        return
+
+    if step == WAIT_FINAL_AUDIO:
+        job_id = s.get("current_job_id")
+        job = _job_store().get(job_id) if job_id else None
+        if (
+            job is None
+            or job.chat_id != int(chat_id)
+            or job.status != "awaiting_user_audio"
+        ):
+            await msg.reply_text(AUDIO_ACTION_STALE)
+            return
+        if msg.voice is None:
+            await msg.reply_text(
+                "Жду одно голосовое сообщение Telegram с полным текстом сценария.",
+                reply_markup=_kb_final_audio(job.job_id),
+            )
+            return
+        try:
+            _job_store().transition(
+                job.job_id,
+                "user_audio_processing",
+                expected="awaiting_user_audio",
+                stage="user_audio",
+            )
+        except RuntimeError:
+            await msg.reply_text(AUDIO_ACTION_STALE)
+            return
+        await msg.reply_text(PROCESSING_FINAL_AUDIO)
+        try:
+            path = await _download(context, msg.voice, chat_id)
+            await asyncio.to_thread(prepare_user_audio, job.workdir, path)
+            _job_store().transition(
+                job.job_id,
+                "queued",
+                expected="user_audio_processing",
+                stage="build",
+            )
+        except Exception as exc:
+            try:
+                _job_store().transition(
+                    job.job_id,
+                    "awaiting_user_audio",
+                    expected="user_audio_processing",
+                    stage="user_audio",
+                    error=str(exc),
+                )
+            except RuntimeError:
+                log.warning(
+                    "job %s сменила status во время обработки user audio",
+                    job.job_id,
+                )
+            await msg.reply_text(
+                f"Не могу использовать эту запись: {str(exc)[:240]}\n\n"
+                "Запишите весь сценарий ещё раз одним голосовым.",
+                reply_markup=_kb_final_audio(job.job_id),
+            )
+            return
+        s["step"] = BUILDING
+        save_session(chat_id, s)
+        if _job_wakeup is not None:
+            _job_wakeup.set()
+        await msg.reply_text(FINAL_AUDIO_ACCEPTED)
         return
 
     if step == WAIT_PHOTO:
@@ -1687,6 +2099,18 @@ async def _post_init(app):
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
         await _safe_job_message(
             app.bot, job.chat_id, f"{INTERRUPTED_MSG}\nID: {job.job_id[:8]}"
+        )
+    recovered_user_audio = await asyncio.to_thread(
+        _job_store().recover_user_audio_processing
+    )
+    for job in recovered_user_audio:
+        _update_active_session_step(job.chat_id, job.job_id, WAIT_FINAL_AUDIO)
+        await _safe_job_message(
+            app.bot,
+            job.chat_id,
+            "Проверка голосового прервалась из-за перезапуска сервиса. "
+            "Пришлите весь сценарий одним голосовым ещё раз.\n"
+            f"ID: {job.job_id[:8]}",
         )
 
     tribute_key = os.environ.get("TRIBUTE_API_KEY")

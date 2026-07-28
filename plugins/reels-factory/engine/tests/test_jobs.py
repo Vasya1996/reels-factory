@@ -131,3 +131,62 @@ def test_20_users_получают_20_изолированных_jobs(tmp_path):
     assert len({job.workdir for job in claimed}) == 20
     for job in claimed:
         assert int((job.workdir / "owner.txt").read_text(encoding="utf-8")) == expected[job.job_id]
+
+
+def test_audio_review_job_паузится_и_только_approve_возвращает_её_в_очередь(
+        tmp_path):
+    store = _store(tmp_path)
+    job_id = store.new_id()
+    workdir = store.workdir_for(job_id)
+    workdir.mkdir(parents=True)
+    created = store.enqueue_prepared(
+        7,
+        job_id=job_id,
+        workdir=workdir,
+        initial_status="audio_queued",
+        initial_stage="audio_preview",
+    )
+
+    claimed_audio = store.claim_next()
+    assert created.status == "audio_queued"
+    assert claimed_audio.status == "audio_running"
+    assert claimed_audio.stage == "audio_preview"
+
+    waiting = store.transition(
+        job_id,
+        "awaiting_audio_approval",
+        expected="audio_running",
+        stage="audio_review",
+    )
+    assert waiting.status == "awaiting_audio_approval"
+    assert store.claim_next() is None
+    assert store.active_for_chat(7).job_id == job_id
+
+    store.transition(
+        job_id,
+        "queued",
+        expected="awaiting_audio_approval",
+        stage="build",
+    )
+    claimed_render = store.claim_next()
+    assert claimed_render.status == "running"
+    assert claimed_render.stage == "build"
+    assert claimed_render.attempts == 2
+
+
+def test_restart_возвращает_локальную_обработку_voice_к_ожиданию(tmp_path):
+    store = _store(tmp_path)
+    job = store.enqueue(7)
+    store.transition(
+        job.job_id,
+        "user_audio_processing",
+        expected="queued",
+        stage="user_audio",
+    )
+
+    recovered = store.recover_user_audio_processing()
+
+    assert [item.job_id for item in recovered] == [job.job_id]
+    current = store.get(job.job_id)
+    assert current.status == "awaiting_user_audio"
+    assert "пришлите голосовое ещё раз" in current.error

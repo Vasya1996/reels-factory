@@ -15,7 +15,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-ACTIVE_STATUSES = ("queued", "running")
+ACTIVE_STATUSES = (
+    "audio_queued",
+    "audio_running",
+    "awaiting_audio_approval",
+    "awaiting_user_audio",
+    "user_audio_processing",
+    "queued",
+    "running",
+)
 TERMINAL_STATUSES = ("completed", "qa_failed", "failed", "interrupted", "delivery_failed")
 
 
@@ -103,7 +111,13 @@ class JobStore:
             raise
 
     def enqueue_prepared(
-        self, chat_id: int, *, job_id: str, workdir: Path | str
+        self,
+        chat_id: int,
+        *,
+        job_id: str,
+        workdir: Path | str,
+        initial_status: str = "queued",
+        initial_stage: str | None = None,
     ) -> BuildJob:
         """Поставить в очередь уже полностью подготовленную папку job.
 
@@ -113,15 +127,25 @@ class JobStore:
         workdir = Path(workdir)
         if not workdir.is_dir():
             raise FileNotFoundError(workdir)
+        if initial_status not in ACTIVE_STATUSES:
+            raise ValueError(f"неизвестный active status: {initial_status}")
         now = time.time()
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO build_jobs
-                (job_id, chat_id, workdir, status, created_at, updated_at)
-                VALUES (?, ?, ?, 'queued', ?, ?)
+                (job_id, chat_id, workdir, status, created_at, updated_at, stage)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (job_id, int(chat_id), str(workdir.resolve()), now, now),
+                (
+                    job_id,
+                    int(chat_id),
+                    str(workdir.resolve()),
+                    initial_status,
+                    now,
+                    now,
+                    initial_stage,
+                ),
             )
         return self.get(job_id)
 
@@ -164,15 +188,16 @@ class JobStore:
         return self._row_to_job(row)
 
     def active_for_chat(self, chat_id: int) -> BuildJob | None:
+        placeholders = ",".join("?" for _ in ACTIVE_STATUSES)
         with self._connect() as conn:
             row = conn.execute(
-                """
+                f"""
                 SELECT * FROM build_jobs
-                WHERE chat_id = ? AND status IN ('queued', 'running')
+                WHERE chat_id = ? AND status IN ({placeholders})
                 ORDER BY created_at DESC
                 LIMIT 1
                 """,
-                (int(chat_id),),
+                (int(chat_id), *ACTIVE_STATUSES),
             ).fetchone()
         return self._row_to_job(row)
 
@@ -186,7 +211,7 @@ class JobStore:
             count = conn.execute(
                 """
                 SELECT COUNT(*) AS n FROM build_jobs
-                WHERE status = 'queued' AND created_at < ?
+                WHERE status IN ('audio_queued', 'queued') AND created_at < ?
                 """,
                 (float(row["created_at"]),),
             ).fetchone()["n"]
@@ -203,8 +228,8 @@ class JobStore:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
                 """
-                SELECT job_id FROM build_jobs
-                WHERE status = 'queued'
+                SELECT job_id, status FROM build_jobs
+                WHERE status IN ('audio_queued', 'queued')
                 ORDER BY created_at
                 LIMIT 1
                 """
@@ -212,15 +237,28 @@ class JobStore:
             if row is None:
                 conn.commit()
                 return None
+            claimed_status = (
+                "audio_running" if row["status"] == "audio_queued" else "running"
+            )
+            claimed_stage = (
+                "audio_preview" if row["status"] == "audio_queued" else "build"
+            )
             now = time.time()
             cur = conn.execute(
                 """
                 UPDATE build_jobs
-                SET status = 'running', updated_at = ?, started_at = ?,
-                    attempts = attempts + 1, stage = 'build', error = NULL
-                WHERE job_id = ? AND status = 'queued'
+                SET status = ?, updated_at = ?, started_at = ?,
+                    attempts = attempts + 1, stage = ?, error = NULL
+                WHERE job_id = ? AND status = ?
                 """,
-                (now, now, row["job_id"]),
+                (
+                    claimed_status,
+                    now,
+                    now,
+                    claimed_stage,
+                    row["job_id"],
+                    row["status"],
+                ),
             )
             if cur.rowcount != 1:
                 conn.rollback()
@@ -229,6 +267,58 @@ class JobStore:
             return self.get(row["job_id"])
         finally:
             conn.close()
+
+    def transition(
+        self,
+        job_id: str,
+        status: str,
+        *,
+        expected: str | tuple[str, ...],
+        stage: str | None = None,
+        result: dict | None = None,
+        error: str | None = None,
+    ) -> BuildJob:
+        """CAS-переход между нетерминальными стадиями одной durable job."""
+        if status not in ACTIVE_STATUSES:
+            raise ValueError(f"неизвестный active status: {status}")
+        expected_statuses = (expected,) if isinstance(expected, str) else tuple(expected)
+        if not expected_statuses:
+            raise ValueError("expected statuses не заданы")
+        placeholders = ",".join("?" for _ in expected_statuses)
+        result_json = (
+            json.dumps(result, ensure_ascii=False, separators=(",", ":"), default=str)
+            if result is not None
+            else None
+        )
+        now = time.time()
+        with self._connect() as conn:
+            cur = conn.execute(
+                f"""
+                UPDATE build_jobs
+                SET status = ?, updated_at = ?, stage = ?, error = ?,
+                    result_json = COALESCE(?, result_json)
+                WHERE job_id = ? AND status IN ({placeholders})
+                """,
+                (
+                    status,
+                    now,
+                    stage,
+                    (error or "")[:1000] or None,
+                    result_json,
+                    job_id,
+                    *expected_statuses,
+                ),
+            )
+            if cur.rowcount != 1:
+                row = conn.execute(
+                    "SELECT status FROM build_jobs WHERE job_id = ?", (job_id,)
+                ).fetchone()
+                actual = row["status"] if row else "missing"
+                raise RuntimeError(
+                    f"job {job_id} transition {expected_statuses} -> {status} "
+                    f"невозможен: текущий status={actual}"
+                )
+        return self.get(job_id)
 
     def finish(
         self,
@@ -271,7 +361,10 @@ class JobStore:
         """
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT job_id FROM build_jobs WHERE status = 'running'"
+                """
+                SELECT job_id FROM build_jobs
+                WHERE status IN ('audio_running', 'running')
+                """
             ).fetchall()
             if not rows:
                 return []
@@ -283,8 +376,33 @@ class JobStore:
                 SET status = 'interrupted', updated_at = ?, finished_at = ?,
                     stage = 'restart',
                     error = 'worker был остановлен; автоповтор отключён во избежание повторной оплаты'
-                WHERE status = 'running'
+                WHERE status IN ('audio_running', 'running')
                 """,
                 (now, now),
+            )
+        return [self.get(job_id) for job_id in ids]
+
+    def recover_user_audio_processing(self) -> list[BuildJob]:
+        """Локальный ASR после рестарта можно безопасно попросить повторить."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT job_id FROM build_jobs
+                WHERE status = 'user_audio_processing'
+                """
+            ).fetchall()
+            if not rows:
+                return []
+            now = time.time()
+            ids = [row["job_id"] for row in rows]
+            conn.execute(
+                """
+                UPDATE build_jobs
+                SET status = 'awaiting_user_audio', updated_at = ?,
+                    stage = 'user_audio',
+                    error = 'локальная обработка прервана рестартом; пришлите голосовое ещё раз'
+                WHERE status = 'user_audio_processing'
+                """,
+                (now,),
             )
         return [self.get(job_id) for job_id in ids]
