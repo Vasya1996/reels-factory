@@ -298,6 +298,8 @@ def test_kazakh_edit_plan_берёт_казахский_cta_и_before_after():
         == "before_after"
         for window in plan["windows"]
     )
+    # before_after window should skip avatar for development block
+    assert plan["blocks"][1]["avatar_required"] is False
 
 
 def _three_questions_scenario():

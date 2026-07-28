@@ -2484,7 +2484,8 @@ def validate_edit_plan(
         coverage = window.get("coverage")
         if window.get("safe_to_skip_avatar") and not _is_faceless(window):
             errors.append(
-                f"{window.get('id')}: HeyGen skip разрешён не для full B-roll"
+                f'{window["id"]}: HeyGen skip разрешён только там, где ведущей '
+                "нет в кадре"
             )
         if coverage in {"full_broll", "hyperframes"}:
             if duration < MIN_FULLSCREEN_S:
