@@ -15,7 +15,7 @@
 
 ## Глобальные ограничения
 
-- Кадр **1080×1920, 30 кадров/с** (`config.py:47-48`), громкость **−14 LUFS / −1.5 TP** (`config.py:49-50`).
+- Кадр **1080×1920, 30 кадров/с** (`config.py:48-49`), громкость **−14 LUFS / −1.5 TP** (`config.py:50-51`).
 - Версия движка **жёстко 0.7.70** (`hyperframes_blocks.py:25`).
 - **Все тайминги кратны 1/30 секунды.**
 - **Громкость приводим сами** — в движке её нет.
@@ -1041,6 +1041,12 @@ def test_интервал_без_ведущей_обязан_быть_закры
         {"cards": [_card(zone="fullscreen", startSec=0.0, endSec=3.0)]}, FACE, [window])
     assert закрыт["D12_faceless_cover"] == "PASS"
 
+    цепочкой = check_storyboard({"cards": [
+        _card(id="c1", zone="fullscreen", startSec=0.0, endSec=1.5),
+        _card(id="c2", zone="fullscreen", startSec=1.533, endSec=3.0),
+    ]}, FACE, [window])
+    assert цепочкой["D12_faceless_cover"] == "PASS"
+
 
 def test_пустая_раскадровка_проходит():
     assert set(check_storyboard({"cards": []}, FACE).values()) == {"PASS"}
@@ -1063,6 +1069,7 @@ def test_пустая_раскадровка_проходит():
 """
 from __future__ import annotations
 
+from reels_factory.config import FPS
 from reels_factory.hf_layout import ALLOWED_ZONES, FACELESS_ZONES, quantize, violations
 
 
@@ -1100,15 +1107,24 @@ def check_storyboard(storyboard: dict, face: dict | None,
         for problem in violations(rect, face):
             face_bad.append(f"{card_id}: {problem}")
 
+    frame = 1.0 / FPS
     for window in faceless_windows or []:
-        start = float(window["final_timing"]["start"])
-        end = float(window["final_timing"]["end"])
-        covered = any(
-            card.get("zone") == "fullscreen"
-            and float(card.get("startSec", 0)) <= start + 0.001
-            and float(card.get("endSec", 0)) >= end - 0.001
-            for card in storyboard.get("cards") or []
+        timing = window.get("final_timing") or {}
+        start = float(timing.get("start", 0.0))
+        end = float(timing.get("end", 0.0))
+        # интервал закрывается ЦЕПОЧКОЙ полноэкранных карточек, а не одной:
+        # разбить показ на титул и список — нормальное монтажное решение.
+        # Допуск в кадр — на зазоры, которые агент оставляет между карточками.
+        spans = sorted(
+            (float(c.get("startSec", 0)), float(c.get("endSec", 0)))
+            for c in storyboard.get("cards") or []
+            if c.get("zone") == "fullscreen"
         )
+        cursor = start
+        for span_start, span_end in spans:
+            if span_start <= cursor + frame + 0.001:
+                cursor = max(cursor, span_end)
+        covered = cursor >= end - frame - 0.001
         if not covered:
             cover_bad.append(
                 f'{window["id"]}: интервал {start}–{end} без ведущей не закрыт '
@@ -1185,6 +1201,13 @@ def test_правила_числами(tmp_path):
     assert "1/30" in text
 
 
+def test_расписание_клипов_передано(tmp_path):
+    text = _text(tmp_path, clips=[{"file": "clips/clip-00.mp4", "start": 0.0,
+                                   "duration": 6.0, "media_start": 0.0}])
+    assert "clips/clip-00.mp4" in text
+    assert "Клипы с ведущей" in text
+
+
 def test_содержание_вставки_передано(tmp_path):
     text = _text(tmp_path)
     assert "window-000" in text
@@ -1252,7 +1275,10 @@ def _window_block(window: dict, text_by_id: dict) -> str:
 
     lines = [
         f'### Окно `{window.get("id")}` — {timing.get("start")}–{timing.get("end")} с',
-        f'- зона-подсказка от плана: `{window.get("zone")}` (можешь выбрать другую)',
+        (f'- **ведущей в кадре нет**: зона обязательно `fullscreen`, '
+         "интервал закрыт целиком, без дыр"
+         if window.get("safe_to_skip_avatar") else
+         f'- зона-подсказка от плана: `{window.get("zone")}` (можешь выбрать другую)'),
         f'- что звучит: «{speech.strip()}»',
     ]
     if effect.get("type") and effect["type"] != "none":
@@ -1272,7 +1298,8 @@ def _window_block(window: dict, text_by_id: dict) -> str:
 
 
 def write_brief(rdir, plan: dict, *, face: dict | None, duration: float,
-                media: list[dict] | None = None, retry_reason: str | None = None) -> Path:
+                clips: list[dict] | None = None, media: list[dict] | None = None,
+                retry_reason: str | None = None) -> Path:
     """Записать BRIEF.md рядом с материалом. Возвращает путь."""
     rdir = Path(rdir)
     rdir.mkdir(parents=True, exist_ok=True)
@@ -1293,6 +1320,11 @@ def write_brief(rdir, plan: dict, *, face: dict | None, duration: float,
         if face else "Лицо не найдено — считай запретной среднюю треть кадра."
     )
 
+    clips_block = "
+".join(
+        f'- `{c["file"]}` — с {c["start"]:g} с, длительность {c["duration"]:g} с'
+        for c in (clips or [])
+    ) or "Клипов нет."
     media_block = "\n".join(
         f'- `{item["file"]}` → окно `{item["window_id"]}`: {item["what"]}'
         for item in (media or [])
@@ -1310,9 +1342,11 @@ def write_brief(rdir, plan: dict, *, face: dict | None, duration: float,
 
 Собрать композицию, в которой:
 
-1. `base.mp4` играет **во весь кадр** от начала до конца ролика — это видео с ведущей.
-2. `voice.wav` — **единственная аудиодорожка** композиции. Звук самого `base.mp4`
-   выключен: у видеоэлемента `muted`, дорожка монтируется отдельным элементом.
+1. Клипы с ведущей стоят на таймлайне **во весь кадр**, каждый в своё время —
+   расписание ниже. Склеивать их не надо, движок ставит несколько кусков на одну
+   дорожку сам.
+2. `voice.wav` — **единственная аудиодорожка** композиции. Звук самих клипов
+   выключен: у видеоэлементов `muted`, дорожка монтируется отдельным элементом.
 3. **Пословные субтитры** построены по `words.json`: слово появляется ровно в свой
    `start`. Группы до пяти слов, разрыв на знаке препинания от трёх.
 4. Поверх этого — графические карточки по окнам плана (раздел «Что показывать»).
@@ -1322,7 +1356,7 @@ def write_brief(rdir, plan: dict, *, face: dict | None, duration: float,
 
 ## Материал (лежит в public/)
 
-- `base.mp4` — видео с ведущей, {OUT_W}×{OUT_H}, {FPS} кадров/с, длительность {duration:g} с
+- клипы с ведущей, {OUT_W}×{OUT_H}, {FPS} кадров/с — расписание в разделе «Клипы»
 - `voice.wav` — единая озвучка, источник истины по времени
 - `words.json` — **готовые пословные тайминги**. Своё распознавание речи **не запускай**:
   оно даст худшую точность и работает по-английски.
@@ -1331,6 +1365,14 @@ def write_brief(rdir, plan: dict, *, face: dict | None, duration: float,
 ## Формат
 
 Холст {OUT_W}×{OUT_H}, {FPS} кадров/с, общая длительность ровно {duration:g} с.
+
+## Клипы с ведущей
+
+Каждый ставится на своё время, во весь кадр, со звуком выключенным.
+Где клипа нет — там ведущей в кадре нет намеренно, и это место закрывает
+полноэкранная карточка.
+
+{clips_block}
 
 ## Стиль
 
@@ -1356,8 +1398,13 @@ def write_brief(rdir, plan: dict, *, face: dict | None, duration: float,
 - **Свободные полосы, если ставишь карточку поверх ведущей:**
 {bands}
 - **Сетка кадров:** любое время карточки кратно 1/{FPS} секунды.
-- **Стык клипов:** клип живёт на кадр дольше своего окна, поэтому не ставь конец
-  карточки вплотную к началу следующей — оставляй зазор не меньше 1/{FPS} секунды.
+- **Стык карточек поверх ведущей:** клип живёт на кадр дольше своего окна, поэтому
+  между такими карточками оставляй зазор не меньше 1/{FPS} секунды. К полноэкранным
+  карточкам это не относится — там зазор недопустим, см. следующий пункт.
+- **Окна без ведущей закрываются целиком.** Если у окна ниже стоит пометка
+  «ведущей в кадре нет», её интервал обязан быть покрыт полноэкранными карточками
+  от начала до конца — одной или цепочкой подряд, без дыр. Аватар на этот кусок не
+  заказан, под карточкой чёрный кадр: любая дыра — чёрный экран у зрителя.
 - **Внешних ссылок нет.** Только локальные файлы.
 
 ## Что показывать по окнам
@@ -1393,7 +1440,7 @@ def write_brief(rdir, plan: dict, *, face: dict | None, duration: float,
 - [ ] **Шаг 4: Запустить тесты**
 
 Запуск: `cd plugins/reels-factory/engine && python -m pytest tests/test_hf_brief.py -v`
-Ожидание: 6 passed.
+Ожидание: 7 passed.
 
 - [ ] **Шаг 5: Коммит**
 
@@ -1663,7 +1710,8 @@ def _fakes(monkeypatch, tmp_path, storyboards):
     monkeypatch.setattr(hf_render, "_cli", fake_cli)
     monkeypatch.setattr(hf_render, "_normalize_loudness",
                         lambda src, dst: (dst.write_bytes(b"n"), dst)[1])
-    monkeypatch.setattr(hf_render, "_concat_islands", lambda *a, **k: tmp_path / "src.mp4")
+    monkeypatch.setattr(hf_render, "_place_clips", lambda public, *a, **k: [
+        {"file": "clips/clip-00.mp4", "start": 0.0, "duration": 6.0, "media_start": 0.0}])
     monkeypatch.setattr(hf_render, "vendor_gsap", lambda public: public)
     monkeypatch.setattr(hf_render, "face_box_for",
                         lambda video, out, **k: {"cx": 540, "cy": 520, "h": 260})
@@ -1825,25 +1873,41 @@ def _normalize_loudness(src: Path, dst: Path) -> Path:
     return dst
 
 
-def _concat_islands(rdir: Path, avatar_mp4s: list, avatar_render_plan: dict | None,
-                    timed_scenario: dict, height: int = OUT_H) -> Path:
-    """Беззвучная база из клипов аватара.
+def _place_clips(public: Path, avatar_mp4s: list, avatar_render_plan: dict | None,
+                 timed_scenario: dict) -> list[dict]:
+    """Разложить клипы аватара в public/clips и вернуть их расписание.
 
-    Островов по умолчанию нет (`avatar_islands.py:44` — enabled False), и тогда
-    приходит по клипу на блок: их надо склеить по длительностям блоков, иначе
-    база окажется длиной первого блока. Для этого случая в revideo есть готовая
-    _concat_master_visuals (`revideo_render.py:139`).
+    Склеивать их своим ffmpeg не нужно: движок сам ставит несколько кусков на
+    одну дорожку с точным началом, длительностью и обрезкой. Раньше склейка
+    была нужна старой сцене, которой требовался один готовый файл.
     """
-    from reels_factory.revideo_render import (
-        _concat_avatar_island_visuals, _concat_master_visuals,
-    )
+    target = public / "clips"
+    target.mkdir(parents=True, exist_ok=True)
 
     if avatar_render_plan is not None:
-        return _concat_avatar_island_visuals(rdir, avatar_mp4s, avatar_render_plan,
-                                             height=height)
-    block_durations = [float(b["end"]) - float(b["start"])
-                       for b in timed_scenario["blocks"]]
-    return _concat_master_visuals(rdir, avatar_mp4s, block_durations, height=height)
+        shots = avatar_render_plan.get("shots") or []
+        timings = [(float(s["visible_timing"]["start"]),
+                    float(s["visible_timing"]["end"]),
+                    float((s.get("trim") or {}).get("start_seconds", 0.0)))
+                   for s in shots]
+    else:
+        timings = [(float(b["start"]), float(b["end"]), 0.0)
+                   for b in timed_scenario["blocks"]]
+
+    if len(timings) != len(avatar_mp4s):
+        raise RuntimeError(
+            f"клипов {len(avatar_mp4s)}, а мест на таймлайне {len(timings)}")
+
+    clips = []
+    for index, (source, (start, end, media_start)) in enumerate(
+            zip(avatar_mp4s, timings)):
+        name = f"clip-{index:02d}.mp4"
+        shutil.copyfile(str(source), str(target / name))
+        clips.append({"file": f"clips/{name}",
+                      "start": quantize(start),
+                      "duration": quantize(end - start),
+                      "media_start": quantize(media_start)})
+    return clips
 
 
 def _media_from_plan(plan: dict, public: Path) -> list[dict]:
@@ -1875,15 +1939,19 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
 
     def prepare() -> None:
         public.mkdir(parents=True, exist_ok=True)
-        base = _concat_islands(rdir, avatar_mp4s, avatar_render_plan, timed_scenario)
-        shutil.copyfile(str(base), str(public / "base.mp4"))
+        clips = _place_clips(public, avatar_mp4s, avatar_render_plan, timed_scenario)
         shutil.copyfile(str(master_audio), str(public / "voice.wav"))
         (public / "words.json").write_text(
             json.dumps(words, ensure_ascii=False, indent=1), encoding="utf-8")
         vendor_gsap(public)
-        face_box_for(public / "base.mp4", rdir / "face.json")
+        face_box_for(public / clips[0]["file"], rdir / "face.json")
         write_brief(rdir, edit_plan, face=load_face(rdir), duration=duration,
-                    media=_media_from_plan(edit_plan, public))
+                    clips=clips, media=_media_from_plan(edit_plan, public))
+        (rdir / "clips.json").write_text(
+            json.dumps(clips, ensure_ascii=False, indent=1), encoding="utf-8")
+        (rdir / "media.json").write_text(
+            json.dumps(_media_from_plan(edit_plan, public), ensure_ascii=False,
+                       indent=1), encoding="utf-8")
 
     run_step(rdir, "prepare", prepare)
 
@@ -1892,8 +1960,10 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         if reason is not None:
             reset_step(rdir, "compose")
             reset_step(rdir, "gates")
+            saved_clips = json.loads((rdir / "clips.json").read_text(encoding="utf-8"))
+            saved_media = json.loads((rdir / "media.json").read_text(encoding="utf-8"))
             write_brief(rdir, edit_plan, face=load_face(rdir), duration=duration,
-                        media=_media_from_plan(edit_plan, public), retry_reason=reason)
+                        clips=saved_clips, media=saved_media, retry_reason=reason)
 
         board = run_step(rdir, "compose",
                          lambda: build_with_agent(rdir, runner=agent_runner))
@@ -2063,16 +2133,15 @@ from reels_factory.hf_render import assemble_hyperframes as _assemble
             return fail("assemble", RuntimeError(
                 "новый сборщик работает только с мастер-звуком; "
                 "включи master_audio"))
-        out_mp4 = wd / "reel.mp4"
         res = assemble_fn(wd,
-                          master.timed_scenario if master else scenario,
+                          master.timed_scenario,
                           edit_plan=edit_plan,
                           avatar_mp4s=avatar_mp4s or [],
                           master_audio=master.wav,
                           alignment_words=apply_caption_fixes(
                               list(master.words), caption_fixes),
                           avatar_render_plan=avatar_render_plan,
-                          out_mp4=out_mp4)
+                          out_mp4=out_mp4)   # out_mp4 уже объявлена на pipeline.py:343
 ```
 
 После `verify_reel` (`:366`) дописать слияние гейтов вставок:
@@ -2615,7 +2684,7 @@ def test_без_предмета_материал_не_нужен():
 
 - [ ] **Шаг 2: Запустить, убедиться что падает**
 
-Запуск: `cd plugins/reels-factory/engine && python -m pytest tests/test_editplan.py -k материал -v`
+Запуск: `cd plugins/reels-factory/engine && python -m pytest tests/test_editplan.py -k "материал or снимка or маршрут" -v`
 Ожидание: FAIL — функции нет.
 
 - [ ] **Шаг 3: Реализация**
@@ -2623,8 +2692,11 @@ def test_без_предмета_материал_не_нужен():
 В `editplan.py` добавить функцию рядом с `_zone_for` (задача 5) и вызывать её в `_assign_window` (`:1284`), записывая результат в поле `material` рядом с `zone`:
 
 ```python
-        "material": material_for_phrase(
-            " ".join(p.get("text", "") for p in selected)),
+        # материал нужен только там, где ведущая может уйти из кадра:
+        # в хуке и призыве валидатор её прятать запрещает (editplan.py:2478-2482)
+        "material": (material_for_phrase(
+            " ".join(p.get("text", "") for p in selected))
+            if coverage in _FACELESS_COVERAGE else None),
 ```
 
 Сама функция:
@@ -2654,7 +2726,9 @@ def material_for_phrase(text: str) -> dict | None:
     """
     low = str(text or "").lower()
     site = _SITE_RE.search(low)
-    query = None
+    # то, что человек диктует после «вводишь» или «запрос» — это и есть запрос
+    query_match = re.search(r"(?:вводишь|запрос)\s+(.{3,40})", low)
+    query = query_match.group(1).strip(" .,") if query_match else None
     if site and sum(marker in low for marker in _ROUTE_MARKERS) < 2:
         return {"kind": "site", "url": _domain(site)}
     if sum(marker in low for marker in _ROUTE_MARKERS) >= 2:
@@ -2666,7 +2740,7 @@ def material_for_phrase(text: str) -> dict | None:
                   "url": "https://www.google.com" if on_google else _domain(site)}]
         if on_google and ("вводишь" in low or "запрос" in low):
             steps.append({"type": "type", "selector": "textarea[name=q]",
-                          "text": query or low[:60]})
+                          "text": query or "открытый проект"})
             if "выбира" in low or "ссылк" in low:
                 steps.append({"type": "click", "selector": "h3"})
         steps.append({"type": "scroll", "pixels": 1200})
@@ -2676,12 +2750,14 @@ def material_for_phrase(text: str) -> dict | None:
 
 - [ ] **Шаг 4: Запустить тесты**
 
-Запуск: `cd plugins/reels-factory/engine && python -m pytest tests/test_editplan.py -k материал -v`
+Запуск: `cd plugins/reels-factory/engine && python -m pytest tests/test_editplan.py -k "материал or снимка or маршрут" -v`
 Ожидание: 3 passed.
 
 - [ ] **Шаг 5: Готовить материал до запуска агента**
 
 В `hf_render.prepare`, до `write_brief`, пройти по окнам плана и для каждого с полем `material` вызвать `capture_site.cached_capture` (`kind == "site"`) или `screen_route.record_route` (`kind == "route"`), положить результат в `public/media/` и добавить запись в список `media`, который уходит в задание.
+
+Список готового материала кладётся в `media.json` рядом с раскадровкой — повторная сборка берёт его оттуда и не снимает сайт заново.
 
 **Импортировать `capture_site` и `screen_route` надо внутри функции, не в шапке модуля:** `capture_site` сам импортирует `hf_render._cli`, и импорт на уровне модуля даст кольцо.
 
@@ -2715,22 +2791,22 @@ git commit -m "feat(editplan): decide when a screenshot or a screen route is nee
 
 **`tz_validator.py` и `hyperframes_blocks.py` НЕ удаляем.** Первый проверяет формат задания и его судьба решается отдельно; второй остаётся источником `_HF_VERSION` и восьми блоков, содержание которых теперь уходит агенту заданием.
 
-- [ ] **Шаг 1: Перенести обе функции склейки**
+- [ ] **Шаг 1: Убедиться, что переносить нечего**
 
-Скопировать в `hf_render.py` **две** функции из `revideo_render.py`: `_concat_avatar_island_visuals` (`:182`, ветка с островами) и `_concat_master_visuals` (`:139`, ветка без островов — она работает по умолчанию, потому что острова выключены). Вместе с зависимостями: вложенной `add_gap`, импортами `FFMPEG`, `OUT_W`, `FPS` из `config` и `VENC` из `compose` (в `config` его нет — он объявлен в `render.py:13`). В `_concat_islands` заменить импорт на вызовы локальных копий.
+Новый сборщик отдаёт клипы агенту как есть и ничего из `revideo_render.py` не импортирует. Проверить:
 
-- [ ] **Шаг 2: Прогнать тесты**
+```bash
+cd plugins/reels-factory/engine && python -c "import reels_factory.hf_render, inspect; print('revideo' in inspect.getsource(reels_factory.hf_render))"
+```
+Ожидание: `False`.
 
-Запуск: `cd plugins/reels-factory/engine && python -m pytest -q -m "not slow"`
-Ожидание: зелено — старые файлы ещё на месте.
-
-- [ ] **Шаг 3: Починить импортёров**
+- [ ] **Шаг 2: Починить импортёров**
 
 - `tests/test_editplan.py:165` — импорт `revideo_adapter` и тесты на `:219` и `:611` удалить: проекции в задание Revideo больше не существует.
 - `tests/test_hyperframes_blocks.py:7` и раздел «интеграция в revideo_render» (`:65`) — удалить раздел; сами блоки остаются покрытыми остальными тестами файла.
 - В `engine/README.md:254`, `docs/EDIT-PLAN.md:5`, `docs/VISUAL-DIRECTOR.md:5` — убрать упоминания удаляемых файлов и описать новый путь одной строкой.
 
-- [ ] **Шаг 4: Удалить файлы**
+- [ ] **Шаг 3: Удалить файлы**
 
 ```bash
 git rm plugins/reels-factory/engine/src/reels_factory/revideo_render.py plugins/reels-factory/engine/src/reels_factory/revideo_adapter.py
@@ -2738,12 +2814,12 @@ git rm plugins/reels-factory/engine/tests/test_revideo_render.py plugins/reels-f
 git rm -r plugins/reels-factory/engine/revideo
 ```
 
-- [ ] **Шаг 5: Прогнать тесты снова**
+- [ ] **Шаг 4: Прогнать тесты снова**
 
 Запуск: `cd plugins/reels-factory/engine && python -m pytest -q -m "not slow"`
 Ожидание: зелено.
 
-- [ ] **Шаг 6: Коммит**
+- [ ] **Шаг 5: Коммит**
 
 ```bash
 git commit -m "refactor(engine): drop the revideo renderer"
