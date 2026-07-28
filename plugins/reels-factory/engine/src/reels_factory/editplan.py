@@ -1301,6 +1301,52 @@ def _is_faceless(window: dict) -> bool:
             and window.get("zone") == "fullscreen")
 
 
+# Домен в речи: «elevenlabs точка ай о», «сайт example точка ру».
+# Зона верхнего уровня в расшифровке приходит словами, поэтому переводим её.
+_SPOKEN_TLD = {"ай о": "io", "ру": "ru", "кз": "kz", "ком": "com",
+               "нет": "net", "орг": "org", "ай": "ai"}
+_SITE_RE = re.compile(
+    r"([a-z0-9-]{3,})\s*(?:точка|\.)\s*([a-z]{2,6}|" +
+    "|".join(_SPOKEN_TLD) + ")", re.IGNORECASE)
+
+
+def _domain(match) -> str:
+    tld = match.group(2).lower()
+    return f"https://{match.group(1)}.{_SPOKEN_TLD.get(tld, tld)}"
+# маркеры последовательности действий на экране
+_ROUTE_MARKERS = ("открыва", "вводишь", "нажима", "выбира", "листа", "прокручива")
+
+
+def material_for_phrase(text: str) -> dict | None:
+    """Что подготовить для этой фразы: снимок сайта, запись маршрута или ничего.
+
+    Приём выбирается из того, что сказано, а не из того, что мы умеем:
+    нет предмета — ничего не готовим.
+    """
+    low = str(text or "").lower()
+    site = _SITE_RE.search(low)
+    # то, что человек диктует после «вводишь» или «запрос» — это и есть запрос
+    query_match = re.search(r"(?:вводишь|запрос)\s+([\w\s-]{3,40}?)(?:\s+(?:и|выбира|нажима|листа|прокручива)|$)", low)
+    query = query_match.group(1).strip(" .,") if query_match else None
+    if site and sum(marker in low for marker in _ROUTE_MARKERS) < 2:
+        return {"kind": "site", "url": _domain(site)}
+    if sum(marker in low for marker in _ROUTE_MARKERS) >= 2:
+        # Ввод в поиск умеем только на Google: селектор поля и результата
+        # у каждого сайта свой, гадать нельзя. Если назван другой домен —
+        # просто открываем его и листаем.
+        on_google = site is None
+        steps = [{"type": "goto",
+                  "url": "https://www.google.com" if on_google else _domain(site)}]
+        if on_google and ("вводишь" in low or "запрос" in low):
+            steps.append({"type": "type", "selector": "textarea[name=q]",
+                          "text": query or "открытый проект"})
+            if "выбира" in low or "ссылк" in low:
+                steps.append({"type": "click", "selector": "h3"})
+        steps.append({"type": "scroll", "pixels": 1200})
+        return {"kind": "route", "steps": steps}
+    return None
+
+
 def _assign_window(
     windows: list[dict],
     phrases: list[dict],
@@ -1340,6 +1386,11 @@ def _assign_window(
         "final_timing": None,
         "camera": {"type": camera},
         "zone": _zone_for(coverage),
+        # материал нужен только там, где ведущая может уйти из кадра:
+        # в хуке и призыве валидатор её прятать запрещает (editplan.py:2478-2482)
+        "material": (material_for_phrase(
+            " ".join(p.get("text", "") for p in selected))
+            if coverage in _FACELESS_COVERAGE else None),
         "transition_in": transition,
         "caption": caption,
         "effect": _window_effect(coverage, effect=effect, asset=asset),
@@ -1382,6 +1433,7 @@ def _downgrade_draft_window(
     window["coverage"] = "avatar"
     window["zone"] = _zone_for("avatar")
     window["asset"] = None
+    window["material"] = None
     window["effect"] = {"type": "none"}
     window["camera"] = {
         "type": "hold" if window.get("role") == "payoff" else "ken_burns"
@@ -2128,6 +2180,7 @@ def _downgrade_window(plan: dict, window: dict, reason: str) -> None:
     window["coverage"] = "avatar"
     window["zone"] = _zone_for("avatar")
     window["asset"] = None
+    window["material"] = None
     window["effect"] = {"type": "none"}
     window["camera"] = {
         "type": "hold" if window.get("role") == "payoff" else "ken_burns"

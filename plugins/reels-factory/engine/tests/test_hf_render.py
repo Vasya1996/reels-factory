@@ -123,3 +123,84 @@ def test_две_неудачи_подряд_роняют_сборку(tmp_path, 
         hf_render.assemble_hyperframes(
             tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
             master_audio=tmp_path / "voice.wav", alignment_words=[])
+
+
+def test_окно_с_материалом_снимает_сайт_или_маршрут(tmp_path, monkeypatch):
+    """prepare вызывает capture_site/screen_route для окон с полем material
+    и кладёт результат в public/media — агенту искать материал не надо."""
+    from reels_factory import capture_site, hf_render, screen_route
+
+    calls = _fakes(monkeypatch, tmp_path, [GOOD])
+
+    def fake_cached_capture(url, cache_dir):
+        shots_dir = Path(cache_dir) / "shots"
+        shots_dir.mkdir(parents=True, exist_ok=True)
+        shot = shots_dir / "scroll-000.png"
+        shot.write_bytes(b"png")
+        return {"dir": str(shots_dir), "screenshots": [str(shot)], "page": ""}
+
+    def fake_record_route(steps, out_mp4, **kw):
+        out_mp4 = Path(out_mp4)
+        out_mp4.parent.mkdir(parents=True, exist_ok=True)
+        out_mp4.write_bytes(b"mp4")
+        return out_mp4
+
+    monkeypatch.setattr(capture_site, "cached_capture", fake_cached_capture)
+    monkeypatch.setattr(screen_route, "record_route", fake_record_route)
+
+    plan = {
+        "windows": [
+            {"id": "window-000", "visual_intent": "Показать интерфейс",
+             "material": {"kind": "site", "url": "https://elevenlabs.io"}},
+            {"id": "window-001", "visual_intent": None,
+             "material": {"kind": "route",
+                          "steps": [{"type": "goto", "url": "https://www.google.com"}]}},
+        ],
+        "phrases": [], "log": [],
+        "timeline": {"final_duration_seconds": 6.0},
+    }
+
+    hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=plan, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav",
+        alignment_words=[{"start": 0.2, "end": 0.9, "text": "Кому"}])
+
+    media = json.loads((tmp_path / "media.json").read_text(encoding="utf-8"))
+    by_window = {item["window_id"]: item for item in media}
+    assert (tmp_path / "public" / by_window["window-000"]["file"]).exists()
+    assert (tmp_path / "public" / by_window["window-001"]["file"]).exists()
+    assert by_window["window-000"]["what"] == "Показать интерфейс"
+    assert by_window["window-001"]["what"] == "запись маршрута"
+
+
+def test_повторный_prepare_не_снимает_материал_заново(tmp_path, monkeypatch):
+    """Маркер шага prepare делает capture/record одноразовыми: перезапуск
+    сборки читает media.json, а не снимает сайт заново."""
+    from reels_factory import capture_site, hf_render, screen_route
+
+    _fakes(monkeypatch, tmp_path, [GOOD, GOOD])
+    capture_calls = []
+    monkeypatch.setattr(capture_site, "cached_capture",
+                        lambda url, cache_dir: capture_calls.append(url) or {
+                            "screenshots": []})
+    monkeypatch.setattr(screen_route, "record_route",
+                        lambda steps, out_mp4, **kw: capture_calls.append("route") or Path(out_mp4))
+
+    plan = {
+        "windows": [{"id": "window-000", "visual_intent": "Показать сайт",
+                     "material": {"kind": "site", "url": "https://elevenlabs.io"}}],
+        "phrases": [], "log": [],
+        "timeline": {"final_duration_seconds": 6.0},
+    }
+
+    hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=plan, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=[])
+    assert len(capture_calls) == 1
+
+    # маркер prepare остался — второй прогон не должен снова звать capture
+    hf_render.reset_step(tmp_path, "compose")
+    hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=plan, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=[])
+    assert len(capture_calls) == 1

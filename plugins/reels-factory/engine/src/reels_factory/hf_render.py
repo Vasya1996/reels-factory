@@ -164,6 +164,44 @@ def _media_from_plan(plan: dict, public: Path) -> list[dict]:
     return media
 
 
+def _prepare_material(plan: dict, public: Path, rdir: Path) -> list[dict]:
+    """Материал для окон, которым планировщик заказал снимок сайта или
+    запись маршрута (editplan.py: material_for_phrase).
+
+    Импорт внутри функции: capture_site сам импортирует hf_render._cli,
+    импорт на уровне модуля дал бы кольцо.
+    """
+    from reels_factory import capture_site, screen_route
+
+    cache_dir = Path.home() / ".reels-factory" / "site-cache"
+    media = []
+    for window in plan.get("windows") or []:
+        material = window.get("material")
+        if not material:
+            continue
+        window_id = window["id"]
+        what = window.get("visual_intent") or (
+            "снимок сайта" if material["kind"] == "site" else "запись маршрута")
+        if material["kind"] == "site":
+            result = capture_site.cached_capture(material["url"], cache_dir)
+            shots = result.get("screenshots") or []
+            if not shots:
+                continue
+            # первый кадр прокрутки — единственный, что уходит в задание как
+            # материал вставки; остальные кадры и HTML агенту не нужны.
+            source = Path(shots[0])
+            target = public / "media" / f"{window_id}-{source.name}"
+        else:
+            source = screen_route.record_route(
+                material["steps"], rdir / "route" / f"{window_id}.mp4")
+            target = public / "media" / source.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        media.append({"file": f"media/{target.name}", "window_id": window_id,
+                      "what": what})
+    return media
+
+
 def _faceless_windows(plan: dict) -> list[dict]:
     """Окна, где аватар действительно не заказан.
 
@@ -197,7 +235,8 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             json.dumps(words, ensure_ascii=False, indent=1), encoding="utf-8")
         vendor_gsap(public)
         face_box_for(public / clips[0]["file"], rdir / "face.json")
-        media = _media_from_plan(edit_plan, public)
+        media = _media_from_plan(edit_plan, public) + _prepare_material(
+            edit_plan, public, rdir)
         write_brief(rdir, edit_plan, face=load_face(rdir), duration=duration,
                     clips=clips, media=media)
         (rdir / "clips.json").write_text(

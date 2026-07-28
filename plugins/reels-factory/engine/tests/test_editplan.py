@@ -1225,3 +1225,26 @@ def test_блок_без_ведущего_помечается_как_не_тр�
     }
     _refresh_blocks_and_summary(plan)
     assert plan["blocks"][0]["avatar_required"] is False
+
+
+def test_названный_сайт_даёт_запрос_снимка():
+    from reels_factory.editplan import material_for_phrase
+
+    material = material_for_phrase("зайди на elevenlabs точка ай о и попробуй")
+    assert material["kind"] == "site"
+    assert "elevenlabs" in material["url"]
+
+
+def test_последовательность_действий_даёт_маршрут():
+    from reels_factory.editplan import material_for_phrase
+
+    material = material_for_phrase(
+        "открываешь гугл вводишь запрос выбираешь первую ссылку и листаешь")
+    assert material["kind"] == "route"
+    assert material["steps"][0]["type"] == "goto"
+
+
+def test_без_предмета_материал_не_нужен():
+    from reels_factory.editplan import material_for_phrase
+
+    assert material_for_phrase("порядок этих вопросов решает всё") is None
