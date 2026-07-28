@@ -2571,7 +2571,7 @@ git commit -m "feat(capture): site screenshots with freshness cache"
 **Интерфейсы:**
 - Производит: `validate_steps`, `chrome_path() -> str`, `build_script(steps, *, width, height, browser_path, frames_dir) -> str`, `record_route(steps, out_mp4, *, width=1080, height=1920, fps=30) -> Path`.
 - Браузер берётся тот, который движок уже скачал: `~/.cache/puppeteer/chrome-headless-shell/**`.
-- `puppeteer-core` ставится в `engine/node_modules`; скрипт маршрута исполняется **с рабочей папкой `engine`**, чтобы модуль разрешился, а кадры пишутся по абсолютным путям.
+- `puppeteer-core` ставится в `engine/node_modules`; модуль резолвится через `NODE_PATH=engine/node_modules`, кадры пишутся по абсолютным путям.
 
 - [ ] **Шаг 1: Написать падающий тест**
 
@@ -2648,6 +2648,7 @@ def test_сценарий_содержит_путь_к_браузеру_и_ка�
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -2737,9 +2738,11 @@ def record_route(steps: list[dict], out_mp4, *, width: int = 1080,
                      browser_path=chrome_path(), frames_dir=frames_dir),
         encoding="utf-8")
 
-    # запускаем из каталога движка, иначе require не найдёт puppeteer-core
+    # запускаем из каталога движка с NODE_PATH, иначе require не найдёт puppeteer-core
+    env = os.environ.copy()
+    env["NODE_PATH"] = str(ENGINE_DIR / "node_modules")
     result = subprocess.run(["node", str(script)], cwd=str(ENGINE_DIR),
-                            capture_output=True, text=True, encoding="utf-8")
+                            capture_output=True, text=True, encoding="utf-8", env=env)
     if result.returncode != 0:
         raise RuntimeError(f"маршрут не прошёл: {(result.stderr or '')[:400]}")
 
