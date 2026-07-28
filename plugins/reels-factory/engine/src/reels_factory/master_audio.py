@@ -46,11 +46,11 @@ class MasterAudioArtifacts:
 
 
 def master_audio_enabled(config: dict) -> bool:
-    """Feature flag с безопасным default=false до отдельного rollout."""
+    """Feature flag: default=true — единая озвучка стала основным путём."""
     raw = os.environ.get("RF_MASTER_AUDIO_ENABLED")
     if raw is not None:
         return raw.strip().lower() in _TRUE
-    return bool(((config or {}).get("master_audio") or {}).get("enabled", False))
+    return bool(((config or {}).get("master_audio") or {}).get("enabled", True))
 
 
 def _sha256_bytes(value: bytes) -> str:

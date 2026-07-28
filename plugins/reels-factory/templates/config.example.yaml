@@ -130,11 +130,11 @@ voices:
   ru: ""
   # kk: "voice_id казахского клона"
 
-# Одна связная озвучка всего утверждённого сценария. До production rollout
-# оставлена выключенной: включать после fixture-тестов/согласованного smoke.
-# То же можно сделать env RF_MASTER_AUDIO_ENABLED=1.
+# Одна связная озвучка всего утверждённого сценария — основной путь сборки.
+# Выключить (временно, для отката) — enabled: false, либо env
+# RF_MASTER_AUDIO_ENABLED=0.
 master_audio:
-  enabled: false
+  enabled: true
 
 # Canonical edit plan строится до платных стадий. Опциональный LLM-проход
 # рекомендует expressiveness/motion_prompt отдельно для каждой phrase.

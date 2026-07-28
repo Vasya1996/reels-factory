@@ -54,8 +54,45 @@ class _FakeAvatar:
         return out_mp4
 
 
+def _fake_master_audio(scenario, config, workdir, voice_id=None, meter=None):
+    """Дефолтный фейк build_master_audio для тестов, не передающих
+    master_audio_fn явно. Дефолт master_audio_enabled теперь True, поэтому
+    без этой подмены такие тесты пошли бы в настоящую сборку (сеть,
+    ElevenLabs). В отличие от точечных фейков в отдельных тестах (плоские
+    2-секундные блоки — там нет B-roll окон, чувствительных к длительности),
+    здесь тайминг блока берётся из уже заданных scenario start/end: иначе
+    finalize_edit_plan пересчитывает окна precut/broll на куцые куски и
+    validate_edit_plan сносит покрытие обратно на avatar."""
+    wd = Path(workdir)
+    master_wav = wd / "voice_master.wav"
+    master_wav.write_bytes(b"master")
+    block_wavs = []
+    words = []
+    timed = json.loads(json.dumps(scenario))
+    for index, block in enumerate(timed["blocks"]):
+        start, end = float(block["start"]), float(block["end"])
+        wav = wd / f"voice_{index}.wav"
+        wav.write_bytes(b"slice")
+        block_wavs.append(wav)
+        pad = min(0.2, (end - start) / 4.0)
+        words.append({
+            "start": start + pad,
+            "end": end - pad,
+            "text": block["speech"],
+            "block_index": index,
+        })
+    timed["total"] = float(timed["blocks"][-1]["end"])
+    return SimpleNamespace(
+        wav=master_wav,
+        block_wavs=tuple(block_wavs),
+        words=tuple(words),
+        timed_scenario=timed,
+    )
+
+
 def _fakes(monkeypatch, tmp_path, calls, captured=None):
     monkeypatch.setattr(pipeline, "WORK_ROOT", tmp_path)
+    monkeypatch.setattr(pipeline, "_build_master_audio", _fake_master_audio)
 
     def fake_synth(text, out_wav, *a, **kw):
         calls.append(("synth", text, kw.get("voice_id")))
@@ -106,7 +143,9 @@ def test_split_happy_path(monkeypatch, tmp_path):
 
     assert res["ok"] is True and res["qa_pass"] is True
     stages = [c[0] for c in calls]
-    assert stages == ["synth", "synth", "synth", "synth", "assemble", "verify"]
+    # master_audio включён по умолчанию: голос приходит одним фейком из
+    # _fakes (master_audio_fn), per-block synth_fn больше не вызывается.
+    assert stages == ["assemble", "verify"]
     # 4 блока -> 4 генерации аватара (cta через cached_generate тоже завершается generate)
     assert len(avatar.calls) == 4
     assemble_call = next(c for c in calls if c[0] == "assemble")
@@ -576,6 +615,11 @@ def test_флаг_включает_джамп_каты_до_сборки(monkeyp
 
     cfg = _cfg("avatar")
     cfg["edit"] = {"jump_cuts": True}
+    # jump_cuts режет паузы покадрово в HeyGen-клипах — несовместимо с
+    # неизменяемым master audio timeline (см.
+    # test_master_audio_не_разрешает_jump_cuts_ломать_timeline). Эта стадия
+    # существует только на legacy пути без мастер-звука.
+    cfg["master_audio"] = {"enabled": False}
 
     res = pipeline.run_make(cfg, wd, avatar_client=avatar,
                             synth_fn=fs, assemble_fn=fa,
@@ -598,6 +642,10 @@ def test_падение_джамп_катов_не_роняет_молча(monke
 
     cfg = _cfg("avatar")
     cfg["edit"] = {"jump_cuts": True}
+    # см. test_флаг_включает_джамп_каты_до_сборки: под master audio эта
+    # стадия не запускается вовсе, поэтому падение здесь тестируется на
+    # legacy пути без мастер-звука.
+    cfg["master_audio"] = {"enabled": False}
 
     res = pipeline.run_make(cfg, wd, avatar_client=avatar,
                             synth_fn=fs, assemble_fn=fa,
@@ -748,7 +796,12 @@ def test_visual_director_llm_обогащает_canonical_plan_до_performance(
                     "template": "sequence_flow",
                     "variables": {
                         "title": "ПУТЬ К РЕЗУЛЬТАТУ",
-                        "items": ["БЫЛО", "ИЗМЕНИЛИ", "СТАЛО"],
+                        # "РОВНО" — опора в реальной речи phrase-002 ("стало
+                        # ровно"). С master_audio по умолчанию finalize
+                        # прогоняет enforce_visual_grounding по-настоящему
+                        # (раньше master было None и грайндинг не запускался),
+                        # и придуманный пункт без опоры в речи снимался бы.
+                        "items": ["БЫЛО", "РОВНО", "СТАЛО"],
                     },
                     "rationale": "Показывает причинную последовательность.",
                 }]
