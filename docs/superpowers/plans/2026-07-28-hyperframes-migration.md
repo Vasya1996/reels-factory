@@ -853,7 +853,7 @@ git commit -m "feat(editplan): derive card zone from window meaning"
 ### Задача 6: Пропуск аватара под полноэкранной графикой
 
 **Файлы:**
-- Изменить: `plugins/reels-factory/engine/src/reels_factory/editplan.py` (`validate_edit_plan` `:2456-2462`, `_refresh_blocks_and_summary` `:1908-1916`, места создания окон `hyperframes`)
+- Изменить: `plugins/reels-factory/engine/src/reels_factory/editplan.py` (`validate_edit_plan` `:2455-2461`, `_refresh_blocks_and_summary` `:1908-1916`, места создания окон `hyperframes`)
 - Изменить: `plugins/reels-factory/engine/tests/test_editplan.py`
 
 **Зачем:** это и есть обещанная экономия. Сейчас пропуск аватара разрешён только под видеовставкой; под полноэкранной графикой ведущей в кадре тоже нет, но аватар всё равно заказывается и оплачивается.
@@ -1249,7 +1249,7 @@ def test_материал_перечислен(tmp_path):
 
 Создать `plugins/reels-factory/engine/src/reels_factory/hf_brief.py`:
 
-```python
+````python
 """Задание агенту-сборщику композиции.
 
 Монтажные решения принимает скил HeyGen. Наше дело — сообщить то, чего он
@@ -1320,11 +1320,13 @@ def write_brief(rdir, plan: dict, *, face: dict | None, duration: float,
         if face else "Лицо не найдено — считай запретной среднюю треть кадра."
     )
 
-    clips_block = "
-".join(
+    clips_block = "\n".join(
         f'- `{c["file"]}` — с {c["start"]:g} с, длительность {c["duration"]:g} с'
+        + (f', начиная с {c["media_start"]:g} с внутри файла'
+           if c.get("media_start") else '')
         for c in (clips or [])
     ) or "Клипов нет."
+
     media_block = "\n".join(
         f'- `{item["file"]}` → окно `{item["window_id"]}`: {item["what"]}'
         for item in (media or [])
@@ -1435,7 +1437,7 @@ def write_brief(rdir, plan: dict, *, face: dict | None, duration: float,
     path = rdir / "BRIEF.md"
     path.write_text(text, encoding="utf-8")
     return path
-```
+````
 
 - [ ] **Шаг 4: Запустить тесты**
 
@@ -1806,7 +1808,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from reels_factory.config import FFMPEG, FPS, LUFS_TARGET, OUT_H, TP_TARGET
+from reels_factory.config import FFMPEG, FPS, LUFS_TARGET, TP_TARGET
 from reels_factory.face_detect import face_box_for, load_face
 from reels_factory.hf_agent import build_with_agent
 from reels_factory.hf_assets import vendor_gsap
@@ -1894,6 +1896,8 @@ def _place_clips(public: Path, avatar_mp4s: list, avatar_render_plan: dict | Non
         timings = [(float(b["start"]), float(b["end"]), 0.0)
                    for b in timed_scenario["blocks"]]
 
+    if not avatar_mp4s:
+        raise RuntimeError("нет ни одного клипа аватара")
     if len(timings) != len(avatar_mp4s):
         raise RuntimeError(
             f"клипов {len(avatar_mp4s)}, а мест на таймлайне {len(timings)}")
@@ -1945,13 +1949,13 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             json.dumps(words, ensure_ascii=False, indent=1), encoding="utf-8")
         vendor_gsap(public)
         face_box_for(public / clips[0]["file"], rdir / "face.json")
+        media = _media_from_plan(edit_plan, public)
         write_brief(rdir, edit_plan, face=load_face(rdir), duration=duration,
-                    clips=clips, media=_media_from_plan(edit_plan, public))
+                    clips=clips, media=media)
         (rdir / "clips.json").write_text(
             json.dumps(clips, ensure_ascii=False, indent=1), encoding="utf-8")
         (rdir / "media.json").write_text(
-            json.dumps(_media_from_plan(edit_plan, public), ensure_ascii=False,
-                       indent=1), encoding="utf-8")
+            json.dumps(media, ensure_ascii=False, indent=1), encoding="utf-8")
 
     run_step(rdir, "prepare", prepare)
 
@@ -2727,7 +2731,7 @@ def material_for_phrase(text: str) -> dict | None:
     low = str(text or "").lower()
     site = _SITE_RE.search(low)
     # то, что человек диктует после «вводишь» или «запрос» — это и есть запрос
-    query_match = re.search(r"(?:вводишь|запрос)\s+(.{3,40})", low)
+    query_match = re.search(r"(?:вводишь|запрос)\s+([\w\s-]{3,40}?)(?:\s+(?:и|выбира|нажима|листа|прокручива)|$)", low)
     query = query_match.group(1).strip(" .,") if query_match else None
     if site and sum(marker in low for marker in _ROUTE_MARKERS) < 2:
         return {"kind": "site", "url": _domain(site)}
@@ -2784,7 +2788,6 @@ git commit -m "feat(editplan): decide when a screenshot or a screen route is nee
 **Выполняется только после того, как задача 13 прошла и результат принят человеком.**
 
 **Файлы:**
-- Изменить: `hf_render.py` (перенести склейку островов внутрь)
 - Изменить: `tests/test_editplan.py:165` (и использования на `:219`, `:611`), `tests/test_hyperframes_blocks.py:7` и раздел на `:65`
 - Изменить: `engine/README.md:254`, `docs/EDIT-PLAN.md:5`, `docs/VISUAL-DIRECTOR.md:5` — упоминания удаляемых файлов
 - Удалить: `src/reels_factory/revideo_render.py`, `src/reels_factory/revideo_adapter.py`, `tests/test_revideo_render.py`, `tests/test_revideo_adapter.py`, каталог `revideo/`
