@@ -25,7 +25,7 @@
 - **Стиль фабрики — `minimal`** из десяти стилей скила, заморожен.
 - **Зоны и раскладки — все, какие есть у скила, без наших ограничений.** Пять зон, четыре раскладки. Выбор для каждой карточки делает агент по смыслу момента. Единственное наше правило поверх — не перекрывать лицо ведущей.
 - **Каждый шаг сборки пишет файл-маркер и перезапускаем.**
-- На Windows CLI движка вызывается **строкой с `shell=True`** — так это уже сделано в `hyperframes_blocks.py:586`. Список аргументов с `npx` не резолвится.
+- На Windows CLI движка вызывается **строкой с `shell=True`** — так это уже сделано в `hyperframes_blocks.py:588`. Список аргументов с `npx` не резолвится.
 - Ветка `feat/vasya-hyperframes`. Коммит после каждой задачи.
 - Тесты: `cd plugins/reels-factory/engine && python -m pytest -q -m "not slow"`.
 
@@ -401,6 +401,19 @@ def test_нижняя_треть_кадра_разрешена():
     assert violations({"left": 0, "top": 1344, "width": 1080, "height": 576}, face) == []
 
 
+def test_лицо_едет_вместе_с_окном_видео():
+    """Раскладка ужала видео в угол — лицо тоже уехало туда."""
+    from reels_factory.hf_layout import moved_face
+
+    face = {"cx": 540, "cy": 520, "h": 260}
+    в_углу = moved_face(face, VIDEO_RECTS["pip"])
+    assert в_углу["cx"] == pytest.approx(690 + 540 * 360 / 1080)
+    assert в_углу["h"] == pytest.approx(260 * 360 / 1080)
+    # там, где лицо было раньше, теперь ставить карточку можно
+    assert violations({"left": 200, "top": 400, "width": 700, "height": 300},
+                      в_углу) == []
+
+
 def test_без_лица_проверка_лица_пропускается():
     assert face_box(None) is None
 ```
@@ -408,7 +421,7 @@ def test_без_лица_проверка_лица_пропускается():
 - [ ] **Шаг 2: Запустить, убедиться что падает**
 
 Запуск: `cd plugins/reels-factory/engine && python -m pytest tests/test_hf_layout.py -v`
-Ожидание: FAIL — модуля нет. Всего тестов будет 11 (пять функций плюс шесть параметров).
+Ожидание: FAIL — модуля нет. Всего тестов будет 12 (шесть функций плюс шесть параметров).
 
 - [ ] **Шаг 3: Реализация**
 
@@ -425,7 +438,7 @@ talking-head-recut (таблица composition layouts, колонка portrait)
 """
 from __future__ import annotations
 
-from reels_factory.config import FPS
+from reels_factory.config import FPS, OUT_W
 
 VIDEO_RECTS = {
     "overlay": {"left": 0, "top": 0, "width": 1080, "height": 1920},
@@ -460,6 +473,20 @@ def face_box(face: dict | None) -> dict | None:
             "width": 2 * margin, "height": 2 * margin}
 
 
+def moved_face(face: dict | None, video_rect: dict | None) -> dict | None:
+    """Лицо в координатах кадра, когда раскладка подвинула окно с видео.
+
+    Видео вписывается в своё окно с сохранением пропорций (object-fit: cover),
+    поэтому центр лица и высота головы масштабируются одним коэффициентом.
+    """
+    if not face or not video_rect:
+        return face
+    scale = float(video_rect["width"]) / OUT_W
+    return {"cx": video_rect["left"] + float(face["cx"]) * scale,
+            "cy": video_rect["top"] + float(face["cy"]) * scale,
+            "h": float(face["h"]) * scale}
+
+
 def _intersects(a: dict, b: dict) -> bool:
     return not (
         a["left"] + a["width"] <= b["left"]
@@ -483,7 +510,7 @@ def violations(content_rect: dict, face: dict | None) -> list[str]:
 - [ ] **Шаг 4: Запустить тесты**
 
 Запуск: `cd plugins/reels-factory/engine && python -m pytest tests/test_hf_layout.py -v`
-Ожидание: 11 passed. Тесты `test_face_detect.py` появятся в задаче 2, которая идёт следом.
+Ожидание: 12 passed. Тесты `test_face_detect.py` появятся в задаче 2, которая идёт следом.
 
 - [ ] **Шаг 5: Коммит**
 
@@ -755,7 +782,9 @@ git commit -m "feat(editplan): show only what is actually said"
 **Интерфейсы:**
 - У окна **добавляется** поле `zone` — `video-overlay` там, где ведущий несёт смысл, `fullscreen` там, где важнее показать. Поле `camera` **остаётся** (его читает `test_editplan.py:472`).
 - Поля `layout` **не добавляем**: раскладку выбирает агент. Наше дело — записать в окно подсказку по зоне, а решение остаётся за ним.
-- **Экономии на аватаре эта задача не даёт.** Валидатор разрешает `safe_to_skip_avatar` только для `coverage="full_broll"` с эффектом `broll` (`editplan.py:2456-2462`), а блок считается безопасным только по фразам `full_broll` (`:1908-1916`). Пропуск аватара под полноэкранной графикой — отдельная задача 6.
+- **Экономия включается только при `format: avatar`** — `covered_block_indexes` вызывается под этим условием (`pipeline.py:218`, дубль `:264`). В шаблоне конфига стоит `format: avatar` (`config.example.yaml:54`), так что у клиентов работает; при `split` задача даёт ноль экономии, и это надо знать.
+
+**Экономии на аватаре сама по себе эта задача не даёт.** Валидатор разрешает `safe_to_skip_avatar` только для `coverage="full_broll"` с эффектом `broll` (`editplan.py:2456-2462`), а блок считается безопасным только по фразам `full_broll` (`:1908-1916`). Пропуск аватара под полноэкранной графикой — отдельная задача 6.
 
 - [ ] **Шаг 1: Написать падающий тест**
 
@@ -1071,7 +1100,9 @@ def test_пустая_раскадровка_проходит():
 from __future__ import annotations
 
 from reels_factory.config import FPS
-from reels_factory.hf_layout import ALLOWED_ZONES, FACELESS_ZONES, quantize, violations
+from reels_factory.hf_layout import (
+    ALLOWED_ZONES, FACELESS_ZONES, moved_face, quantize, violations,
+)
 
 
 def check_storyboard(storyboard: dict, face: dict | None,
@@ -1105,7 +1136,9 @@ def check_storyboard(storyboard: dict, face: dict | None,
         # в зоне fullscreen ведущей в кадре нет — проверять её лицо незачем
         if card.get("zone") in FACELESS_ZONES:
             continue
-        for problem in violations(rect, face):
+        # лицо живёт внутри видео: если раскладка подвинула или ужала окно,
+        # запретный прямоугольник едет вместе с ним
+        for problem in violations(rect, moved_face(face, card.get("videoRect"))):
             face_bad.append(f"{card_id}: {problem}")
 
     frame = 1.0 / FPS
@@ -1162,7 +1195,7 @@ git commit -m "feat(hf): gate the storyboard on face, grid, zone and shape"
 - Создать: `plugins/reels-factory/engine/tests/test_hf_brief.py`
 
 **Интерфейсы:**
-- Производит: `write_brief(rdir, plan, *, face, duration, media=None, retry_reason=None) -> Path`; `STYLE_NAME = "minimal"`.
+- Производит: `write_brief(rdir, plan, *, face, duration, clips=None, media=None, retry_reason=None) -> Path`; `STYLE_NAME = "minimal"`.
 - **В задание уходит содержание каждого окна:** текст фраз, заголовок вставки, её пункты, имя блока. Без этого агент придумает содержимое сам, план перестанет отвечать за картинку, а правило граундинга будет сторожить данные, которых агент не видит.
 - `retry_reason` — текст провала гейтов при повторной сборке.
 
@@ -1200,6 +1233,12 @@ def test_правила_числами(tmp_path):
     assert "лицо" in text.lower()
     assert "storyboard.json" in text and "contentRect" in text
     assert "1/30" in text
+
+
+def test_скрытые_субтитры_отмечены(tmp_path):
+    plan = {**PLAN, "windows": [{**PLAN["windows"][0], "caption": "hidden"}]}
+    text = write_brief(tmp_path, plan, face=None, duration=41.5).read_text(encoding="utf-8")
+    assert "субтитры на этом интервале скрыты" in text
 
 
 def test_расписание_клипов_передано(tmp_path):
@@ -1281,6 +1320,8 @@ def _window_block(window: dict, text_by_id: dict) -> str:
          if window.get("safe_to_skip_avatar") else
          f'- зона-подсказка от плана: `{window.get("zone")}` (можешь выбрать другую)'),
         f'- что звучит: «{speech.strip()}»',
+        *(["- субтитры на этом интервале скрыты"]
+          if window.get("caption") == "hidden" else []),
     ]
     if effect.get("type") and effect["type"] != "none":
         lines.append(f'- тип вставки: `{effect["type"]}`')
@@ -1345,13 +1386,17 @@ def write_brief(rdir, plan: dict, *, face: dict | None, duration: float,
 
 Собрать композицию, в которой:
 
-1. Клипы с ведущей стоят на таймлайне **во весь кадр**, каждый в своё время —
-   расписание ниже. Склеивать их не надо, движок ставит несколько кусков на одну
-   дорожку сам.
+1. Клипы с ведущей стоят на таймлайне по расписанию ниже, каждый в своё время.
+   Склеивать их не надо, движок ставит несколько кусков на одну дорожку сам.
+   По умолчанию видео занимает весь кадр; если раскладка карточки его двигает
+   или ужимает — укажи в раскадровке `videoRect` этой карточки, иначе проверка
+   лица посчитает по устаревшей геометрии и завернёт сборку.
 2. `voice.wav` — **единственная аудиодорожка** композиции. Звук самих клипов
    выключен: у видеоэлементов `muted`, дорожка монтируется отдельным элементом.
 3. **Пословные субтитры** построены по `words.json`: слово появляется ровно в свой
-   `start`. Группы до пяти слов, разрыв на знаке препинания от трёх.
+   `start`. Группы до пяти слов, разрыв на знаке препинания от трёх. **Там, где у
+   окна ниже стоит пометка «субтитры скрыты», их быть не должно** — под
+   полноэкранной графикой они лишние и лезут поверх неё.
 4. Поверх этого — графические карточки по окнам плана (раздел «Что показывать»).
 
 Без пунктов 1–3 ролик не примут: без звука падает нормализация громкости,
@@ -1425,13 +1470,16 @@ def write_brief(rdir, plan: dict, *, face: dict | None, duration: float,
 
 1. `public/index.html` — собранная композиция.
 2. `storyboard.json`. Формат скила сохраняй, но **добавь в каждую карточку поле
-   `contentRect`** — прямоугольник видимого содержимого в пикселях. По нему
-   проверяются границы и лицо, без него сборка не принимается.
+   `contentRect`** — прямоугольник видимого содержимого в пикселях, и, если
+   раскладка двигает или ужимает видео, поле `videoRect` — куда поставлено окно
+   с ведущей. По этим двум проверяется лицо; без `contentRect` сборка не
+   принимается, `videoRect` по умолчанию считается полным кадром.
 
 ```json
 {{"cards": [
   {{"id": "card-01", "startSec": 0.0, "endSec": 3.0, "zone": "video-overlay",
-    "contentRect": {{"left": 130, "top": 980, "width": 810, "height": 260}}}}
+    "contentRect": {{"left": 130, "top": 980, "width": 810, "height": 260}},
+    "videoRect": {{"left": 0, "top": 0, "width": 1080, "height": 1920}}}}
 ]}}
 ```
 """
@@ -1443,7 +1491,7 @@ def write_brief(rdir, plan: dict, *, face: dict | None, duration: float,
 - [ ] **Шаг 4: Запустить тесты**
 
 Запуск: `cd plugins/reels-factory/engine && python -m pytest tests/test_hf_brief.py -v`
-Ожидание: 7 passed.
+Ожидание: 8 passed.
 
 - [ ] **Шаг 5: Коммит**
 
@@ -1809,7 +1857,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from reels_factory.config import FFMPEG, FPS, LUFS_TARGET, TP_TARGET
+from reels_factory.compose import VENC
+from reels_factory.config import FFMPEG, FPS, LUFS_TARGET, OUT_H, OUT_W, TP_TARGET
 from reels_factory.face_detect import face_box_for, load_face
 from reels_factory.hf_agent import build_with_agent
 from reels_factory.hf_assets import vendor_gsap
@@ -1907,7 +1956,20 @@ def _place_clips(public: Path, avatar_mp4s: list, avatar_render_plan: dict | Non
     for index, (source, (start, end, media_start)) in enumerate(
             zip(avatar_mp4s, timings)):
         name = f"clip-{index:02d}.mp4"
-        shutil.copyfile(str(source), str(target / name))
+        duration = quantize(end - start)
+        # HeyGen отдаёт клип на несколько кадров короче или длиннее заказанного,
+        # поэтому каждый кусок подгоняется под длительность блока: не хватает —
+        # достраиваем последним кадром, лишнее режем. Заодно приводим к нашему
+        # кадру и частоте. Старый рендерер делал ровно это (revideo_render.py:142-168);
+        # без подгонки на каждом стыке блоков будет дыра.
+        subprocess.run(
+            [FFMPEG, "-y", "-i", str(source),
+             "-vf", (f"scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
+                     f"crop={OUT_W}:{OUT_H},fps={FPS},"
+                     f"tpad=stop_mode=clone:stop_duration={duration:.3f},"
+                     f"trim=duration={duration:.3f},setpts=PTS-STARTPTS"),
+             "-an", *VENC, str(target / name)],
+            check=True, capture_output=True)
         clips.append({"file": f"clips/{name}",
                       "start": quantize(start),
                       "duration": quantize(end - start),
@@ -1916,11 +1978,23 @@ def _place_clips(public: Path, avatar_mp4s: list, avatar_render_plan: dict | Non
 
 
 def _media_from_plan(plan: dict, public: Path) -> list[dict]:
-    """Локальные файлы вставок: копируем в public/media и описываем агенту."""
+    """Локальные файлы вставок: копируем в public/media и описываем агенту.
+
+    Путь считает _asset_path: у библиотечных ассетов ключ path пустой всегда
+    (broll_index.py:171-175 его не кладёт), а реальный файл ищется по имени
+    в LIBRARY_DIR (editplan.py:665-669). Брать asset["path"] напрямую —
+    значит молча остаться без всего видеоряда.
+    """
+    from reels_factory.broll_lib import LIBRARY_DIR
+    from reels_factory.editplan import _asset_path
+
     media = []
     for window in plan.get("windows") or []:
         asset = window.get("asset") or {}
-        source = asset.get("path")
+        name = asset.get("src") or asset.get("name")
+        if not name:
+            continue
+        source = _asset_path(name, LIBRARY_DIR, asset)
         if not source or not Path(source).exists():
             continue
         target = public / "media" / Path(source).name
@@ -1930,6 +2004,21 @@ def _media_from_plan(plan: dict, public: Path) -> list[dict]:
                       "window_id": window["id"],
                       "what": window.get("visual_intent") or "материал вставки"})
     return media
+
+
+def _faceless_windows(plan: dict) -> list[dict]:
+    """Окна, где аватар действительно не заказан.
+
+    Пометка safe_to_skip_avatar стоит на окне, но HeyGen отменяется по БЛОКУ:
+    covered_block_indexes (editplan.py:2623-2628) смотрит avatar_required, а он
+    выводится по всем фразам блока (editplan.py:1908-1912). Окно с пометкой
+    внутри смешанного блока — ведущая в кадре есть, и требовать закрыть её
+    полноэкранной карточкой нельзя.
+    """
+    faceless_blocks = {b["index"] for b in (plan.get("blocks") or [])
+                       if b.get("avatar_required") is False}
+    return [w for w in (plan.get("windows") or [])
+            if w.get("block_index") in faceless_blocks]
 
 
 def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
@@ -1975,9 +2064,8 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         if board is None:
             board = json.loads((rdir / "storyboard.json").read_text(encoding="utf-8"))
 
-        faceless = [w for w in (edit_plan.get("windows") or [])
-                    if w.get("safe_to_skip_avatar")]
-        result = check_storyboard(board, load_face(rdir), faceless)
+        result = check_storyboard(board, load_face(rdir),
+                                  _faceless_windows(edit_plan))
         failed = [f"{k}: {v}" for k, v in result.items() if v.startswith("FAIL")]
         if not failed:
             gate_result = result
@@ -2128,16 +2216,24 @@ from reels_factory.compose import apply_caption_fixes, build_caption_fixes
 from reels_factory.hf_render import assemble_hyperframes as _assemble
 ```
 
+Сразу после `fmt = config.get("format", "split")` (`pipeline.py:85`) — до всех платных стадий:
+
+```python
+    if fmt == "fullscreen":
+        return fail("config", RuntimeError(
+            "формат fullscreen не поддержан новым сборщиком"))
+    if not master_audio_enabled(config):
+        return fail("config", RuntimeError(
+            "новый сборщик работает только с мастер-звуком; включи master_audio"))
+```
+
 Вызов `:346-357` заменить на:
 
 ```python
-        if fmt == "fullscreen":
-            return fail("assemble", RuntimeError(
-                "формат fullscreen не поддержан новым сборщиком"))
-        if master is None:
-            return fail("assemble", RuntimeError(
-                "новый сборщик работает только с мастер-звуком; "
-                "включи master_audio"))
+        # Проверки стоят ЗДЕСЬ только для наглядности; в реальной правке их
+        # надо поставить рядом с `fmt = config.get(...)` (pipeline.py:85),
+        # то есть ДО оплаты ElevenLabs (:229) и HeyGen (:300-318) — иначе
+        # «понятная ошибка» приходит после того, как деньги уже списаны.
         res = assemble_fn(wd,
                           master.timed_scenario,
                           edit_plan=edit_plan,
