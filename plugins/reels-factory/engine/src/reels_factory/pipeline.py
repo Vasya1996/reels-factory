@@ -15,8 +15,12 @@ master WAV режутся технические block WAV только для �
 До TTS/HeyGen строится единственный versioned ``edit_plan.json``. После master
 alignment в нём уточняются только тайминги и явные safety-fallbacks. Только
 validator-approved full B-roll window может пометить блок ``avatar_required:
-false`` и заменить невидимый HeyGen дешёвым локальным placeholder. Revideo
-получает тот же документ и только проецирует его в runtime ``tz.json``.
+false`` и заменить невидимый HeyGen дешёвым локальным placeholder. Сборщик
+HyperFrames получает тот же документ: по нему пишется задание агенту и по нему
+же проверяются гейты вставок.
+
+Новый сборщик работает только с мастер-звуком и только с форматами ``split`` и
+``avatar``; неподдержанный конфиг отбивается до первого платного вызова.
 """
 import hashlib
 import json
@@ -33,10 +37,10 @@ from reels_factory.master_audio import (
     build_master_audio as _build_master_audio,
     master_audio_enabled,
 )
-from reels_factory.compose import build_caption_fixes
-# Рендер-слой: Revideo (единственный рендерер). Совместим по контракту с
-# compose.assemble ({"mp4","timed_scenario","words_fixed"}).
-from reels_factory.revideo_render import assemble_revideo as _assemble
+from reels_factory.compose import apply_caption_fixes, build_caption_fixes
+# Рендер-слой: HyperFrames (единственный рендерер). Контракт результата тот же
+# ({"mp4","timed_scenario","words_fixed"}) плюс "gates" от гейтов раскадровки.
+from reels_factory.hf_render import assemble_hyperframes as _assemble
 from reels_factory.edit import jump_cut_fragments as _jump_cut_fragments
 from reels_factory.editplan import (
     build_edit_plan as _build_edit_plan,
@@ -97,6 +101,15 @@ def run_make(config: dict, workdir,
     def fail(stage, e):
         return {"ok": False, "workdir": str(wd), "mp4": None, "qa_pass": False,
                 "stage": stage, "error": str(e)[:500]}
+
+    # Отказ от неподдержанного конфига — до единственного ElevenLabs запроса и
+    # до HeyGen: деньги не должны списываться ради ошибки, которую видно сразу.
+    if fmt == "fullscreen":
+        return fail("config", RuntimeError(
+            "формат fullscreen не поддержан новым сборщиком"))
+    if not use_master_audio:
+        return fail("config", RuntimeError(
+            "новый сборщик работает только с мастер-звуком; включи master_audio"))
 
     if scenario is None:
         try:
@@ -343,18 +356,15 @@ def run_make(config: dict, workdir,
         out_mp4 = wd / "reel.mp4"
         # Непрерывный видеоряд-источник (ingest) убран: аватар — единственный
         # формат, низовое видео сборщик больше не получает.
-        res = assemble_fn(wd, scenario, None, 0.0, out_mp4,
-                          format=fmt, avatar_mp4s=avatar_mp4s or None,
-                          voice_wavs=voice_wavs or None,
+        res = assemble_fn(wd,
+                          master.timed_scenario,
                           edit_plan=edit_plan,
-                          caption_fixes=caption_fixes,
-                          grade=edit_cfg["grade"], grain=edit_cfg["grain"],
-                          zoom=edit_cfg["zoom"], flash=edit_cfg["flash"],
-                          config=config,
-                          master_audio=master.wav if master else None,
-                          alignment_words=list(master.words) if master else None,
-                          master_timed_scenario=master.timed_scenario if master else None,
-                          avatar_render_plan=avatar_render_plan)
+                          avatar_mp4s=avatar_mp4s or [],
+                          master_audio=master.wav,
+                          alignment_words=apply_caption_fixes(
+                              list(master.words), caption_fixes),
+                          avatar_render_plan=avatar_render_plan,
+                          out_mp4=out_mp4)
         mp4 = res["mp4"]
         timed = res["timed_scenario"]
         words = res.get("words_fixed")
@@ -365,6 +375,11 @@ def run_make(config: dict, workdir,
     try:
         qa = verify_reel(Path(mp4), timed, words=words,
                          hypothesis=_fixes_hypothesis(config), format=fmt)
+        # verify_reel не знает про вставки: гейты раскадровки приходят от
+        # сборщика и вливаются в общий отчёт, чтобы qa_pass был честным.
+        qa["gates"].update(res.get("gates") or {})
+        qa["all_pass"] = all(
+            not str(v).startswith("FAIL") for v in qa["gates"].values())
     except Exception as e:
         return fail("verify", e)
 

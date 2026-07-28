@@ -99,22 +99,17 @@ def _fakes(monkeypatch, tmp_path, calls, captured=None):
         Path(out_wav).write_bytes(b"")
         return Path(out_wav)
 
-    def fake_assemble(rdir, scenario, broll_mp4, offset, out_mp4, **kw):
-        calls.append(("assemble", kw.get("format"),
-                      len(kw.get("avatar_mp4s") or []), len(kw.get("voice_wavs") or [])))
+    def fake_assemble(rdir, timed_scenario, **kw):
+        out = Path(kw.get("out_mp4") or (Path(rdir) / "reel.mp4"))
+        out.write_bytes(b"")
+        calls.append(("assemble", kw.get("avatar_render_plan"), timed_scenario))
         if captured is not None:
-            captured["caption_fixes"] = kw.get("caption_fixes")
-            captured["broll_segments"] = kw.get("broll_segments")
-            captured["punch_windows"] = kw.get("punch_windows")
-            captured["master_audio"] = kw.get("master_audio")
-            captured["alignment_words"] = kw.get("alignment_words")
-            captured["master_timed_scenario"] = kw.get("master_timed_scenario")
-            captured["edit_plan"] = kw.get("edit_plan")
-            captured["avatar_render_plan"] = kw.get("avatar_render_plan")
-        Path(out_mp4).write_bytes(b"")
-        timed = dict(scenario, total=25.0)
-        return {"mp4": str(out_mp4), "dur": 25.0, "lufs": -14.0,
-                "timed_scenario": timed, "words_fixed": [{"text": "кофе"}]}
+            captured.update(kw)
+            captured["timed_scenario"] = timed_scenario
+        return {"mp4": str(out), "dur": float(timed_scenario.get("total") or 0.0),
+                "timed_scenario": timed_scenario,
+                "words_fixed": kw.get("alignment_words") or [],
+                "gates": {"D8_face": "PASS"}}
 
     def fake_verify(mp4, scenario, **kw):
         calls.append(("verify", str(mp4), kw.get("words")))
@@ -134,7 +129,8 @@ def _wd_with_scenario(tmp_path):
 
 def test_split_happy_path(monkeypatch, tmp_path):
     calls = []
-    fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    captured = {}
+    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
 
@@ -149,27 +145,57 @@ def test_split_happy_path(monkeypatch, tmp_path):
     # 4 блока -> 4 генерации аватара (cta через cached_generate тоже завершается generate)
     assert len(avatar.calls) == 4
     assemble_call = next(c for c in calls if c[0] == "assemble")
-    assert assemble_call[1] == "split" and assemble_call[2] == 4 and assemble_call[3] == 0
+    # новый сборщик получает ретаймленный сценарий первым позиционным
+    # аргументом; islands выключены — плана рендера аватара нет
+    assert assemble_call[1] is None
+    assert assemble_call[2] == captured["timed_scenario"]
+    assert assemble_call[2]["total"] == 25.0
+    assert len(captured["avatar_mp4s"]) == 4
+    assert captured["out_mp4"] == wd / "reel.mp4"
     # cta-аватар осел в общий кэш WORK_ROOT/avatar_cache
     assert Path(avatar.calls[-1][2]).parent == tmp_path / "avatar_cache"
     # words_fixed из assemble прокинуты в verify
     verify_call = next(c for c in calls if c[0] == "verify")
-    assert verify_call[2] == [{"text": "кофе"}]
+    assert verify_call[2] == captured["alignment_words"]
+    # гейты вставок от сборщика слились с гейтами verify
+    assert res["gates"]["D8_face"] == "PASS"
 
 
-def test_fullscreen_без_аватара(monkeypatch, tmp_path):
+def test_fullscreen_не_поддержан_и_падает_до_оплаты(monkeypatch, tmp_path):
+    """format=fullscreen новый сборщик не умеет. Отказ обязан прийти ДО
+    ElevenLabs и HeyGen: иначе понятная ошибка стоит денег."""
     calls = []
     fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
 
-    res = pipeline.run_make(_cfg("fullscreen"), wd,
+    res = pipeline.run_make(_cfg("fullscreen"), wd, avatar_client=avatar,
                             synth_fn=fs, assemble_fn=fa)
 
-    assert res["ok"] is True
-    assemble_call = next(c for c in calls if c[0] == "assemble")
-    assert assemble_call[1] == "fullscreen" and assemble_call[2] == 0 and assemble_call[3] == 4
-    # голос синтезируется с voice_id из конфига
-    assert all(c[2] == "v1" for c in calls if c[0] == "synth")
+    assert res["ok"] is False and res["stage"] == "config"
+    assert "fullscreen" in res["error"]
+    assert calls == []  # ни синтеза, ни сборки, ни verify
+    assert avatar.calls == []  # HeyGen не дёрнут
+    assert not (wd / "voice_master.wav").exists()  # ElevenLabs не дёрнут
+
+
+def test_без_мастер_звука_падает_до_оплаты(monkeypatch, tmp_path):
+    """Мастер-звук обязателен: путь с поблочным TTS новый сборщик не
+    поддерживает. Проверка стоит там же, до платных вызовов."""
+    calls = []
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+    cfg = _cfg("avatar")
+    cfg["master_audio"] = {"enabled": False}
+
+    res = pipeline.run_make(cfg, wd, avatar_client=avatar,
+                            synth_fn=fs, assemble_fn=fa)
+
+    assert res["ok"] is False and res["stage"] == "config"
+    assert "master_audio" in res["error"]
+    assert calls == []
+    assert avatar.calls == []
 
 
 def test_avatar_с_аватаром_без_broll(monkeypatch, tmp_path):
@@ -186,9 +212,8 @@ def test_avatar_с_аватаром_без_broll(monkeypatch, tmp_path):
     assert res["ok"] is True and res["qa_pass"] is True
     # аватар генерируется на каждый блок (как split)
     assert len(avatar.calls) == 4
-    assemble_call = next(c for c in calls if c[0] == "assemble")
-    assert assemble_call[1] == "avatar" and assemble_call[2] == 4 and assemble_call[3] == 0
-    # verify получает format=avatar
+    assert len(captured["avatar_mp4s"]) == 4
+    # format в сборщик больше не уходит — он остался только у verify
     assert captured["verify_format"] == "avatar"
 
 
@@ -245,7 +270,7 @@ def test_master_audio_одна_озвучка_вместо_block_tts(monkeypatch
     assert len(captured["alignment_words"]) == 4
     assert captured["alignment_words"][0]["block_index"] == 0
     assert captured["alignment_words"][-1]["block_index"] == 3
-    assert captured["master_timed_scenario"]["total"] == 8.0
+    assert captured["timed_scenario"]["total"] == 8.0
     assert captured["edit_plan"]["status"] == "final"
     assert all(
         phrase["final_timing"] for phrase in captured["edit_plan"]["phrases"]
@@ -376,9 +401,10 @@ def test_avatar_islands_заменяет_block_by_block_photo_avatar_iv(
     assert plan["engine_scope"] == "photo_avatar_iv"
     assert plan["validation"]["all_pass"] is True
     assert captured["avatar_render_plan"] == plan
-    assert len(captured["avatar_render_plan"]["shots"]) == next(
-        call[2] for call in calls if call[0] == "assemble"
-    )
+    # план рендера аватара доехал до сборщика вторым элементом кортежа
+    assemble_call = next(call for call in calls if call[0] == "assemble")
+    assert assemble_call[1] == plan
+    assert len(captured["avatar_mp4s"]) == len(plan["shots"])
     assert res["avatar_summary"] == plan["summary"]
 
 
@@ -463,7 +489,8 @@ def test_avatar_блок_на_100pct_закрытый_вставкой_не_дё
     """development на 100% под вставкой (insert=True) -> HeyGen не рендерит его,
     вместо этого дешёвый локальный covered_block_fn (голос поверх чёрного кадра)."""
     calls = []
-    fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    captured = {}
+    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
 
@@ -485,8 +512,7 @@ def test_avatar_блок_на_100pct_закрытый_вставкой_не_дё
     assert len(covered_calls) == 1
     assert "voice_1.wav" in covered_calls[0]
     # общее число фрагментов аватара для сборки не меняется (4 — все блоки покрыты)
-    assemble_call = next(c for c in calls if c[0] == "assemble")
-    assert assemble_call[2] == 4
+    assert len(captured["avatar_mp4s"]) == 4
 
 
 def test_нет_scenario_даёт_stage_scenario(monkeypatch, tmp_path):
@@ -494,7 +520,8 @@ def test_нет_scenario_даёт_stage_scenario(monkeypatch, tmp_path):
     fs, fa = _fakes(monkeypatch, tmp_path, calls)
     wd = tmp_path / "wd"; wd.mkdir()  # scenario.json отсутствует
 
-    res = pipeline.run_make(_cfg("fullscreen"), wd,
+    # format=split: fullscreen теперь отбивается раньше чтения scenario.json
+    res = pipeline.run_make(_cfg("split"), wd,
                             synth_fn=fs, assemble_fn=fa)
 
     assert res["ok"] is False and res["stage"] == "scenario"
@@ -510,7 +537,8 @@ def test_несовпадение_языка_останавливает_pipeline
     (wd / "scenario.json").write_text(
         json.dumps(scenario, ensure_ascii=False), encoding="utf-8"
     )
-    cfg = _cfg("fullscreen")
+    # format=split: fullscreen отбивается раньше языковых проверок
+    cfg = _cfg("split")
     cfg["language"] = "ru"
     cfg["voice_language"] = "ru"
     cfg["tts"] = {"language_code": "ru"}
@@ -534,7 +562,8 @@ def test_голос_другого_языка_останавливает_pipelin
     (wd / "scenario.json").write_text(
         json.dumps(scenario, ensure_ascii=False), encoding="utf-8"
     )
-    cfg = _cfg("fullscreen")
+    # format=split: fullscreen отбивается раньше языковых проверок
+    cfg = _cfg("split")
     cfg.update({
         "language": "kk",
         "voice_id": "voice-ru",
@@ -552,35 +581,36 @@ def test_голос_другого_языка_останавливает_pipelin
     assert calls == []
 
 
-def test_caption_fixes_прокидываются(monkeypatch, tmp_path):
+def test_caption_fixes_применяются_до_сборки(monkeypatch, tmp_path):
+    """Новый сборщик карту фиксов не принимает: конвейер сам чинит слова
+    выравнивания через apply_caption_fixes и отдаёт уже исправленные."""
     calls = []
     captured = {}
     fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
     avatar = _FakeAvatar()
     wd = _wd_with_scenario(tmp_path)
 
+    def fake_master(scenario, config, workdir, voice_id=None, meter=None):
+        master = _fake_master_audio(scenario, config, workdir,
+                                    voice_id=voice_id, meter=meter)
+        words = list(master.words)
+        # Whisper услышал бренд как "гайт" — brand_captions знает этот вариант
+        words[0] = dict(words[0], text="гайт")
+        return SimpleNamespace(
+            wav=master.wav,
+            block_wavs=master.block_wavs,
+            words=tuple(words),
+            timed_scenario=master.timed_scenario,
+        )
+
     res = pipeline.run_make(_cfg("split"), wd,
-                            avatar_client=avatar, synth_fn=fs, assemble_fn=fa)
+                            avatar_client=avatar, synth_fn=fs, assemble_fn=fa,
+                            master_audio_fn=fake_master)
 
     assert res["ok"] is True
-    assert "Гайд" in captured["caption_fixes"]
-    assert "кофе" in captured["caption_fixes"]
-    assert captured["broll_segments"] is None
+    assert captured["alignment_words"][0]["text"] == "Гайд"
+    assert len(captured["alignment_words"]) == 4
     assert captured["edit_plan"]["format_version"] == 1
-
-
-def test_без_broll_plan_punch_windows_none(monkeypatch, tmp_path):
-    calls = []
-    captured = {}
-    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
-    avatar = _FakeAvatar()
-    wd = _wd_with_scenario(tmp_path)
-
-    res = pipeline.run_make(_cfg("split"), wd,
-                            avatar_client=avatar, synth_fn=fs, assemble_fn=fa)
-
-    assert res["ok"] is True
-    assert captured["punch_windows"] is None
 
 
 def test_джамп_каты_выключены_по_умолчанию(monkeypatch, tmp_path):
@@ -600,83 +630,6 @@ def test_джамп_каты_выключены_по_умолчанию(monkeypa
 
     assert res["ok"] is True
     assert cut_calls == []  # флага нет — стадия не запускалась
-
-
-def test_флаг_включает_джамп_каты_до_сборки(monkeypatch, tmp_path):
-    calls = []
-    fs, fa = _fakes(monkeypatch, tmp_path, calls)
-    avatar = _FakeAvatar()
-    wd = _wd_with_scenario(tmp_path)
-    cut_calls = []
-
-    def fake_cut(frags, rdir, **kw):
-        cut_calls.append(list(frags))
-        return [Path(str(f).replace(".mp4", "_cut.mp4")) for f in frags]
-
-    cfg = _cfg("avatar")
-    cfg["edit"] = {"jump_cuts": True}
-    # jump_cuts режет паузы покадрово в HeyGen-клипах — несовместимо с
-    # неизменяемым master audio timeline (см.
-    # test_master_audio_не_разрешает_jump_cuts_ломать_timeline). Эта стадия
-    # существует только на legacy пути без мастер-звука.
-    cfg["master_audio"] = {"enabled": False}
-
-    res = pipeline.run_make(cfg, wd, avatar_client=avatar,
-                            synth_fn=fs, assemble_fn=fa,
-                            jump_cut_fn=fake_cut)
-
-    assert res["ok"] is True
-    assert len(cut_calls) == 1 and len(cut_calls[0]) == 4
-    # стадия отработала ДО assemble — сборка получила подрезанные фрагменты
-    assert [c[0] for c in calls].index("assemble") >= 0
-
-
-def test_падение_джамп_катов_не_роняет_молча(monkeypatch, tmp_path):
-    calls = []
-    fs, fa = _fakes(monkeypatch, tmp_path, calls)
-    avatar = _FakeAvatar()
-    wd = _wd_with_scenario(tmp_path)
-
-    def broken_cut(frags, rdir, **kw):
-        raise RuntimeError("auto-editor не найден")
-
-    cfg = _cfg("avatar")
-    cfg["edit"] = {"jump_cuts": True}
-    # см. test_флаг_включает_джамп_каты_до_сборки: под master audio эта
-    # стадия не запускается вовсе, поэтому падение здесь тестируется на
-    # legacy пути без мастер-звука.
-    cfg["master_audio"] = {"enabled": False}
-
-    res = pipeline.run_make(cfg, wd, avatar_client=avatar,
-                            synth_fn=fs, assemble_fn=fa,
-                            jump_cut_fn=broken_cut)
-
-    assert res["ok"] is False
-    assert res["stage"] == "jump_cuts"
-    assert "auto-editor" in res["error"]
-
-
-def test_грейд_и_зерно_прокидываются_в_сборку(monkeypatch, tmp_path):
-    calls = []
-    captured = {}
-    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
-    avatar = _FakeAvatar()
-    wd = _wd_with_scenario(tmp_path)
-
-    seen = {}
-
-    def fa2(rdir, scenario, broll_mp4, offset, out_mp4, **kw):
-        seen["grade"] = kw.get("grade")
-        seen["grain"] = kw.get("grain")
-        return fa(rdir, scenario, broll_mp4, offset, out_mp4, **kw)
-
-    cfg = _cfg("avatar")
-    cfg["edit"] = {"grade": True, "grain": True}
-
-    pipeline.run_make(cfg, wd, avatar_client=avatar,
-                      synth_fn=fs, assemble_fn=fa2)
-
-    assert seen == {"grade": True, "grain": True}
 
 
 def test_precut_план_строится_и_экономит_heygen(monkeypatch, tmp_path):
@@ -707,7 +660,6 @@ def test_precut_план_строится_и_экономит_heygen(monkeypatch
     assert len(avatar.calls) == 3
     assert len(covered_calls) == 1 and "voice_1.wav" in covered_calls[0]
     # план дошёл до сборки и сохранён для прозрачности
-    assert captured["broll_segments"] is None
     assert captured["edit_plan"]["summary"]["covered_block_indexes"] == [1]
     assert (wd / "edit_plan.json").exists()
     assert not (wd / "segment_plan.json").exists()
@@ -934,6 +886,13 @@ def test_кэшированный_фрагмент_не_тарифицирует
     meter.heygen(30.0, cached=False, twin=False)
     billable = [s for s, cached, _ in meter.heygen_calls if not cached]
     assert billable == [30.0]
+
+
+def test_конвейер_собирает_новым_движком():
+    import reels_factory.pipeline as pipeline
+
+    assert pipeline._assemble.__module__ == "reels_factory.hf_render"
+    assert pipeline._assemble.__name__ == "assemble_hyperframes"
 
 
 def test_run_make_принимает_meter():
