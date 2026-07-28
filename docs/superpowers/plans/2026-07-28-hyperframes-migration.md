@@ -41,7 +41,7 @@
 - Прямоугольники окна видео в вертикали: `overlay` `{0,0,1080,1920}`, `stack` `{0,0,1080,844}`, `split` `{0,960,1080,960}`, `pip` `{738,28,312,555}`.
 - `ClaudeSkillRunner` (`llm.py:52`) работает в изолированном профиле `~/.reels-factory/claude` с `--setting-sources ""` — **скилы HeyGen из `~/.claude/skills` он не увидит**. Нужен отдельный запуск.
 - GSAP лежит в `~/.claude/skills/talking-head-recut/assets/vendor/gsap.min.js`.
-- Восемь наших блоков (`hyperframes_blocks.py:592-600`) вызываются только из `revideo_render.py:104`. После переезда их содержание передаётся агенту заданием, а сам `render_block` становится неиспользуемым — это осознанно, см. «Отложено».
+- Восемь наших блоков (`hyperframes_blocks.py:593-601`) вызываются только из `revideo_render.py:104`. После переезда их содержание передаётся агенту заданием, а сам `render_block` становится неиспользуемым — это осознанно, см. «Отложено».
 
 ## Геометрия кадра
 
@@ -65,7 +65,7 @@
 | `src/reels_factory/capture_site.py` | Снимок сайта с кэшем |
 | `src/reels_factory/screen_route.py` | Запись экранного маршрута |
 
-Изменяются: `editplan.py`, `pipeline.py`, `tests/test_pipeline.py`, `tests/test_editplan.py`, `tests/test_hyperframes_blocks.py`.
+Изменяются: `editplan.py` (задачи 4, 5, 6), `pipeline.py` (12), `master_audio.py` (11), `hyperframes_blocks.py` (17), `engine/package.json` (15), тесты `test_pipeline.py`, `test_editplan.py`, `test_hyperframes_blocks.py`, `test_master_audio.py`, документация `engine/README.md`, `docs/EDIT-PLAN.md`, `docs/VISUAL-DIRECTOR.md` (16).
 
 ---
 
@@ -494,8 +494,8 @@ def violations(content_rect: dict, face: dict | None) -> list[str]:
 
 - [ ] **Шаг 4: Запустить тесты**
 
-Запуск: `cd plugins/reels-factory/engine && python -m pytest tests/test_hf_layout.py tests/test_face_detect.py -v`
-Ожидание: 13 + 4 passed.
+Запуск: `cd plugins/reels-factory/engine && python -m pytest tests/test_hf_layout.py -v`
+Ожидание: 13 passed. Тесты `test_face_detect.py` появятся в задаче 2, которая идёт следом.
 
 - [ ] **Шаг 5: Коммит**
 
@@ -562,9 +562,20 @@ def test_выдуманная_вставка_снимается():
 
 def test_снятая_вставка_возвращает_окно_и_фразы_ведущему():
     plan = enforce_visual_grounding(_plan(["Открыть сайт elevenlabs"]))
-    assert plan["windows"][0]["coverage"] == "avatar"
-    assert plan["windows"][0]["safe_to_skip_avatar"] is False
+    window = plan["windows"][0]
+    assert window["coverage"] == "avatar"
+    assert window["zone"] == "video-overlay"
+    assert window["caption"] == "bottom"
+    assert window["transition_in"] == "none"
+    assert window["safe_to_skip_avatar"] is False
     assert plan["phrases"][0]["coverage"] == "avatar"
+
+
+def test_шаблонная_графика_не_трогается():
+    """У concept_nodes подписи приходят из словаря локализации, а не из речи."""
+    plan = _plan(["КОМУ", "ЧТО", "КАК"])
+    plan["windows"][0]["effect"]["hyperframes"]["block"] = "concept_nodes"
+    assert enforce_visual_grounding(plan)["windows"][0]["effect"]["type"] == "chart_bars"
 
 
 def test_вставка_без_текста_не_трогается():
@@ -595,7 +606,7 @@ def test_исходный_план_не_меняется():
 ```python
 """Граундинг вставок: на экране только то, что звучит.
 
-Для речи правило есть с самого начала (скил сценария, scenario.py:213).
+Для речи правило есть с самого начала (скил сценария, scenario.py:214).
 Для картинки его не было — через эту дыру в ролик попадает предмет, которого
 в сценарии нет. Проверяем пункты списка: заголовок может быть обобщением,
 а пункты обязаны опираться на сказанное.
@@ -607,6 +618,12 @@ import re
 
 _WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё0-9]{4,}")
 _MIN_ROOT = 4
+
+# Правило применяется только к вставкам, чьи пункты ВЫВЕДЕНЫ ИЗ РЕЧИ.
+# У остальных подписи шаблонные и приходят из словаря локализации
+# (editplan.py:1082, :1143, :1208, :1250 — «КОМУ», «ЧТО», «КАК» и подобные):
+# они ничего не утверждают о фактах, и заземлять их нечем.
+GROUNDED_BLOCKS = {"task_list", "stat_number", "before_after"}
 
 
 def _root(word: str) -> str:
@@ -650,7 +667,11 @@ def enforce_visual_grounding(plan: dict) -> dict:
     text_by_id = {p["id"]: p.get("text", "") for p in phrases}
 
     for window in result.get("windows") or []:
-        items = _item_texts(window.get("effect") or {})
+        effect = window.get("effect") or {}
+        block = (effect.get("hyperframes") or {}).get("block")
+        if block not in GROUNDED_BLOCKS:
+            continue
+        items = _item_texts(effect)
         if not items:
             continue
         roots: set[str] = set()
@@ -662,9 +683,15 @@ def enforce_visual_grounding(plan: dict) -> dict:
 
         # Покрытие меняем и у окна, и у его фраз — иначе валидатор плана
         # поймает несовпадение и уронит finalize_edit_plan.
+        # Сбрасываем ровно то же, что штатный _downgrade_window (editplan.py:2102-2110):
+        # иначе у окна останутся caption="hidden" и переход от снятой вставки,
+        # и у вернувшихся ведущей фраз пропадут субтитры.
         window["effect"] = {"type": "none"}
         window["coverage"] = "avatar"
         window["zone"] = "video-overlay"   # инвариант: аватарное окно — поверх видео
+        window["camera"] = {"type": "hold"}
+        window["transition_in"] = "none"
+        window["caption"] = "bottom"
         window["asset"] = None
         window["safe_to_skip_avatar"] = False
         window["decision_reason"] = (
@@ -683,7 +710,7 @@ def enforce_visual_grounding(plan: dict) -> dict:
 - [ ] **Шаг 4: Запустить тесты**
 
 Запуск: `cd plugins/reels-factory/engine && python -m pytest tests/test_visual_grounding.py -v`
-Ожидание: 5 passed.
+Ожидание: 6 passed.
 
 - [ ] **Шаг 5: Подключить в план**
 
@@ -855,7 +882,9 @@ def test_блок_без_ведущего_помечается_как_не_тр�
         "phrases": [{"id": "p1", "block_index": 0, "coverage": "hyperframes",
                      "window_id": "w1"}],
         "windows": [{"id": "w1", "phrase_ids": ["p1"], "block_index": 0,
-                     "coverage": "hyperframes", "safe_to_skip_avatar": True}],
+                     "coverage": "hyperframes", "zone": "fullscreen",
+                     "effect": {"type": "chart_bars"},
+                     "safe_to_skip_avatar": True}],
         "summary": {},
     }
     _refresh_blocks_and_summary(plan)
@@ -885,11 +914,24 @@ def test_блок_без_ведущего_помечается_как_не_тр�
                 "нет в кадре")
 ```
 
-В `_refresh_blocks_and_summary` (`:1895`, логика на `:1908-1912`) условие «блок не требует аватара» расширить теми же двумя случаями: фраза считается безлицевой, если её окно помечено `safe_to_skip_avatar` **и** её покрытие входит в `{"full_broll", "hyperframes"}`.
+**Определение «безлицевого» окно должно быть ОДНО на все три места.** Заведи рядом с `_zone_for` (задача 5) функцию и зови её отовсюду:
+
+```python
+def _is_faceless(window: dict) -> bool:
+    """Окно, в котором ведущей нет в кадре: полноэкранная видеовставка или
+    полноэкранная графика. Только им разрешено не заказывать аватар."""
+    effect = window.get("effect") or {}
+    if window.get("coverage") == "full_broll" and effect.get("type") == "broll":
+        return True
+    return (window.get("coverage") == "hyperframes"
+            and window.get("zone") == "fullscreen")
+```
+
+В `_refresh_blocks_and_summary` (`:1895`, логика на `:1908-1912`) условие «блок не требует аватара» строить через ту же `_is_faceless`, а не через отдельный набор покрытий: иначе валидатор и подсчёт блока разойдутся в определениях.
 
 **Третье место, без которого ничего не заработает** — блочная проверка `editplan.py:2589-2603`: там требуется, чтобы у блока с `avatar_required=False` **все** окна были `full_broll` с безопасным пропуском. Расширить тем же условием `faceless`.
 
-**Где ставить `safe_to_skip_avatar=True`.** В местах создания окон с `coverage="hyperframes"`: `editplan.py:1538`, `:1569`, `:1632`, `:1721`, `:2829`. Но **не безусловно**: `validate_edit_plan:2489-2493` запрещает пропуск для окон, чей эффект несёт метку `visual_director` (её ставит `_visual_director_effect`, `:926-946`). Такие окна — `:1632` и `:2829`. Для них флаг не ставим, иначе `enrich_visuals_with_llm` и `ensure_assetless_visual_coverage` бросят ошибку и упадут существующие тесты (`test_editplan.py:778`, `:823`).
+**Где ставить `safe_to_skip_avatar=True`.** В местах создания окон с `coverage="hyperframes"`: `editplan.py:1538`, `:1569`, `:1637`, `:1721`, `:2829`. Но **не безусловно**: `validate_edit_plan:2489-2493` запрещает пропуск для окон, чей эффект несёт метку `visual_director` (её ставит `_visual_director_effect`, `:926-946`). Такие окна — `:1637` и `:2829`. Для них флаг не ставим, иначе `enrich_visuals_with_llm` и `ensure_assetless_visual_coverage` бросят ошибку и упадут существующие тесты (`test_editplan.py:767`, `:944`, `:989`).
 
 Правило одной строкой: `safe_to_skip_avatar=True` ставим окнам `hyperframes` с зоной `fullscreen`, у которых в эффекте **нет** ключа `visual_director`.
 
@@ -1012,7 +1054,10 @@ def check_storyboard(storyboard: dict, face: dict | None) -> dict:
             zone_bad.append(f'{card_id}: зона {card.get("zone")!r} не разрешена')
 
         for field in ("startSec", "endSec"):
-            value = float(card.get(field, 0.0))
+            if field not in card:
+                grid_bad.append(f"{card_id}: нет поля {field}")
+                continue
+            value = float(card[field])
             if abs(value - quantize(value)) > 0.0005:
                 grid_bad.append(f"{card_id}: {field}={value} вне сетки кадров")
 
@@ -1327,7 +1372,7 @@ git commit -m "feat(hf): brief carries rules and the plan's insert content"
 
 **Интерфейсы:**
 - Производит: `HeyGenAgentRunner` с методом `run(prompt: str, cwd) -> str` и полем `total_cost_usd`; `build_with_agent(rdir, *, runner=None) -> dict`.
-- **Почему не `ClaudeSkillRunner`:** он работает в изолированном профиле `~/.reels-factory/claude` с `--setting-sources ""` (`llm.py:88`) и скилы HeyGen из `~/.claude/skills` не увидит. Здесь нужен обычный профиль пользователя, право писать файлы и запускать команды, рабочая папка ролика и таймаут под десятиминутную сборку.
+- **Почему не `ClaudeSkillRunner`:** он работает в изолированном профиле `~/.reels-factory/claude` с `--setting-sources ""` (`llm.py:117`) и скилы HeyGen из `~/.claude/skills` не увидит. Здесь нужен обычный профиль пользователя, право писать файлы и запускать команды, рабочая папка ролика и таймаут под десятиминутную сборку.
 
 - [ ] **Шаг 1: Написать падающий тест**
 
@@ -1868,8 +1913,8 @@ git commit -m "feat(hf): assemble with gate-driven retry, no transcribe step"
 ### Задача 11: Мастер-звук по умолчанию
 
 **Файлы:**
-- Изменить: `plugins/reels-factory/engine/src/reels_factory/config.py` (дефолт `master_audio.enabled`)
-- Изменить: `plugins/reels-factory/engine/tests/` — тесты, полагавшиеся на путь без мастер-звука
+- Изменить: `plugins/reels-factory/engine/src/reels_factory/master_audio.py:48-53` (дефолт функции `master_audio_enabled`)
+- Изменить: `plugins/reels-factory/engine/tests/test_master_audio.py` (новый тест), `tests/test_pipeline.py` (фейк мастер-звука в помощнике `_fakes`) и остальные тесты, полагавшиеся на путь без мастер-звука
 
 **Зачем отдельной задачей:** новый сборщик работает только с единой озвучкой. Смена дефолта затрагивает много тестов, и делать это одновременно с переключением сборщика — значит не понять, что именно сломалось.
 
@@ -1892,22 +1937,36 @@ def test_мастер_звук_включён_по_умолчанию(monkeypatc
 
 - [ ] **Шаг 3: Реализация**
 
-Дефолт живёт в `master_audio.py:48-53`, в функции `master_audio_enabled(config)`; там же перекрытие через переменную окружения `RF_MASTER_AUDIO_ENABLED`. Перевести дефолт в `True`, поведение переменной окружения не менять.
+Дефолт живёт в `master_audio.py:53`, в функции `master_audio_enabled(config)` (`:48-53`); там же перекрытие через переменную окружения `RF_MASTER_AUDIO_ENABLED`. Перевести дефолт в `True`, поведение переменной окружения не менять.
+
+**Два места, без которых смена дефолта бессмысленна:**
+- `tests/test_master_audio.py:277` — там уже есть `assert master_audio_enabled({}) is False`. Его надо поправить, иначе файл станет самопротиворечивым.
+- `plugins/reels-factory/templates/config.example.yaml:136-137` — `master_audio: enabled: false`. У клиентов флаг проставлен явно, дефолт в коде их не касается. Перевести в `true`, иначе в бою путь останется старым и задача 12 упадёт своей же ошибкой.
 
 - [ ] **Шаг 4: Прикрыть тесты конвейера фейком мастер-звука**
 
-Из 27 тестов `test_pipeline.py` 26 идут через помощник `_fakes`, и лишь пять передают `master_audio_fn`. После смены дефолта остальные позовут настоящую сборку мастер-звука — то есть сеть и ElevenLabs. **До** смены дефолта добавить фейк мастер-звука в сам `_fakes`, чтобы он подставлялся всем тестам по умолчанию.
+Из 27 тестов `test_pipeline.py` 26 идут через помощник `_fakes` (`:57`), и лишь пять передают `master_audio_fn` (`:197`, `:260`, `:329`, `:410`, `:935`). После смены дефолта остальные позовут настоящую сборку — то есть сеть и ElevenLabs.
+
+Сигнатуру `_fakes` и её возвращаемый 2-кортеж **менять нельзя**: он распаковывается в 26 местах. Поэтому фейк ставится подменой имени внутри самого помощника — `pipeline.py:228-229` резолвит его из глобалей модуля:
+
+```python
+    monkeypatch.setattr(pipeline, "_build_master_audio", fake_master_audio)
+```
+
+Фейк должен вернуть объект с полями `wav`, `words`, `timed_scenario` — форма `MasterAudioArtifacts` (`master_audio.py:37-45`).
+
+Отдельно: `master_audio_enabled` читает ещё и `bot.py:663` — там от него зависит смета, которую видит пользователь. Прогнать `tests/test_bot.py` и поправить ожидания сметы.
 
 - [ ] **Шаг 5: Прогнать весь набор и починить тесты**
 
 Запуск: `cd plugins/reels-factory/engine && python -m pytest -q -m "not slow"`
 Ожидание: для каждого упавшего решить: либо тест проверяет поведение, которое сохраняется — поправить ожидания; либо тест проверяет путь без мастер-звука — переписать на мастер-звук, потому что старого пути больше нет.
 
-- [ ] **Шаг 5: Коммит**
+- [ ] **Шаг 6: Коммит**
 
 ```bash
-git add plugins/reels-factory/engine/src/reels_factory/config.py plugins/reels-factory/engine/tests
-git commit -m "feat(config): master audio is the default path"
+git add plugins/reels-factory/engine/src/reels_factory/master_audio.py plugins/reels-factory/engine/tests
+git commit -m "feat(audio): master audio is the default path"
 ```
 
 ---
@@ -2009,7 +2068,7 @@ from reels_factory.hf_render import assemble_hyperframes as _assemble
 - `captured["caption_fixes"]` (`:527-528`) — фиксы теперь применяются до вызова; проверять не словарь фиксов, а то, что исправленное слово пришло в `captured["alignment_words"]`;
 - `captured["broll_segments"]` (`:529`, `:662`) и `captured["punch_windows"]` (`:544`) — новый сборщик их не принимает; ассерты снять вместе с проверяемым поведением;
 - `captured["master_timed_scenario"]` (`:209`) — теперь `captured["timed_scenario"]`;
-- `assemble_call[1]` (`:113`, `:131`, `:151`, `:449`) — это больше не формат: в новом фейке вторым элементом идёт `avatar_render_plan`;
+- обращения к кортежу `assemble_call` (`:113`, `:131`, `:151`, `:450`) — старый фейк клал четыре элемента, новый кладёт три (`"assemble"`, `avatar_render_plan`, `timed_scenario`). Значит `assemble_call[3]` даст IndexError, а `assemble_call[2]` теперь сценарий, а не число блоков. Пройти по каждому обращению и переписать под новый кортеж;
 - тест на `fullscreen` (`:129-131`) — переписать в проверку того, что конвейер падает понятной ошибкой.
 
 - [ ] **Шаг 5: Прогнать весь набор**
@@ -2061,8 +2120,10 @@ def test_живая_сборка_ролика(tmp_path):
     shutil.copyfile(WORK / "top.mp4", tmp_path / "top.mp4")
     shutil.copyfile(WORK / "reel-audio.wav", tmp_path / "voice.wav")
     words = json.loads((WORK / "words.fixed.json").read_text(encoding="utf-8"))
-    timed = json.loads((WORK / "scenario.timed.json").read_text(encoding="utf-8"))
-    timed["total"] = 41.5
+    # один готовый клип на весь ролик, значит и блок в сценарии один:
+    # склейка базы ждёт по клипу на блок
+    timed = {"total": 41.5, "blocks": [{"role": "hook", "start": 0.0, "end": 41.5,
+                                        "speech": " ".join(w["text"] for w in words)}]}
 
     plan = {"timeline": {"final_duration_seconds": 41.5},
             "phrases": [{"id": "p1", "text": " ".join(w["text"] for w in words[:12])}],
@@ -2482,9 +2543,9 @@ git commit -m "feat(route): record a browser walkthrough as insert footage"
 
 **`tz_validator.py` и `hyperframes_blocks.py` НЕ удаляем.** Первый проверяет формат задания и его судьба решается отдельно; второй остаётся источником `_HF_VERSION` и восьми блоков, содержание которых теперь уходит агенту заданием.
 
-- [ ] **Шаг 1: Перенести склейку островов**
+- [ ] **Шаг 1: Перенести обе функции склейки**
 
-Скопировать в `hf_render.py` функцию `_concat_avatar_island_visuals` из `revideo_render.py:182` **вместе с зависимостями**: вложенной `add_gap`, импортами `FFMPEG`, `OUT_W`, `FPS` из `config` и `VENC` из `compose` (в `config` его нет — он объявлен в `render.py:13`). В `_concat_islands` заменить импорт на вызов локальной копии.
+Скопировать в `hf_render.py` **две** функции из `revideo_render.py`: `_concat_avatar_island_visuals` (`:182`, ветка с островами) и `_concat_master_visuals` (`:139`, ветка без островов — она работает по умолчанию, потому что острова выключены). Вместе с зависимостями: вложенной `add_gap`, импортами `FFMPEG`, `OUT_W`, `FPS` из `config` и `VENC` из `compose` (в `config` его нет — он объявлен в `render.py:13`). В `_concat_islands` заменить импорт на вызовы локальных копий.
 
 - [ ] **Шаг 2: Прогнать тесты**
 
@@ -2521,8 +2582,8 @@ git commit -m "refactor(engine): drop the revideo renderer"
 ### Задача 17: Выбросить старый жёлтый
 
 **Файлы:**
-- Изменить: `plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py` (17 вхождений `#FFE500`)
-- Создать тест: `plugins/reels-factory/engine/tests/test_hf_env.py` (дописать)
+- Изменить: `plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py` — 19 вхождений `#FFE500` в 18 строках плюс 15 вхождений того же цвета в форме `rgba(255,229,0,…)`
+- Изменить: `plugins/reels-factory/engine/tests/test_hf_env.py` (дописать тест)
 
 **Выполняется после задачи 16** — иначе тест поймает жёлтый в `revideo_adapter.py`, который к тому времени уже удалён.
 
@@ -2542,7 +2603,7 @@ def test_старый_жёлтый_не_используется():
 - [ ] **Шаг 2: Запустить, убедиться что падает**
 
 Запуск: `cd plugins/reels-factory/engine && python -m pytest tests/test_hf_env.py -k жёлтый -v`
-Ожидание: FAIL — в `hyperframes_blocks.py` 19 вхождений `#FFE500` в 17 строках плюс 15 вхождений того же цвета в форме `rgba(255,229,0,…)`.
+Ожидание: FAIL — в `hyperframes_blocks.py` 19 вхождений `#FFE500` в 18 строках плюс 15 вхождений того же цвета в форме `rgba(255,229,0,…)`.
 
 - [ ] **Шаг 3: Реализация**
 
@@ -2554,8 +2615,10 @@ def test_старый_жёлтый_не_используется():
 # Стиль minimal: чистые чёрный и белый, крупный шрифт, без цветных акцентов.
 # Фон наших блоков тёмный, значит акцент — белый. Прежний #FFE500 решением не был.
 ACCENT = "#FFFFFF"
-ACCENT_SOFT = "rgba(255,255,255,0.14)"   # вместо rgba(255,229,0,…)
+ACCENT_RGB = "255,255,255"   # для полупрозрачных форм
 ```
+
+Полупрозрачные вхождения записаны с десятью разными значениями прозрачности (`.09`, `.10`, `.12`, `.14`, `.16`, `.48`, `.55` и другие) — **заменять надо только цветовую часть, прозрачность у каждого своя**. То есть `rgba(255,229,0,.12)` становится `rgba({ACCENT_RGB},.12)`, а не приводится к общему значению: иначе поедут тени и градиенты.
 
 - [ ] **Шаг 4: Запустить тесты**
 
@@ -2582,6 +2645,9 @@ git commit -m "refactor(style): drop the legacy yellow hardcode"
 5. **Гейт `D6_broll_bed`** (`verify.py:160-176`) при формате не-`avatar` меряет громкость фоновой дорожки в паузе после хука. В новом пути фоновой дорожки нет — проверить на живой сборке, не даёт ли он ложный отказ.
 6. **Приём «ведущий в пузыре»** (`coverage="mixed"`, `effect.bubble`) в новом пути не описан. Либо переносим, либо честно снимаем — решать после первой сборки.
 7. **Флаги `grade`, `grain`, `zoom`, `flash`** остаются в конфиге без действия. Либо чистим конфиг, либо переносим приёмы.
+8. **Что играет в кадре там, где аватар не заказан.** Задача 6 разрешает не заказывать аватар под полноэкранной графикой, но база склеивается из клипов аватара по блокам. Значит либо на этот кусок кладётся заглушка (чёрный кадр, который целиком закроет карточка), либо база строится иначе. Решается на первой сборке, где такой кусок реально появится; до тех пор экономия не включается сама собой.
+9. **`window["asset"]["path"]`** в `_media_from_plan` — предположение: «Установленные факты» подтверждают только наличие `window["asset"]`. У внешних ассетов ключа `path` может не быть. Проверить на первом ролике с видеовставкой.
+10. **Под полноэкранной графикой база — чёрный кадр.** `covered_block_indexes` (`editplan.py:2623-2628`) читает `avatar_required`, и конвейер подменяет такой блок чёрным кадром с голосом (`avatar.py:344`). В новом пути этот чёрный кадр играет во весь экран, а карточка ограничена ядром 810×970 — по краям останется чёрное. Либо карточке для зоны `fullscreen` нужны свои границы (см. вопрос 2), либо под графику нужна другая подложка. Решается на первой сборке с таким куском.
 
 ## Отложено сознательно
 
