@@ -2277,6 +2277,9 @@ def finalize_edit_plan(
     result["timeline"]["final_duration_seconds"] = round(
         float(timed_scenario.get("total") or timed_blocks[-1]["end"]), 3
     )
+    from reels_factory.visual_grounding import enforce_visual_grounding
+
+    result = enforce_visual_grounding(result)
     _refresh_blocks_and_summary(result)
     report = validate_edit_plan(
         result,
