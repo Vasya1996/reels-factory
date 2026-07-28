@@ -1822,12 +1822,21 @@ def test_сборка_проходит_все_шаги(tmp_path, monkeypatch):
 def test_провал_гейтов_вызывает_повтор(tmp_path, monkeypatch):
     from reels_factory import hf_render
 
-    _fakes(monkeypatch, tmp_path, [BAD, GOOD])
+    calls = _fakes(monkeypatch, tmp_path, [BAD, GOOD])
+    # как будто прошлый прогон уже дошёл до конца — маркеры check/render/loudness
+    # стоят ДО первой попытки этого запуска, на старой (непровалившейся) раскадровке
+    (tmp_path / ".hf-check.done").write_text("ok", encoding="utf-8")
+    (tmp_path / ".hf-render.done").write_text("ok", encoding="utf-8")
+    (tmp_path / ".hf-loudness.done").write_text("ok", encoding="utf-8")
+
     res = hf_render.assemble_hyperframes(
         tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
         master_audio=tmp_path / "voice.wav", alignment_words=[])
     assert res["gates"]["D8_face"] == "PASS"
     assert "лицо" in (tmp_path / "BRIEF.md").read_text(encoding="utf-8")
+    assert Path(res["mp4"]).exists()
+    assert any(a[0] == "check" for a in calls)
+    assert any(a[0] == "render" for a in calls)
 
 
 def test_две_неудачи_подряд_роняют_сборку(tmp_path, monkeypatch):
