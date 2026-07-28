@@ -1964,7 +1964,7 @@ def _place_clips(public: Path, avatar_mp4s: list, avatar_render_plan: dict | Non
     for index, (source, (start, end, media_start)) in enumerate(
             zip(avatar_mp4s, timings)):
         name = f"clip-{index:02d}.mp4"
-        duration = quantize(end - start)
+        duration = round(quantize(end) - quantize(start), 3)
         # HeyGen отдаёт клип на несколько кадров короче или длиннее заказанного,
         # поэтому каждый кусок подгоняется под длительность блока: не хватает —
         # достраиваем последним кадром, лишнее режем. Заодно приводим к нашему
@@ -2064,6 +2064,9 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         if reason is not None:
             reset_step(rdir, "compose")
             reset_step(rdir, "gates")
+            reset_step(rdir, "check")
+            reset_step(rdir, "render")
+            reset_step(rdir, "loudness")
             saved_clips = json.loads((rdir / "clips.json").read_text(encoding="utf-8"))
             saved_media = json.loads((rdir / "media.json").read_text(encoding="utf-8"))
             write_brief(rdir, edit_plan, face=load_face(rdir), duration=duration,
