@@ -217,6 +217,17 @@ def test_промпт_содержит_theme_spoken_и_cta(tmp_path):
     assert CTA in prompt
 
 
+def test_промпт_не_предлагает_v3_audio_tags(tmp_path):
+    good = json.dumps(_ok_4blocks(), ensure_ascii=False)
+    runner = FakeRunner([good])
+    generate_scenario(tmp_path, _hyp(), runner)
+    prompt = runner.prompts[0]
+    assert "Eleven Multilingual v2" in prompt
+    assert "[curious]" not in prompt
+    assert "[excited]" not in prompt
+    assert "[sighs]" not in prompt
+
+
 def test_персона_и_манера_речи_в_промпте(tmp_path):
     good = json.dumps(_ok_4blocks(), ensure_ascii=False)
     runner = FakeRunner([good])

@@ -5,6 +5,7 @@ import pytest
 
 from reels_factory.master_audio import (
     MasterAudioArtifacts,
+    _tts_cache_key,
     alignment_to_words,
     build_canonical_script,
     build_master_audio,
@@ -117,8 +118,12 @@ def test_build_master_audio_один_provider_request_и_полный_contract(t
         "language": "ru",
         "voice_id": "private-voice-id",
         "tts": {
-            "model_id": "eleven_v3",
-            "stability": 0.5,
+            "model_id": "eleven_multilingual_v2",
+            "speed": 1.1,
+            "stability": 0.2,
+            "similarity_boost": 0.55,
+            "style": 0.5,
+            "use_speaker_boost": False,
             "seed": 7,
             "apply_text_normalization": "auto",
         },
@@ -131,8 +136,12 @@ def test_build_master_audio_один_provider_request_и_полный_contract(t
     assert isinstance(result, MasterAudioArtifacts)
     assert len(calls) == 1
     assert calls[0][0] == fixture["text"]
-    assert calls[0][1]["model_id"] == "eleven_v3"
-    assert calls[0][1]["stability"] == 0.5
+    assert calls[0][1]["model_id"] == "eleven_multilingual_v2"
+    assert calls[0][1]["speed"] == 1.1
+    assert calls[0][1]["stability"] == 0.2
+    assert calls[0][1]["similarity_boost"] == 0.55
+    assert calls[0][1]["style"] == 0.5
+    assert calls[0][1]["use_speaker_boost"] is False
     assert calls[0][1]["seed"] == 7
     assert result.mp3.read_bytes() == b"fake-mp3"
     assert result.wav.exists()
@@ -163,11 +172,65 @@ def test_build_master_audio_один_provider_request_и_полный_contract(t
 
     manifest_text = (tmp_path / "audio_manifest.json").read_text(encoding="utf-8")
     manifest = json.loads(manifest_text)
-    assert manifest["model_id"] == "eleven_v3"
+    assert manifest["model_id"] == "eleven_multilingual_v2"
+    assert len(manifest["cache_key"]) == 64
     assert manifest["provider_request"]["request_id"] == "req_fixture_master"
-    assert manifest["settings"]["stability"] == 0.5
+    assert manifest["settings"]["speed"] == 1.1
+    assert manifest["settings"]["stability"] == 0.2
+    assert manifest["settings"]["similarity_boost"] == 0.55
+    assert manifest["settings"]["style"] == 0.5
+    assert manifest["settings"]["use_speaker_boost"] is False
     assert "private-voice-id" not in manifest_text
     assert "api_key" not in manifest_text.lower()
+
+
+def test_tts_cache_key_учитывает_модель_голос_текст_и_все_settings():
+    options = {
+        "model_id": "eleven_multilingual_v2",
+        "speed": 1.1,
+        "stability": 0.2,
+        "similarity_boost": 0.55,
+        "style": 0.5,
+        "use_speaker_boost": False,
+        "seed": None,
+        "language_code": "ru",
+        "apply_text_normalization": "auto",
+        "pronunciation_dictionary_locators": [],
+        "output_format": "mp3_44100_128",
+    }
+    baseline = _tts_cache_key(
+        voice_id="private-voice-id",
+        input_sha256="text-hash",
+        options=options,
+    )
+    assert baseline == _tts_cache_key(
+        voice_id="private-voice-id",
+        input_sha256="text-hash",
+        options=dict(options),
+    )
+    for changed_options in (
+        {**options, "model_id": "eleven_v3"},
+        {**options, "speed": 1.0},
+        {**options, "stability": 0.3},
+        {**options, "similarity_boost": 0.6},
+        {**options, "style": 0.4},
+        {**options, "use_speaker_boost": True},
+    ):
+        assert baseline != _tts_cache_key(
+            voice_id="private-voice-id",
+            input_sha256="text-hash",
+            options=changed_options,
+        )
+    assert baseline != _tts_cache_key(
+        voice_id="another-voice",
+        input_sha256="text-hash",
+        options=options,
+    )
+    assert baseline != _tts_cache_key(
+        voice_id="private-voice-id",
+        input_sha256="another-text",
+        options=options,
+    )
 
 
 def test_build_master_audio_meter_считает_canonical_text_один_раз(tmp_path):

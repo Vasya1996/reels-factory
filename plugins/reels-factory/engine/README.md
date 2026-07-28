@@ -30,7 +30,7 @@ python -m venv .venv
 `expressiveness` относятся к Photo Avatar / Avatar IV и не отправляются в
 Avatar V request.
 
-### Master audio и Eleven v3
+### Master audio и Eleven Multilingual v2
 
 Новый путь включается `master_audio.enabled: true` либо
 `RF_MASTER_AUDIO_ENABLED=1`. До отдельного production rollout default —
@@ -40,8 +40,12 @@ Avatar V request.
 master_audio:
   enabled: false
 tts:
-  model_id: eleven_v3
-  stability: 0.5              # Natural; 0=Creative, 1=Robust
+  model_id: eleven_multilingual_v2
+  speed: 1.1
+  stability: 0.2
+  similarity_boost: 0.55
+  style: 0.5
+  use_speaker_boost: false
   # seed: 42                  # best-effort, не гарантия идентичного результата
   apply_text_normalization: auto
   output_format: mp3_44100_128
@@ -53,16 +57,10 @@ Master path делает один `POST /v1/text-to-speech/{voice_id}/with-times
 word timings и manifest. Whisper остаётся для входящих пользовательских медиа и
 legacy/fallback, но не подменяет утверждённый текст после TTS.
 
-Для Eleven v3 намеренно передаётся только `stability`. Параметры `speed`,
-`similarity_boost` и `use_speaker_boost` этой моделью не поддерживаются;
-style exaggeration не передаётся, чтобы не снижать стабильность. Эмоции, темп и
-паузы управляются пунктуацией и audio tags (`[curious]`, `[excited]`,
-`[whispers]`, `[laughs]`, `[sighs]`) внутри текста, который видит и утверждает
-пользователь. SSML `<break>` v3 не поддерживает.
-
-Лимит v3 — 5000 символов. Движок проверяет его до HTTP и не начинает частично
-оплаченную генерацию. Наш сценарный лимит значительно ниже; request stitching
-для v3 не поддерживается, поэтому narration генерируется одним запросом.
+Параметры Multilingual v2 зафиксированы по контрольному русскому клону.
+Эмоциональные v3 audio tags в текст не добавляются. Лимит модели — 10 000
+символов; движок проверяет его до HTTP. Наш сценарный лимит значительно ниже,
+поэтому narration генерируется одним запросом.
 
 ### Canonical edit plan и пластика по фразам
 

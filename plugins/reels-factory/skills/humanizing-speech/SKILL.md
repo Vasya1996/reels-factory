@@ -49,5 +49,5 @@ disable-model-invocation: true
 
 - латиницы в speech быть не должно;
 - аббревиатуры — как произносятся;
-- Eleven v3 audio tags в квадратных скобках (`[curious]`, `[excited]`,
-  `[whispers]`, `[laughs]`, `[sighs]`) сохраняй дословно.
+- не добавляй и не сохраняй Eleven v3 audio tags в квадратных скобках:
+  production использует Eleven Multilingual v2, который их не поддерживает.
