@@ -47,6 +47,10 @@ def test_без_задания_ошибка(tmp_path):
 def test_команда_видит_обычный_профиль_и_права(monkeypatch, tmp_path):
     from reels_factory import hf_agent
 
+    # На этой машине ~/.reels-factory/oauth-token существует по-настоящему;
+    # без этого monkeypatch тест читал бы реальный файл токена подписки.
+    monkeypatch.setattr(hf_agent.Path, "home", lambda: tmp_path / "нет-профиля")
+
     seen = {}
 
     def fake_run(cmd, **kw):
@@ -70,3 +74,59 @@ def test_команда_видит_обычный_профиль_и_права(m
     assert "acceptEdits" in " ".join(map(str, seen["cmd"]))
     assert str(seen["cwd"]) == str(tmp_path)
     assert runner.total_cost_usd == 0.02
+
+
+def test_headless_подхватывает_токен_подписки(monkeypatch, tmp_path):
+    from reels_factory import hf_agent
+
+    monkeypatch.setattr(hf_agent.Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    token_dir = tmp_path / ".reels-factory"
+    token_dir.mkdir()
+    (token_dir / "oauth-token").write_text("fake-token-123", encoding="utf-8")
+
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["env"] = kw.get("env") or {}
+
+        class P:
+            returncode = 0
+            stdout = json.dumps({"result": "ок", "total_cost_usd": 0.0})
+            stderr = ""
+
+        return P()
+
+    monkeypatch.setattr(hf_agent.subprocess, "run", fake_run)
+    runner = hf_agent.HeyGenAgentRunner()
+    runner.run("/hyperframes привет", cwd=tmp_path)
+
+    assert seen["env"]["CLAUDE_CODE_OAUTH_TOKEN"] == "fake-token-123"
+
+
+def test_headless_не_перекрывает_существующий_токен(monkeypatch, tmp_path):
+    from reels_factory import hf_agent
+
+    monkeypatch.setattr(hf_agent.Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "уже-стоит")
+    token_dir = tmp_path / ".reels-factory"
+    token_dir.mkdir()
+    (token_dir / "oauth-token").write_text("fake-token-123", encoding="utf-8")
+
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["env"] = kw.get("env") or {}
+
+        class P:
+            returncode = 0
+            stdout = json.dumps({"result": "ок", "total_cost_usd": 0.0})
+            stderr = ""
+
+        return P()
+
+    monkeypatch.setattr(hf_agent.subprocess, "run", fake_run)
+    runner = hf_agent.HeyGenAgentRunner()
+    runner.run("/hyperframes привет", cwd=tmp_path)
+
+    assert seen["env"]["CLAUDE_CODE_OAUTH_TOKEN"] == "уже-стоит"

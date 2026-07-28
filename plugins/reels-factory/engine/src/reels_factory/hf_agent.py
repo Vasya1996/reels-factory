@@ -43,6 +43,14 @@ class HeyGenAgentRunner:
         env.pop("ANTHROPIC_API_KEY", None)
         env.pop("ANTHROPIC_AUTH_TOKEN", None)
         env.pop("CLAUDE_CONFIG_DIR", None)  # нужен обычный профиль со скилами
+        # Headless-вызов не умеет продлевать интерактивную OAuth-сессию:
+        # без CLAUDE_CODE_OAUTH_TOKEN он падает «OAuth session expired», даже
+        # когда десктопная сессия жива. Годовой токен подписки (claude
+        # setup-token) уже лежит рядом с профилем бота.
+        token_file = Path.home() / ".reels-factory" / "oauth-token"
+        if not env.get("CLAUDE_CODE_OAUTH_TOKEN") and token_file.exists():
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = token_file.read_text(
+                encoding="utf-8").strip()
         result = subprocess.run(
             [self.exe, "-p", "--output-format", "json",
              "--permission-mode", "acceptEdits"],

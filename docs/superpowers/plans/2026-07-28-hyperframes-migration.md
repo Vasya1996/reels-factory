@@ -1519,6 +1519,7 @@ git commit -m "feat(hf): brief carries rules and the plan's insert content"
 **Интерфейсы:**
 - Производит: `HeyGenAgentRunner` с методом `run(prompt: str, cwd) -> str` и полем `total_cost_usd`; `build_with_agent(rdir, *, runner=None) -> dict`.
 - **Почему не `ClaudeSkillRunner`:** он работает в изолированном профиле `~/.reels-factory/claude` с `--setting-sources ""` (`llm.py:117`) и скилы HeyGen из `~/.claude/skills` не увидит. Здесь нужен обычный профиль пользователя, право писать файлы и запускать команды, рабочая папка ролика и таймаут под десятиминутную сборку.
+- Headless-вызову нужен годовой токен подписки: `CLAUDE_CODE_OAUTH_TOKEN` подхватывается из `~/.reels-factory/oauth-token`, иначе «OAuth session expired» даже при живой интерактивной сессии.
 
 - [ ] **Шаг 1: Написать падающий тест**
 
@@ -1654,6 +1655,14 @@ class HeyGenAgentRunner:
         env.pop("ANTHROPIC_API_KEY", None)
         env.pop("ANTHROPIC_AUTH_TOKEN", None)
         env.pop("CLAUDE_CONFIG_DIR", None)  # нужен обычный профиль со скилами
+        # Headless-вызов не умеет продлевать интерактивную OAuth-сессию:
+        # без CLAUDE_CODE_OAUTH_TOKEN он падает «OAuth session expired», даже
+        # когда десктопная сессия жива. Годовой токен подписки (claude
+        # setup-token) уже лежит рядом с профилем бота.
+        token_file = Path.home() / ".reels-factory" / "oauth-token"
+        if not env.get("CLAUDE_CODE_OAUTH_TOKEN") and token_file.exists():
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = token_file.read_text(
+                encoding="utf-8").strip()
         result = subprocess.run(
             [self.exe, "-p", "--output-format", "json",
              "--permission-mode", "acceptEdits"],
