@@ -1281,6 +1281,16 @@ def _window_effect(
     return {"type": "none"}
 
 
+# Подсказка по зоне из смысла окна: где ведущий несёт смысл — карточка поверх
+# видео, где важнее показать — кадр отдаётся показу. Это именно подсказка:
+# окончательный выбор из пяти зон скила делает агент.
+_FACELESS_COVERAGE = {"full_broll", "hyperframes"}
+
+
+def _zone_for(coverage: str) -> str:
+    return "fullscreen" if coverage in _FACELESS_COVERAGE else "video-overlay"
+
+
 def _assign_window(
     windows: list[dict],
     phrases: list[dict],
@@ -1319,6 +1329,7 @@ def _assign_window(
         "estimated_timing": estimated,
         "final_timing": None,
         "camera": {"type": camera},
+        "zone": _zone_for(coverage),
         "transition_in": transition,
         "caption": caption,
         "effect": _window_effect(coverage, effect=effect, asset=asset),
@@ -1359,6 +1370,7 @@ def _downgrade_draft_window(
 ) -> None:
     """Сделать draft-окно avatar fallback до оплаты и exact timing."""
     window["coverage"] = "avatar"
+    window["zone"] = _zone_for("avatar")
     window["asset"] = None
     window["effect"] = {"type": "none"}
     window["camera"] = {
@@ -2101,6 +2113,7 @@ def _words_for_phrase(
 
 def _downgrade_window(plan: dict, window: dict, reason: str) -> None:
     window["coverage"] = "avatar"
+    window["zone"] = _zone_for("avatar")
     window["asset"] = None
     window["effect"] = {"type": "none"}
     window["camera"] = {

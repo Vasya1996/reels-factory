@@ -1143,3 +1143,46 @@ def test_performance_recommendations_отклоняют_неподдержива
 
     with pytest.raises(ValueError, match="неподдерживаемым объектом"):
         apply_performance_recommendations(draft, recommendations)
+
+
+def _timed_two_blocks():
+    return {"total": 20.0, "blocks": [
+        {"role": "hook", "start": 0.0, "end": 6.0,
+         "speech": "первый вопрос кому продаём и кто наш клиент"},
+        {"role": "cta", "start": 6.0, "end": 20.0, "speech": "сохрани это видео"},
+    ]}
+
+
+def test_у_каждого_окна_есть_разрешённая_зона():
+    from reels_factory.editplan import build_edit_plan
+    from reels_factory.hf_layout import ALLOWED_ZONES
+
+    plan = build_edit_plan(_timed_two_blocks(), {}, index={}, require_asset_files=False)
+    assert plan["windows"], "план без окон — тест бессмыслен"
+    for window in plan["windows"]:
+        assert window["zone"] in ALLOWED_ZONES
+
+
+def test_аватарное_окно_поверх_видео():
+    from reels_factory.editplan import build_edit_plan
+
+    plan = build_edit_plan(_timed_two_blocks(), {}, index={}, require_asset_files=False)
+    for window in plan["windows"]:
+        if window["coverage"] in {"avatar", "mixed"}:
+            assert window["zone"] == "video-overlay"
+
+
+def test_поле_камеры_не_потеряно():
+    from reels_factory.editplan import build_edit_plan
+
+    plan = build_edit_plan(_timed_two_blocks(), {}, index={}, require_asset_files=False)
+    assert all("camera" in w for w in plan["windows"])
+
+
+def test_даунгрейд_возвращает_зону_с_ведущим():
+    from reels_factory.editplan import _downgrade_window
+
+    window = {"id": "w", "phrase_ids": [], "role": "development",
+              "coverage": "hyperframes", "zone": "fullscreen"}
+    _downgrade_window({"phrases": []}, window, "нет ассета")
+    assert window["zone"] == "video-overlay"
