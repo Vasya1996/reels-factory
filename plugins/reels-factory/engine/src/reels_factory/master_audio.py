@@ -15,8 +15,10 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sys
 import unicodedata
+from difflib import SequenceMatcher
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -452,6 +454,10 @@ def build_master_audio(
             "canonical_audio": {"path": wav.name},
             "characters_alignment": {"path": "alignment.characters.json"},
             "words_alignment": {"path": "alignment.words.json"},
+            "block_audio": [
+                {"path": path.name, "sha256": _sha256_bytes(path.read_bytes())}
+                for path in block_wavs
+            ],
         },
     }
     manifest["files"]["canonical_audio"]["sha256"] = _sha256_bytes(wav.read_bytes())
@@ -463,6 +469,332 @@ def build_master_audio(
         block_wavs=tuple(block_wavs),
         words=tuple(words),
         timed_scenario=timed_scenario,
+        canonical=canonical,
+        manifest=manifest,
+    )
+
+
+def _timed_scenario_from_ranges(scenario: dict, ranges: list[dict], duration: float) -> dict:
+    if len(ranges) != len(scenario.get("blocks") or []):
+        raise ValueError("audio ranges не совпадают с блоками scenario")
+    timed = json.loads(json.dumps(scenario, ensure_ascii=False))
+    for block, timing in zip(timed["blocks"], ranges):
+        block["start"] = float(timing["start"])
+        block["end"] = float(timing["end"])
+        block["audio_start"] = float(timing["start"])
+        block["audio_end"] = float(timing["end"])
+        block["speech_start"] = float(timing["speech_start"])
+        block["speech_end"] = float(timing["speech_end"])
+    timed["total"] = float(duration)
+    return timed
+
+
+def _verify_file(path: Path, expected_sha256: str | None = None) -> Path:
+    if not path.is_file():
+        raise ValueError(f"audio artifact не найден: {path.name}")
+    if expected_sha256 and _sha256_bytes(path.read_bytes()) != expected_sha256:
+        raise ValueError(f"audio artifact изменился после утверждения: {path.name}")
+    return path
+
+
+def load_master_audio(
+    scenario: dict,
+    config: dict,
+    artifact_dir,
+) -> MasterAudioArtifacts:
+    """Загрузить готовые master artifacts и проверить их immutable contract."""
+    wd = Path(artifact_dir)
+    canonical = build_canonical_script(scenario, config)
+    saved_canonical = json.loads(
+        (wd / "script.canonical.json").read_text(encoding="utf-8")
+    )
+    if saved_canonical.get("text_sha256") != canonical["text_sha256"]:
+        raise ValueError("утверждённое аудио создано для другого сценария")
+
+    manifest = json.loads((wd / "audio_manifest.json").read_text(encoding="utf-8"))
+    if manifest.get("input_sha256") != canonical["text_sha256"]:
+        raise ValueError("audio manifest не совпадает с утверждённым сценарием")
+    files = manifest.get("files") or {}
+    canonical_file = files.get("canonical_audio") or {}
+    source_file = files.get("provider_audio") or files.get("source_audio") or {}
+    wav = _verify_file(
+        wd / str(canonical_file.get("path") or "voice_master.wav"),
+        canonical_file.get("sha256"),
+    )
+    source = _verify_file(
+        wd / str(source_file.get("path") or "voice_master.mp3"),
+        source_file.get("sha256"),
+    )
+
+    words_doc = json.loads(
+        (wd / str((files.get("words_alignment") or {}).get("path")
+                  or "alignment.words.json")).read_text(encoding="utf-8")
+    )
+    if words_doc.get("text_sha256") != canonical["text_sha256"]:
+        raise ValueError("word alignment не совпадает с утверждённым сценарием")
+    words = list(words_doc.get("words") or [])
+    ranges = list(words_doc.get("blocks") or [])
+    if not words or not ranges:
+        raise ValueError("утверждённое аудио не содержит word/block timings")
+    duration = float(manifest.get("duration_seconds") or media_dur(str(wav)))
+    timed = _timed_scenario_from_ranges(scenario, ranges, duration)
+    block_docs = list(files.get("block_audio") or [])
+    if block_docs and len(block_docs) != len(ranges):
+        raise ValueError("audio manifest содержит неверное число block slices")
+    block_wavs = tuple(
+        _verify_file(
+            wd / str(
+                (block_docs[index] if block_docs else {}).get("path")
+                or f"voice_{index}.wav"
+            ),
+            (block_docs[index] if block_docs else {}).get("sha256"),
+        )
+        for index in range(len(ranges))
+    )
+    return MasterAudioArtifacts(
+        wav=wav,
+        mp3=source,
+        block_wavs=block_wavs,
+        words=tuple(words),
+        timed_scenario=timed,
+        canonical=saved_canonical,
+        manifest=manifest,
+    )
+
+
+def approve_master_audio(job_workdir, artifact_dir, *, source: str) -> dict:
+    """Зафиксировать выбранную дорожку с hash, который проверит render stage."""
+    job_wd = Path(job_workdir).resolve()
+    artifacts = Path(artifact_dir).resolve()
+    try:
+        relative = artifacts.relative_to(job_wd)
+    except ValueError as exc:
+        raise ValueError("audio artifacts должны находиться внутри job workdir") from exc
+    manifest_path = artifacts / "audio_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    canonical_file = (manifest.get("files") or {}).get("canonical_audio") or {}
+    wav = _verify_file(
+        artifacts / str(canonical_file.get("path") or "voice_master.wav"),
+        canonical_file.get("sha256"),
+    )
+    approval = {
+        "format_version": FORMAT_VERSION,
+        "source": str(source),
+        "artifact_dir": relative.as_posix(),
+        "input_sha256": manifest.get("input_sha256"),
+        "canonical_audio_sha256": _sha256_bytes(wav.read_bytes()),
+    }
+    _write_json(job_wd / "audio.approved.json", approval)
+    return approval
+
+
+def load_approved_master_audio(
+    scenario: dict,
+    config: dict,
+    job_workdir,
+) -> MasterAudioArtifacts:
+    job_wd = Path(job_workdir).resolve()
+    approval = json.loads(
+        (job_wd / "audio.approved.json").read_text(encoding="utf-8")
+    )
+    artifact_dir = (job_wd / str(approval.get("artifact_dir") or "")).resolve()
+    try:
+        artifact_dir.relative_to(job_wd)
+    except ValueError as exc:
+        raise ValueError("audio approval ссылается за пределы job workdir") from exc
+    artifacts = load_master_audio(scenario, config, artifact_dir)
+    if approval.get("input_sha256") != artifacts.canonical["text_sha256"]:
+        raise ValueError("audio approval создан для другого сценария")
+    actual = _sha256_bytes(artifacts.wav.read_bytes())
+    if approval.get("canonical_audio_sha256") != actual:
+        raise ValueError("утверждённая аудиодорожка изменилась перед рендером")
+    return artifacts
+
+
+def _normalized_tokens(text: str) -> list[str]:
+    return [
+        text[start:end].casefold()
+        for start, end, _display_end in _word_spans(str(text or ""))
+    ]
+
+
+def _assign_user_words_to_blocks(
+    raw_words: list[dict],
+    canonical: dict,
+) -> tuple[list[dict], float]:
+    canonical_tokens = _normalized_tokens(canonical["text"])
+    spoken_tokens = [
+        token
+        for word in raw_words
+        for token in _normalized_tokens(str(word.get("text") or ""))
+    ]
+    if not canonical_tokens or not spoken_tokens:
+        raise ValueError("не удалось распознать речь в голосовом")
+    match_ratio = SequenceMatcher(
+        None, canonical_tokens, spoken_tokens, autojunk=False
+    ).ratio()
+    word_ratio = len(spoken_tokens) / len(canonical_tokens)
+    if match_ratio < 0.52 or not 0.60 <= word_ratio <= 1.55:
+        raise ValueError(
+            "голосовое заметно отличается от утверждённого сценария или "
+            "записано не целиком"
+        )
+
+    clean_words = []
+    for word in raw_words:
+        text = str(word.get("text") or "").strip()
+        if not text:
+            continue
+        start, end = float(word["start"]), float(word["end"])
+        if start < 0 or end <= start:
+            continue
+        clean_words.append({**word, "text": text, "start": start, "end": end})
+    block_weights = [
+        max(1, len(_normalized_tokens(block["speech"])))
+        for block in canonical["blocks"]
+    ]
+    if len(clean_words) < len(block_weights):
+        raise ValueError("в голосовом недостаточно речи для всех блоков сценария")
+    boundaries = [0]
+    consumed = 0
+    total_weight = sum(block_weights)
+    for index, weight in enumerate(block_weights[:-1]):
+        consumed += weight
+        raw = round(len(clean_words) * consumed / total_weight)
+        minimum = boundaries[-1] + 1
+        maximum = len(clean_words) - (len(block_weights) - index - 1)
+        boundaries.append(max(minimum, min(raw, maximum)))
+    boundaries.append(len(clean_words))
+
+    words = []
+    for block_index, block in enumerate(canonical["blocks"]):
+        for word in clean_words[boundaries[block_index]:boundaries[block_index + 1]]:
+            words.append({
+                "id": len(words),
+                "block_id": block["id"],
+                "block_index": block_index,
+                "role": block.get("role"),
+                "character_start": None,
+                "character_end": None,
+                "start": word["start"],
+                "end": word["end"],
+                "text": word["text"],
+                "prob": word.get("prob"),
+            })
+    return words, match_ratio
+
+
+def build_user_master_audio(
+    scenario: dict,
+    config: dict,
+    artifact_dir,
+    source_audio,
+    *,
+    transcribe_fn=None,
+    run_cmd: Callable | None = None,
+    duration_fn: Callable[[str], float] | None = None,
+) -> MasterAudioArtifacts:
+    """Telegram voice -> exact final master без TTS, чистки, склеек и дозаписей."""
+    wd = Path(artifact_dir)
+    wd.mkdir(parents=True, exist_ok=True)
+    source_audio = Path(source_audio)
+    if not source_audio.is_file():
+        raise ValueError("голосовое не найдено")
+    if run_cmd is None:
+        from reels_factory import render
+        run_cmd = render.run
+    if transcribe_fn is None:
+        from reels_factory.transcribe import transcribe_file
+        transcribe_fn = transcribe_file
+    duration_fn = duration_fn or media_dur
+
+    suffix = source_audio.suffix.lower() or ".ogg"
+    frozen_source = wd / f"user_voice_source{suffix}"
+    shutil.copyfile(source_audio, frozen_source)
+    wav = wd / "voice_master.wav"
+    run_cmd([
+        str(FFMPEG), "-y", "-i", str(frozen_source),
+        "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", str(wav),
+    ])
+    duration = float(duration_fn(str(wav)))
+    if duration <= 0:
+        raise ValueError("голосовое имеет неположительную длительность")
+
+    canonical = build_canonical_script(scenario, config)
+    _write_json(wd / "script.canonical.json", canonical)
+    source_sha256 = _sha256_bytes(frozen_source.read_bytes())
+    # faster-whisper кеширует extracted audio16k.wav в workdir. Новый voice
+    # обязан получить новый каталог, иначе повтор после неудачной записи
+    # незаметно расшифрует старый файл.
+    transcript_dir = wd / f"transcription-{source_sha256[:12]}"
+    meta = transcribe_fn(
+        str(wav),
+        str(transcript_dir),
+        language=canonical["language"],
+    )
+    raw_doc = json.loads(Path(meta["out"]).read_text(encoding="utf-8"))
+    words, match_ratio = _assign_user_words_to_blocks(
+        list(raw_doc.get("words") or []), canonical
+    )
+    ranges = _block_audio_ranges(canonical["blocks"], words, duration)
+    timed = _timed_scenario_from_ranges(scenario, ranges, duration)
+
+    block_wavs = []
+    for timing in ranges:
+        out = wd / f"voice_{timing['index']}.wav"
+        run_cmd([
+            str(FFMPEG), "-y",
+            "-ss", f"{timing['start']:.6f}",
+            "-t", f"{timing['duration']:.6f}",
+            "-i", str(wav),
+            "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", str(out),
+        ])
+        block_wavs.append(out)
+
+    words_doc = {
+        "format_version": FORMAT_VERSION,
+        "text_sha256": canonical["text_sha256"],
+        "words": words,
+        "blocks": ranges,
+        "transcript_match_ratio": round(match_ratio, 4),
+    }
+    _write_json(wd / "alignment.words.json", words_doc)
+    manifest = {
+        "format_version": FORMAT_VERSION,
+        "provider": "telegram_user_audio",
+        "input_sha256": canonical["text_sha256"],
+        "input_characters": len(canonical["text"]),
+        "duration_seconds": duration,
+        "transcript_match_ratio": round(match_ratio, 4),
+        "processing": {
+            "content_edits": False,
+            "denoise": False,
+            "generated_audio": False,
+            "canonical_pcm": "48000Hz stereo pcm_s16le",
+        },
+        "files": {
+            "source_audio": {
+                "path": frozen_source.name,
+                "sha256": source_sha256,
+            },
+            "canonical_audio": {
+                "path": wav.name,
+                "sha256": _sha256_bytes(wav.read_bytes()),
+            },
+            "words_alignment": {"path": "alignment.words.json"},
+            "block_audio": [
+                {"path": path.name, "sha256": _sha256_bytes(path.read_bytes())}
+                for path in block_wavs
+            ],
+        },
+    }
+    _write_json(wd / "audio_manifest.json", manifest)
+    return MasterAudioArtifacts(
+        wav=wav,
+        mp3=frozen_source,
+        block_wavs=tuple(block_wavs),
+        words=tuple(words),
+        timed_scenario=timed,
         canonical=canonical,
         manifest=manifest,
     )

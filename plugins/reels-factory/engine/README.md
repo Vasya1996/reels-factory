@@ -224,13 +224,16 @@ python -m reels_factory verify --workdir demo1            # перепровер
 1. создаёт UUID `job_id`;
 2. атомарно пишет утверждённый сценарий, `job.input.json` и immutable
    `build-config.yaml` в `work/jobs/<job_id>/`;
-3. добавляет job в `work/jobs.sqlite3`;
-4. один FIFO-worker забирает её транзакционным claim;
-5. доставляет видео только при `qa_pass=true`.
+3. добавляет job в `work/jobs.sqlite3` на стадию `audio_queued`;
+4. один FIFO-worker создаёт только ElevenLabs master audio и присылает MP3;
+5. подтверждение переводит ту же job в render queue без повторного TTS;
+6. при отказе бот принимает один Telegram voice со всем сценарием и использует
+   его только для текущего ролика, не заменяя voice clone профиля;
+7. видео доставляется только при `qa_pass=true`.
 
 Команда `/status` показывает durable-статус последней job. Повторное нажатие
-«Создать ролик», пока у чата есть `queued`/`running` job, не создаёт вторую
-платную сборку.
+«Создать ролик», пока job создаёт/проверяет аудио, ждёт пользовательскую запись
+или рендерится, не создаёт вторую платную сборку.
 
 Все изменяемые данные Revideo находятся внутри job:
 
@@ -239,14 +242,21 @@ work/jobs/<job_id>/
 ├── scenario.json
 ├── job.input.json
 ├── build-config.yaml
-├── script.canonical.json
+├── audio.approved.json
+├── audio/
+│   ├── tts/
+│   │   ├── script.canonical.json
+│   │   ├── voice_master.mp3
+│   │   ├── voice_master.wav
+│   │   ├── alignment.characters.json
+│   │   ├── alignment.words.json
+│   │   └── audio_manifest.json
+│   └── user/
+│       ├── user_voice_source.ogg
+│       ├── voice_master.wav
+│       ├── alignment.words.json
+│       └── audio_manifest.json
 ├── edit_plan.json
-├── voice_master.mp3
-├── voice_master.wav
-├── alignment.characters.json
-├── alignment.words.json
-├── audio_manifest.json
-├── voice_*.wav
 ├── avatar_*.mp4
 ├── reel.mp4
 └── revideo/
@@ -258,9 +268,13 @@ work/jobs/<job_id>/
     └── output/reel.mp4
 ```
 
+`audio.approved.json` хранит source, artifact directory и SHA-256 канонического
+WAV. Render stage повторно проверяет hash и сценарий; без этого маркера bot-job
+не может вызвать HeyGen.
+
 Общими и read-only остаются код Revideo и `node_modules`. При старте queued
-jobs продолжают выполняться. Job, которая имела статус `running` во время
-рестарта, переводится в `interrupted` и **не повторяется автоматически**:
+jobs продолжают выполняться. Job, которая имела статус `audio_running` или
+`running` во время рестарта, переводится в `interrupted` и **не повторяется автоматически**:
 до внедрения provider idempotency/job-id такой повтор мог бы дважды списать
 деньги HeyGen или ElevenLabs.
 

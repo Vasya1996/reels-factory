@@ -31,6 +31,7 @@ from reels_factory.avatar import (
 from reels_factory.tts import synth_voice as _synth_voice
 from reels_factory.master_audio import (
     build_master_audio as _build_master_audio,
+    load_approved_master_audio,
     master_audio_enabled,
 )
 from reels_factory.compose import build_caption_fixes
@@ -225,11 +226,22 @@ def run_make(config: dict, workdir,
         avatar_render_manifest = None
         cache_dir = WORK_ROOT / AVATAR_CACHE_DIRNAME
         if use_master_audio:
-            master_audio_fn = master_audio_fn or _build_master_audio
-            master = master_audio_fn(
-                scenario, config, wd, voice_id=voice_id,
-                meter=(meter.elevenlabs if meter is not None else None),
+            approval_path = wd / "audio.approved.json"
+            review_required = bool(
+                ((config.get("master_audio") or {}).get("review_required", False))
             )
+            if approval_path.exists():
+                master = load_approved_master_audio(scenario, config, wd)
+            elif review_required:
+                raise RuntimeError(
+                    "render заблокирован: master audio ещё не утверждено"
+                )
+            else:
+                master_audio_fn = master_audio_fn or _build_master_audio
+                master = master_audio_fn(
+                    scenario, config, wd, voice_id=voice_id,
+                    meter=(meter.elevenlabs if meter is not None else None),
+                )
             block_wavs = list(master.block_wavs)
             if (
                 not use_avatar_islands

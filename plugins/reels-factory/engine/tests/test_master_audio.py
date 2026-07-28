@@ -7,8 +7,12 @@ from reels_factory.master_audio import (
     MasterAudioArtifacts,
     _tts_cache_key,
     alignment_to_words,
+    approve_master_audio,
     build_canonical_script,
     build_master_audio,
+    build_user_master_audio,
+    load_approved_master_audio,
+    load_master_audio,
     master_audio_enabled,
     validate_character_alignment,
 )
@@ -343,3 +347,135 @@ def test_master_audio_feature_flag_safe_default(monkeypatch):
     assert master_audio_enabled({"master_audio": {"enabled": True}}) is False
     monkeypatch.setenv("RF_MASTER_AUDIO_ENABLED", "true")
     assert master_audio_enabled({}) is True
+
+
+def test_tts_audio_approval_фиксирует_hash_и_загружается_без_provider_request(
+        tmp_path):
+    fixture = _fixture()["response"]
+
+    class Provider:
+        def convert_with_timestamps(self, text, **kwargs):
+            return TimestampedSpeech(
+                audio=b"approved-preview",
+                alignment=fixture["alignment"],
+                normalized_alignment=fixture["normalized_alignment"],
+                request_id="preview-request",
+            )
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"generated-" + Path(cmd[-1]).name.encode())
+
+    config = {"language": "ru", "voice_id": "v1"}
+    artifact_dir = tmp_path / "audio" / "tts"
+    original = build_master_audio(
+        _scenario(), config, artifact_dir,
+        provider=Provider(), run_cmd=fake_run, duration_fn=lambda _: 1.3,
+    )
+    approval = approve_master_audio(
+        tmp_path, artifact_dir, source="elevenlabs_approved"
+    )
+
+    loaded = load_approved_master_audio(_scenario(), config, tmp_path)
+
+    assert approval["artifact_dir"] == "audio/tts"
+    assert loaded.wav.read_bytes() == original.wav.read_bytes()
+    assert loaded.mp3.read_bytes() == b"approved-preview"
+    assert loaded.manifest["provider"] == "elevenlabs"
+
+
+def test_approved_audio_hash_не_даёт_подменить_дорожку_перед_рендером(tmp_path):
+    fixture = _fixture()["response"]
+
+    class Provider:
+        def convert_with_timestamps(self, text, **kwargs):
+            return TimestampedSpeech(
+                audio=b"preview",
+                alignment=fixture["alignment"],
+                normalized_alignment=None,
+                request_id="req",
+            )
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"generated")
+
+    config = {"language": "ru", "voice_id": "v1"}
+    artifact_dir = tmp_path / "audio" / "tts"
+    build_master_audio(
+        _scenario(), config, artifact_dir,
+        provider=Provider(), run_cmd=fake_run, duration_fn=lambda _: 1.3,
+    )
+    approve_master_audio(tmp_path, artifact_dir, source="elevenlabs_approved")
+    (artifact_dir / "voice_master.wav").write_bytes(b"changed")
+
+    with pytest.raises(ValueError, match="изменился"):
+        load_approved_master_audio(_scenario(), config, tmp_path)
+
+
+def test_telegram_voice_становится_master_без_генеративной_обработки(tmp_path):
+    source = tmp_path / "input.ogg"
+    source.write_bytes(b"telegram-opus")
+    scenario = _scenario()
+    config = {"language": "ru", "voice_id": "unused-for-user-audio"}
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"pcm-" + Path(cmd[-1]).name.encode())
+
+    def fake_transcribe(src, workdir, language):
+        out = Path(workdir) / "words.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"words": [
+            {"id": 0, "start": 0.1, "end": 0.4, "text": "Кофе", "prob": 0.9},
+            {"id": 1, "start": 0.4, "end": 0.8, "text": "вкусный.", "prob": 0.9},
+            {"id": 2, "start": 1.0, "end": 1.3, "text": "Кофе", "prob": 0.9},
+            {"id": 3, "start": 1.3, "end": 1.8, "text": "бодрит!", "prob": 0.9},
+        ]}, ensure_ascii=False), encoding="utf-8")
+        return {"out": str(out)}
+
+    artifact_dir = tmp_path / "audio" / "user"
+    built = build_user_master_audio(
+        scenario,
+        config,
+        artifact_dir,
+        source,
+        transcribe_fn=fake_transcribe,
+        run_cmd=fake_run,
+        duration_fn=lambda _: 2.0,
+    )
+    approve_master_audio(
+        tmp_path, artifact_dir, source="telegram_user_audio"
+    )
+    loaded = load_approved_master_audio(scenario, config, tmp_path)
+
+    assert built.manifest["provider"] == "telegram_user_audio"
+    assert built.manifest["processing"]["content_edits"] is False
+    assert built.manifest["processing"]["denoise"] is False
+    assert built.mp3.read_bytes() == b"telegram-opus"
+    assert len(loaded.block_wavs) == 2
+    assert [word["block_index"] for word in loaded.words] == [0, 0, 1, 1]
+
+
+def test_telegram_voice_с_большим_пропуском_сценария_отклоняется(tmp_path):
+    source = tmp_path / "input.ogg"
+    source.write_bytes(b"short")
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"pcm")
+
+    def fake_transcribe(src, workdir, language):
+        out = Path(workdir) / "words.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"words": [
+            {"id": 0, "start": 0.1, "end": 0.4, "text": "Совсем другое"},
+        ]}, ensure_ascii=False), encoding="utf-8")
+        return {"out": str(out)}
+
+    with pytest.raises(ValueError, match="отличается|не целиком"):
+        build_user_master_audio(
+            _scenario(),
+            {"language": "ru"},
+            tmp_path / "audio" / "user",
+            source,
+            transcribe_fn=fake_transcribe,
+            run_cmd=fake_run,
+            duration_fn=lambda _: 1.0,
+        )

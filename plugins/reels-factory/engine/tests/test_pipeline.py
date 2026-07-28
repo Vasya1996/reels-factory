@@ -213,6 +213,33 @@ def test_master_audio_одна_озвучка_вместо_block_tts(monkeypatch
     )
 
 
+def test_bot_job_не_запускает_render_пока_master_audio_не_утверждено(
+        monkeypatch, tmp_path):
+    calls = []
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+    master_calls = []
+
+    cfg = _cfg("avatar")
+    cfg["master_audio"] = {"enabled": True, "review_required": True}
+    result = pipeline.run_make(
+        cfg,
+        wd,
+        avatar_client=avatar,
+        synth_fn=fs,
+        assemble_fn=fa,
+        master_audio_fn=lambda *args, **kwargs: master_calls.append(1),
+    )
+
+    assert result["ok"] is False
+    assert result["stage"] == "voice"
+    assert "не утверждено" in result["error"]
+    assert master_calls == []
+    assert avatar.calls == []
+    assert not any(call[0] == "assemble" for call in calls)
+
+
 def test_master_audio_не_разрешает_jump_cuts_ломать_timeline(monkeypatch, tmp_path):
     calls = []
     fs, fa = _fakes(monkeypatch, tmp_path, calls)

@@ -61,6 +61,7 @@ class _BotAPI:
     def __init__(self):
         self.messages = []
         self.videos = []
+        self.audios = []
 
     async def send_message(self, chat_id, text):
         self.messages.append((chat_id, text))
@@ -74,6 +75,16 @@ class _BotAPI:
             "reply_markup": reply_markup,
             "width": width,
             "height": height,
+        })
+
+    async def send_audio(self, chat_id, audio, caption=None, reply_markup=None,
+                         title=None):
+        self.audios.append({
+            "chat_id": chat_id,
+            "bytes": audio.read(),
+            "caption": caption,
+            "reply_markup": reply_markup,
+            "title": title,
         })
 
 
@@ -938,13 +949,132 @@ def test_создать_ролик_сохраняет_профиль_и_став
 
     assert вызовы == [7]
     s = bot.load_session(7)
-    assert s["step"] == bot.BUILDING
+    assert s["step"] == bot.AUDIO_PREPARING
     assert s["current_job_id"]
     assert bot.BUILDING_MSG in msg.replies[-1]
     assert not msg.videos
     job = bot._job_store().get(s["current_job_id"])
-    assert job.status == "queued"
+    assert job.status == "audio_queued"
     assert (job.workdir / "scenario.json").exists()
+
+
+def _deliver_audio_preview():
+    job = _claim_job()
+    api = _BotAPI()
+
+    def fake_preview(chat_id, workdir):
+        audio = workdir / "audio" / "tts" / "voice_master.mp3"
+        audio.parent.mkdir(parents=True)
+        audio.write_bytes(b"preview-audio")
+        return {"ok": True, "audio": str(audio), "stage": "audio_review"}
+
+    asyncio.run(bot._process_audio_job(api, job, preview_fn=fake_preview))
+    return job, api
+
+
+def test_audio_preview_отправляется_до_рендера_и_job_ждёт_решения(
+        work, клиент):
+    bot.save_session(7, {
+        "step": bot.READY,
+        "scenario": SCENARIO,
+        "photo": {"asset_id": "a1", "file": "ф.jpg"},
+        "voice_id": "voice-1",
+    })
+    _press("build", _Msg())
+
+    job, api = _deliver_audio_preview()
+
+    saved = bot._job_store().get(job.job_id)
+    assert saved.status == "awaiting_audio_approval"
+    assert bot.load_session(7)["step"] == bot.AUDIO_REVIEW
+    assert api.audios[-1]["bytes"] == b"preview-audio"
+    assert api.audios[-1]["caption"] == bot.AUDIO_REVIEW_MSG
+    assert _labels(api.audios[-1]["reply_markup"]) == [
+        "✅ Аудио подходит",
+        "🎙 Не подходит — запишу сам(а)",
+    ]
+    assert not api.videos
+
+
+def test_утверждённое_audio_переходит_в_render_queue_без_повторного_tts(
+        work, клиент, monkeypatch):
+    bot.save_session(7, {
+        "step": bot.READY,
+        "scenario": SCENARIO,
+        "photo": {"asset_id": "a1", "file": "ф.jpg"},
+        "voice_id": "voice-1",
+    })
+    _press("build", _Msg())
+    job, _api = _deliver_audio_preview()
+    approved = []
+    monkeypatch.setattr(
+        bot, "approve_tts_audio",
+        lambda workdir: approved.append(workdir) or {},
+    )
+
+    msg = _Msg()
+    _press(f"audio_ok:{job.job_id}", msg)
+
+    assert approved == [job.workdir]
+    assert bot._job_store().get(job.job_id).status == "queued"
+    assert bot.load_session(7)["step"] == bot.BUILDING
+    assert msg.replies[-1] == bot.RENDER_QUEUED_MSG
+
+
+def test_отказ_от_tts_принимает_одно_telegram_voice_и_ставит_render(
+        work, клиент, monkeypatch):
+    bot.save_session(7, {
+        "step": bot.READY,
+        "scenario": SCENARIO,
+        "photo": {"asset_id": "a1", "file": "ф.jpg"},
+        "voice_id": "voice-1",
+    })
+    _press("build", _Msg())
+    job, _api = _deliver_audio_preview()
+
+    reject_msg = _Msg()
+    _press(f"audio_self:{job.job_id}", reject_msg)
+    assert bot._job_store().get(job.job_id).status == "awaiting_user_audio"
+    assert bot.load_session(7)["step"] == bot.WAIT_FINAL_AUDIO
+    assert "одним голосовым" in reject_msg.replies[-1]
+
+    script_msg = _Msg()
+    _press(f"audio_script:{job.job_id}", script_msg)
+    assert "Продажи начинаются раньше." in script_msg.replies[-1]
+    assert "Сохрани себе." in script_msg.replies[-1]
+
+    monkeypatch.setattr(bot, "_download", _fake_download)
+    prepared = []
+    monkeypatch.setattr(
+        bot,
+        "prepare_user_audio",
+        lambda workdir, source: prepared.append((workdir, source)) or {"ok": True},
+    )
+    voice_msg = _Msg(voice=object())
+    asyncio.run(bot.on_message(_Update(voice_msg), None))
+
+    assert prepared and prepared[0][0] == job.workdir
+    assert bot._job_store().get(job.job_id).status == "queued"
+    assert bot.load_session(7)["step"] == bot.BUILDING
+    assert voice_msg.replies[-1] == bot.FINAL_AUDIO_ACCEPTED
+
+
+def test_new_не_бросает_job_которая_ждёт_audio_approval(work, клиент):
+    bot.save_session(7, {
+        "step": bot.READY,
+        "scenario": SCENARIO,
+        "photo": {"asset_id": "a1", "file": "ф.jpg"},
+        "voice_id": "voice-1",
+    })
+    _press("build", _Msg())
+    job, _api = _deliver_audio_preview()
+    msg = _Msg()
+
+    asyncio.run(bot.cmd_new(_Update(msg), None))
+
+    assert msg.replies[-1] == bot.BUSY_MSG
+    assert bot._job_store().get(job.job_id).status == "awaiting_audio_approval"
+    assert bot.load_session(7)["current_job_id"] == job.job_id
 
 
 # --- шаг 9: сборка ролика ------------------------------------------------------
@@ -1484,7 +1614,7 @@ def test_сбой_статусного_сообщения_не_теряет_dura
     _press("build", msg)
 
     job = bot._job_store().latest_for_chat(7)
-    assert job.status == "queued"
+    assert job.status == "audio_queued"
     assert bot.load_session(7)["current_job_id"] == job.job_id
 
 
@@ -1576,7 +1706,7 @@ def test_с_islands_оценка_меньше_и_хватает_там_где_б
         bot.enqueue_build(1, SCENARIO, language="ru", voice_id="voice-1")
 
     job = bot.enqueue_build(2, SCENARIO, language="ru", voice_id="voice-1")
-    assert job.status == "queued"
+    assert job.status == "audio_queued"
 
 
 def test_islands_без_master_audio_даёт_полную_оценку(work, tmp_path, monkeypatch):
