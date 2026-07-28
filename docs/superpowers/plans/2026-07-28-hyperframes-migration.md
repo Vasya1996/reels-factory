@@ -15,7 +15,7 @@
 
 ## Глобальные ограничения
 
-- Кадр **1080×1920, 30 кадров/с** (`config.py:48-49`), громкость **−14 LUFS / −1.5 TP** (`config.py:50-51`).
+- Кадр **1080×1920, 30 кадров/с** (`config.py:47-48`), громкость **−14 LUFS / −1.5 TP** (`config.py:49-50`).
 - Версия движка **жёстко 0.7.70** (`hyperframes_blocks.py:25`).
 - **Все тайминги кратны 1/30 секунды.**
 - **Громкость приводим сами** — в движке её нет.
@@ -38,7 +38,7 @@
 - `safe_to_skip_avatar` разрешён валидатором **только** при `coverage == "full_broll"` и `effect.type == "broll"` (`editplan.py:2456-2462`); `avatar_required` блока считается только по фразам `full_broll` (`:1908-1916`).
 - `enforce_visual_grounding` обязана менять покрытие **и у окна, и у его фраз** — иначе `validate_edit_plan` упадёт на несовпадении (`editplan.py:2443-2444`), как это делает штатный `_downgrade_window` (`:2113-2118`).
 - `effect["src"]` — **имя ассета библиотеки**, не путь. Путь считает `_asset_path` (`editplan.py:665`), исходные данные лежат в `window["asset"]`.
-- Прямоугольники окна видео в вертикали: `overlay` `{0,0,1080,1920}`, `stack` `{0,0,1080,844}`, `split` `{0,960,1080,960}`, `pip` `{738,28,312,555}`.
+- Прямоугольники окна видео в вертикали: `overlay` `{0,0,1080,1920}`, `stack` `{0,0,1080,844}`, `split` `{0,960,1080,960}`, `pip` `{690,28,360,203}`.
 - `ClaudeSkillRunner` (`llm.py:52`) работает в изолированном профиле `~/.reels-factory/claude` с `--setting-sources ""` — **скилы HeyGen из `~/.claude/skills` он не увидит**. Нужен отдельный запуск.
 - GSAP лежит в `~/.claude/skills/talking-head-recut/assets/vendor/gsap.min.js`.
 - Восемь наших блоков (`hyperframes_blocks.py:593-601`) вызываются только из `revideo_render.py:104`. После переезда их содержание передаётся агенту заданием, а сам `render_block` становится неиспользуемым — это осознанно, см. «Отложено».
@@ -203,9 +203,9 @@ git commit -m "chore(hf): install skills, pin engine, vendor gsap"
 
 **Интерфейсы:**
 - Потребляет: `zoom.detect_face_anchor(src, *, sample_fps=2.0, run_probe=None, detect=None) -> tuple[float, float]` (`zoom.py:55`, доли кадра; без детекта возвращает `(0.5, 0.42)`).
-- Производит: `face_box_for(video, out_json, *, width=OUT_W, height=OUT_H, detect=None) -> dict` → `{"cx", "cy", "h"}` в пикселях; `load_face(rdir) -> dict | None`; `free_bands(face) -> list[dict]` — свободные полосы над и под лицом внутри ядра.
+- Производит: `face_box_for(video, out_json, *, width=OUT_W, height=OUT_H, detect=None) -> dict` → `{"cx", "cy", "h"}` в пикселях; `load_face(rdir) -> dict | None`; `free_bands(face) -> list[dict]` — свободные полосы над лицом и под ним.
 
-**Зачем `free_bands`:** ведущая стоит по центру, поэтому «поставь карточку внутрь ядра» — недостаточная инструкция. Агенту нужно отдать конкретные прямоугольники, куда можно.
+**Зачем `free_bands`:** ведущая стоит по центру, поэтому «поставь карточку в свободную полосу» — недостаточная инструкция. Агенту нужно отдать конкретные прямоугольники, куда можно.
 
 - [ ] **Шаг 1: Написать падающий тест**
 
@@ -234,7 +234,7 @@ def test_без_детекта_якорь_по_умолчанию(tmp_path):
 
 
 def test_свободные_полосы_не_пересекают_лицо(tmp_path):
-    from reels_factory.hf_layout import face_box, violations
+    from reels_factory.hf_layout import violations
 
     face = face_box_for("нет.mp4", tmp_path / "face.json", detect=lambda src, fps: [])
     bands = free_bands(face)
@@ -350,8 +350,8 @@ git commit -m "feat(face): face box and free bands of the frame"
 - Создать: `plugins/reels-factory/engine/tests/test_hf_layout.py`
 
 **Интерфейсы:**
-- Производит: `VIDEO_RECTS`, `ALLOWED_ZONES`, `CORE_BOX`, `UI_BAND_TOP`, `FACE_MARGIN`, `quantize(seconds) -> float`, `face_box(face) -> dict | None`, `violations(content_rect, face) -> list[str]`.
-- `violations` возвращает строки с маркерами: `"ядро"`, `"интерфейс"`, `"лицо"` — по ним гейты раскладывают нарушения по разным ключам.
+- Производит: `VIDEO_RECTS`, `ALLOWED_ZONES`, `FACELESS_ZONES`, `FACE_MARGIN`, `quantize(seconds) -> float`, `face_box(face) -> dict | None`, `violations(content_rect, face) -> list[str]`.
+- `violations` возвращает одну строку — «перекрывает лицо ведущей», либо пустой список.
 
 - [ ] **Шаг 1: Написать падающий тест**
 
@@ -431,7 +431,7 @@ VIDEO_RECTS = {
     "overlay": {"left": 0, "top": 0, "width": 1080, "height": 1920},
     "stack": {"left": 0, "top": 0, "width": 1080, "height": 844},
     "split": {"left": 0, "top": 960, "width": 1080, "height": 960},
-    "pip": {"left": 738, "top": 28, "width": 312, "height": 555},
+    "pip": {"left": 690, "top": 28, "width": 360, "height": 203},
 }
 
 # Все пять зон скила разрешены: своих ограничений поверх его геометрии
@@ -525,7 +525,7 @@ def _plan(items):
             "coverage": "hyperframes",
             "safe_to_skip_avatar": False,
             "effect": {
-                "type": "chart_bars",
+                "type": "concept_nodes",
                 "title": "Три вопроса",
                 "items": [{"label": t, "v": 1} for t in items],
                 "visual_director": {"source": "llm", "template": "concept_nodes"},
@@ -539,7 +539,7 @@ def _plan(items):
 
 def test_заземлённая_вставка_остаётся():
     plan = enforce_visual_grounding(_plan(["Кому продаём", "Кто клиент"]))
-    assert plan["windows"][0]["effect"]["type"] == "chart_bars"
+    assert plan["windows"][0]["effect"]["type"] == "concept_nodes"
     assert plan["log"] == []
 
 
@@ -564,13 +564,13 @@ def test_детерминированная_вставка_не_трогаетс
     """task_list собирается кодом из речи окна — выдумать там нечего."""
     plan = _plan(["Открыть сайт elevenlabs"])
     plan["windows"][0]["effect"].pop("visual_director", None)
-    assert enforce_visual_grounding(plan)["windows"][0]["effect"]["type"] == "chart_bars"
+    assert enforce_visual_grounding(plan)["windows"][0]["effect"]["type"] == "concept_nodes"
 
 
 def test_шаблонные_подписи_не_считаются_выдумкой():
     """«КОМУ», «ЧТО», «КАК» приходят из словаря локализации."""
     plan = _plan(["КОМУ", "ЧТО", "КАК"])
-    assert enforce_visual_grounding(plan)["windows"][0]["effect"]["type"] == "chart_bars"
+    assert enforce_visual_grounding(plan)["windows"][0]["effect"]["type"] == "concept_nodes"
 
 
 def test_вставка_без_текста_не_трогается():
@@ -586,7 +586,7 @@ def test_вставка_без_текста_не_трогается():
 def test_исходный_план_не_меняется():
     original = _plan(["Открыть сайт elevenlabs"])
     enforce_visual_grounding(original)
-    assert original["windows"][0]["effect"]["type"] == "chart_bars"
+    assert original["windows"][0]["effect"]["type"] == "concept_nodes"
 ```
 
 - [ ] **Шаг 2: Запустить, убедиться что падает**
@@ -618,8 +618,10 @@ _MIN_ROOT = 4
 # Детерминированные блоки (task_list, stat_number, before_after) собираются
 # из речи окна кодом (editplan.py:806-817, :998-1002, :531-537, :552) —
 # выдумать там нечего. Единственный путь, где в кадр может попасть предмет,
-# которого нет в сценарии, — LLM Visual Director: _visual_director_effect
-# ставит в эффект метку {"source": "llm"} (editplan.py:2804-2813).
+# которого нет в сценарии, — LLM Visual Director. Метку source в эффект
+# кладёт _visual_director_effect (editplan.py:926-946), а значение "llm"
+# приходит из apply_visual_recommendations(source="llm") (editplan.py:3253).
+# Правиловые шаблоны несут ту же метку со значением "rules" — их пропускаем.
 #
 # Шаблонные подписи из словаря локализации («КОМУ», «ЧТО», «КАК» —
 # editplan.py:1208, :1250) ничего не утверждают о фактах и пропускаются.
@@ -635,10 +637,16 @@ def _speech_roots(text: str) -> set[str]:
     return {_root(w) for w in _WORD_RE.findall(str(text or ""))}
 
 
+# свободный текст шаблонов, который модель тоже придумывает
+_FREE_TEXT_KEYS = ("offer", "actual", "resolution", "subtitle", "caption")
+
+
 def _item_texts(effect: dict) -> list[str]:
-    """Строки вставки из обоих мест, где движок их держит."""
+    """Строки вставки из всех мест, где движок их держит."""
     variables = (effect.get("hyperframes") or {}).get("variables") or {}
     texts = [str(x) for x in (variables.get("items") or []) if isinstance(x, str)]
+    texts += [str(variables[k]) for k in _FREE_TEXT_KEYS
+              if isinstance(variables.get(k), str)]
     if texts:
         return texts
     out = []
@@ -693,6 +701,7 @@ def enforce_visual_grounding(plan: dict) -> dict:
         window["transition_in"] = "none"
         window["caption"] = "bottom"
         window["asset"] = None
+        window["material"] = None
         window["safe_to_skip_avatar"] = False
         window["decision_reason"] = (
             "Снято граундингом: в речи нет опоры для " + "; ".join(stray))
@@ -744,7 +753,7 @@ git commit -m "feat(editplan): show only what is actually said"
 
 **Интерфейсы:**
 - У окна **добавляется** поле `zone` — `video-overlay` там, где ведущий несёт смысл, `fullscreen` там, где важнее показать. Поле `camera` **остаётся** (его читает `test_editplan.py:472`).
-- Поля `layout` **не добавляем**: в вертикали работает единственная раскладка `overlay`, а различие выражается зоной. Раскладками управляет агент внутри разрешённого набора, наше дело — сказать зону.
+- Поля `layout` **не добавляем**: раскладку выбирает агент. Наше дело — записать в окно подсказку по зоне, а решение остаётся за ним.
 - **Экономии на аватаре эта задача не даёт.** Валидатор разрешает `safe_to_skip_avatar` только для `coverage="full_broll"` с эффектом `broll` (`editplan.py:2456-2462`), а блок считается безопасным только по фразам `full_broll` (`:1908-1916`). Пропуск аватара под полноэкранной графикой — отдельная задача 6.
 
 - [ ] **Шаг 1: Написать падающий тест**
@@ -805,9 +814,9 @@ def test_даунгрейд_возвращает_зону_с_ведущим():
 В `editplan.py` над `_assign_window` добавить:
 
 ```python
-# Зона выводится из смысла окна: где ведущий несёт смысл — карточка поверх
-# видео, где важнее показать — кадр отдаётся показу. Три остальные зоны скила
-# в вертикали лежат в полосе интерфейса приложения и нами запрещены.
+# Подсказка по зоне из смысла окна: где ведущий несёт смысл — карточка поверх
+# видео, где важнее показать — кадр отдаётся показу. Это именно подсказка:
+# окончательный выбор из пяти зон скила делает агент.
 _FACELESS_COVERAGE = {"full_broll", "hyperframes"}
 
 
@@ -931,7 +940,7 @@ def _is_faceless(window: dict) -> bool:
 
 Это важно: если убрать и его, блок с окном визуального директора (покрытие `hyperframes`, зона `fullscreen`, но пометку ставить запрещено) будет считаться безлицевым, попадёт в `covered_block_indexes` (`:2623-2628`) и получит чёрный кадр вместо ведущей. Тест этого не поймает — он подаёт окно с уже выставленной пометкой.
 
-То же самое для блочной проверки на `:2596-2599`.
+(Это та же блочная проверка, что названа выше как третье место.)
 
 **Третье место, без которого ничего не заработает** — блочная проверка `editplan.py:2589-2603`: там требуется, чтобы у блока с `avatar_required=False` **все** окна были `full_broll` с безопасным пропуском. Расширить тем же условием `faceless`.
 
@@ -960,7 +969,7 @@ git commit -m "feat(editplan): skip avatar under fullscreen graphics"
 - Создать: `plugins/reels-factory/engine/tests/test_hf_gates.py`
 
 **Интерфейсы:**
-- Производит: `check_storyboard(storyboard: dict, face: dict | None) -> dict` — `D8_face`, `D9_frame_grid`, `D10_zone`, `D11_shape`. Значение — `"PASS"` либо `"FAIL: ..."`.
+- Производит: `check_storyboard(storyboard, face, faceless_windows=None) -> dict` — `D8_face`, `D9_frame_grid`, `D10_zone`, `D11_shape`, `D12_faceless_cover`. Значение — `"PASS"` либо `"FAIL: ..."`.
 - Контракт раскадровки, который мы требуем от агента: у каждой карточки `id`, `startSec`, `endSec`, `zone`, `contentRect`.
 
 - [ ] **Шаг 1: Написать падающий тест**
@@ -1023,6 +1032,16 @@ def test_карточка_без_прямоугольника_валится():
     assert gates["D11_shape"].startswith("FAIL")
 
 
+def test_интервал_без_ведущей_обязан_быть_закрыт():
+    window = {"id": "w1", "final_timing": {"start": 0.0, "end": 3.0}}
+    открыт = check_storyboard({"cards": [_card()]}, FACE, [window])
+    assert открыт["D12_faceless_cover"].startswith("FAIL")
+
+    закрыт = check_storyboard(
+        {"cards": [_card(zone="fullscreen", startSec=0.0, endSec=3.0)]}, FACE, [window])
+    assert закрыт["D12_faceless_cover"] == "PASS"
+
+
 def test_пустая_раскадровка_проходит():
     assert set(check_storyboard({"cards": []}, FACE).values()) == {"PASS"}
 ```
@@ -1047,9 +1066,15 @@ from __future__ import annotations
 from reels_factory.hf_layout import ALLOWED_ZONES, FACELESS_ZONES, quantize, violations
 
 
-def check_storyboard(storyboard: dict, face: dict | None) -> dict:
-    """Гейты раскадровки. PASS либо FAIL с перечислением карточек."""
-    face_bad, grid_bad, zone_bad, shape_bad = [], [], [], []
+def check_storyboard(storyboard: dict, face: dict | None,
+                     faceless_windows: list[dict] | None = None) -> dict:
+    """Гейты раскадровки. PASS либо FAIL с перечислением карточек.
+
+    faceless_windows — окна плана, где аватар не заказан. На этих интервалах
+    в базе чёрный кадр, и его обязана закрыть полноэкранная карточка. Если
+    агент выбрал там другую зону — зритель увидит чёрный экран с плашкой.
+    """
+    face_bad, grid_bad, zone_bad, shape_bad, cover_bad = [], [], [], [], []
 
     for card in storyboard.get("cards") or []:
         card_id = card.get("id", "?")
@@ -1075,23 +1100,38 @@ def check_storyboard(storyboard: dict, face: dict | None) -> dict:
         for problem in violations(rect, face):
             face_bad.append(f"{card_id}: {problem}")
 
+    for window in faceless_windows or []:
+        start = float(window["final_timing"]["start"])
+        end = float(window["final_timing"]["end"])
+        covered = any(
+            card.get("zone") == "fullscreen"
+            and float(card.get("startSec", 0)) <= start + 0.001
+            and float(card.get("endSec", 0)) >= end - 0.001
+            for card in storyboard.get("cards") or []
+        )
+        if not covered:
+            cover_bad.append(
+                f'{window["id"]}: интервал {start}–{end} без ведущей не закрыт '
+                "полноэкранной карточкой — будет чёрный экран")
+
     def gate(problems: list[str]) -> str:
         return "PASS" if not problems else "FAIL: " + "; ".join(problems)
 
     return {"D8_face": gate(face_bad), "D9_frame_grid": gate(grid_bad),
-            "D10_zone": gate(zone_bad), "D11_shape": gate(shape_bad)}
+            "D10_zone": gate(zone_bad), "D11_shape": gate(shape_bad),
+            "D12_faceless_cover": gate(cover_bad)}
 ```
 
 - [ ] **Шаг 4: Запустить тесты**
 
 Запуск: `cd plugins/reels-factory/engine && python -m pytest tests/test_hf_gates.py -v`
-Ожидание: 8 passed.
+Ожидание: 9 passed.
 
 - [ ] **Шаг 5: Коммит**
 
 ```bash
 git add plugins/reels-factory/engine/src/reels_factory/hf_gates.py plugins/reels-factory/engine/tests/test_hf_gates.py
-git commit -m "feat(hf): gate the storyboard on face, UI band, grid and core"
+git commit -m "feat(hf): gate the storyboard on face, grid, zone and shape"
 ```
 
 ---
@@ -1212,7 +1252,7 @@ def _window_block(window: dict, text_by_id: dict) -> str:
 
     lines = [
         f'### Окно `{window.get("id")}` — {timing.get("start")}–{timing.get("end")} с',
-        f'- зона карточки: `{window.get("zone")}`',
+        f'- зона-подсказка от плана: `{window.get("zone")}` (можешь выбрать другую)',
         f'- что звучит: «{speech.strip()}»',
     ]
     if effect.get("type") and effect["type"] != "none":
@@ -1651,7 +1691,7 @@ TIMED = {"total": 6.0, "blocks": [{"role": "hook", "start": 0.0, "end": 6.0,
                                    "speech": "кому продаём"}]}
 GOOD = {"cards": []}
 BAD = {"cards": [{"id": "c1", "startSec": 0.0, "endSec": 3.0, "zone": "video-overlay",
-                  "contentRect": {"left": 130, "top": 1100, "width": 810, "height": 260}}]}
+                  "contentRect": {"left": 200, "top": 400, "width": 700, "height": 300}}]}
 
 
 def test_сборка_проходит_все_шаги(tmp_path, monkeypatch):
@@ -1679,15 +1719,15 @@ def test_провал_гейтов_вызывает_повтор(tmp_path, monke
     res = hf_render.assemble_hyperframes(
         tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
         master_audio=tmp_path / "voice.wav", alignment_words=[])
-    assert res["gates"]["D9_ui_band"] == "PASS"
-    assert "интерфейс" in (tmp_path / "BRIEF.md").read_text(encoding="utf-8")
+    assert res["gates"]["D8_face"] == "PASS"
+    assert "лицо" in (tmp_path / "BRIEF.md").read_text(encoding="utf-8")
 
 
 def test_две_неудачи_подряд_роняют_сборку(tmp_path, monkeypatch):
     from reels_factory import hf_render
 
     _fakes(monkeypatch, tmp_path, [BAD, BAD])
-    with pytest.raises(RuntimeError, match="интерфейс"):
+    with pytest.raises(RuntimeError, match="лицо"):
         hf_render.assemble_hyperframes(
             tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
             master_audio=tmp_path / "voice.wav", alignment_words=[])
@@ -1756,8 +1796,8 @@ def run_step(rdir, step: str, fn):
 def _cli(*args: str, cwd) -> None:
     """Вызов CLI движка. На Windows npx резолвится только через shell.
 
-    Кавычим КАЖДЫЙ аргумент: у `--caption-zone` значение содержит `;` и `=`,
-    а это разделители для cmd.exe и батника npx.cmd.
+    Кавычим КАЖДЫЙ аргумент: пути содержат пробелы, а значения флагов —
+    разделители, которые cmd.exe и батник npx.cmd разберут по-своему.
     """
     quoted = " ".join(f'"{a}"' for a in args)
     command = f'npx --yes hyperframes@{_HF_VERSION} {quoted}'
@@ -1860,7 +1900,9 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         if board is None:
             board = json.loads((rdir / "storyboard.json").read_text(encoding="utf-8"))
 
-        result = check_storyboard(board, load_face(rdir))
+        faceless = [w for w in (edit_plan.get("windows") or [])
+                    if w.get("safe_to_skip_avatar")]
+        result = check_storyboard(board, load_face(rdir), faceless)
         failed = [f"{k}: {v}" for k, v in result.items() if v.startswith("FAIL")]
         if not failed:
             gate_result = result
@@ -1941,7 +1983,7 @@ def test_мастер_звук_включён_по_умолчанию(monkeypatc
 
 - [ ] **Шаг 4: Прикрыть тесты конвейера фейком мастер-звука**
 
-Из 27 тестов `test_pipeline.py` 26 идут через помощник `_fakes` (`:57`), и лишь пять передают `master_audio_fn` (`:197`, `:260`, `:329`, `:410`, `:935`). После смены дефолта остальные позовут настоящую сборку — то есть сеть и ElevenLabs.
+Из 27 тестов `test_pipeline.py` 25 идут через помощник `_fakes` (`:57`), и лишь пять передают `master_audio_fn` (`:197`, `:260`, `:329`, `:410`, `:935`). После смены дефолта остальные позовут настоящую сборку — то есть сеть и ElevenLabs.
 
 Сигнатуру `_fakes` и её возвращаемый 2-кортеж **менять нельзя**: он распаковывается в 26 местах. Поэтому фейк ставится подменой имени внутри самого помощника — `pipeline.py:228-229` резолвит его из глобалей модуля:
 
@@ -2154,7 +2196,7 @@ def test_живая_сборка_ролика(tmp_path):
 ```bash
 ffmpeg -y -ss 15 -i <путь к reel.mp4> -frames:v 1 frame15.png
 ```
-Проверить: лицо не перекрыто и не обрезано, ниже 1300 пикселей пусто, субтитры на своих словах, кириллица не рассыпалась.
+Проверить: лицо не перекрыто и не обрезано, подписи не уходят под кнопки приложения, субтитры на своих словах, кириллица не рассыпалась.
 
 - [ ] **Шаг 4: Коммит**
 
@@ -2578,11 +2620,28 @@ def test_без_предмета_материал_не_нужен():
 
 - [ ] **Шаг 3: Реализация**
 
-В `editplan.py` добавить функцию и вызывать её при сборке окна, записывая результат в поле `material`:
+В `editplan.py` добавить функцию рядом с `_zone_for` (задача 5) и вызывать её в `_assign_window` (`:1284`), записывая результат в поле `material` рядом с `zone`:
 
 ```python
-# домен в речи распознаём по «точка» и по латинице с точкой
-_SITE_RE = re.compile(r"([a-z0-9-]+)\s*(?:точка|\.)\s*([a-z]{2,6})", re.IGNORECASE)
+        "material": material_for_phrase(
+            " ".join(p.get("text", "") for p in selected)),
+```
+
+Сама функция:
+
+```python
+# Домен в речи: «elevenlabs точка ай о», «сайт example точка ру».
+# Зона верхнего уровня в расшифровке приходит словами, поэтому переводим её.
+_SPOKEN_TLD = {"ай о": "io", "ру": "ru", "кз": "kz", "ком": "com",
+               "нет": "net", "орг": "org", "ай": "ai"}
+_SITE_RE = re.compile(
+    r"([a-z0-9-]{3,})\s*(?:точка|\.)\s*([a-z]{2,6}|" +
+    "|".join(_SPOKEN_TLD) + ")", re.IGNORECASE)
+
+
+def _domain(match) -> str:
+    tld = match.group(2).lower()
+    return f"https://{match.group(1)}.{_SPOKEN_TLD.get(tld, tld)}"
 # маркеры последовательности действий на экране
 _ROUTE_MARKERS = ("открыва", "вводишь", "нажима", "выбира", "листа", "прокручива")
 
@@ -2595,17 +2654,21 @@ def material_for_phrase(text: str) -> dict | None:
     """
     low = str(text or "").lower()
     site = _SITE_RE.search(low)
+    query = None
     if site and sum(marker in low for marker in _ROUTE_MARKERS) < 2:
-        return {"kind": "site", "url": f"https://{site.group(1)}.{site.group(2)}"}
+        return {"kind": "site", "url": _domain(site)}
     if sum(marker in low for marker in _ROUTE_MARKERS) >= 2:
+        # Ввод в поиск умеем только на Google: селектор поля и результата
+        # у каждого сайта свой, гадать нельзя. Если назван другой домен —
+        # просто открываем его и листаем.
+        on_google = site is None
         steps = [{"type": "goto",
-                  "url": f"https://{site.group(1)}.{site.group(2)}" if site
-                         else "https://www.google.com"}]
-        if "вводишь" in low or "запрос" in low:
+                  "url": "https://www.google.com" if on_google else _domain(site)}]
+        if on_google and ("вводишь" in low or "запрос" in low):
             steps.append({"type": "type", "selector": "textarea[name=q]",
-                          "text": low[:60]})
-        if "выбира" in low or "ссылк" in low:
-            steps.append({"type": "click", "selector": "h3"})
+                          "text": query or low[:60]})
+            if "выбира" in low or "ссылк" in low:
+                steps.append({"type": "click", "selector": "h3"})
         steps.append({"type": "scroll", "pixels": 1200})
         return {"kind": "route", "steps": steps}
     return None
@@ -2619,6 +2682,10 @@ def material_for_phrase(text: str) -> dict | None:
 - [ ] **Шаг 5: Готовить материал до запуска агента**
 
 В `hf_render.prepare`, до `write_brief`, пройти по окнам плана и для каждого с полем `material` вызвать `capture_site.cached_capture` (`kind == "site"`) или `screen_route.record_route` (`kind == "route"`), положить результат в `public/media/` и добавить запись в список `media`, который уходит в задание.
+
+**Импортировать `capture_site` и `screen_route` надо внутри функции, не в шапке модуля:** `capture_site` сам импортирует `hf_render._cli`, и импорт на уровне модуля даст кольцо.
+
+Дополнительно: `visual_grounding.enforce_visual_grounding` и `_downgrade_window` должны снимать поле `material` вместе с эффектом — иначе для снятого окна мы приготовим снимок, который никуда не пойдёт.
 
 - [ ] **Шаг 6: Прогнать весь набор**
 
@@ -2758,7 +2825,7 @@ git commit -m "refactor(style): drop the legacy yellow hardcode"
 3. **Приём «было и стало» на двух снимках** — сейчас блок работает только на текстовых парах.
 4. **Апгрейд движка с 0.7.70** — отдельной задачей с полным перепрогоном.
 5. **Судьба `tz_validator.py`** — после переезда он проверяет формат, которого больше нет.
-6. **Разбор чужих залетевших роликов** — источник YouTube официально; после того, как выжмем скилы HeyGen.
+
 
 ## Чего в плане намеренно нет
 
