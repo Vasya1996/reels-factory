@@ -407,8 +407,9 @@ def test_лицо_едет_вместе_с_окном_видео():
 
     face = {"cx": 540, "cy": 520, "h": 260}
     в_углу = moved_face(face, VIDEO_RECTS["pip"])
-    assert в_углу["cx"] == pytest.approx(690 + 540 * 360 / 1080)
-    assert в_углу["h"] == pytest.approx(260 * 360 / 1080)
+    scale = max(360 / 1080, 203 / 1920)          # вписывание по большей стороне
+    assert в_углу["cx"] == pytest.approx(690 + 540 * scale)
+    assert в_углу["h"] == pytest.approx(260 * scale)
     # там, где лицо было раньше, теперь ставить карточку можно
     assert violations({"left": 200, "top": 400, "width": 700, "height": 300},
                       в_углу) == []
@@ -438,7 +439,7 @@ talking-head-recut (таблица composition layouts, колонка portrait)
 """
 from __future__ import annotations
 
-from reels_factory.config import FPS, OUT_W
+from reels_factory.config import FPS, OUT_H, OUT_W
 
 VIDEO_RECTS = {
     "overlay": {"left": 0, "top": 0, "width": 1080, "height": 1920},
@@ -481,9 +482,14 @@ def moved_face(face: dict | None, video_rect: dict | None) -> dict | None:
     """
     if not face or not video_rect:
         return face
-    scale = float(video_rect["width"]) / OUT_W
-    return {"cx": video_rect["left"] + float(face["cx"]) * scale,
-            "cy": video_rect["top"] + float(face["cy"]) * scale,
+    rw, rh = float(video_rect["width"]), float(video_rect["height"])
+    # object-fit: cover — вписываем по БОЛЬШЕЙ стороне и обрезаем по краям,
+    # поэтому кадр смещён центрирующим отступом, иногда отрицательным
+    scale = max(rw / OUT_W, rh / OUT_H)
+    offset_x = float(video_rect["left"]) + (rw - OUT_W * scale) / 2
+    offset_y = float(video_rect["top"]) + (rh - OUT_H * scale) / 2
+    return {"cx": offset_x + float(face["cx"]) * scale,
+            "cy": offset_y + float(face["cy"]) * scale,
             "h": float(face["h"]) * scale}
 
 
@@ -1243,7 +1249,7 @@ def test_скрытые_субтитры_отмечены(tmp_path):
 
 def test_расписание_клипов_передано(tmp_path):
     text = _text(tmp_path, clips=[{"file": "clips/clip-00.mp4", "start": 0.0,
-                                   "duration": 6.0, "media_start": 0.0}])
+                                   "duration": 6.0}])
     assert "clips/clip-00.mp4" in text
     assert "Клипы с ведущей" in text
 
@@ -1307,7 +1313,7 @@ STYLE_NAME = "minimal"
 FONTS = "Montserrat, Inter"
 
 
-def _window_block(window: dict, text_by_id: dict) -> str:
+def _window_block(window: dict, text_by_id: dict, faceless: bool = False) -> str:
     timing = window.get("final_timing") or {}
     effect = window.get("effect") or {}
     variables = (effect.get("hyperframes") or {}).get("variables") or {}
@@ -1315,10 +1321,9 @@ def _window_block(window: dict, text_by_id: dict) -> str:
 
     lines = [
         f'### Окно `{window.get("id")}` — {timing.get("start")}–{timing.get("end")} с',
-        (f'- **ведущей в кадре нет**: зона обязательно `fullscreen`, '
-         "интервал закрыт целиком, без дыр"
-         if window.get("safe_to_skip_avatar") else
-         f'- зона-подсказка от плана: `{window.get("zone")}` (можешь выбрать другую)'),
+        f'- зона-подсказка от плана: `{window.get("zone")}` (можешь выбрать другую)',
+        *(["- **ведущей в кадре нет**: зона обязательно `fullscreen`, "
+           "интервал закрыт целиком, без дыр"] if faceless else []),
         f'- что звучит: «{speech.strip()}»',
         *(["- субтитры на этом интервале скрыты"]
           if window.get("caption") == "hidden" else []),
@@ -1347,8 +1352,13 @@ def write_brief(rdir, plan: dict, *, face: dict | None, duration: float,
     rdir.mkdir(parents=True, exist_ok=True)
 
     text_by_id = {p["id"]: p.get("text", "") for p in plan.get("phrases") or []}
-    windows = "\n\n".join(_window_block(w, text_by_id)
-                          for w in plan.get("windows") or []) or "Окон нет."
+    # «ведущей нет» — свойство блока, а не окна: тот же признак, что у гейта
+    faceless_blocks = {b["index"] for b in (plan.get("blocks") or [])
+                       if b.get("avatar_required") is False}
+    windows = "\n\n".join(
+        _window_block(w, text_by_id,
+                      faceless=w.get("block_index") in faceless_blocks)
+        for w in plan.get("windows") or []) or "Окон нет."
 
     bands = "\n".join(
         f'- left={b["left"]}, top={b["top"]}, width={b["width"]}, height={b["height"]}'
@@ -1364,8 +1374,6 @@ def write_brief(rdir, plan: dict, *, face: dict | None, duration: float,
 
     clips_block = "\n".join(
         f'- `{c["file"]}` — с {c["start"]:g} с, длительность {c["duration"]:g} с'
-        + (f', начиная с {c["media_start"]:g} с внутри файла'
-           if c.get("media_start") else '')
         for c in (clips or [])
     ) or "Клипов нет."
 
@@ -1962,18 +1970,20 @@ def _place_clips(public: Path, avatar_mp4s: list, avatar_render_plan: dict | Non
         # достраиваем последним кадром, лишнее режем. Заодно приводим к нашему
         # кадру и частоте. Старый рендерер делал ровно это (revideo_render.py:142-168);
         # без подгонки на каждом стыке блоков будет дыра.
+        # -ss ДО -i: точная перемотка с декодированием, иначе попадём на
+        # ближайший ключевой кадр. Клип режется здесь целиком, поэтому агенту
+        # отматывать внутри файла уже нечего.
         subprocess.run(
-            [FFMPEG, "-y", "-i", str(source),
+            [FFMPEG, "-y", "-ss", f"{media_start:.3f}", "-i", str(source),
              "-vf", (f"scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
-                     f"crop={OUT_W}:{OUT_H},fps={FPS},"
+                     f"crop={OUT_W}:{OUT_H},fps={FPS},setsar=1,"
                      f"tpad=stop_mode=clone:stop_duration={duration:.3f},"
                      f"trim=duration={duration:.3f},setpts=PTS-STARTPTS"),
              "-an", *VENC, str(target / name)],
             check=True, capture_output=True)
         clips.append({"file": f"clips/{name}",
                       "start": quantize(start),
-                      "duration": quantize(end - start),
-                      "media_start": quantize(media_start)})
+                      "duration": duration})
     return clips
 
 
@@ -1985,7 +1995,6 @@ def _media_from_plan(plan: dict, public: Path) -> list[dict]:
     в LIBRARY_DIR (editplan.py:665-669). Брать asset["path"] напрямую —
     значит молча остаться без всего видеоряда.
     """
-    from reels_factory.broll_lib import LIBRARY_DIR
     from reels_factory.editplan import _asset_path
 
     media = []
@@ -1994,7 +2003,8 @@ def _media_from_plan(plan: dict, public: Path) -> list[dict]:
         name = asset.get("src") or asset.get("name")
         if not name:
             continue
-        source = _asset_path(name, LIBRARY_DIR, asset)
+        # library_dir=None — _asset_path сам подставит broll_library.LIBRARY_DIR
+        source = _asset_path(name, None, asset)
         if not source or not Path(source).exists():
             continue
         target = public / "media" / Path(source).name
@@ -2216,13 +2226,13 @@ from reels_factory.compose import apply_caption_fixes, build_caption_fixes
 from reels_factory.hf_render import assemble_hyperframes as _assemble
 ```
 
-Сразу после `fmt = config.get("format", "split")` (`pipeline.py:85`) — до всех платных стадий:
+Сразу после определения `fail` (`pipeline.py:97`) — раньше нельзя, там `fail` ещё не существует; это всё равно до оплаты ElevenLabs (`:229`) и HeyGen (`:300-318`):
 
 ```python
     if fmt == "fullscreen":
         return fail("config", RuntimeError(
             "формат fullscreen не поддержан новым сборщиком"))
-    if not master_audio_enabled(config):
+    if not use_master_audio:   # уже посчитан на pipeline.py:94
         return fail("config", RuntimeError(
             "новый сборщик работает только с мастер-звуком; включи master_audio"))
 ```
@@ -2862,7 +2872,7 @@ def material_for_phrase(text: str) -> dict | None:
 
 **Импортировать `capture_site` и `screen_route` надо внутри функции, не в шапке модуля:** `capture_site` сам импортирует `hf_render._cli`, и импорт на уровне модуля даст кольцо.
 
-Дополнительно: `visual_grounding.enforce_visual_grounding` и `_downgrade_window` должны снимать поле `material` вместе с эффектом — иначе для снятого окна мы приготовим снимок, который никуда не пойдёт.
+Дополнительно: `visual_grounding.enforce_visual_grounding`, `_downgrade_window` (`editplan.py:2102`) и `_downgrade_draft_window` (`:1353`) должны снимать поле `material` вместе с эффектом — иначе для снятого окна мы приготовим снимок, который никуда не пойдёт.
 
 - [ ] **Шаг 6: Прогнать весь набор**
 
@@ -2991,7 +3001,7 @@ git commit -m "refactor(style): drop the legacy yellow hardcode"
 3. **Гейт `D6_broll_bed`** (`verify.py:160-176`) при формате не-`avatar` меряет громкость фоновой дорожки в паузе после хука. В новом пути фоновой дорожки нет — проверить на живой сборке, не даёт ли он ложный отказ.
 4. **Приём «ведущий в пузыре»** (`coverage="mixed"`, `effect.bubble`) в новом пути не описан. Либо переносим, либо честно снимаем — решать после первой сборки.
 5. **Флаги `grade`, `grain`, `zoom`, `flash`** остаются в конфиге без действия. Либо чистим конфиг, либо переносим приёмы.
-6. **`window["asset"]["path"]`** в `_media_from_plan` — предположение: «Установленные факты» подтверждают только наличие `window["asset"]`. У внешних ассетов ключа `path` может не быть. Проверить на первом ролике с видеовставкой.
+6. **Путь к файлу ассета** теперь считается через `_asset_path`, как в старом рендерере. Проверить на первом ролике с видеовставкой, что файл действительно находится.
 7. **Под полноэкранной графикой в базе чёрный кадр** (`avatar.py:344`) — и это правильно: карточка `fullscreen` закрывает его целиком. Проверить глазами на первой сборке, что края действительно не видны.
 
 ## Отложено сознательно
