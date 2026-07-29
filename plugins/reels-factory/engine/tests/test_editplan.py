@@ -802,6 +802,15 @@ def test_visual_llm_prompt_и_guardrails():
         apply_visual_recommendations(draft, invalid)
 
 
+def test_промпт_директора_просит_закрывать_дыры_оверлеями():
+    from reels_factory.editplan import visual_analysis_prompt
+
+    plan = {"phrases": [], "windows": [], "blocks": [], "log": []}
+    prompt = visual_analysis_prompt(plan)
+    assert "3 секунд" in prompt
+    assert "оверле" in prompt.lower() or "video-overlay" in prompt
+
+
 def _adjacent_visual_llm_scenario():
     return {
         "theme": "выбор",
