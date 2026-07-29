@@ -1335,3 +1335,89 @@ def test_первые_секунды_прятать_ведущую_нельзя(
     assert any(
         "хук" in error or "hook" in error for error in report["errors"]
     )
+
+
+def _rhythm_plan(windows):
+    phrases = []
+    for index, window in enumerate(windows):
+        speech = window.pop("_speech")
+        phrases.append(
+            {"id": f"p{index}", "text": speech, "window_id": window["id"]}
+        )
+    return {"phrases": phrases, "windows": windows, "blocks": [], "log": []}
+
+
+def test_дыра_получает_материал_по_приоритету():
+    from reels_factory.editplan import fill_material_by_rhythm
+
+    plan = _rhythm_plan([
+        {"id": "w1", "phrase_ids": ["p0"], "role": "development",
+         "coverage": "avatar", "effect": {"type": "none"}, "material": None,
+         "final_timing": {"start": 6.0, "end": 11.0},
+         "_speech": "зайди на elevenlabs точка ай о и посмотри сам"},
+    ])
+    assert fill_material_by_rhythm(plan)["windows"][0]["material"]["kind"] == "site"
+
+
+def test_дыра_без_предмета_получает_сток():
+    from reels_factory.editplan import fill_material_by_rhythm
+
+    plan = _rhythm_plan([
+        {"id": "w1", "phrase_ids": ["p0"], "role": "development",
+         "coverage": "avatar", "effect": {"type": "none"}, "material": None,
+         "final_timing": {"start": 6.0, "end": 11.0},
+         "_speech": "усложняем продажи изучаем хитрые приёмы"},
+    ])
+    material = fill_material_by_rhythm(plan)["windows"][0]["material"]
+    assert material["kind"] == "stock"
+    assert "усложняем" in material["query"]
+
+
+def test_источник_не_повторяется():
+    from reels_factory.editplan import fill_material_by_rhythm
+
+    speech = "зайди на elevenlabs точка ай о и попробуй"
+    plan = _rhythm_plan([
+        {"id": "w1", "phrase_ids": ["p0"], "role": "development",
+         "coverage": "avatar", "effect": {"type": "none"}, "material": None,
+         "final_timing": {"start": 6.0, "end": 11.0}, "_speech": speech},
+        {"id": "w2", "phrase_ids": ["p1"], "role": "development",
+         "coverage": "avatar", "effect": {"type": "none"}, "material": None,
+         "final_timing": {"start": 20.0, "end": 25.0}, "_speech": speech},
+    ])
+    kinds = [
+        window["material"]["kind"]
+        for window in fill_material_by_rhythm(plan)["windows"]
+    ]
+    assert kinds == ["site", "stock"]
+
+
+def test_хук_и_короткие_окна_не_трогаются():
+    from reels_factory.editplan import fill_material_by_rhythm
+
+    plan = _rhythm_plan([
+        {"id": "w1", "phrase_ids": ["p0"], "role": "hook",
+         "coverage": "avatar", "effect": {"type": "none"}, "material": None,
+         "final_timing": {"start": 0.0, "end": 3.5},
+         "_speech": "зайди на elevenlabs точка ай о"},
+        {"id": "w2", "phrase_ids": ["p1"], "role": "development",
+         "coverage": "avatar", "effect": {"type": "none"}, "material": None,
+         "final_timing": {"start": 6.0, "end": 8.0},
+         "_speech": "короткое окно"},
+    ])
+    out = fill_material_by_rhythm(plan)
+    assert out["windows"][0]["material"] is None
+    assert out["windows"][1]["material"] is None
+
+
+def test_окно_с_событием_не_трогается():
+    from reels_factory.editplan import fill_material_by_rhythm
+
+    plan = _rhythm_plan([
+        {"id": "w1", "phrase_ids": ["p0"], "role": "development",
+         "coverage": "hyperframes", "material": None,
+         "effect": {"type": "chart_bars"},
+         "final_timing": {"start": 6.0, "end": 11.0},
+         "_speech": "зайди на elevenlabs точка ай о"},
+    ])
+    assert fill_material_by_rhythm(plan)["windows"][0]["material"] is None

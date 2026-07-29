@@ -1362,6 +1362,96 @@ def material_for_phrase(text: str) -> dict | None:
     return None
 
 
+_STOCK_WORD_RE = re.compile(r"[А-Яа-яЁёA-Za-z]{5,}")
+
+
+def _stock_query(text: str) -> str | None:
+    """Три самых длинных слова речи — детерминированная тема для стока."""
+    words = sorted(
+        {word.lower() for word in _STOCK_WORD_RE.findall(str(text or ""))},
+        key=lambda word: (-len(word), word),
+    )[:3]
+    return " ".join(words) or None
+
+
+def _material_key(material: dict) -> str:
+    if material.get("kind") == "site":
+        return f"site:{material.get('url')}"
+    if material.get("kind") == "route":
+        return "route:" + "|".join(
+            str(step.get("url") or step.get("selector") or step.get("type"))
+            for step in material.get("steps") or []
+        )
+    return f"stock:{material.get('query')}"
+
+
+def fill_material_by_rhythm(
+    plan: dict, *, max_gap_s: float = 3.0
+) -> dict:
+    """Назначить материал avatar-окнам без событий длиннее max_gap_s.
+
+    Приоритет: экранный маршрут → снимок сайта → stock/media-use. Один и тот
+    же источник показывается в ролике только один раз.
+    """
+    result = copy.deepcopy(plan)
+    text_by_id = {
+        phrase["id"]: phrase.get("text", "")
+        for phrase in result.get("phrases") or []
+    }
+    used = {
+        _material_key(window["material"])
+        for window in result.get("windows") or []
+        if window.get("material")
+    }
+
+    for window in result.get("windows") or []:
+        timing = window.get("final_timing") or {}
+        length = (
+            float(timing.get("end", 0.0))
+            - float(timing.get("start", 0.0))
+        )
+        effect = (window.get("effect") or {}).get("type")
+        busy = (effect and effect != "none") or window.get("material")
+        if (
+            busy
+            or window.get("coverage") != "avatar"
+            or length <= max_gap_s
+            or window.get("role") == "cta"
+            or _in_hook_guard(window)
+        ):
+            continue
+
+        speech = " ".join(
+            text_by_id.get(phrase_id, "")
+            for phrase_id in window.get("phrase_ids") or []
+        )
+        candidates = []
+        primary = material_for_phrase(speech)
+        if primary and primary.get("kind") == "route":
+            candidates.append(primary)
+        if primary and primary.get("kind") == "site":
+            candidates.append(primary)
+        query = _stock_query(speech)
+        if query:
+            candidates.append({"kind": "stock", "query": query})
+
+        for material in candidates:
+            key = _material_key(material)
+            if key in used:
+                continue
+            window["material"] = material
+            window["decision_reason"] = (
+                f"Ритм: окно {length:.1f} с без событий, "
+                f"источник {material['kind']}"
+            )
+            used.add(key)
+            result.setdefault("log", []).append(
+                f'{window["id"]}: ритм-материал {material["kind"]}'
+            )
+            break
+    return result
+
+
 def _assign_window(
     windows: list[dict],
     phrases: list[dict],
@@ -2373,6 +2463,7 @@ def finalize_edit_plan(
     )
     from reels_factory.visual_grounding import enforce_visual_grounding
 
+    result = fill_material_by_rhythm(result)
     result = enforce_visual_grounding(result)
     _refresh_blocks_and_summary(result)
     report = validate_edit_plan(
