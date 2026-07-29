@@ -4,9 +4,9 @@ from reels_factory.revideo_adapter import plan_to_tz
 
 def _timed():
     return {"total": 25.0, "blocks": [
-        {"role": "hook", "start": 0.0, "end": 3.0, "speech": "хук"},
-        {"role": "development", "start": 3.0, "end": 13.0, "speech": "развитие"},
-        {"role": "payoff", "start": 13.0, "end": 22.0, "speech": "настроил один раз и готово"},
+        {"role": "hook", "start": 0.0, "end": 4.0, "speech": "хук"},
+        {"role": "development", "start": 4.0, "end": 14.0, "speech": "развитие"},
+        {"role": "payoff", "start": 14.0, "end": 22.0, "speech": "настроил один раз и готово"},
         {"role": "cta", "start": 22.0, "end": 25.0, "speech": "подпишись"},
     ]}
 
@@ -15,11 +15,11 @@ def _words():
     # по 2 слова на блок, тайминги ВНУТРИ блоков (с отступом от границ,
     # как у реального транскрипта)
     return [
-        {"start": 0.2, "end": 1.4, "text": "хук."},
-        {"start": 1.6, "end": 2.7, "text": "внимание."},
-        {"start": 3.3, "end": 7.0, "text": "развитие."},
-        {"start": 7.4, "end": 12.6, "text": "темы."},
-        {"start": 13.3, "end": 18.0, "text": "настроил."},
+        {"start": 0.2, "end": 1.8, "text": "хук."},
+        {"start": 2.0, "end": 3.7, "text": "внимание."},
+        {"start": 4.3, "end": 8.0, "text": "развитие."},
+        {"start": 8.4, "end": 13.6, "text": "темы."},
+        {"start": 14.3, "end": 18.0, "text": "настроил."},
         {"start": 18.4, "end": 21.6, "text": "готово."},
         {"start": 22.3, "end": 23.5, "text": "подпишись."},
         {"start": 23.8, "end": 24.7, "text": "сейчас."},
@@ -38,7 +38,7 @@ def test_покрытый_блок_один_fullscreen_на_весь_блок():
     seg = dev[0]
     # границы БЛОКА, не фраз: транскрипт начинается позже границы блока,
     # зазор показал бы чёрный base
-    assert seg["start"] == 3.0 and seg["end"] == 13.0
+    assert seg["start"] == 4.0 and seg["end"] == 14.0
     eff = seg["effect"]
     assert eff["type"] == "broll" and eff["style"] == "fullscreen"
     assert eff["src"] == "lib_clip.mp4" and eff["src_locked"] is True
@@ -48,7 +48,7 @@ def test_покрытый_блок_один_fullscreen_на_весь_блок():
 def test_внутри_покрытого_блока_нет_bubble_и_pip():
     tz = plan_to_tz(_timed(), _covered_segments(), {}, words=_words())
     for s in tz["segments"]:
-        if 3.0 <= float(s["start"]) < 13.0:
+        if 4.0 <= float(s["start"]) < 14.0:
             eff = s["effect"]
             assert "bubble" not in eff
             assert not (eff.get("type") == "broll" and eff.get("style") == "pip")
@@ -71,7 +71,7 @@ def test_без_insert_блок_остаётся_аватарным():
     # блок разложен по фразам (не одним fullscreen-сегментом на весь блок)
     assert not any(s["effect"].get("type") == "broll"
                    and s["effect"].get("style") == "fullscreen"
-                   and s["start"] == 3.0 and s["end"] == 13.0 for s in dev)
+                   and s["start"] == 4.0 and s["end"] == 14.0 for s in dev)
 
 
 # ---- HyperFrames-триггеры адаптера ----
@@ -92,17 +92,17 @@ def test_before_after_ловит_маркеры():
 
 def _timed_stat():
     return {"total": 20.0, "blocks": [
-        {"role": "hook", "start": 0.0, "end": 3.0, "speech": "хук"},
-        {"role": "development", "start": 3.0, "end": 12.0, "speech": "публикуем 10 статей в день на автопилоте"},
+        {"role": "hook", "start": 0.0, "end": 4.0, "speech": "хук"},
+        {"role": "development", "start": 4.0, "end": 12.0, "speech": "публикуем 10 статей в день на автопилоте"},
         {"role": "cta", "start": 12.0, "end": 20.0, "speech": "подпишись"},
     ]}
 
 
 def test_plan_to_tz_эмитит_stat_number_на_цифре():
     words = [
-        {"start": 0.3, "end": 2.7, "text": "хук."},
-        {"start": 3.3, "end": 6.0, "text": "публикуем 10 статей"},
-        {"start": 6.3, "end": 11.6, "text": "в день на автопилоте."},
+        {"start": 0.3, "end": 3.7, "text": "хук."},
+        {"start": 4.3, "end": 7.0, "text": "публикуем 10 статей"},
+        {"start": 7.3, "end": 11.6, "text": "в день на автопилоте."},
         {"start": 12.3, "end": 19.6, "text": "подпишись."},
     ]
     tz = plan_to_tz(_timed_stat(), None, {}, words=words)
@@ -112,13 +112,13 @@ def test_plan_to_tz_эмитит_stat_number_на_цифре():
 
 def test_plan_to_tz_эмитит_before_after_на_маркерах():
     timed = {"total": 20.0, "blocks": [
-        {"role": "hook", "start": 0.0, "end": 3.0, "speech": "хук"},
-        {"role": "development", "start": 3.0, "end": 12.0, "speech": "было три часа работы стало один клик"},
+        {"role": "hook", "start": 0.0, "end": 4.0, "speech": "хук"},
+        {"role": "development", "start": 4.0, "end": 12.0, "speech": "было три часа работы стало один клик"},
         {"role": "cta", "start": 12.0, "end": 20.0, "speech": "подпишись"},
     ]}
     words = [
-        {"start": 0.3, "end": 2.7, "text": "хук."},
-        {"start": 3.3, "end": 7.0, "text": "было три часа работы"},
+        {"start": 0.3, "end": 3.7, "text": "хук."},
+        {"start": 4.3, "end": 7.0, "text": "было три часа работы"},
         {"start": 7.3, "end": 11.6, "text": "стало один клик."},
         {"start": 12.3, "end": 19.6, "text": "подпишись."},
     ]

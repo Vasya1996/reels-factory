@@ -12,9 +12,9 @@ import reels_factory.pipeline as pipeline
 
 def _scenario():
     return {"theme": "кофе", "blocks": [
-        {"role": "hook", "start": 0.0, "end": 3.0, "speech": "кофе кислит"},
-        {"role": "development", "start": 3.0, "end": 13.0, "speech": "молол мелко"},
-        {"role": "payoff", "start": 13.0, "end": 22.0, "speech": "стало ровно"},
+        {"role": "hook", "start": 0.0, "end": 4.0, "speech": "кофе кислит"},
+        {"role": "development", "start": 4.0, "end": 14.0, "speech": "молол мелко"},
+        {"role": "payoff", "start": 14.0, "end": 22.0, "speech": "стало ровно"},
         {"role": "cta", "start": 22.0, "end": 25.0, "speech": "пиши кофе"},
     ]}
 

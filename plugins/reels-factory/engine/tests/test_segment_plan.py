@@ -7,10 +7,10 @@ import reels_factory.segment_plan as sp
 
 def _scenario():
     return {"blocks": [
-        {"role": "hook", "start": 0.0, "end": 3.0, "speech": "агенты заменят рутину"},
-        {"role": "development", "start": 3.0, "end": 13.0,
+        {"role": "hook", "start": 0.0, "end": 4.0, "speech": "агенты заменят рутину"},
+        {"role": "development", "start": 4.0, "end": 14.0,
          "speech": "настраиваем автоматизацию процессов в компании"},
-        {"role": "payoff", "start": 13.0, "end": 22.0, "speech": "всё работает само"},
+        {"role": "payoff", "start": 14.0, "end": 22.0, "speech": "всё работает само"},
         {"role": "cta", "start": 22.0, "end": 25.0, "speech": "подпишись"},
     ]}
 
@@ -73,10 +73,10 @@ def test_clip_недоступен_деградация_без_покрытия(
 def test_соседние_блоки_не_покрываются_оба(monkeypatch):
     _fake_embed(monkeypatch)
     scenario = {"blocks": [
-        {"role": "hook", "start": 0.0, "end": 3.0, "speech": "хук"},
-        {"role": "context", "start": 3.0, "end": 8.0, "speech": "контекст про ботов"},
-        {"role": "development", "start": 8.0, "end": 18.0, "speech": "автоматизация"},
-        {"role": "payoff", "start": 18.0, "end": 24.0, "speech": "вывод"},
+        {"role": "hook", "start": 0.0, "end": 4.0, "speech": "хук"},
+        {"role": "context", "start": 4.0, "end": 9.0, "speech": "контекст про ботов"},
+        {"role": "development", "start": 9.0, "end": 19.0, "speech": "автоматизация"},
+        {"role": "payoff", "start": 19.0, "end": 24.0, "speech": "вывод"},
         {"role": "cta", "start": 24.0, "end": 27.0, "speech": "подпишись"},
     ]}
     index = {"a.mp4": {"duration": 30.0, "embedding": [1.0, 0.0]},
@@ -95,10 +95,10 @@ def test_ритм_варнинг_на_длинном_аватарном_отре
 def test_один_клип_не_бронируется_дважды(monkeypatch):
     _fake_embed(monkeypatch)
     scenario = {"blocks": [
-        {"role": "hook", "start": 0.0, "end": 3.0, "speech": "хук"},
-        {"role": "context", "start": 3.0, "end": 8.0, "speech": "контекст"},
-        {"role": "development", "start": 8.0, "end": 14.0, "speech": "развитие"},
-        {"role": "payoff", "start": 14.0, "end": 20.0, "speech": "вывод"},
+        {"role": "hook", "start": 0.0, "end": 4.0, "speech": "хук"},
+        {"role": "context", "start": 4.0, "end": 9.0, "speech": "контекст"},
+        {"role": "development", "start": 9.0, "end": 15.0, "speech": "развитие"},
+        {"role": "payoff", "start": 15.0, "end": 20.0, "speech": "вывод"},
         {"role": "cta", "start": 20.0, "end": 23.0, "speech": "подпишись"},
     ]}
     plan = sp.plan_precut(scenario, {}, index=_index(dur=30.0))
