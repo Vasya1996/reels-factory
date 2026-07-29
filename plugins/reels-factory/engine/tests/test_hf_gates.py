@@ -12,7 +12,8 @@ def _card(**over):
 
 
 def test_чистая_раскадровка_проходит():
-    assert set(check_storyboard({"cards": [_card()]}, FACE).values()) == {"PASS"}
+    gates = check_storyboard({"cards": [_card()]}, FACE)
+    assert all(value == "PASS" for key, value in gates.items() if key != "D13_rhythm")
 
 
 def test_карточка_на_лице_валится():
@@ -33,7 +34,7 @@ def test_полноэкранная_карточка_на_лицо_не_пров
 
 def test_нижняя_треть_разрешена():
     gates = check_storyboard({"cards": [_card(zone="lower-third")]}, FACE)
-    assert set(gates.values()) == {"PASS"}
+    assert all(value == "PASS" for key, value in gates.items() if key != "D13_rhythm")
 
 
 def test_время_вне_сетки_кадров_валится():
@@ -70,4 +71,31 @@ def test_интервал_без_ведущей_обязан_быть_закры
 
 
 def test_пустая_раскадровка_проходит():
-    assert set(check_storyboard({"cards": []}, FACE).values()) == {"PASS"}
+    gates = check_storyboard({"cards": []}, FACE)
+    assert all(value == "PASS" for key, value in gates.items() if key != "D13_rhythm")
+
+
+def test_ритм_проходит_когда_разрывы_не_дольше_трёх_секунд():
+    board = {"cards": [
+        _card(id="c1", startSec=6.0, endSec=9.0),
+        _card(id="c2", startSec=12.0, endSec=15.0),
+    ]}
+    gates = check_storyboard(board, FACE, duration=18.0)
+    assert gates["D13_rhythm"] == "PASS"
+
+
+def test_ритм_валится_на_длинном_разрыве():
+    board = {"cards": [_card(startSec=8.0, endSec=11.0)]}
+    gates = check_storyboard(board, FACE, duration=14.0)
+    assert gates["D13_rhythm"].startswith("FAIL")
+
+
+def test_ритм_не_проверяет_первые_четыре_секунды():
+    board = {"cards": [_card(startSec=7.0, endSec=10.0)]}
+    gates = check_storyboard(board, FACE, duration=13.0)
+    assert gates["D13_rhythm"] == "PASS"
+
+
+def test_ритм_без_длительности_пропускается():
+    gates = check_storyboard({"cards": []}, FACE)
+    assert gates["D13_rhythm"].startswith("SKIP")

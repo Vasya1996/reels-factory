@@ -12,7 +12,10 @@ from reels_factory.hf_layout import (
 
 
 def check_storyboard(storyboard: dict, face: dict | None,
-                     faceless_windows: list[dict] | None = None) -> dict:
+                     faceless_windows: list[dict] | None = None, *,
+                     duration: float | None = None,
+                     hook_guard_s: float = 4.0,
+                     max_gap_s: float = 3.0) -> dict:
     """Гейты раскадровки. PASS либо FAIL с перечислением карточек.
 
     faceless_windows — окна плана, где аватар не заказан. На этих интервалах
@@ -70,9 +73,28 @@ def check_storyboard(storyboard: dict, face: dict | None,
                 f'{window["id"]}: интервал {start}–{end} без ведущей не закрыт '
                 "полноэкранной карточкой — будет чёрный экран")
 
+    rhythm_bad: list[str] = []
+    rhythm_skip = duration is None
+    if not rhythm_skip:
+        spans = sorted(
+            (float(card.get("startSec", 0.0)), float(card.get("endSec", 0.0)))
+            for card in storyboard.get("cards") or []
+        )
+        cursor = hook_guard_s
+        for start, end in spans:
+            if start - cursor > max_gap_s + 0.001:
+                rhythm_bad.append(
+                    f"нет визуального события {cursor:.3f}–{start:.3f}")
+            cursor = max(cursor, end)
+        if float(duration) - cursor > max_gap_s + 0.001:
+            rhythm_bad.append(
+                f"нет визуального события {cursor:.3f}–{float(duration):.3f}")
+
     def gate(problems: list[str]) -> str:
         return "PASS" if not problems else "FAIL: " + "; ".join(problems)
 
     return {"D8_face": gate(face_bad), "D9_frame_grid": gate(grid_bad),
             "D10_zone": gate(zone_bad), "D11_shape": gate(shape_bad),
-            "D12_faceless_cover": gate(cover_bad)}
+            "D12_faceless_cover": gate(cover_bad),
+            "D13_rhythm": ("SKIP(нет длительности)" if rhythm_skip
+                           else gate(rhythm_bad))}

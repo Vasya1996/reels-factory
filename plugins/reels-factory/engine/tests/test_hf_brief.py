@@ -72,3 +72,9 @@ def test_материал_перечислен(tmp_path):
               "what": "снимок сайта"}]
     text = _text(tmp_path, media=media)
     assert "media/shot-1.png" in text and "снимок сайта" in text
+
+
+def test_правило_ритма_передано_агенту(tmp_path):
+    text = _text(tmp_path)
+    assert "ритм" in text.lower()
+    assert "3 секунд" in text

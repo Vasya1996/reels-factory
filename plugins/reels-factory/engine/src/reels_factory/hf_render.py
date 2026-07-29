@@ -278,8 +278,9 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         if board is None:
             board = json.loads((rdir / "storyboard.json").read_text(encoding="utf-8"))
 
-        result = check_storyboard(board, load_face(rdir),
-                                  _faceless_windows(edit_plan))
+        result = check_storyboard(
+            board, load_face(rdir), _faceless_windows(edit_plan),
+            duration=duration)
         failed = [f"{k}: {v}" for k, v in result.items() if v.startswith("FAIL")]
         if not failed:
             gate_result = result
