@@ -172,13 +172,13 @@ def _canonical_scenario():
             {
                 "role": "hook",
                 "start": 0.0,
-                "end": 3.0,
+                "end": 4.0,
                 "speech": "Вы всё ещё делаете это вручную?",
             },
             {
                 "role": "development",
-                "start": 3.0,
-                "end": 9.0,
+                "start": 4.0,
+                "end": 10.0,
                 "speech": (
                     "Настройте один сценарий, и он сам собирает данные "
                     "и готовит отчёт."
@@ -186,14 +186,14 @@ def _canonical_scenario():
             },
             {
                 "role": "payoff",
-                "start": 9.0,
-                "end": 15.0,
+                "start": 10.0,
+                "end": 16.0,
                 "speech": "Команда экономит 10 часов каждую неделю.",
             },
             {
                 "role": "cta",
-                "start": 15.0,
-                "end": 18.0,
+                "start": 16.0,
+                "end": 19.0,
                 "speech": "Подпишитесь, чтобы получить схему.",
             },
         ],
@@ -258,13 +258,13 @@ def test_kazakh_edit_plan_берёт_казахский_cta_и_before_after():
             {
                 "role": "hook",
                 "start": 0.0,
-                "end": 3.0,
+                "end": 4.0,
                 "speech": "Есепке қанша уақыт жұмсайсыз?",
             },
             {
                 "role": "development",
-                "start": 3.0,
-                "end": 9.0,
+                "start": 4.0,
+                "end": 10.0,
                 "speech": (
                     "Бұрын есеп қолмен жасалды, қазір жүйе автоматты "
                     "жұмыс істейді."
@@ -272,8 +272,8 @@ def test_kazakh_edit_plan_берёт_казахский_cta_и_before_after():
             },
             {
                 "role": "cta",
-                "start": 9.0,
-                "end": 12.0,
+                "start": 10.0,
+                "end": 13.0,
                 "speech": "Келесі кеңестер үшін жазылыңыз.",
             },
         ],
@@ -374,15 +374,15 @@ def _build_canonical(tmp_path, *, config=None, duration=8.0):
     )
 
 
-def _timed_and_words(plan, *, development_end=9.0):
+def _timed_and_words(plan, *, development_end=10.0):
     timed = copy.deepcopy(_canonical_scenario())
-    delta = development_end - 9.0
+    delta = development_end - 10.0
     timed["blocks"][1]["end"] = development_end
     timed["blocks"][2]["start"] = development_end
-    timed["blocks"][2]["end"] = 15.0 + delta
-    timed["blocks"][3]["start"] = 15.0 + delta
-    timed["blocks"][3]["end"] = 18.0 + delta
-    timed["total"] = 18.0 + delta
+    timed["blocks"][2]["end"] = 16.0 + delta
+    timed["blocks"][3]["start"] = 16.0 + delta
+    timed["blocks"][3]["end"] = 19.0 + delta
+    timed["total"] = 19.0 + delta
 
     words = []
     phrases_by_block = {}
@@ -690,13 +690,13 @@ def _visual_llm_scenario():
             {
                 "role": "hook",
                 "start": 0.0,
-                "end": 3.0,
+                "end": 4.0,
                 "speech": "Почему клиент откладывает решение?",
             },
             {
                 "role": "development",
-                "start": 3.0,
-                "end": 9.0,
+                "start": 4.0,
+                "end": 10.0,
                 "speech": (
                     "Клиент видит проблему, сравнивает варианты "
                     "и выбирает решение."
@@ -704,14 +704,14 @@ def _visual_llm_scenario():
             },
             {
                 "role": "payoff",
-                "start": 9.0,
-                "end": 13.0,
+                "start": 10.0,
+                "end": 14.0,
                 "speech": "Ясная система делает выбор понятным.",
             },
             {
                 "role": "cta",
-                "start": 13.0,
-                "end": 16.0,
+                "start": 14.0,
+                "end": 17.0,
                 "speech": "Сохрани эту схему.",
             },
         ],
@@ -760,7 +760,7 @@ def test_visual_llm_заменяет_только_целое_avatar_only_окн�
     )
     assert visual["role"] == "development"
     assert visual["coverage"] == "hyperframes"
-    assert visual["estimated_timing"] == {"start": 3.0, "end": 9.0}
+    assert visual["estimated_timing"] == {"start": 4.0, "end": 10.0}
     assert visual["effect"]["hyperframes"]["block"] == "concept_nodes"
     assert visual["caption"] == "hidden"
     assert enriched["validation"]["all_pass"] is True
@@ -809,25 +809,25 @@ def _adjacent_visual_llm_scenario():
             {
                 "role": "hook",
                 "start": 0.0,
-                "end": 3.0,
+                "end": 4.0,
                 "speech": "Сейчас покажу важную закономерность.",
             },
             {
                 "role": "context",
-                "start": 3.0,
-                "end": 9.0,
+                "start": 4.0,
+                "end": 10.0,
                 "speech": "Команда долго изучает исходные данные.",
             },
             {
                 "role": "development",
-                "start": 9.0,
-                "end": 15.0,
+                "start": 10.0,
+                "end": 16.0,
                 "speech": "Затем она выбирает рабочее решение.",
             },
             {
                 "role": "cta",
-                "start": 15.0,
-                "end": 18.0,
+                "start": 16.0,
+                "end": 19.0,
                 "speech": "Сохрани эту полезную схему.",
             },
         ],
@@ -896,7 +896,7 @@ def _hotel_comparison_scenario():
             {
                 "role": "hook",
                 "start": 0.0,
-                "end": 3.0,
+                "end": 4.0,
                 "speech": (
                     "Обычная гостиница окупа́ется за пятнадцать лет. "
                     "Бутик-отель — вдвое быстрее."
@@ -904,8 +904,8 @@ def _hotel_comparison_scenario():
             },
             {
                 "role": "development",
-                "start": 3.0,
-                "end": 19.5,
+                "start": 4.0,
+                "end": 20.5,
                 "speech": (
                     "Многие вкладывают в отели. И ждут прибыль десятилетиями. "
                     "Но дело не в отелях, а в формате. Бутик-отели, санатории "
@@ -915,8 +915,8 @@ def _hotel_comparison_scenario():
             },
             {
                 "role": "payoff",
-                "start": 19.5,
-                "end": 27.0,
+                "start": 20.5,
+                "end": 28.0,
                 "speech": (
                     "Рентабе́льность обычной гостиницы — двадцать пять "
                     "процентов. У бутик-отеля и спа — тридцать пять. "
@@ -925,8 +925,8 @@ def _hotel_comparison_scenario():
             },
             {
                 "role": "cta",
-                "start": 27.0,
-                "end": 30.0,
+                "start": 28.0,
+                "end": 31.0,
                 "speech": (
                     "Сохрани, если задумываешься об инвести́циях в отели."
                 ),
@@ -1038,7 +1038,7 @@ def test_validator_защищает_hook_face_absence_и_motion_contract(tmp_pat
 
     report = validate_edit_plan(plan)
 
-    assert any("hook нельзя полностью скрывать" in error for error in report["errors"])
+    assert any("хук, ведущую прятать нельзя" in error for error in report["errors"])
     assert any("лицо отсутствует дольше" in error for error in report["errors"])
     assert any("неподдерживаемым объектом" in error for error in report["errors"])
 
@@ -1052,7 +1052,7 @@ def test_finalize_добавляет_exact_timing_не_перепланируя(
     final = finalize_edit_plan(draft, timed, words)
 
     assert final["status"] == "final"
-    assert final["timeline"]["final_duration_seconds"] == 18.0
+    assert final["timeline"]["final_duration_seconds"] == 19.0
     assert [window["id"] for window in final["windows"]] == window_ids
     assert [window["coverage"] for window in final["windows"]] == coverages
     assert all(phrase["final_timing"] for phrase in final["phrases"])
@@ -1061,7 +1061,7 @@ def test_finalize_добавляет_exact_timing_не_перепланируя(
 
 def test_finalize_exact_timing_делает_явный_asset_fallback(tmp_path):
     draft = _build_canonical(tmp_path, duration=8.0)
-    timed, words = _timed_and_words(draft, development_end=12.0)
+    timed, words = _timed_and_words(draft, development_end=13.0)
 
     final = finalize_edit_plan(draft, timed, words)
     development = next(
@@ -1248,3 +1248,90 @@ def test_без_предмета_материал_не_нужен():
     from reels_factory.editplan import material_for_phrase
 
     assert material_for_phrase("порядок этих вопросов решает всё") is None
+
+
+def test_хвост_длинного_хука_разрешает_показ():
+    """Хук — первые 4 секунды. Дальше кадр можно отдавать показу."""
+    from reels_factory.editplan import validate_edit_plan
+
+    plan = {
+        "format_version": 1,
+        "status": "draft",
+        "script": {"language": "ru"},
+        "timeline": {"final_duration_seconds": 12.0},
+        "blocks": [],
+        "log": [],
+        "phrases": [
+            {
+                "id": "p1",
+                "text": "показываем",
+                "block_index": 0,
+                "role": "hook",
+                "coverage": "hyperframes",
+                "window_id": "w1",
+            }
+        ],
+        "windows": [
+            {
+                "id": "w1",
+                "phrase_ids": ["p1"],
+                "block_index": 0,
+                "role": "hook",
+                "coverage": "hyperframes",
+                "zone": "fullscreen",
+                "final_timing": {"start": 6.0, "end": 9.0},
+                "effect": {
+                    "type": "chart_bars",
+                    "hyperframes": {"block": "task_list"},
+                },
+            }
+        ],
+    }
+    report = validate_edit_plan(
+        plan, require_final=False, require_asset_files=False
+    )
+    assert not any("hook" in error for error in report["errors"])
+
+
+def test_первые_секунды_прятать_ведущую_нельзя():
+    from reels_factory.editplan import validate_edit_plan
+
+    plan = {
+        "format_version": 1,
+        "status": "draft",
+        "script": {"language": "ru"},
+        "timeline": {"final_duration_seconds": 12.0},
+        "blocks": [],
+        "log": [],
+        "phrases": [
+            {
+                "id": "p1",
+                "text": "старт",
+                "block_index": 0,
+                "role": "hook",
+                "coverage": "hyperframes",
+                "window_id": "w1",
+            }
+        ],
+        "windows": [
+            {
+                "id": "w1",
+                "phrase_ids": ["p1"],
+                "block_index": 0,
+                "role": "hook",
+                "coverage": "hyperframes",
+                "zone": "fullscreen",
+                "final_timing": {"start": 0.0, "end": 3.0},
+                "effect": {
+                    "type": "chart_bars",
+                    "hyperframes": {"block": "task_list"},
+                },
+            }
+        ],
+    }
+    report = validate_edit_plan(
+        plan, require_final=False, require_asset_files=False
+    )
+    assert any(
+        "хук" in error or "hook" in error for error in report["errors"]
+    )

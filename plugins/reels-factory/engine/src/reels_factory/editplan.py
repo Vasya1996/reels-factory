@@ -1291,6 +1291,21 @@ def _zone_for(coverage: str) -> str:
     return "fullscreen" if coverage in _FACELESS_COVERAGE else "video-overlay"
 
 
+# Хук как продуктовое окно — первые секунды ролика, а не сценарный блок:
+# блок role="hook" бывает длиннее, и его хвост — обычная речь,
+# где кадр можно отдать показу. Решение Васи 2026-07-29.
+HOOK_GUARD_S = 4.0
+
+
+def _in_hook_guard(window: dict) -> bool:
+    timing = (
+        window.get("final_timing")
+        or window.get("estimated_timing")
+        or {}
+    )
+    return float(timing.get("start", 0.0) or 0.0) < HOOK_GUARD_S
+
+
 def _is_faceless(window: dict) -> bool:
     """Окно, в котором ведущей нет в кадре: полноэкранная видеовставка или
     полноэкранная графика. Только им разрешено не заказывать аватар."""
@@ -2556,8 +2571,11 @@ def validate_edit_plan(
             face_absence_start = None
 
         role = window.get("role")
-        if role == "hook" and coverage not in {"avatar", "mixed"}:
-            errors.append(f"{window.get('id')}: hook нельзя полностью скрывать")
+        if _in_hook_guard(window) and coverage not in {"avatar", "mixed"}:
+            errors.append(
+                f'{window.get("id")}: первые {HOOK_GUARD_S:g} секунды — '
+                "хук, ведущую прятать нельзя"
+            )
         if role == "cta" and coverage not in {"avatar", "mixed"}:
             errors.append(f"{window.get('id')}: CTA нельзя полностью скрывать")
 
@@ -2572,10 +2590,10 @@ def validate_edit_plan(
                     f"{window.get('id')}: built-in visual требует "
                     "hyperframes coverage без HeyGen skip"
                 )
-            if role in {"hook", "cta"}:
+            if _in_hook_guard(window) or role == "cta":
                 errors.append(
                     f"{window.get('id')}: built-in visual нельзя использовать "
-                    f"в {role}"
+                    f"в {'хуке' if _in_hook_guard(window) else role}"
                 )
             if not visual_min <= duration <= visual_max:
                 errors.append(
@@ -2593,9 +2611,10 @@ def validate_edit_plan(
                 errors.append(
                     f"{window.get('id')}: bubble требует mixed coverage и Avatar IV"
                 )
-            if role in {"hook", "cta"}:
+            if _in_hook_guard(window) or role == "cta":
                 errors.append(
-                    f"{window.get('id')}: bubble нельзя использовать в {role}"
+                    f"{window.get('id')}: bubble нельзя использовать в "
+                    f"{'хуке' if _in_hook_guard(window) else role}"
                 )
             if not bubble_min <= duration <= bubble_max:
                 errors.append(
@@ -2753,7 +2772,8 @@ def visual_analysis_prompt(plan: dict) -> str:
         if (
             window.get("coverage") != "avatar"
             or effect.get("type") != "none"
-            or window.get("role") in {"hook", "cta"}
+            or _in_hook_guard(window)
+            or window.get("role") == "cta"
         ):
             continue
         candidates.extend(
@@ -2847,7 +2867,15 @@ def _apply_one_visual_recommendation(
     selected = [phrase_by_id[phrase_id] for phrase_id in phrase_ids]
     if len({phrase["block_index"] for phrase in selected}) != 1:
         raise ValueError("visual recommendation не может пересекать blocks")
-    if any(phrase.get("role") in {"hook", "cta"} for phrase in selected):
+    window_by_id = {
+        window["id"]: window for window in result.get("windows") or []
+    }
+    source_windows = {phrase["window_id"] for phrase in selected}
+    if (
+        any(phrase.get("role") == "cta" for phrase in selected)
+        or any(_in_hook_guard(window_by_id[window_id])
+               for window_id in source_windows)
+    ):
         raise ValueError("visual recommendation не может закрывать hook/CTA")
 
     constraints = (result.get("constraints") or {}).get("visual_director") or {}
@@ -2864,10 +2892,6 @@ def _apply_one_visual_recommendation(
             f"{visual_min:.1f}–{visual_max:.1f}с"
         )
 
-    window_by_id = {
-        window["id"]: window for window in result.get("windows") or []
-    }
-    source_windows = {phrase["window_id"] for phrase in selected}
     selected_set = set(phrase_ids)
     for window_id in source_windows:
         window = window_by_id[window_id]
