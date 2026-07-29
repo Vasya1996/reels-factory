@@ -27,14 +27,17 @@ PROMPT = """/hyperframes
 Верни ровно два файла: public/index.html и storyboard.json в формате из
 задания. Ничего не спрашивай — все решения принимай сам."""
 
-TIMEOUT_S = 1800
+TIMEOUT_S = 3600
 
 
 class HeyGenAgentRunner:
     """Headless-сессия в обычном профиле, с правом писать файлы."""
 
-    def __init__(self, timeout_s: int = TIMEOUT_S):
-        self.timeout_s = timeout_s
+    def __init__(self, timeout_s: int | None = None):
+        env_timeout = os.environ.get("RF_HF_AGENT_TIMEOUT_S", "").strip()
+        self.timeout_s = int(
+            timeout_s if timeout_s is not None else env_timeout or TIMEOUT_S
+        )
         self.exe = shutil.which("claude") or "claude"
         self.total_cost_usd = 0.0
 
@@ -51,11 +54,28 @@ class HeyGenAgentRunner:
         if not env.get("CLAUDE_CODE_OAUTH_TOKEN") and token_file.exists():
             env["CLAUDE_CODE_OAUTH_TOKEN"] = token_file.read_text(
                 encoding="utf-8").strip()
-        result = subprocess.run(
-            [self.exe, "-p", "--output-format", "json",
-             "--permission-mode", "acceptEdits"],
-            input=prompt, capture_output=True, text=True, encoding="utf-8",
-            timeout=self.timeout_s, env=env, cwd=str(cwd) if cwd else None,
+        log_path = (Path(cwd) if cwd else Path.cwd()) / "agent.log"
+        try:
+            result = subprocess.run(
+                [self.exe, "-p", "--output-format", "json",
+                 "--permission-mode", "acceptEdits"],
+                input=prompt, capture_output=True, text=True, encoding="utf-8",
+                timeout=self.timeout_s, env=env, cwd=str(cwd) if cwd else None,
+            )
+        except subprocess.TimeoutExpired as exc:
+            partial_stdout = exc.output or ""
+            partial_stderr = exc.stderr or ""
+            log_path.write_text(
+                str(partial_stdout) + "\n--- stderr ---\n" + str(partial_stderr),
+                encoding="utf-8",
+            )
+            raise RuntimeError(
+                f"агент-сборщик не уложился в {self.timeout_s} с; "
+                f"частичный вывод в {log_path}"
+            ) from exc
+        log_path.write_text(
+            (result.stdout or "") + "\n--- stderr ---\n" + (result.stderr or ""),
+            encoding="utf-8",
         )
         if result.returncode != 0:
             raise RuntimeError(

@@ -130,3 +130,57 @@ def test_headless_не_перекрывает_существующий_токе�
     runner.run("/hyperframes привет", cwd=tmp_path)
 
     assert seen["env"]["CLAUDE_CODE_OAUTH_TOKEN"] == "уже-стоит"
+
+
+def test_вывод_сессии_пишется_в_лог(monkeypatch, tmp_path):
+    from reels_factory import hf_agent
+
+    def fake_run(cmd, **kw):
+        class P:
+            returncode = 0
+            stdout = 'шум\n{"result": "ок", "total_cost_usd": 0.1}'
+            stderr = "warn"
+
+        return P()
+
+    monkeypatch.setattr(hf_agent.subprocess, "run", fake_run)
+    hf_agent.HeyGenAgentRunner().run("/hyperframes х", cwd=tmp_path)
+    log = (tmp_path / "agent.log").read_text(encoding="utf-8")
+    assert "шум" in log and "warn" in log
+
+
+def test_таймаут_из_окружения(monkeypatch, tmp_path):
+    from reels_factory import hf_agent
+
+    monkeypatch.setenv("RF_HF_AGENT_TIMEOUT_S", "120")
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["timeout"] = kw.get("timeout")
+
+        class P:
+            returncode = 0
+            stdout = '{"result": "ок"}'
+            stderr = ""
+
+        return P()
+
+    monkeypatch.setattr(hf_agent.subprocess, "run", fake_run)
+    hf_agent.HeyGenAgentRunner().run("х", cwd=tmp_path)
+    assert seen["timeout"] == 120
+
+
+def test_таймаут_даёт_понятную_ошибку_с_логом(monkeypatch, tmp_path):
+    from reels_factory import hf_agent
+
+    def fake_run(cmd, **kw):
+        raise hf_agent.subprocess.TimeoutExpired(
+            cmd="claude", timeout=1, output="частичный вывод"
+        )
+
+    monkeypatch.setattr(hf_agent.subprocess, "run", fake_run)
+    with pytest.raises(RuntimeError, match="agent.log"):
+        hf_agent.HeyGenAgentRunner(timeout_s=1).run("х", cwd=tmp_path)
+    assert "частичный вывод" in (
+        tmp_path / "agent.log"
+    ).read_text(encoding="utf-8")
