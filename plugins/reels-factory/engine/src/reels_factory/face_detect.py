@@ -51,7 +51,12 @@ def free_bands(face: dict | None, *, width: int = OUT_W,
 
     box = face_box(face)
     if box is None:
-        return [{"left": 0, "top": 0, "width": width, "height": height}]
+        # лица нет — договорная запретная зона: средняя треть кадра
+        third = height // 3
+        return [
+            {"left": 0, "top": 0, "width": width, "height": third},
+            {"left": 0, "top": 2 * third, "width": width, "height": third},
+        ]
 
     bands = []
     above = box["top"]

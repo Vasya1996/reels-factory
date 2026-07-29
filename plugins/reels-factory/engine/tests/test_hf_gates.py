@@ -99,3 +99,14 @@ def test_ритм_не_проверяет_первые_четыре_секунд
 def test_ритм_без_длительности_пропускается():
     gates = check_storyboard({"cards": []}, FACE)
     assert gates["D13_rhythm"].startswith("SKIP")
+
+
+def test_пузырь_pip_проходит_гейты():
+    """Аватар малым окном в углу (аналог пузыря) — законная раскладка."""
+    card = _card(
+        zone="video-overlay",
+        contentRect={"left": 60, "top": 400, "width": 960, "height": 900},
+        videoRect={"left": 690, "top": 28, "width": 360, "height": 203},
+    )
+    gates = check_storyboard({"cards": [card]}, FACE, duration=3.0)
+    assert gates["D8_face"] == "PASS"

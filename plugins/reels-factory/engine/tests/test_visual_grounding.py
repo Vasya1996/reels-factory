@@ -27,7 +27,7 @@ def _plan(items):
 def test_заземлённая_вставка_остаётся():
     plan = enforce_visual_grounding(_plan(["Кому продаём", "Кто клиент"]))
     assert plan["windows"][0]["effect"]["type"] == "concept_nodes"
-    assert plan["log"] == []
+    assert plan["log"] == ["граундинг: снято 0, проверено 1"]
 
 
 def test_выдуманная_вставка_снимается():
@@ -74,3 +74,10 @@ def test_исходный_план_не_меняется():
     original = _plan(["Открыть сайт elevenlabs"])
     enforce_visual_grounding(original)
     assert original["windows"][0]["effect"]["type"] == "concept_nodes"
+
+
+def test_статистика_граундинга_в_логе():
+    plan = enforce_visual_grounding(
+        _plan(["Кому продаём", "Открыть сайт elevenlabs"])
+    )
+    assert any(line.startswith("граундинг:") for line in plan["log"])

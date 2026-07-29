@@ -113,4 +113,19 @@ def enforce_visual_grounding(plan: dict) -> dict:
                 phrase["decision_reason"] = window["decision_reason"]
         result.setdefault("log", []).append(
             f"{window.get('id')}: вставка снята, нет опоры в речи — " + "; ".join(stray))
+    checked = sum(
+        1
+        for window in result.get("windows") or []
+        if (
+            ((window.get("effect") or {}).get("visual_director") or {}).get("source")
+            == "llm"
+            or "Снято граундингом" in str(window.get("decision_reason") or "")
+        )
+    )
+    stripped = sum(
+        1 for line in result.get("log") or [] if "вставка снята" in line
+    )
+    result.setdefault("log", []).append(
+        f"граундинг: снято {stripped}, проверено {checked}"
+    )
     return result
