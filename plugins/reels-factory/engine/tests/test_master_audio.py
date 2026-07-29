@@ -9,6 +9,7 @@ from reels_factory.master_audio import (
     build_canonical_script,
     build_master_audio,
     master_audio_enabled,
+    trim_master_pauses,
     validate_character_alignment,
 )
 from reels_factory.tts import TimestampedSpeech
@@ -34,6 +35,57 @@ def _alignment(text):
         "character_start_times_seconds": [i * 0.05 for i in range(len(text))],
         "character_end_times_seconds": [(i + 1) * 0.05 for i in range(len(text))],
     }
+
+
+def _w(start, end, text):
+    return {
+        "id": f"w{start}",
+        "block_id": "b0",
+        "block_index": 0,
+        "role": "hook",
+        "character_start": 0,
+        "character_end": 1,
+        "start": start,
+        "end": end,
+        "text": text,
+    }
+
+
+def test_паузы_вырезаются_с_пересдвигом_слов():
+    words = [_w(0.0, 1.0, "раз"), _w(2.0, 3.0, "два"), _w(3.1, 4.0, "три")]
+    new_words, new_total, cuts = trim_master_pauses(
+        words, 4.5, min_silence_s=0.45, keep_s=0.18
+    )
+    assert cuts == [(1.18, 1.82)]
+    assert new_words[0]["start"] == pytest.approx(0.0)
+    assert new_words[1]["start"] == pytest.approx(2.0 - 0.64)
+    assert new_words[2]["end"] == pytest.approx(4.0 - 0.64)
+    assert new_total == pytest.approx(4.5 - 0.64)
+
+
+def test_короткие_паузы_не_трогаются():
+    words = [_w(0.0, 1.0, "раз"), _w(1.3, 2.0, "два")]
+    new_words, new_total, cuts = trim_master_pauses(words, 2.5)
+    assert cuts == []
+    assert new_total == 2.5
+    assert new_words[1]["start"] == 1.3
+
+
+def test_несколько_пауз_режутся_накопительно():
+    words = [_w(0.0, 1.0, "а"), _w(2.0, 3.0, "б"), _w(4.0, 5.0, "в")]
+    new_words, new_total, cuts = trim_master_pauses(
+        words, 5.0, min_silence_s=0.45, keep_s=0.18
+    )
+    assert len(cuts) == 2
+    assert new_words[2]["start"] == pytest.approx(4.0 - 2 * 0.64)
+    assert new_total == pytest.approx(5.0 - 2 * 0.64)
+
+
+def test_хвост_после_последнего_слова_не_режется():
+    """Дыхание в конце — забота ретайминга CTA, не паузорезки."""
+    words = [_w(0.0, 1.0, "раз")]
+    _, new_total, cuts = trim_master_pauses(words, 3.0)
+    assert cuts == [] and new_total == 3.0
 
 
 def test_canonical_script_сохраняет_character_ranges_и_повторы():
@@ -168,6 +220,95 @@ def test_build_master_audio_один_provider_request_и_полный_contract(t
     assert manifest["settings"]["stability"] == 0.5
     assert "private-voice-id" not in manifest_text
     assert "api_key" not in manifest_text.lower()
+
+
+def test_build_master_audio_режет_паузу_до_нарезки_блоков(tmp_path):
+    fixture = _fixture()
+    response = fixture["response"]
+    alignment = json.loads(json.dumps(response["alignment"]))
+    second_block_start = fixture["text"].index("\n") + 1
+    for field in (
+        "character_start_times_seconds",
+        "character_end_times_seconds",
+    ):
+        alignment[field] = [
+            value + (1.0 if index >= second_block_start else 0.0)
+            for index, value in enumerate(alignment[field])
+        ]
+
+    class Provider:
+        def convert_with_timestamps(self, text, **kwargs):
+            return TimestampedSpeech(
+                audio=b"fake-mp3",
+                alignment=alignment,
+                normalized_alignment=None,
+                request_id="req-pause",
+            )
+
+    ffmpeg_calls = []
+
+    def fake_run(cmd):
+        ffmpeg_calls.append(cmd)
+        Path(cmd[-1]).write_bytes(b"generated")
+
+    result = build_master_audio(
+        _scenario(),
+        {"language": "ru", "voice_id": "v1"},
+        tmp_path,
+        provider=Provider(),
+        run_cmd=fake_run,
+        duration_fn=lambda _: 2.3,
+    )
+
+    assert any("atrim" in " ".join(map(str, call)) for call in ffmpeg_calls)
+    assert result.timed_scenario["total"] == pytest.approx(1.61)
+    assert result.words[2]["start"] == pytest.approx(1.01)
+    assert result.manifest["pause_cuts"] == [(0.83, 1.52)]
+
+
+def test_rf_trim_pauses_ноль_отключает_резку(tmp_path, monkeypatch):
+    fixture = _fixture()
+    response = fixture["response"]
+    alignment = json.loads(json.dumps(response["alignment"]))
+    second_block_start = fixture["text"].index("\n") + 1
+    for field in (
+        "character_start_times_seconds",
+        "character_end_times_seconds",
+    ):
+        alignment[field] = [
+            value + (1.0 if index >= second_block_start else 0.0)
+            for index, value in enumerate(alignment[field])
+        ]
+
+    class Provider:
+        def convert_with_timestamps(self, text, **kwargs):
+            return TimestampedSpeech(
+                audio=b"fake-mp3",
+                alignment=alignment,
+                normalized_alignment=None,
+                request_id="req-no-pause",
+            )
+
+    ffmpeg_calls = []
+
+    def fake_run(cmd):
+        ffmpeg_calls.append(cmd)
+        Path(cmd[-1]).write_bytes(b"generated")
+
+    monkeypatch.setenv("RF_TRIM_PAUSES", "0")
+    result = build_master_audio(
+        _scenario(),
+        {"language": "ru", "voice_id": "v1"},
+        tmp_path,
+        provider=Provider(),
+        run_cmd=fake_run,
+        duration_fn=lambda _: 2.3,
+    )
+
+    assert not any("atrim" in " ".join(map(str, call)) for call in ffmpeg_calls)
+    assert result.timed_scenario["total"] == pytest.approx(2.3)
+    assert result.words[2]["start"] == pytest.approx(1.7)
+    assert result.manifest["pause_cuts"] == []
 
 
 def test_build_master_audio_meter_считает_canonical_text_один_раз(tmp_path):

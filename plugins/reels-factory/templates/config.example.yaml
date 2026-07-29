@@ -135,6 +135,9 @@ voices:
 # RF_MASTER_AUDIO_ENABLED=0.
 master_audio:
   enabled: true
+  trim_pauses:
+    enabled: true        # вырезать паузы речи длиннее min_silence_s
+    min_silence_s: 0.45  # порог паузы; хвосты по 0.18 с остаются
 
 # Canonical edit plan строится до платных стадий. Опциональный LLM-проход
 # рекомендует expressiveness/motion_prompt отдельно для каждой phrase.

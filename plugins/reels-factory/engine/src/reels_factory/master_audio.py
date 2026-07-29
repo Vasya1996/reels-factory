@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sys
 import unicodedata
 from dataclasses import dataclass
@@ -224,6 +225,68 @@ def alignment_to_words(text: str, alignment: dict, canonical_blocks: list[dict])
     return words
 
 
+def trim_master_pauses(
+    words: list[dict],
+    duration: float,
+    *,
+    min_silence_s: float = 0.45,
+    keep_s: float = 0.18,
+) -> tuple[list[dict], float, list[tuple[float, float]]]:
+    """Вырезы длинных пауз по пословным таймингам.
+
+    Возвращает (новые слова, новая длительность, вырезы в исходных
+    координатах). Вырез начинается через keep_s после конца слова и
+    кончается за keep_s до начала следующего — речь не обрубается.
+    """
+    cuts: list[tuple[float, float]] = []
+    ordered = sorted(words, key=lambda word: float(word["start"]))
+    for previous, following in zip(ordered, ordered[1:]):
+        gap = float(following["start"]) - float(previous["end"])
+        if gap > min_silence_s:
+            cut = (
+                round(float(previous["end"]) + keep_s, 3),
+                round(float(following["start"]) - keep_s, 3),
+            )
+            if cut[1] > cut[0]:
+                cuts.append(cut)
+    if not cuts:
+        return [dict(word) for word in words], float(duration), []
+
+    def shifted(value: float) -> float:
+        removed = sum(
+            min(value, cut_end) - cut_start
+            for cut_start, cut_end in cuts
+            if value > cut_start
+        )
+        return round(value - removed, 3)
+
+    new_words = [
+        {
+            **word,
+            "start": shifted(float(word["start"])),
+            "end": shifted(float(word["end"])),
+        }
+        for word in words
+    ]
+    total_removed = sum(cut_end - cut_start for cut_start, cut_end in cuts)
+    return new_words, round(float(duration) - total_removed, 3), cuts
+
+
+def _keep_intervals(
+    cuts: list[tuple[float, float]], total: float
+) -> list[tuple[float, float]]:
+    """Дополнение вырезов: какие куски исходного звука сохраняются."""
+    keep: list[tuple[float, float]] = []
+    cursor = 0.0
+    for cut_start, cut_end in cuts:
+        if cut_start - cursor > 0.01:
+            keep.append((cursor, cut_start))
+        cursor = cut_end
+    if total - cursor > 0.01:
+        keep.append((cursor, total))
+    return keep
+
+
 def _block_audio_ranges(
     canonical_blocks: list[dict], words: list[dict], duration: float
 ) -> list[dict]:
@@ -344,6 +407,40 @@ def build_master_audio(
     words = alignment_to_words(
         canonical["text"], result.alignment, canonical["blocks"]
     )
+    original_duration = duration
+    pause_cuts: list[tuple[float, float]] = []
+    trim_cfg = ((config or {}).get("master_audio") or {}).get("trim_pauses") or {}
+    trim_env = os.environ.get("RF_TRIM_PAUSES")
+    trim_enabled = (
+        trim_env.strip().lower() in _TRUE
+        if trim_env is not None
+        else bool(trim_cfg.get("enabled", True))
+    )
+    if trim_enabled:
+        words, duration, pause_cuts = trim_master_pauses(
+            words,
+            duration,
+            min_silence_s=float(trim_cfg.get("min_silence_s", 0.45)),
+        )
+        if pause_cuts:
+            keep = _keep_intervals(pause_cuts, original_duration)
+            filter_parts = ";".join(
+                f"[0:a]atrim={start:.3f}:{end:.3f},"
+                f"asetpts=PTS-STARTPTS[s{index}]"
+                for index, (start, end) in enumerate(keep)
+            )
+            concat_inputs = "".join(f"[s{index}]" for index in range(len(keep)))
+            trimmed = wd / "voice_master.trimmed.wav"
+            run_cmd([
+                str(FFMPEG), "-y", "-i", str(wav),
+                "-filter_complex",
+                f"{filter_parts};{concat_inputs}"
+                f"concat=n={len(keep)}:v=0:a=1[out]",
+                "-map", "[out]",
+                "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le",
+                str(trimmed),
+            ])
+            shutil.move(str(trimmed), str(wav))
     ranges = _block_audio_ranges(canonical["blocks"], words, duration)
     timed_scenario = json.loads(json.dumps(scenario, ensure_ascii=False))
     for block, timing in zip(timed_scenario["blocks"], ranges):
@@ -390,6 +487,7 @@ def build_master_audio(
         "input_sha256": canonical["text_sha256"],
         "input_characters": len(canonical["text"]),
         "duration_seconds": duration,
+        "pause_cuts": pause_cuts,
         "settings": {
             "stability": options["stability"],
             "seed": options["seed"],
