@@ -180,9 +180,10 @@ def _prepare_material(plan: dict, public: Path, rdir: Path) -> list[dict]:
         if not material:
             continue
         window_id = window["id"]
-        what = window.get("visual_intent") or (
-            "снимок сайта" if material["kind"] == "site" else "запись маршрута")
-        if material["kind"] == "site":
+        kind = material["kind"]
+        what = window.get("visual_intent")
+        if kind == "site":
+            what = what or "снимок сайта"
             result = capture_site.cached_capture(material["url"], cache_dir)
             shots = result.get("screenshots") or []
             if not shots:
@@ -191,10 +192,23 @@ def _prepare_material(plan: dict, public: Path, rdir: Path) -> list[dict]:
             # материал вставки; остальные кадры и HTML агенту не нужны.
             source = Path(shots[0])
             target = public / "media" / f"{window_id}-{source.name}"
-        else:
+        elif kind == "route":
+            what = what or "запись маршрута"
             source = screen_route.record_route(
                 material["steps"], rdir / "route" / f"{window_id}.mp4")
             target = public / "media" / source.name
+        elif kind == "stock":
+            from reels_factory import hf_media
+
+            source = hf_media.resolve_stock(
+                str(material.get("query") or ""), rdir
+            )
+            target = (
+                public / "media" / f"{window_id}-stock{Path(source).suffix}"
+            )
+            what = what or f"сток: {material.get('query')}"
+        else:
+            raise ValueError(f"неизвестный material.kind: {kind}")
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
         media.append({"file": f"media/{target.name}", "window_id": window_id,

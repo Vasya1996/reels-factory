@@ -204,3 +204,34 @@ def test_повторный_prepare_не_снимает_материал_зан�
         tmp_path, TIMED, edit_plan=plan, avatar_mp4s=[tmp_path / "src.mp4"],
         master_audio=tmp_path / "voice.wav", alignment_words=[])
     assert len(capture_calls) == 1
+
+
+def test_stock_материал_копируется_для_агента(tmp_path, monkeypatch):
+    from reels_factory import hf_media, hf_render
+
+    source = tmp_path / "resolved.webp"
+    source.write_bytes(b"image")
+    monkeypatch.setattr(
+        hf_media, "resolve_stock", lambda query, out_dir: source
+    )
+    public = tmp_path / "public"
+    plan = {
+        "windows": [
+            {
+                "id": "window-002",
+                "visual_intent": None,
+                "material": {"kind": "stock", "query": "город ночью"},
+            }
+        ]
+    }
+
+    media = hf_render._prepare_material(plan, public, tmp_path)
+
+    assert media == [
+        {
+            "file": "media/window-002-stock.webp",
+            "window_id": "window-002",
+            "what": "сток: город ночью",
+        }
+    ]
+    assert (public / media[0]["file"]).read_bytes() == b"image"
