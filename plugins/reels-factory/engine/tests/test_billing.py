@@ -265,6 +265,29 @@ def test_meter_считает_все_три_провайдера(store):
     }
 
 
+def test_claude_шаг_в_entry_id(tmp_path):
+    store = LedgerStore(tmp_path / "b.sqlite3")
+    store.credit(
+        1,
+        10_000_000,
+        purchase_id="t1",
+        amount_minor=1000,
+        currency="USD",
+    )
+    meter = JobMeter(
+        store,
+        chat_id=1,
+        job_id="j1",
+        rates=RATES,
+        markup=1.0,
+        run_id="r1",
+    )
+    meter.claude(9.78, step="compose")
+    meter.claude(9.78, step="compose")
+    rows = store.job_breakdown("j1")
+    assert rows.get("claude") == to_micro(9.78)
+
+
 class _МедленноеЧисло(int):
     """int, который специально тормозит при форматировании в f-строку.
 

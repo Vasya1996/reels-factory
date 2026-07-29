@@ -109,7 +109,8 @@ def _fakes(monkeypatch, tmp_path, calls, captured=None):
         return {"mp4": str(out), "dur": float(timed_scenario.get("total") or 0.0),
                 "timed_scenario": timed_scenario,
                 "words_fixed": kw.get("alignment_words") or [],
-                "gates": {"D8_face": "PASS"}}
+                "gates": {"D8_face": "PASS"},
+                "agent_cost_usd": 0.05}
 
     def fake_verify(mp4, scenario, **kw):
         calls.append(("verify", str(mp4), kw.get("words")))
@@ -872,12 +873,16 @@ class _FakeMeter:
     def __init__(self):
         self.heygen_calls = []
         self.eleven_calls = []
+        self.claude_calls = []
 
     def heygen(self, seconds, *, cached=False, twin=False):
         self.heygen_calls.append((seconds, cached, twin))
 
     def elevenlabs(self, chars):
         self.eleven_calls.append(chars)
+
+    def claude(self, usd, step="scenario"):
+        self.claude_calls.append((round(usd, 2), step))
 
 
 def test_кэшированный_фрагмент_не_тарифицируется():
@@ -951,3 +956,25 @@ def test_master_audio_с_meter_тарифицирует_единственный
     assert res["ok"] is True, res.get("error")
     assert len(meter.eleven_calls) == 1
     assert meter.eleven_calls[0] == sum(len(b["speech"]) for b in _scenario()["blocks"])
+
+
+def test_compose_сессия_тарифицируется(monkeypatch, tmp_path):
+    calls = []
+    captured = {}
+    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+    meter = _FakeMeter()
+
+    result = pipeline.run_make(
+        _cfg("avatar"),
+        wd,
+        avatar_client=avatar,
+        synth_fn=fs,
+        assemble_fn=fa,
+        meter=meter,
+    )
+
+    assert result["ok"] is True, result.get("error")
+    assert captured.get("agent_runner") is not None
+    assert (0.05, "compose") in meter.claude_calls

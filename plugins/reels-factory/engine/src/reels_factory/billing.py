@@ -350,12 +350,24 @@ class JobMeter:
         # изменение self._charged.
         self._lock = threading.Lock()
 
-    def _record(self, provider: str, unit: str, quantity: float,
-                unit_price_micro: int, cost_micro: int) -> None:
+    def _record(
+        self,
+        provider: str,
+        unit: str,
+        quantity: float,
+        unit_price_micro: int,
+        cost_micro: int,
+        *,
+        step: str | None = None,
+    ) -> None:
         charged = apply_markup(cost_micro, self.markup)
         with self._lock:
-            entry_id = f"{self.job_id}:{self.run_id}:{provider}:{self._step}"
-            self._step += 1
+            if step is None:
+                entry_step = self._step
+                self._step += 1
+            else:
+                entry_step = step
+            entry_id = f"{self.job_id}:{self.run_id}:{provider}:{entry_step}"
         if self.store.charge(
             self.chat_id, entry_id=entry_id, job_id=self.job_id,
             provider=provider, unit=unit, quantity=quantity,
@@ -385,10 +397,17 @@ class JobMeter:
             elevenlabs_cost_micro(chars, self.rates),
         )
 
-    def claude(self, usd: float) -> None:
+    def claude(self, usd: float, step: str = "scenario") -> None:
         if not usd or usd <= 0:
             return
-        self._record("claude", "usd", float(usd), 0, claude_cost_micro(usd))
+        self._record(
+            "claude",
+            "usd",
+            float(usd),
+            0,
+            claude_cost_micro(usd),
+            step=step,
+        )
 
     def total_charged(self) -> int:
         return self._charged

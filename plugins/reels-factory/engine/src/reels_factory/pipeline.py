@@ -41,6 +41,7 @@ from reels_factory.compose import apply_caption_fixes, build_caption_fixes
 # Рендер-слой: HyperFrames (единственный рендерер). Контракт результата тот же
 # ({"mp4","timed_scenario","words_fixed"}) плюс "gates" от гейтов раскадровки.
 from reels_factory.hf_render import assemble_hyperframes as _assemble
+from reels_factory.hf_agent import HeyGenAgentRunner
 from reels_factory.edit import jump_cut_fragments as _jump_cut_fragments
 from reels_factory.editplan import (
     build_edit_plan as _build_edit_plan,
@@ -354,6 +355,7 @@ def run_make(config: dict, workdir,
     _log("assemble")
     try:
         out_mp4 = wd / "reel.mp4"
+        agent_runner = HeyGenAgentRunner()
         # Непрерывный видеоряд-источник (ingest) убран: аватар — единственный
         # формат, низовое видео сборщик больше не получает.
         res = assemble_fn(wd,
@@ -364,7 +366,11 @@ def run_make(config: dict, workdir,
                           alignment_words=apply_caption_fixes(
                               list(master.words), caption_fixes),
                           avatar_render_plan=avatar_render_plan,
+                          agent_runner=agent_runner,
                           out_mp4=out_mp4)
+        agent_cost = float(res.get("agent_cost_usd") or 0.0)
+        if meter is not None and agent_cost > 0:
+            meter.claude(agent_cost, step="compose")
         mp4 = res["mp4"]
         timed = res["timed_scenario"]
         words = res.get("words_fixed")
