@@ -24,7 +24,18 @@ ACTIVE_STATUSES = (
     "queued",
     "running",
 )
-TERMINAL_STATUSES = ("completed", "qa_failed", "failed", "interrupted", "delivery_failed")
+# Статусы, где job стоит на паузе и ждёт действия пользователя (или ещё даже не
+# начала синтез): их безопасно отменить по /new или /start. Активная работа
+# (audio_running/user_audio_processing/queued/running) сюда НЕ входит — там уже
+# крутится оплаченный запрос или рендер, который так просто не остановить.
+CANCELLABLE_STATUSES = (
+    "audio_queued",
+    "awaiting_audio_approval",
+    "awaiting_user_audio",
+)
+TERMINAL_STATUSES = (
+    "completed", "qa_failed", "failed", "interrupted", "delivery_failed", "cancelled",
+)
 
 
 @dataclass(frozen=True)
@@ -349,6 +360,29 @@ class JobStore:
             )
             if cur.rowcount != 1:
                 raise KeyError(job_id)
+        return self.get(job_id)
+
+    def cancel_waiting(self, job_id: str) -> BuildJob | None:
+        """Отменить job, ТОЛЬКО пока она ждёт действия пользователя (CAS).
+
+        Возвращает обновлённую job при успешной отмене; ``None`` — если статус
+        уже сменился (worker успел взять на синтез/рендер, либо job исчезла): в
+        этом случае отменять нельзя, идёт реальная работа.
+        """
+        placeholders = ",".join("?" for _ in CANCELLABLE_STATUSES)
+        now = time.time()
+        with self._connect() as conn:
+            cur = conn.execute(
+                f"""
+                UPDATE build_jobs
+                SET status = 'cancelled', updated_at = ?, finished_at = ?,
+                    stage = 'cancelled'
+                WHERE job_id = ? AND status IN ({placeholders})
+                """,
+                (now, now, job_id, *CANCELLABLE_STATUSES),
+            )
+            if cur.rowcount != 1:
+                return None
         return self.get(job_id)
 
     def mark_running_interrupted(self) -> list[BuildJob]:

@@ -228,6 +228,9 @@ RENDER_QUEUED_MSG = (
 AUDIO_ACTION_STALE = "Эта кнопка уже не относится к текущему этапу ролика."
 RUNNING_MSG = "Начинаю сборку ролика. Это займёт несколько минут…"
 BUSY_MSG = "Предыдущий ролик ещё не завершён — сначала закончим его текущий этап."
+CANCELLED_PENDING_MSG = (
+    "Предыдущий ролик ждал вашего решения — отменил его. Начинаем новый."
+)
 CLIENT_NOT_FOUND_MSG = (
     "Не нашёл ваш профиль для сборки — похоже, что-то не сохранилось (например, "
     "не удалось склонировать голос). Пройдите шаги фото и голоса заново."
@@ -1185,10 +1188,29 @@ async def _go_back(msg, chat_id: int, s: dict):
         await _show_start(msg, chat_id, s, _keep_all)
 
 
+async def _ready_for_new_reel(msg, chat_id: int) -> bool:
+    """Можно ли начинать новый ролик?
+
+    Если предыдущий стоит на паузе и ждёт решения пользователя (озвучка на
+    подтверждении, ожидание голосового, ещё не начатый синтез) — тихо
+    отменяем его и разрешаем старт. Если идёт реальная работа (синтез/рендер)
+    — блокируем, её нельзя бросать на полпути. CAS-отмена сама отсекает гонку с
+    worker: если он только что взял job, отмена не пройдёт и мы честно блокируем.
+    """
+    job = _job_store().active_for_chat(chat_id)
+    if job is None:
+        return True
+    cancelled = _job_store().cancel_waiting(job.job_id)
+    if cancelled is None:
+        await msg.reply_text(BUSY_MSG)
+        return False
+    await msg.reply_text(CANCELLED_PENDING_MSG)
+    return True
+
+
 async def cmd_start(update, context):
     chat_id = update.effective_chat.id
-    if _job_store().active_for_chat(chat_id):
-        await update.message.reply_text(BUSY_MSG)
+    if not await _ready_for_new_reel(update.message, chat_id):
         return
     await _show_start(update.message, chat_id, load_session(chat_id))
 
@@ -1196,8 +1218,7 @@ async def cmd_start(update, context):
 async def cmd_new(update, context):
     """/new — новый язык и сценарий; фото и языковые голоса остаются."""
     chat_id = update.effective_chat.id
-    if _job_store().active_for_chat(chat_id):
-        await update.message.reply_text(BUSY_MSG)
+    if not await _ready_for_new_reel(update.message, chat_id):
         return
     await _show_start(update.message, chat_id, load_session(chat_id), loop_session)
 
@@ -1215,6 +1236,7 @@ _JOB_STATUS_RU = {
     "failed": "сборка завершилась ошибкой",
     "interrupted": "остановлен перезапуском сервиса",
     "delivery_failed": "готов, но не отправлен в Telegram",
+    "cancelled": "отменён — начат новый ролик",
 }
 
 

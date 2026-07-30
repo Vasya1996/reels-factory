@@ -190,3 +190,29 @@ def test_restart_возвращает_локальную_обработку_voic
     current = store.get(job.job_id)
     assert current.status == "awaiting_user_audio"
     assert "пришлите голосовое ещё раз" in current.error
+
+
+def test_cancel_waiting_отменяет_ждущую_но_щадит_идущую(tmp_path):
+    store = _store(tmp_path)
+    # job на паузе (ждёт юзера) — отменяется, уходит из активных
+    jid = store.new_id()
+    wd = store.workdir_for(jid)
+    wd.mkdir(parents=True)
+    (wd / "scenario.json").write_text(
+        json.dumps({"blocks": [{"role": "hook", "speech": "Привет"}]},
+                   ensure_ascii=False),
+        encoding="utf-8",
+    )
+    store.enqueue_prepared(
+        7, job_id=jid, workdir=wd,
+        initial_status="awaiting_audio_approval", initial_stage="audio_review",
+    )
+    cancelled = store.cancel_waiting(jid)
+    assert cancelled is not None and cancelled.status == "cancelled"
+    assert store.active_for_chat(7) is None
+
+    # job в реальном рендере — отмена не проходит (None), статус не меняется
+    running = store.enqueue(8)
+    store.claim_next()  # queued -> running
+    assert store.cancel_waiting(running.job_id) is None
+    assert store.get(running.job_id).status == "running"

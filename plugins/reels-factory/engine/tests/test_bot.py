@@ -1064,7 +1064,9 @@ def test_отказ_от_tts_принимает_одно_telegram_voice_и_ст�
     assert voice_msg.replies[-1] == bot.FINAL_AUDIO_ACCEPTED
 
 
-def test_new_не_бросает_job_которая_ждёт_audio_approval(work, клиент):
+def test_new_отменяет_job_которая_ждёт_audio_approval(work, клиент):
+    # ролик стоит на подтверждении озвучки и ждёт юзера — /new его отменяет
+    # и начинает новый, а не блокирует пользователя в тупике
     bot.save_session(7, {
         "step": bot.READY,
         "scenario": SCENARIO,
@@ -1073,13 +1075,41 @@ def test_new_не_бросает_job_которая_ждёт_audio_approval(work
     })
     _press("build", _Msg())
     job, _api = _deliver_audio_preview()
+    assert bot._job_store().get(job.job_id).status == "awaiting_audio_approval"
+    msg = _Msg()
+
+    asyncio.run(bot.cmd_new(_Update(msg), None))
+
+    assert bot._job_store().get(job.job_id).status == "cancelled"
+    assert bot.CANCELLED_PENDING_MSG in msg.replies
+    # сессия отвязана от отменённой job и начат новый заход
+    assert bot.load_session(7).get("current_job_id") is None
+    assert bot.load_session(7)["step"] != bot.READY
+
+
+def test_new_не_бросает_реально_идущий_рендер(work, клиент, monkeypatch):
+    # активный рендер (не пауза) нельзя отменять на полпути — /new блокируется
+    bot.save_session(7, {
+        "step": bot.READY,
+        "scenario": SCENARIO,
+        "photo": {"asset_id": "a1", "file": "ф.jpg"},
+        "voice_id": "voice-1",
+    })
+    _press("build", _Msg())
+    job = bot._job_store().latest_for_chat(7)
+    # протолкнуть job в реально исполняемое состояние
+    bot._job_store().transition(
+        job.job_id, "queued", expected="audio_queued", stage="build",
+    )
+    bot._job_store().transition(
+        job.job_id, "running", expected="queued", stage="build",
+    )
     msg = _Msg()
 
     asyncio.run(bot.cmd_new(_Update(msg), None))
 
     assert msg.replies[-1] == bot.BUSY_MSG
-    assert bot._job_store().get(job.job_id).status == "awaiting_audio_approval"
-    assert bot.load_session(7)["current_job_id"] == job.job_id
+    assert bot._job_store().get(job.job_id).status == "running"
 
 
 # --- шаг 9: сборка ролика ------------------------------------------------------
