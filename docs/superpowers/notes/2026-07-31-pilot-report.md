@@ -92,3 +92,112 @@ npx --yes hyperframes@0.7.70 snapshot . --at 1 --output snaps
 
 Проект `cyr-test` — одноразовый, в `C:\Users\123\Videos\Reels\`, в git не
 входит.
+
+## Задача 3: доустановка жанровых скиллов
+
+### `skills check` до установки
+
+```
+hyperframes skills
+  Location  C:\Users\123\.claude\skills (claude-code)
+  ✓ 9 current   ◦ 10 available on demand
+  Available on demand (installed when their workflow first runs):
+    ◦ embedded-captions
+    ◦ faceless-explainer
+    ◦ figma
+    ◦ general-video
+    ◦ motion-graphics
+    ◦ music-to-video
+    ◦ pr-to-video
+    ◦ product-launch-video
+    ◦ remotion-to-hyperframes
+    ◦ slideshow
+  ◇  Installed skills are up to date
+```
+
+**Расхождение с ожиданием брифа**: бриф предполагал на эту дату «4 актуальны,
+5 устарели». По факту все 9 уже установленных скиллов на момент проверки были
+актуальны (`Installed skills are up to date`), устаревших не было вовсе.
+Возможные причины (не проверял) — более ранние задачи плана или отдельный
+`skills update` уже подтянули их до latest. Записываю как факт, а не как то,
+что бриф ожидал.
+
+### Команда установки
+
+```
+npx --yes hyperframes@0.7.70 skills update product-launch-video faceless-explainer embedded-captions music-to-video
+```
+
+Вывод инсталлятора явно перечислил обновлёнными/поставленными только эти
+четыре: `Installed/updated 4 skill(s): embedded-captions, faceless-explainer,
+music-to-video, product-launch-video`. Про остальные пять (уже стоявшие)
+инсталлятор ничего не сообщил отдельно — версии каждого скилла до команды я
+не снимал (бриф просил сохранить именно вывод `skills check`, не версии
+поштучно), поэтому не могу подтвердить и не могу опровергнуть, что они тоже
+молча обновились до latest, как предполагало решение №2 брифа. Итоговый
+`skills check` (ниже) показывает рост только на 4 новых, что согласуется и с
+«пятёрка была и осталась актуальной», и не противоречит «пятёрка тоже
+обновилась молча».
+
+### `skills check` после установки
+
+```
+hyperframes skills
+  Location  C:\Users\123\.claude\skills (claude-code)
+  ✓ 13 current   ◦ 6 available on demand
+  Available on demand (installed when their workflow first runs):
+    ◦ figma
+    ◦ general-video
+    ◦ motion-graphics
+    ◦ pr-to-video
+    ◦ remotion-to-hyperframes
+    ◦ slideshow
+  ◇  Installed skills are up to date
+```
+
+Сравнение: 9→13 актуальных, 10→6 доступных по требованию. Разница — ровно
+четыре запрошенных скилла (`embedded-captions`, `faceless-explainer`,
+`music-to-video`, `product-launch-video`), подтверждено также листингом
+`C:\Users\123\.claude\skills\` (15 директорий, включая инфраструктурные
+`hyperframes*`, `media-use`, `skill-creator`, `talking-head-recut`,
+`vael-reels`). Версия CLI не менялась — все команды выполнялись через
+`npx --yes hyperframes@0.7.70`.
+
+### Скрипты: путь из брифа/решения → фактический путь → существует
+
+| Скрипт | Путь | Существует |
+|---|---|---|
+| `safe-zones.cjs` | `C:\Users\123\.claude\skills\embedded-captions\scripts\safe-zones.cjs` | да |
+| `check-occlusion.cjs` | `C:\Users\123\.claude\skills\embedded-captions\scripts\check-occlusion.cjs` | да |
+| `assemble-index.mjs` | `C:\Users\123\.claude\skills\product-launch-video\scripts\assemble-index.mjs` | да |
+| `dimensions.mjs` | `C:\Users\123\.claude\skills\faceless-explainer\scripts\lib\dimensions.mjs` | да |
+| `captions.mjs` | `C:\Users\123\.claude\skills\faceless-explainer\scripts\captions.mjs` **и** `C:\Users\123\.claude\skills\product-launch-video\scripts\captions.mjs` | да, в обоих скиллах (разные копии, не единый общий файл) |
+| `transitions.mjs` | `C:\Users\123\.claude\skills\faceless-explainer\scripts\transitions.mjs` **и** `C:\Users\123\.claude\skills\product-launch-video\scripts\transitions.mjs` | да, в обоих скиллах |
+| `preview-frames.cjs` | `C:\Users\123\.claude\skills\embedded-captions\scripts\preview-frames.cjs` | да |
+| `transcribe.cjs` | `C:\Users\123\.claude\skills\embedded-captions\scripts\transcribe.cjs` | да |
+| `resolve.mjs` (media-use) | `C:\Users\123\.claude\skills\media-use\scripts\resolve.mjs` | да |
+| `transcript-cut.mjs` (media-use) | `C:\Users\123\.claude\skills\media-use\scripts\transcript-cut.mjs` | да |
+| `analyze-beatgrid.py` (music-to-video) | `C:\Users\123\.claude\skills\music-to-video\scripts\analyze-beatgrid.py` | да |
+
+Первые четыре пути совпали с путями из брифа буквально — подгонять
+предположения не пришлось. `captions.mjs` и `transitions.mjs` оказались не
+общими файлами, а отдельными копиями в двух скиллах каждый — задачи 4-6
+должны явно указывать, из какого скилла берут файл.
+
+### Точечные тесты движка (по решению, не полный набор)
+
+```
+cd plugins/reels-factory/engine && python -m pytest tests/test_hf_fonts.py tests/test_hyperframes_blocks.py -q
+```
+→ `27 passed`. Скиллы (тексты/скрипты на диске) движок не задели, как и
+ожидалось.
+
+### Сомнения
+
+- Не подтверждено (и не опровергнуто) молчаливое обновление пяти ранее
+  установленных скиллов версией `skills update` — инсталлятор отчитался
+  только по четырём запрошенным именам, версии по одиночным скиллам до
+  команды не снимались.
+- `captions.mjs` и `transitions.mjs` существуют как минимум в двух местах
+  каждый (`faceless-explainer` и `product-launch-video`) — не единый файл;
+  дальнейшим задачам (4-6) нужно указывать конкретный скилл, а не имя файла.
