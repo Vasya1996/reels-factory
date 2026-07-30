@@ -1002,6 +1002,10 @@ def test_без_монтажа_один_проход_heygen(monkeypatch, tmp_pat
     assert "synth" not in stages
     assert ("master_audio", "v1") in calls
     assert Path(res["mp4"]).name == "reel.mp4"
+    # результат уходит через json.dumps в _cmd_make — он обязан быть
+    # сериализуемым (mp4 = str, не Path)
+    assert isinstance(res["mp4"], str)
+    json.dumps(res)
 
 
 def test_без_монтажа_требует_master_audio(monkeypatch, tmp_path):

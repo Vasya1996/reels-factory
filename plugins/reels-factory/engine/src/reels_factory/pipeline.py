@@ -212,7 +212,8 @@ def run_make(config: dict, workdir,
         return {
             "ok": True,
             "workdir": str(wd),
-            "mp4": out_mp4,
+            # str, а не Path: результат уходит через json.dumps в _cmd_make
+            "mp4": str(out_mp4),
             "qa_pass": True,
             "gates": None,
             "avatar_summary": None,
