@@ -9,44 +9,20 @@ index.html генерится на лету из данных фразы, зат
 валидированные данные canonical edit_plan и не ищут внешние ассеты.
 
 Рендер тяжёлый (headless-браузер + ffmpeg, ~40с) и требует Node/npx (GSAP всё
-ещё с CDN; шрифты self-hosted через data-URI, см. _fonts_css). Вызывается
+ещё с CDN; шрифты self-hosted через data-URI, см. hf_fonts.fonts_css). Вызывается
 опционально с graceful-фолбэком: если рендер не удался (нет node, таймаут) —
 сегмент остаётся встроенным эффектом.
 """
 from __future__ import annotations
 
-import base64
-import functools
 import html as _html
 import subprocess
 from pathlib import Path
 
+from reels_factory.hf_fonts import fonts_css as _fonts_css
+
 HF_DIR = Path(__file__).resolve().parents[2] / "hyperframes"
 _HF_VERSION = "0.7.70"
-
-# Self-hosted шрифты (Unbounded/Manrope, кириллица+латиница) — встраиваются в
-# каждый блок как @font-face data-URI, чтобы рендер не ходил в Google Fonts
-# (детерминизм + работа офлайн). Файлы в engine/hyperframes/_fonts/.
-_FONTS_DIR = HF_DIR / "_fonts"
-_FONT_RANGES = {
-    "latin": "U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+2074, U+20AC, U+2122, U+2212, U+2215",
-    "cyrillic": "U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
-}
-
-
-@functools.lru_cache(maxsize=1)
-def _fonts_css() -> str:
-    """@font-face с data-URI для всех woff2 в _fonts/ (имя family-weight-subset)."""
-    faces = []
-    for f in sorted(_FONTS_DIR.glob("*.woff2")):
-        fam, wght, subset = f.stem.rsplit("-", 2)
-        b64 = base64.b64encode(f.read_bytes()).decode("ascii")
-        faces.append(
-            f"@font-face{{font-family:'{fam.capitalize()}';font-style:normal;"
-            f"font-weight:{wght};font-display:block;"
-            f"src:url(data:font/woff2;base64,{b64}) format('woff2');"
-            f"unicode-range:{_FONT_RANGES.get(subset, '')};}}")
-    return "\n      ".join(faces)
 
 
 # ---------- task_list ----------
