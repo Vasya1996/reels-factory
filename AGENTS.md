@@ -27,10 +27,40 @@ or monotone.
 - All TTS settings, the model, voice hash, and input hash must remain part of
   the deterministic `cache_key` and `audio_manifest.json`.
 
+## Per-language TTS model — 2026-07-30
+
+The model is chosen by the reel language, not fixed globally:
+
+- `ru` → `eleven_multilingual_v2` (production decision above; best clone
+  identity for Russian).
+- `kk` → `eleven_v3`. This is a **deliberate exception** to the "reject v3"
+  note below: multilingual v2 does **not** support Kazakh at all, so there is
+  no v2 option for `kk`. v3 is the only model that speaks Kazakh.
+- Implementation: `tts.tts_model_for_language(language)`; the bot writes
+  `tts.model_id` into the immutable job snapshot (`enqueue_build`,
+  `save_client_profile`), so the model stays part of `cache_key` /
+  `audio_manifest.json`.
+- v3 requires a discrete `stability` (0.0/0.5/1.0); the master-audio path
+  defaults it to `0.5` for v3 (`DEFAULT_STABILITY_V3`) instead of the v2 `0.2`.
+- Verified 2026-07-30 with one paid probe (`scripts/probe_v3_timestamps.py`):
+  `eleven_v3` returns valid per-character alignment via `/with-timestamps`
+  for Kazakh with `language_code="kk"` (no `kaz` mapping needed). So the full
+  montage path (which needs alignment) works for `kk`, same as `ru`.
+
+## Montage toggle — 2026-07-30
+
+Each reel can be built **with montage** (full edit_plan / B-roll / captions /
+Revideo) or **without** (a single HeyGen pass over the approved master audio,
+no captions, no QA gates — raw talking head). Chosen on the READY screen
+(`build:montage` / `build:plain`), persisted as `config.montage` in the job
+snapshot, and branched in `pipeline.run_make` → `_run_plain_avatar`. The audio
+step (master-audio synthesis + user approval) is identical for both modes.
+
 ### Rejected approaches
 
-- Do not switch back to Eleven v3 for production: tests found that it loses
-  the cloned speaker identity.
+- Do not switch back to Eleven v3 for production **Russian**: tests found that
+  it loses the cloned speaker identity. (Kazakh is the documented exception
+  above — v2 has no Kazakh, so `kk` uses v3.)
 - Eleven v2.5 was ruled out for this solution.
 - Do not add Eleven v3 audio tags such as `[sighs]`, `[excited]`,
   `[whispers]`, or similar tags to scenario text.

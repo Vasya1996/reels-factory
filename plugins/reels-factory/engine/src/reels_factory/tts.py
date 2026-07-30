@@ -27,14 +27,29 @@ TTS_TIMESTAMPS_URL = TTS_URL + "/with-timestamps"
 VOICES_ADD_URL = "https://api.elevenlabs.io/v1/voices/add"
 VOICES_URL = "https://api.elevenlabs.io/v1/voices/{voice_id}"
 MODEL_ID = "eleven_multilingual_v2"
+V3_MODEL_ID = "eleven_v3"
 V3_MAX_CHARACTERS = 5000
 MULTILINGUAL_V2_MAX_CHARACTERS = 10_000
 DEFAULT_OUTPUT_FORMAT = "mp3_44100_128"
 DEFAULT_SPEED = 1.1
 DEFAULT_STABILITY = 0.2
+# v3 принимает stability только дискретными значениями (0.0/0.5/1.0); 0.5 —
+# «Natural», тот же дефолт, что и в legacy synth_voice для v3.
+DEFAULT_STABILITY_V3 = 0.5
 DEFAULT_SIMILARITY_BOOST = 0.55
 DEFAULT_STYLE = 0.5
 DEFAULT_USE_SPEAKER_BOOST = False
+
+# Модель под язык ролика. Multilingual v2 НЕ поддерживает казахский, поэтому для
+# kk используем eleven_v3 (в нём казахский есть). Русский остаётся на v2, где
+# клон голоса сохраняет идентичность лучше всего (production-решение AGENTS.md;
+# для kk сделано осознанное исключение — иначе языка нет вовсе).
+_MODEL_BY_LANGUAGE = {"ru": MODEL_ID, "kk": V3_MODEL_ID}
+
+
+def tts_model_for_language(language: str | None) -> str:
+    """ElevenLabs model_id для языка ролика (fallback — production v2)."""
+    return _MODEL_BY_LANGUAGE.get(str(language or "").strip().lower(), MODEL_ID)
 
 
 @dataclass(frozen=True)
@@ -251,7 +266,7 @@ def synth_voice(text: str, out_wav: Path, voice_id: str | None = None,
     if stability is None:
         stability = float(
             os.environ.get("ELEVENLABS_STABILITY")
-            or (0.5 if model_id == "eleven_v3" else DEFAULT_STABILITY)
+            or (DEFAULT_STABILITY_V3 if model_id == V3_MODEL_ID else DEFAULT_STABILITY)
         )
     if model_id != "eleven_v3":
         if speed is None:

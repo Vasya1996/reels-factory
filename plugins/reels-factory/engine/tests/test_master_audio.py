@@ -479,3 +479,36 @@ def test_telegram_voice_с_большим_пропуском_сценария_о
             run_cmd=fake_run,
             duration_fn=lambda _: 1.0,
         )
+
+
+def test_build_master_audio_v3_дефолтная_stability_дискретна(tmp_path):
+    # kk-ролик идёт на eleven_v3; без явной stability в конфиге провайдер
+    # должен получить v3-безопасное значение 0.5, а не production-дефолт v2 0.2.
+    fixture = _fixture()
+    response = fixture["response"]
+    calls = []
+
+    class Provider:
+        def convert_with_timestamps(self, text, **kwargs):
+            calls.append((text, kwargs))
+            return TimestampedSpeech(
+                audio=b"fake-mp3",
+                alignment=response["alignment"],
+                normalized_alignment=response["normalized_alignment"],
+                request_id=response["request_id"],
+            )
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"generated")
+
+    config = {
+        "language": "kk",
+        "voice_id": "kk-voice-id",
+        "tts": {"model_id": "eleven_v3", "language_code": "kk"},
+    }
+    build_master_audio(
+        _scenario(), config, tmp_path, provider=Provider(),
+        run_cmd=fake_run, duration_fn=lambda _: 1.3,
+    )
+    assert calls[0][1]["model_id"] == "eleven_v3"
+    assert calls[0][1]["stability"] == 0.5

@@ -49,6 +49,7 @@ from reels_factory.llm import ClaudeSkillRunner
 from reels_factory.scenario import (ScenarioError, run_generated_path, run_ideas,
                                     run_verbatim_path, split_verbatim)
 from reels_factory.tribute import start_webhook_server
+from reels_factory.tts import tts_model_for_language
 
 log = logging.getLogger(__name__)
 
@@ -594,6 +595,7 @@ def save_client_profile(chat_id: int, session: dict) -> None:
     base["voices"] = voices
     tts = dict(base.get("tts") or {})
     tts["language_code"] = language
+    tts["model_id"] = tts_model_for_language(language)
     base["tts"] = tts
     register_client(
         str(chat_id),
@@ -660,8 +662,13 @@ def enqueue_build(
     *,
     language: str | None = None,
     voice_id: str | None = None,
+    montage: bool = True,
 ) -> BuildJob:
-    """Подготовить immutable scenario/config и лишь затем показать job worker."""
+    """Подготовить immutable scenario/config и лишь затем показать job worker.
+
+    ``montage=False`` — ролик собирается одним проходом HeyGen без монтажного
+    слоя (edit_plan, B-roll, субтитры, Revideo). Флаг зашивается в snapshot job.
+    """
     from reels_factory.avatar_islands import avatar_islands_enabled
     from reels_factory.clients import load_client
     from reels_factory.master_audio import master_audio_enabled
@@ -690,7 +697,8 @@ def enqueue_build(
             # чтобы не показывать урезанную оценку для пути, который не
             # запустится.
             use_islands_estimate = (
-                avatar_islands_enabled(profile_for_estimate)
+                montage
+                and avatar_islands_enabled(profile_for_estimate)
                 and master_audio_enabled(profile_for_estimate)
             )
         except Exception:
@@ -760,7 +768,14 @@ def enqueue_build(
         config["master_audio"] = master_audio
         tts = dict(config.get("tts") or {})
         tts["language_code"] = language
+        # Модель озвучки выбирается по языку: ru -> multilingual v2, kk -> v3
+        # (v2 не поддерживает казахский). Пишем в snapshot, чтобы модель попала
+        # в детерминированный cache_key/audio_manifest.
+        tts["model_id"] = tts_model_for_language(language)
         config["tts"] = tts
+        # Монтаж/без монтажа фиксируется в immutable snapshot: pipeline.run_make
+        # читает config["montage"] и выбирает полный путь либо один проход HeyGen.
+        config["montage"] = bool(montage)
         config_path = workdir / "build-config.yaml"
         _write_yaml_atomic(config_path, config)
 
@@ -1034,7 +1049,10 @@ def _kb_review():
 def _kb_ready():
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Создать ролик", callback_data="build")],
+        [InlineKeyboardButton("🎬 С монтажом", callback_data="build:montage")],
+        [InlineKeyboardButton(
+            "🎥 Без монтажа (только аватар)", callback_data="build:plain"
+        )],
         [InlineKeyboardButton("← Назад", callback_data="back")],
     ])
 
@@ -1374,7 +1392,7 @@ async def on_button(update, context):
             await q.message.reply_text(AUDIO_ACTION_STALE)
             return
         await q.message.reply_text(_scenario_speech(job))
-    elif data == "build":
+    elif data == "build" or data.startswith("build:"):
         # инлайн-кнопки живут в истории чата вечно: тап по старому сообщению
         # READY после DONE не должен зазывать платную сборку заново
         if s.get("step") != READY:
@@ -1386,6 +1404,10 @@ async def on_button(update, context):
         if _job_store().active_for_chat(chat_id):
             await q.message.reply_text(BUSY_MSG)
             return
+        # build:plain — один проход HeyGen без монтажа; build / build:montage —
+        # полный пайплайн. Старый callback "build" остаётся монтажным (совместимость).
+        s["montage"] = not data.endswith(":plain")
+        save_session(chat_id, s)
         try:
             save_client_profile(chat_id, s)
         except Exception:
@@ -1543,6 +1565,7 @@ async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
             s["scenario"],
             language=_reel_language(s),
             voice_id=s.get("voice_id"),
+            montage=bool(s.get("montage", True)),
         )
     except InsufficientBalance as exc:
         # Раньше общего except: иначе нехватка баланса покажется как

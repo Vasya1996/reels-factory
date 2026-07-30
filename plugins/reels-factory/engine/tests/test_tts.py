@@ -7,15 +7,18 @@ from reels_factory.tts import (
     DEFAULT_SIMILARITY_BOOST,
     DEFAULT_SPEED,
     DEFAULT_STABILITY,
+    DEFAULT_STABILITY_V3,
     DEFAULT_STYLE,
     DEFAULT_USE_SPEAKER_BOOST,
     MODEL_ID,
     MULTILINGUAL_V2_MAX_CHARACTERS,
     V3_MAX_CHARACTERS,
+    V3_MODEL_ID,
     ElevenLabsClient,
     create_voice_clone,
     delete_voice,
     synth_voice,
+    tts_model_for_language,
 )
 
 
@@ -265,3 +268,28 @@ def test_synth_voice_без_meter_работает_как_раньше(tmp_path,
     out = synth_voice("текст", tmp_path / "g.wav", voice_id="v1",
                       http=_FakeHttp(), run_cmd=lambda *a, **kw: None)
     assert out == tmp_path / "g.wav"
+
+
+def test_tts_model_for_language_ru_v2_kk_v3():
+    assert tts_model_for_language("ru") == MODEL_ID == "eleven_multilingual_v2"
+    assert tts_model_for_language("kk") == V3_MODEL_ID == "eleven_v3"
+    # регистр/пробелы не должны влиять
+    assert tts_model_for_language("  KK ") == V3_MODEL_ID
+    # неизвестный/пустой язык — безопасный production-дефолт v2
+    assert tts_model_for_language(None) == MODEL_ID
+    assert tts_model_for_language("de") == MODEL_ID
+
+
+def test_synth_voice_v3_дефолтная_stability_дискретна(tmp_path, monkeypatch):
+    # v3 отклоняет непрерывную stability; без явного значения берём 0.5.
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "k")
+    monkeypatch.delenv("ELEVENLABS_STABILITY", raising=False)
+    http = _FakeHttp()
+    synth_voice("текст", tmp_path / "g.wav", voice_id="v1",
+                model_id=V3_MODEL_ID, http=http, run_cmd=lambda *a, **kw: None)
+    body = http.posts[0][1]
+    assert body["model_id"] == V3_MODEL_ID
+    assert body["voice_settings"]["stability"] == DEFAULT_STABILITY_V3
+    # v2-only настройки для v3 не отправляются
+    assert "speed" not in body["voice_settings"]
+    assert "similarity_boost" not in body["voice_settings"]

@@ -30,9 +30,11 @@ from reels_factory.tts import (
     DEFAULT_SIMILARITY_BOOST,
     DEFAULT_SPEED,
     DEFAULT_STABILITY,
+    DEFAULT_STABILITY_V3,
     DEFAULT_STYLE,
     DEFAULT_USE_SPEAKER_BOOST,
     MODEL_ID,
+    V3_MODEL_ID,
     ElevenLabsClient,
 )
 
@@ -277,10 +279,16 @@ def _tts_options(config: dict) -> dict:
         tts.get("model_id") or os.environ.get("ELEVENLABS_MODEL") or MODEL_ID
     )
     seed = tts.get("seed")
+    # v3 принимает stability только дискретными значениями (0.0/0.5/1.0):
+    # production-дефолт v2 (0.2) провайдер для v3 отклонит, поэтому берём
+    # v3-безопасный дефолт, если явное значение в конфиге не задано.
+    default_stability = (
+        DEFAULT_STABILITY_V3 if model_id == V3_MODEL_ID else DEFAULT_STABILITY
+    )
     return {
         "model_id": model_id,
         "speed": float(tts.get("speed", DEFAULT_SPEED)),
-        "stability": float(tts.get("stability", DEFAULT_STABILITY)),
+        "stability": float(tts.get("stability", default_stability)),
         "similarity_boost": float(
             tts.get("similarity_boost", DEFAULT_SIMILARITY_BOOST)
         ),

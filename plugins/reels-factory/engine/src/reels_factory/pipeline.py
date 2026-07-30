@@ -75,6 +75,51 @@ def _fixes_hypothesis(config: dict) -> dict:
     }
 
 
+def _run_plain_avatar(config: dict, wd, scenario: dict, voice_id,
+                      avatar_client, meter, *, master_audio_fn=None):
+    """Ролик без монтажа: единая утверждённая дорожка -> один вызов HeyGen.
+
+    Возвращает путь к mp4 (звук уже вшит HeyGen). Монтажный слой не строится
+    и не вызывается вовсе. Master audio обязателен: без него нет единой дорожки
+    на весь ролик, а поблочная озвучка — это уже монтажный путь.
+    """
+    avatar_cfg = config.get("avatar") or {}
+    if avatar_client is None:
+        avatar_client = HeyGenClient(
+            avatar_id=avatar_cfg.get("heygen_asset_id"),
+            look_id=avatar_cfg.get("heygen_look_id"),
+            motion_prompt=avatar_cfg.get("motion_prompt"),
+            expressiveness=avatar_cfg.get("expressiveness"),
+            engine=avatar_cfg.get("engine"),
+            resolution=avatar_cfg.get("resolution"),
+        )
+    if not master_audio_enabled(config):
+        raise RuntimeError(
+            "режим без монтажа требует master_audio.enabled=true: нужна одна "
+            "утверждённая дорожка на весь ролик"
+        )
+    approval_path = wd / "audio.approved.json"
+    review_required = bool(
+        ((config.get("master_audio") or {}).get("review_required", False))
+    )
+    if approval_path.exists():
+        master = load_approved_master_audio(scenario, config, wd)
+    elif review_required:
+        raise RuntimeError("render заблокирован: master audio ещё не утверждено")
+    else:
+        master = (master_audio_fn or _build_master_audio)(
+            scenario, config, wd, voice_id=voice_id,
+            meter=(meter.elevenlabs if meter is not None else None),
+        )
+    out_mp4 = avatar_client.generate(master.wav, wd / "reel.mp4")
+    if meter is not None:
+        meter.heygen(
+            billable_seconds(out_mp4),
+            twin=bool(getattr(avatar_client, "look_id", None)),
+        )
+    return out_mp4
+
+
 def run_make(config: dict, workdir,
              scenario: dict | None = None,
              avatar_client=None, synth_fn=None, assemble_fn=None,
@@ -150,6 +195,33 @@ def run_make(config: dict, workdir,
             ),
         )
     avatar_cfg = config.get("avatar") or {}
+
+    # Режим без монтажа: одна утверждённая дорожка -> один проход HeyGen. Ни
+    # edit_plan, ни B-roll, ни субтитров, ни Revideo, ни QA-геймов — отдаём
+    # сырой talking-head mp4 (звук уже вшит HeyGen). Ветка ранняя, чтобы не
+    # строить и не финализировать монтажный план впустую.
+    if config.get("montage") is False:
+        _log("plain_avatar")
+        try:
+            out_mp4 = _run_plain_avatar(
+                config, wd, scenario, voice_id, avatar_client, meter,
+                master_audio_fn=master_audio_fn,
+            )
+        except Exception as e:
+            return fail("plain_avatar", e)
+        return {
+            "ok": True,
+            "workdir": str(wd),
+            "mp4": out_mp4,
+            "qa_pass": True,
+            "gates": None,
+            "avatar_summary": None,
+            "avatar_render_manifest": None,
+            "montage": False,
+            "stage": None,
+            "error": None,
+        }
+
     caption_fixes = build_caption_fixes(_fixes_hypothesis(config))
 
     # Один canonical edit plan строится до любых TTS/HeyGen вызовов. Старый

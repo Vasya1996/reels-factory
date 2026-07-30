@@ -764,7 +764,12 @@ def test_использовать_прежнюю_запись_ведёт_к_го
     s = bot.load_session(7)
     assert s["step"] == bot.READY and s["voice_id"] == "voice-1"
     assert msg.replies[-1] == bot.READY_MSG
-    assert "Создать ролик" in _labels(msg.markups[-1])
+    callbacks = [
+        b.callback_data
+        for row in msg.markups[-1].inline_keyboard
+        for b in row
+    ]
+    assert "build:montage" in callbacks and "build:plain" in callbacks
 
 
 def test_записать_заново_удаляет_старый_клон_и_просит_новую_запись(work, monkeypatch):
@@ -1156,7 +1161,23 @@ def test_job_snapshot_не_меняется_после_смены_профиля
     assert snapshot["language"] == "ru"
     assert snapshot["voice_id"] == "voice-1"
     assert snapshot["tts"]["language_code"] == "ru"
+    assert snapshot["tts"]["model_id"] == "eleven_multilingual_v2"
+    # по умолчанию ролик собирается с монтажом
+    assert snapshot["montage"] is True
     assert input_doc["language"] == "ru"
+
+
+def test_enqueue_build_без_монтажа_пишет_флаг_в_snapshot(work, клиент):
+    import yaml
+
+    job = bot.enqueue_build(
+        7, {**SCENARIO, "language": "ru"},
+        language="ru", voice_id="voice-1", montage=False,
+    )
+    snapshot = yaml.safe_load(
+        (job.workdir / "build-config.yaml").read_text(encoding="utf-8")
+    )
+    assert snapshot["montage"] is False
 
 
 def test_run_build_невалидный_json_превращается_в_ошибку(tmp_path, monkeypatch):
@@ -1233,6 +1254,8 @@ def test_save_client_profile_сохраняет_голоса_обоих_язык
     assert cfg["voice_id"] == "voice-kk"
     assert cfg["voices"] == {"ru": "voice-ru", "kk": "voice-kk"}
     assert cfg["tts"]["language_code"] == "kk"
+    # kk-профиль озвучивается через eleven_v3 (v2 не знает казахский)
+    assert cfg["tts"]["model_id"] == "eleven_v3"
 
 
 def test_профиль_клиента_без_файла_не_готов(tmp_path, monkeypatch):
@@ -1357,6 +1380,31 @@ def test_сценарий_пишется_в_job_workdir_с_uuid(work, клиен
     assert saved == {**SCENARIO, "language": "ru"}
     assert (job.workdir / "job.input.json").exists()
     assert (job.workdir / "build-config.yaml").exists()
+
+
+def test_кнопка_без_монтажа_пишет_montage_false_в_snapshot(work, клиент):
+    import yaml
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+
+    job = bot._job_store().latest_for_chat(7)
+    cfg = yaml.safe_load((job.workdir / "build-config.yaml").read_text(encoding="utf-8"))
+    assert cfg["montage"] is False
+    assert bot.load_session(7)["montage"] is False
+
+
+def test_кнопка_с_монтажом_пишет_montage_true_в_snapshot(work, клиент):
+    import yaml
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:montage", _Msg())
+
+    job = bot._job_store().latest_for_chat(7)
+    cfg = yaml.safe_load((job.workdir / "build-config.yaml").read_text(encoding="utf-8"))
+    assert cfg["montage"] is True
 
 
 def test_сбой_сборки_сообщается_человеческим_текстом(work, клиент, monkeypatch):
