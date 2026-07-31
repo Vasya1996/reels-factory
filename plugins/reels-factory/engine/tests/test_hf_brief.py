@@ -23,7 +23,7 @@ def test_правила_числами(tmp_path):
     text = _text(tmp_path)
     assert "1080" in text and "1920" in text
     assert STYLE_NAME in text
-    assert "Montserrat" in text
+    assert "Manrope" in text
     assert "лицо" in text.lower()
     assert "storyboard.json" in text and "contentRect" in text
     assert "1/30" in text

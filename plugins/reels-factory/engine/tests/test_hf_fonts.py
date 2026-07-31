@@ -8,13 +8,9 @@ from fontTools.ttLib import TTFont
 
 from reels_factory import hf_fonts
 
-KAZAKH = "әғқңөұүһі"
+KAZAKH = "әғқңөұүһіӘҒҚҢӨҰҮҺІ"
 
-#: (family, weight) пары, реально присутствующие в композициях.
-FAMILY_WEIGHTS = [
-    ("Manrope", "500"), ("Manrope", "600"), ("Manrope", "700"),
-    ("Unbounded", "600"), ("Unbounded", "700"), ("Unbounded", "800"),
-]
+FAMILY_WEIGHTS = hf_fonts.FAMILY_WEIGHTS
 
 _FACE_RE = re.compile(
     r"@font-face\{font-family:'(?P<fam>[^']+)';font-style:normal;"
@@ -88,19 +84,24 @@ def test_every_kazakh_letter_has_a_matching_covering_glyph(faces, cmap_cache):
     assert missing == [], "нет глифа+покрывающего диапазона: " + ", ".join(missing)
 
 
-def test_unknown_subset_in_filename_raises():
+def test_unknown_subset_in_filename_raises(tmp_path, monkeypatch):
     """FONT_RANGES.get(subset, '') раньше тихо давал unicode-range:; —
     безграничный @font-face без единого сигнала об ошибке. Теперь это
     должно падать явно.
+
+    Пишем bogus-файл во временный каталог (monkeypatch подменяет FONTS_DIR),
+    а не в отслеживаемый git-каталог шрифтов: обрыв процесса до unlink() в
+    finally раньше оставлял мусорный файл там, где его подхватывает
+    fonts_css() у всех потребителей.
     """
-    bogus = hf_fonts.FONTS_DIR / "manrope-500-bogussubset.woff2"
+    monkeypatch.setattr(hf_fonts, "FONTS_DIR", tmp_path)
+    bogus = tmp_path / "manrope-500-bogussubset.woff2"
     bogus.write_bytes(b"\x00")
     hf_fonts.fonts_css.cache_clear()
     try:
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             hf_fonts.fonts_css()
     finally:
-        bogus.unlink()
         hf_fonts.fonts_css.cache_clear()
 
 
