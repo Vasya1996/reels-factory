@@ -19,6 +19,7 @@ from reels_factory.face_detect import face_box_for, load_face
 from reels_factory.hf_agent import build_with_agent
 from reels_factory.hf_assets import vendor_gsap
 from reels_factory.hf_brief import write_brief
+from reels_factory.hf_fonts import embed_fonts
 from reels_factory.hf_gates import check_storyboard
 from reels_factory.hf_layout import quantize
 from reels_factory.hyperframes_blocks import _HF_VERSION
@@ -276,6 +277,13 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         reason = "; ".join(failed)
         if attempt == MAX_COMPOSE_ATTEMPTS - 1:
             raise RuntimeError("раскадровка не прошла гейты — " + reason)
+
+    # Шрифты врезаем ДО check: их гейты меряют переполнение и перекрытие по
+    # отрисованному тексту, а без наших @font-face кириллица считалась бы по
+    # подменному шрифту — гейты судили бы не тот текст, что увидит зритель.
+    # Вызов идемпотентен, поэтому не нуждается в своём маркере шага и
+    # переживает как возобновление, так и повторную сборку.
+    embed_fonts(rdir / "public")
 
     run_step(rdir, "check", lambda: _cli("check", "public", cwd=rdir))
 

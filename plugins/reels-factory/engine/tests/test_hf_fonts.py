@@ -123,3 +123,57 @@ def test_fonts_css_embeds_every_file_plus_donor_faces(faces):
     donor_faces = len(FAMILY_WEIGHTS)  # один донорский @font-face на пару семейство+вес
     assert len(faces) == real_files + donor_faces
     assert all(f["bytes"] for f in faces)
+
+
+# ---------- embed_fonts: врезка шрифтов в композицию агента ----------
+#
+# fonts_css() до сих пор подключался только в hyperframes_blocks.py — в наши
+# собственные блоки. Композицию, которую пишет агент по скиллам HyperFrames,
+# рендерит hf_render, и туда шрифты не попадали: кириллица уезжала в подменный
+# системный шрифт, а казахские буквы — в пустоту.
+
+def _write(public, name, html):
+    public.mkdir(parents=True, exist_ok=True)
+    (public / name).write_text(html, encoding="utf-8")
+    return public / name
+
+
+def test_embed_fonts_inserts_faces_before_head_close(tmp_path):
+    page = _write(tmp_path / "public", "index.html",
+                  "<!doctype html><html><head><title>t</title></head>"
+                  "<body>Привет</body></html>")
+
+    assert hf_fonts.embed_fonts(tmp_path / "public") == 1
+
+    html = page.read_text(encoding="utf-8")
+    assert "@font-face" in html
+    assert html.index("@font-face") < html.index("</head>")
+
+
+def test_embed_fonts_is_idempotent(tmp_path):
+    page = _write(tmp_path / "public", "index.html",
+                  "<html><head></head><body></body></html>")
+
+    hf_fonts.embed_fonts(tmp_path / "public")
+    once = page.read_text(encoding="utf-8")
+    hf_fonts.embed_fonts(tmp_path / "public")
+    twice = page.read_text(encoding="utf-8")
+
+    assert once == twice
+    assert twice.count("@font-face") == once.count("@font-face")
+
+
+def test_embed_fonts_covers_every_html_including_nested(tmp_path):
+    public = tmp_path / "public"
+    _write(public, "index.html", "<html><head></head><body></body></html>")
+    _write(public / "cards", "card-01.html", "<html><head></head><body></body></html>")
+
+    assert hf_fonts.embed_fonts(public) == 2
+    assert "@font-face" in (public / "cards" / "card-01.html").read_text(encoding="utf-8")
+
+
+def test_embed_fonts_handles_page_without_head(tmp_path):
+    page = _write(tmp_path / "public", "index.html", "<div>Привет, әлем</div>")
+
+    assert hf_fonts.embed_fonts(tmp_path / "public") == 1
+    assert "@font-face" in page.read_text(encoding="utf-8")

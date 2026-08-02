@@ -110,3 +110,36 @@ def fonts_css() -> str:
             f"src:url(data:font/woff2;base64,{b64}) format('woff2');"
             f"unicode-range:{donor_range};}}")
     return "\n      ".join(faces)
+
+
+# Метка врезки: по ней узнаём уже обработанный файл. Повторный запуск шага
+# сборки не должен раздувать HTML вторым мегабайтом data-URI.
+_EMBED_MARK = "data-reels-fonts"
+
+
+def embed_fonts(public_dir) -> int:
+    """Врезать @font-face во все HTML композиции, отданной агентом.
+
+    fonts_css() исторически подключался только в hyperframes_blocks.py — в наши
+    блоки, написанные руками. Композицию по скилам HyperFrames пишет агент, и
+    там наших шрифтов нет: кириллица уезжает в подменный системный шрифт, а
+    казахские буквы не отрисовываются вовсе. Врезаем сами, до гейтов и рендера,
+    чтобы гейты мерили тот же текст, который увидит зритель.
+
+    Возвращает число обработанных файлов.
+    """
+    public = Path(public_dir)
+    style = f"<style {_EMBED_MARK}>\n      {fonts_css()}\n    </style>"
+    touched = 0
+    for page in sorted(public.rglob("*.html")):
+        html = page.read_text(encoding="utf-8")
+        if _EMBED_MARK in html:
+            continue
+        lower = html.lower()
+        at = lower.find("</head>")
+        if at == -1:
+            head_open = lower.find("<head>")
+            at = head_open + len("<head>") if head_open != -1 else 0
+        page.write_text(html[:at] + style + html[at:], encoding="utf-8")
+        touched += 1
+    return touched
