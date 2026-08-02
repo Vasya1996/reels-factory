@@ -238,10 +238,13 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         face_box_for(public / clips[0]["file"], rdir / "face.json")
         media = _media_from_plan(edit_plan, public) + _prepare_material(
             edit_plan, public, rdir)
-        write_brief(rdir, edit_plan, face=load_face(rdir), duration=duration,
-                    clips=clips, media=media)
+        write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
+                    duration=duration, clips=clips)
         (rdir / "clips.json").write_text(
             json.dumps(clips, ensure_ascii=False, indent=1), encoding="utf-8")
+        # media.json задание больше не читает: вставки агент ищет сам через
+        # media-use. Файл остаётся как след того, что план успел положить в
+        # public/ — на него смотрят при разборе прогона.
         (rdir / "media.json").write_text(
             json.dumps(media, ensure_ascii=False, indent=1), encoding="utf-8")
 
@@ -256,9 +259,8 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             reset_step(rdir, "render")
             reset_step(rdir, "loudness")
             saved_clips = json.loads((rdir / "clips.json").read_text(encoding="utf-8"))
-            saved_media = json.loads((rdir / "media.json").read_text(encoding="utf-8"))
-            write_brief(rdir, edit_plan, face=load_face(rdir), duration=duration,
-                        clips=saved_clips, media=saved_media, retry_reason=reason)
+            write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
+                        duration=duration, clips=saved_clips, retry_reason=reason)
 
         board = run_step(rdir, "compose",
                          lambda: build_with_agent(rdir, runner=agent_runner))
