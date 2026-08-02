@@ -130,3 +130,61 @@ def test_headless_не_перекрывает_существующий_токе�
     runner.run("/hyperframes привет", cwd=tmp_path)
 
     assert seen["env"]["CLAUDE_CODE_OAUTH_TOKEN"] == "уже-стоит"
+
+
+# ---------- выбор модели ----------
+#
+# Замер себестоимости требует прогнать одно и то же задание на разных моделях.
+# Без флага --model headless-сессия берёт модель по умолчанию, и сравнить
+# Sonnet 5 с Opus 5 на одном материале нечем.
+
+def _fake_run(seen):
+    def run(cmd, **kw):
+        seen["cmd"] = [str(c) for c in cmd]
+
+        class P:
+            returncode = 0
+            stdout = json.dumps({"result": "ок", "total_cost_usd": 0.01})
+            stderr = ""
+
+        return P()
+    return run
+
+
+def test_модель_не_задана_флага_нет(monkeypatch, tmp_path):
+    from reels_factory import hf_agent
+
+    monkeypatch.setattr(hf_agent.Path, "home", lambda: tmp_path / "нет-профиля")
+    monkeypatch.delenv("REELS_AGENT_MODEL", raising=False)
+    seen = {}
+    monkeypatch.setattr(hf_agent.subprocess, "run", _fake_run(seen))
+
+    hf_agent.HeyGenAgentRunner().run("/hyperframes", cwd=tmp_path)
+
+    assert "--model" not in seen["cmd"]
+
+
+def test_модель_из_переменной_окружения(monkeypatch, tmp_path):
+    from reels_factory import hf_agent
+
+    monkeypatch.setattr(hf_agent.Path, "home", lambda: tmp_path / "нет-профиля")
+    monkeypatch.setenv("REELS_AGENT_MODEL", "claude-sonnet-5")
+    seen = {}
+    monkeypatch.setattr(hf_agent.subprocess, "run", _fake_run(seen))
+
+    hf_agent.HeyGenAgentRunner().run("/hyperframes", cwd=tmp_path)
+
+    assert seen["cmd"][seen["cmd"].index("--model") + 1] == "claude-sonnet-5"
+
+
+def test_модель_явным_аргументом_бьёт_окружение(monkeypatch, tmp_path):
+    from reels_factory import hf_agent
+
+    monkeypatch.setattr(hf_agent.Path, "home", lambda: tmp_path / "нет-профиля")
+    monkeypatch.setenv("REELS_AGENT_MODEL", "claude-sonnet-5")
+    seen = {}
+    monkeypatch.setattr(hf_agent.subprocess, "run", _fake_run(seen))
+
+    hf_agent.HeyGenAgentRunner(model="claude-opus-5").run("/hyperframes", cwd=tmp_path)
+
+    assert seen["cmd"][seen["cmd"].index("--model") + 1] == "claude-opus-5"

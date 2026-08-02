@@ -33,9 +33,13 @@ TIMEOUT_S = 1800
 class HeyGenAgentRunner:
     """Headless-сессия в обычном профиле, с правом писать файлы."""
 
-    def __init__(self, timeout_s: int = TIMEOUT_S):
+    def __init__(self, timeout_s: int = TIMEOUT_S, model: str | None = None):
         self.timeout_s = timeout_s
         self.exe = shutil.which("claude") or "claude"
+        # Замер себестоимости требует одного и того же задания на разных
+        # моделях. Без явного выбора headless-сессия берёт модель по умолчанию,
+        # и сравнить Sonnet 5 с Opus 5 нечем. Пусто — модель не навязываем.
+        self.model = model or os.environ.get("REELS_AGENT_MODEL") or None
         self.total_cost_usd = 0.0
 
     def run(self, prompt: str, cwd=None) -> str:
@@ -51,9 +55,10 @@ class HeyGenAgentRunner:
         if not env.get("CLAUDE_CODE_OAUTH_TOKEN") and token_file.exists():
             env["CLAUDE_CODE_OAUTH_TOKEN"] = token_file.read_text(
                 encoding="utf-8").strip()
+        model_args = ["--model", self.model] if self.model else []
         result = subprocess.run(
             [self.exe, "-p", "--output-format", "json",
-             "--permission-mode", "acceptEdits"],
+             "--permission-mode", "acceptEdits", *model_args],
             input=prompt, capture_output=True, text=True, encoding="utf-8",
             timeout=self.timeout_s, env=env, cwd=str(cwd) if cwd else None,
         )
