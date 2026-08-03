@@ -1,8 +1,13 @@
 """Телеграм-бот фабрики: сырьё или готовый текст -> утверждённый сценарий.
 
-Разговор: /start или /new -> язык ролика -> выбор пути -> материал -> сценарий
-в чате -> правка текста руками или утверждение -> фото -> голос языка ролика
--> готовность.
+Разговор: /start или /new -> язык ролика -> фото -> запись голоса -> выбор
+пути -> материал -> экран цены -> оплата -> клон голоса и сценарий в чате ->
+правка текста руками или утверждение -> готовность.
+
+Порядок держится на одном правиле: до экрана цены не уходит ни один платный
+вызов. Фото загружается в HeyGen бесплатно, запись голоса просто лежит файлом,
+материал принимается как есть. Клон голоса (ElevenLabs) и сценарий (Клод) —
+первые платные шаги, и оба живут за экраном цены.
 
 По кнопке «Создать ролик» durable worker сначала создаёт только master audio и
 присылает его на проверку. Подтверждение продолжает ту же immutable job без
@@ -46,26 +51,28 @@ from reels_factory.language import (
     normalize_profile_language,
 )
 from reels_factory.llm import ClaudeSkillRunner
-from reels_factory.scenario import (ScenarioError, run_generated_path, run_ideas,
+from reels_factory.scenario import (DEFAULT_MAX_DURATION_S, ScenarioError,
+                                    run_generated_path, run_ideas,
                                     run_verbatim_path, split_verbatim)
 from reels_factory.tribute import start_webhook_server
 from reels_factory.tts import tts_model_for_language
 
 log = logging.getLogger(__name__)
 
-# Шаги разговора.
+# Шаги разговора. Порядок: всё бесплатное (язык, фото, запись голоса,
+# материал) идёт ДО экрана цены; клон голоса и Клод — только после него.
 CHOOSING_LANGUAGE = "choosing_language"  # язык нового ролика
+WAIT_PHOTO = "wait_photo"
+WAIT_VOICE = "wait_voice"            # ждём запись голоса; клон здесь не делаем
+CHOOSING_PROFILE = "choosing_profile"  # фото и запись уже есть: взять или заменить
 CHOOSING = "choosing"                # ждём выбора пути
 CHOOSING_MATERIAL = "choosing_material"  # прежний материал или новый
 WAIT_TEXT = "wait_text"              # ждём готовый текст реплик
 WAIT_RAW = "wait_raw"                # ждём сырьё (мысли, отрывок, запись)
+CONFIRM_PRICE = "confirm_price"      # оценка показана, ждём «Поехали» или оплату
 CHOOSING_IDEA = "choosing_idea"
 REVIEW = "review"                    # сценарий показан, ждём решения
 WAIT_EDIT = "wait_edit"              # ждём отредактированный текст
-CHOOSING_PHOTO = "choosing_photo"    # фото уже есть: прежнее или новое
-WAIT_PHOTO = "wait_photo"
-CHOOSING_VOICE = "choosing_voice"    # голос уже есть: прежний или новый
-WAIT_VOICE = "wait_voice"
 READY = "ready"                      # сценарий утверждён, фото и голос собраны
 AUDIO_PREPARING = "audio_preparing"  # master TTS стоит в очереди или создаётся
 AUDIO_REVIEW = "audio_review"        # TTS отправлено, ждём approve/reject
@@ -73,6 +80,18 @@ WAIT_FINAL_AUDIO = "wait_final_audio"  # ждём весь сценарий Tele
 BUILDING = "building"                # утверждённое audio идёт в video render
 BUILD_FAILED = "build_failed"        # сборка/QA остановлены, видео не отправлено
 DONE = "done"                        # ролик заказан, ждём новый цикл
+
+# Версия порядка шагов. Сессии, записанные прежним порядком (фото и голос
+# после сценария), помечены её отсутствием и переводятся на новый порядок в
+# load_session — с сохранением фото, голосов и всего, за что уже заплачено.
+FLOW_VERSION = 2
+
+# Шаги, привязанные к оплаченной job: их миграция не трогает, иначе разговор
+# отвяжется от уже запущенной сборки.
+_JOB_BOUND_STEPS = frozenset({
+    AUDIO_PREPARING, AUDIO_REVIEW, WAIT_FINAL_AUDIO, BUILDING,
+    BUILD_FAILED, DONE,
+})
 
 ROLE_RU = {"hook": "хук", "context": "контекст", "development": "развитие",
            "payoff": "вывод", "cta": "призыв"}
@@ -82,8 +101,10 @@ HELLO = (
     "ролик для Reels, Shorts и TikTok.\n\n"
     "В кадре будет ваш ИИ-аватар с вашим реалистичным голосом. Снимать и "
     "монтировать не придётся: нужны только фото и минутная запись голоса.\n\n"
-    "С чего начнём?"
+    "Сначала соберём всё бесплатно — язык, фото, голос и материал. Стоимость "
+    "покажу перед работой, до неё ни одна платная кнопка не нажимается."
 )
+ASK_PATH = "С чего начнём?"
 ASK_LANGUAGE = (
     "На каком языке хотите сделать ролик?"
 )
@@ -114,7 +135,7 @@ ASK_EDIT = (
 )
 APPROVED_MSG = "Сценарий утверждён и сохранён."
 ASK_PHOTO = (
-    "Теперь фото — с него сделаю говорящего ведущего.\n\n"
+    "Начнём с фото — с него сделаю говорящего ведущего.\n\n"
     "Снимите по пояс, чтобы руки были в кадре: тогда ведущий будет "
     "жестикулировать, а не говорить одной головой. Смотрите в камеру, ровный "
     "свет, без тёмных очков и без чужих лиц в кадре.\n\n"
@@ -193,7 +214,26 @@ def _ask_voice_text(language: str) -> str:
 
 
 PHOTO_SAVED = "Фото принял."
-VOICE_SAVED = "Голос принял."
+VOICE_SAVED = (
+    "Запись принял. Голос по ней сделаю позже — на этом шаге ничего не "
+    "оплачивается."
+)
+PROFILE_KEEP_MSG = (
+    "Фото и запись голоса уже есть. Берём их или что-то заменить?"
+)
+CLONING_VOICE_MSG = "Делаю голос по вашей записи, это займёт минуту…"
+PRICE_ENOUGH_MSG = (
+    "Материал принял. Ролик обойдётся примерно в {need}, на балансе {have}.\n\n"
+    "Спишется по факту — обычно меньше оценки. Жмите «Поехали»: напишу "
+    "сценарий, сделаю голос и покажу озвучку на проверку."
+)
+PRICE_SHORT_MSG = (
+    "Материал принял. Ролик обойдётся примерно в {need}, на балансе {have} — "
+    "не хватает {gap}.\n\n"
+    "Пополните баланс кнопкой ниже и нажмите «Проверить баланс» — продолжим "
+    "с этого места, ничего заново присылать не нужно."
+)
+PRICE_STILL_SHORT_MSG = "Баланс: {have}. Пока не хватает {gap} — оплата ещё не дошла."
 READY_MSG = "Всё на месте: сценарий, фото и голос. Жмите «Создать ролик», когда готовы."
 DONE_MSG = (
     "Ролик заказан. Когда будет что снять ещё — жмите «Новый ролик» или "
@@ -293,9 +333,11 @@ def scenario_from_text(text: str, language: str | None = None) -> dict:
     return scenario
 
 
-# Фото и голоса по языкам переживают новый цикл («Новый ролик»).
+# Фото, записи голоса и готовые клоны переживают новый цикл («Новый ролик»).
 _PROFILE_KEYS = (
     "photo",
+    "voice_samples",     # записи по языкам: из них делается клон после оплаты
+    "voice_pending",     # записи, клон по которым ещё не сделан
     "voices",
     "voice_id",          # active voice текущего языка; legacy-compatible
     "voice_language",
@@ -382,6 +424,28 @@ def format_usd(micro: int) -> str:
     return f"{sign}${abs(micro) / 1_000_000:.2f}"
 
 
+def estimate_material_micro(session: dict, billing: dict) -> int:
+    """Во сколько обойдётся ролик по принятому материалу — до генерации.
+
+    В режиме готового текста символы уже известны: это ровно те слова, что
+    уйдут в озвучку. В режиме сырья сценария ещё нет, поэтому берём верхнюю
+    границу длины ролика (DEFAULT_MAX_DURATION_S) — оценка сверху честнее,
+    чем приятная снизу.
+
+    Долю аватара в кадре (avatar islands) здесь НЕ применяем, хотя
+    enqueue_build умеет: оценка на экране цены должна быть не ниже той, что
+    посчитает очередь, иначе человек заплатит ровно по экрану и упрётся в
+    отказ уже после генерации сценария.
+    """
+    rates = billing["rates"]
+    chars = 0
+    if (session or {}).get("material_mode") == "text":
+        chars = len(clean_input((session or {}).get("material_text") or ""))
+    if chars <= 0:
+        chars = int(DEFAULT_MAX_DURATION_S * float(rates["chars_per_second"]))
+    return estimate_micro(chars, rates, billing["markup"])
+
+
 class InsufficientBalance(Exception):
     """Баланса не хватает на оценку сборки — платный рендер не начинаем."""
 
@@ -450,10 +514,26 @@ def load_session(chat_id: int) -> dict:
         voices.setdefault(language, data["voice_id"])
         data["voices"] = voices
         data["voice_language"] = language
+    if data.get("flow") != FLOW_VERSION:
+        data = _migrate_flow(data)
+    return data
+
+
+def _migrate_flow(data: dict) -> dict:
+    """Сессия прежнего порядка шагов (фото и голос после сценария).
+
+    Трогаем только позицию в разговоре: фото, клоны голоса, сценарий и всё,
+    за что уже заплачено, остаются на месте. Разговор, привязанный к job,
+    не сдвигаем — иначе оплаченная сборка потеряет своего собеседника.
+    """
+    if data.get("current_job_id") or data.get("step") in _JOB_BOUND_STEPS:
+        return data
+    data["step"] = CHOOSING_LANGUAGE if not data.get("language") else CHOOSING
     return data
 
 
 def save_session(chat_id: int, data: dict) -> None:
+    data["flow"] = FLOW_VERSION
     d = session_dir(chat_id)
     d.mkdir(parents=True, exist_ok=True)
     target = d / "session.json"
@@ -489,6 +569,34 @@ def _voice_for_language(session: dict, language: str) -> str | None:
     language = normalize_profile_language(language)
     voice_id = str(((session or {}).get("voices") or {}).get(language) or "").strip()
     return voice_id or None
+
+
+def _voice_sample_for_language(session: dict, language: str) -> Path | None:
+    """Запись голоса, из которой делается (или уже сделан) клон этого языка."""
+    language = normalize_profile_language(language)
+    raw = ((session or {}).get("voice_samples") or {}).get(language)
+    if not raw:
+        return None
+    path = Path(str(raw))
+    return path if path.exists() else None
+
+
+def _pending_voice_sample(session: dict, language: str) -> Path | None:
+    """Запись, по которой клон ещё не заказан: её и превращаем в голос."""
+    language = normalize_profile_language(language)
+    raw = ((session or {}).get("voice_pending") or {}).get(language)
+    if not raw:
+        return None
+    path = Path(str(raw))
+    return path if path.exists() else None
+
+
+def _has_voice_material(session: dict, language: str) -> bool:
+    """Есть чем озвучивать: готовый клон или ещё не оплаченная запись."""
+    return bool(
+        _voice_for_language(session, language)
+        or _voice_sample_for_language(session, language)
+    )
 
 
 def _activate_language_voice(session: dict, language: str) -> str | None:
@@ -562,17 +670,6 @@ def step_delete_voice(voice_id: str) -> None:
     from reels_factory.tts import delete_voice
 
     delete_voice(voice_id)
-
-
-def clear_client_voice_profile(chat_id: int, language: str) -> None:
-    """Убрать заменяемый языковой voice из профиля до paid build.
-
-    Сам provider-клон удаляется только после успешной записи и сохранения
-    нового; голоса остальных языков не затрагиваются.
-    """
-    from reels_factory.clients import clear_client_voice
-
-    clear_client_voice(str(chat_id), language=language)
 
 
 def save_client_profile(chat_id: int, session: dict) -> None:
@@ -1022,20 +1119,13 @@ def _kb_ideas(n: int):
         [[InlineKeyboardButton("← Назад", callback_data="back")]])
 
 
-def _kb_photo():
+def _kb_profile():
+    """Повторный ролик: фото и запись голоса уже есть — один экран вместо двух."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Использовать загруженное фото", callback_data="photo:old")],
-        [InlineKeyboardButton("Загрузить новое фото", callback_data="photo:new")],
-        [InlineKeyboardButton("← Назад", callback_data="back")],
-    ])
-
-
-def _kb_voice():
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Использовать прежнюю запись", callback_data="voice:old")],
-        [InlineKeyboardButton("Записать заново", callback_data="voice:new")],
+        [InlineKeyboardButton("Использовать прежние", callback_data="profile:keep")],
+        [InlineKeyboardButton("Заменить фото", callback_data="profile:photo")],
+        [InlineKeyboardButton("Записать голос заново", callback_data="profile:voice")],
         [InlineKeyboardButton("← Назад", callback_data="back")],
     ])
 
@@ -1084,20 +1174,41 @@ def _kb_final_audio(job_id: str):
     ]])
 
 
+def _kb_price(enough: bool):
+    """Экран цены. Хватает баланса — одна кнопка «Поехали»; не хватает —
+    кнопки пополнения Tribute и проверка баланса, чтобы вернуться сюда же."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    if enough:
+        rows = [[InlineKeyboardButton("🚀 Поехали", callback_data="pay:go")]]
+    else:
+        rows = [
+            [InlineKeyboardButton(label, url=url)]
+            for label, url in TOPUP_PRODUCTS
+        ]
+        rows.append([InlineKeyboardButton(
+            "Проверить баланс", callback_data="pay:check"
+        )])
+    rows.append([InlineKeyboardButton("← Назад", callback_data="back")])
+    return InlineKeyboardMarkup(rows)
+
+
 def _kb_done():
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     return InlineKeyboardMarkup([[InlineKeyboardButton("Новый ролик", callback_data="new_reel")]])
 
 
 async def _show_start(msg, chat_id: int, s: dict, session_builder=fresh_session):
+    """Начало разговора: язык -> фото -> голос -> выбор пути. Всё бесплатно."""
     next_session = session_builder(s)
     if not _reel_language(next_session, required=False):
         next_session["step"] = CHOOSING_LANGUAGE
         save_session(chat_id, next_session)
+        if not next_session.get("photo"):
+            await msg.reply_text(HELLO)
         await msg.reply_text(ASK_LANGUAGE, reply_markup=_kb_language())
         return
     save_session(chat_id, next_session)
-    await msg.reply_text(HELLO, reply_markup=_kb_start())
+    await _profile_stage(msg, chat_id, next_session)
 
 
 async def _show_language_choice(msg, chat_id: int, s: dict):
@@ -1114,10 +1225,9 @@ async def _select_reel_language(msg, chat_id: int, s: dict, language: str):
     language = normalize_profile_language(language)
     s["language"] = language
     _activate_language_voice(s, language)
-    s["step"] = CHOOSING
     save_session(chat_id, s)
     await msg.reply_text(LANGUAGE_SAVED.format(language=language_label(language)))
-    await msg.reply_text(HELLO, reply_markup=_kb_start())
+    await _profile_stage(msg, chat_id, s)
 
 
 async def _ask(msg, chat_id: int, s: dict, step: str, text: str):
@@ -1136,8 +1246,43 @@ async def _ask_voice(msg, chat_id: int, s: dict, language: str):
     )
 
 
+async def _profile_stage(msg, chat_id: int, s: dict):
+    """Фото и запись голоса — до всего платного.
+
+    Новичка ведём по шагам, у повторного и то и другое уже есть: показываем
+    один экран вместо двух подряд «прежнее или новое».
+    """
+    language = _reel_language(s)
+    if not s.get("photo"):
+        await _photo_stage(msg, chat_id, s)
+        return
+    if not _has_voice_material(s, language):
+        await _ask_voice(msg, chat_id, s, language)
+        return
+    s["step"] = CHOOSING_PROFILE
+    save_session(chat_id, s)
+    await msg.reply_text(PROFILE_KEEP_MSG, reply_markup=_kb_profile())
+
+
+async def _choose_path_stage(msg, chat_id: int, s: dict):
+    """Выбор пути открыт, только когда собрано всё бесплатное."""
+    language = _reel_language(s)
+    if not s.get("photo") or not _has_voice_material(s, language):
+        await _profile_stage(msg, chat_id, s)
+        return
+    s["step"] = CHOOSING
+    save_session(chat_id, s)
+    await msg.reply_text(ASK_PATH, reply_markup=_kb_start())
+
+
 async def _show_material(msg, chat_id: int, s: dict, mode: str):
     """Шаг 2: прежний материал уже есть — предлагаем взять его или прислать новый."""
+    language = _reel_language(s)
+    if not s.get("photo") or not _has_voice_material(s, language):
+        # Кнопка из истории чата или сессия прежнего порядка шагов: сначала
+        # фото и голос, иначе человек упрётся в них уже после оплаты.
+        await _profile_stage(msg, chat_id, s)
+        return
     s["step"] = CHOOSING_MATERIAL
     s["material_mode"] = mode
     save_session(chat_id, s)
@@ -1161,10 +1306,145 @@ async def _show_review(msg, chat_id: int, s: dict):
     await msg.reply_text(render_scenario(s["scenario"]), reply_markup=_kb_review())
 
 
+async def _show_price(msg, chat_id: int, s: dict, *, checked: bool = False):
+    """Экран цены — единственная точка, где человек соглашается платить.
+
+    До него не сделано ни одного платного вызова: фото уже в HeyGen (бесплатно),
+    запись голоса лежит файлом, материал принят как есть. checked=True — человек
+    вернулся сюда кнопкой после пополнения, ему нужен свежий баланс, а не
+    повтор длинного текста.
+    """
+    billing = _billing()
+    if not billing["enabled"]:
+        # Биллинг выключен — спрашивать не о чем, сразу за работу.
+        await _start_generation(msg, chat_id, s)
+        return
+    need = estimate_material_micro(s, billing)
+    have = _ledger().balance(chat_id)
+    s["step"] = CONFIRM_PRICE
+    s["price_need"] = need
+    save_session(chat_id, s)
+    if have >= need:
+        await msg.reply_text(
+            PRICE_ENOUGH_MSG.format(need=format_usd(need), have=format_usd(have)),
+            reply_markup=_kb_price(True),
+        )
+        return
+    gap = format_usd(need - have)
+    text = (
+        PRICE_STILL_SHORT_MSG.format(have=format_usd(have), gap=gap)
+        if checked
+        else PRICE_SHORT_MSG.format(
+            need=format_usd(need), have=format_usd(have), gap=gap
+        )
+    )
+    await msg.reply_text(text, reply_markup=_kb_price(False))
+
+
+async def _ensure_voice_clone(msg, chat_id: int, s: dict) -> bool:
+    """Сделать голос по записи. Первый платный шаг, живёт за экраном цены.
+
+    Прежний клон удаляем только после того, как новый создан и сохранён:
+    упавший клон не должен оставить человека вообще без голоса.
+    """
+    language = _reel_language(s)
+    sample = _pending_voice_sample(s, language)
+    if sample is None:
+        if _voice_for_language(s, language):
+            return True
+        await _ask_voice(msg, chat_id, s, language)
+        return False
+    await msg.reply_text(CLONING_VOICE_MSG)
+    try:
+        voice_id = await asyncio.to_thread(step_voice, chat_id, sample, language)
+    except Exception as e:
+        await msg.reply_text(f"Голос не принялся: {str(e)[:200]}")
+        await _ask_voice(msg, chat_id, s, language)
+        return False
+    previous = _voice_for_language(s, language)
+    voices = dict(s.get("voices") or {})
+    voices[language] = voice_id
+    s["voices"] = voices
+    s["voice_id"] = voice_id
+    s["voice_language"] = language
+    pending = dict(s.get("voice_pending") or {})
+    pending.pop(language, None)
+    s["voice_pending"] = pending
+    s.pop("pending_previous_voice", None)
+    save_session(chat_id, s)
+    try:
+        save_client_profile(chat_id, s)
+        save_session(chat_id, s)
+    except Exception as e:
+        log.warning("профиль клиента %s не сохранился после клона: %s", chat_id, e)
+    if previous and previous != voice_id:
+        try:
+            await asyncio.to_thread(step_delete_voice, previous)
+        except Exception as e:
+            # Новый голос уже сохранён. Уборка старого клона — best effort,
+            # из-за неё человек ждать не должен.
+            log.warning("не удалось удалить старый клон голоса %s: %s", previous, e)
+    return True
+
+
+async def _start_paid_part(msg, chat_id: int, s: dict):
+    """«Поехали» с экрана цены. Кнопка живёт в истории чата, поэтому баланс
+    сверяем заново: между показом экрана и нажатием могло пройти что угодно."""
+    billing = _billing()
+    if billing["enabled"]:
+        need = estimate_material_micro(s, billing)
+        if _ledger().balance(chat_id) < need:
+            await _show_price(msg, chat_id, s)
+            return
+    await _start_generation(msg, chat_id, s)
+
+
+async def _start_generation(msg, chat_id: int, s: dict):
+    """Платная часть: голос по записи, затем сценарий Клодом."""
+    language = _reel_language(s)
+    if not await _ensure_voice_clone(msg, chat_id, s):
+        return
+    material = str(s.get("material_text") or "")
+    if not material.strip():
+        await _show_material(msg, chat_id, s, s.get("material_mode", "text"))
+        return
+    await msg.reply_text(WORKING)
+    if s.get("material_mode") == "raw":
+        try:
+            ideas = await asyncio.to_thread(step_ideas, chat_id, material, language)
+        except (ScenarioError, RuntimeError) as e:
+            await msg.reply_text(f"Не получилось вытащить идеи: {e}")
+            return
+        s["ideas"] = ideas
+        await _show_ideas(msg, chat_id, s)
+        return
+    try:
+        sc = await asyncio.to_thread(
+            step_verbatim, chat_id, clean_input(material), language
+        )
+    except (ScenarioError, RuntimeError) as e:
+        await msg.reply_text(f"Не получилось разобрать текст: {e}")
+        return
+    s["scenario"] = sc
+    await _show_review(msg, chat_id, s)
+
+
+async def _ready_stage(msg, chat_id: int, s: dict):
+    """Сценарий утверждён, фото и голос собраны раньше — остаётся сборка."""
+    s["step"] = READY
+    save_session(chat_id, s)
+    try:
+        save_client_profile(chat_id, s)
+        save_session(chat_id, s)
+    except Exception as e:
+        log.warning("профиль клиента %s не сохранился: %s", chat_id, e)
+    await msg.reply_text(READY_MSG, reply_markup=_kb_ready())
+
+
 async def _go_back(msg, chat_id: int, s: dict):
     """Шаг назад — на предыдущий экран, ничего не теряя."""
     step = s.get("step", CHOOSING)
-    if step == WAIT_EDIT:
+    if step in (WAIT_EDIT, READY):
         await _show_review(msg, chat_id, s)
     elif step == REVIEW:
         # из сценария — туда, откуда он взялся: к идеям или к вводу материала
@@ -1176,16 +1456,29 @@ async def _go_back(msg, chat_id: int, s: dict):
             await _ask(msg, chat_id, s, WAIT_TEXT, ASK_TEXT)
     elif step == CHOOSING_IDEA:
         await _ask(msg, chat_id, s, WAIT_RAW, ASK_RAW)
+    elif step == CONFIRM_PRICE:
+        if s.get("material_mode") == "raw":
+            await _ask(msg, chat_id, s, WAIT_RAW, ASK_RAW)
+        else:
+            await _ask(msg, chat_id, s, WAIT_TEXT, ASK_TEXT)
     elif step in (WAIT_TEXT, WAIT_RAW):
         await _show_material(msg, chat_id, s, s.get("material_mode", "text"))
     elif step == CHOOSING_MATERIAL:
-        await _show_start(msg, chat_id, s, _keep_all)
-    elif step in (WAIT_PHOTO, CHOOSING_PHOTO):
-        await _show_review(msg, chat_id, s)
-    elif step in (CHOOSING_VOICE, WAIT_VOICE, READY):
+        await _choose_path_stage(msg, chat_id, s)
+    elif step == CHOOSING:
+        await _profile_stage(msg, chat_id, s)
+    elif step == WAIT_VOICE and s.get("photo") and not _has_voice_material(
+        s, _reel_language(s)
+    ):
+        # Новичок записывает голос впервые — назад ему только к фото.
         await _photo_stage(msg, chat_id, s)
-    else:  # CHOOSING — дальше некуда, начало разговора
-        await _show_start(msg, chat_id, s, _keep_all)
+    elif step in (WAIT_PHOTO, WAIT_VOICE) and s.get("photo") and (
+        _has_voice_material(s, _reel_language(s))
+    ):
+        # Замена фото или голоса на повторном ролике — назад к общему экрану.
+        await _profile_stage(msg, chat_id, s)
+    else:  # первый заход: дальше только выбор языка
+        await _show_language_choice(msg, chat_id, s)
 
 
 async def _ready_for_new_reel(msg, chat_id: int) -> bool:
@@ -1304,8 +1597,16 @@ async def on_button(update, context):
             await _ask(q.message, chat_id, s, WAIT_RAW, ASK_RAW)
         else:
             await _ask(q.message, chat_id, s, WAIT_TEXT, ASK_TEXT)
+    elif data == "pay:go":
+        await _start_paid_part(q.message, chat_id, s)
+    elif data == "pay:check":
+        # Возврат после пополнения: показываем тот же экран со свежим балансом.
+        await _show_price(q.message, chat_id, s, checked=True)
     elif data.startswith("idea:"):
         idea = (s.get("ideas") or [])[int(data.split(":")[1])]
+        # Экран цены человек уже прошёл, деньги на ролик проверены там. Здесь
+        # ловим только уход в минус: между экраном и выбором идеи баланс мог
+        # просесть на самих идеях.
         if await _blocked_by_negative_balance(q.message, chat_id):
             return
         await q.message.reply_text(WORKING)
@@ -1332,11 +1633,15 @@ async def on_button(update, context):
         s["scenario"]["language"] = language
         save_session(chat_id, s)
         await q.message.reply_text(APPROVED_MSG)
-        await _photo_stage(q.message, chat_id, s)
-    elif data == "photo:old":
-        await _voice_stage(q.message, chat_id, s)
-    elif data == "photo:new":
+        await _ready_stage(q.message, chat_id, s)
+    elif data in ("profile:keep", "photo:old", "voice:old"):
+        # photo:old и voice:old — кнопки прежнего порядка шагов, они живут в
+        # истории чата вечно; ведут туда же, куда «Использовать прежние».
+        await _choose_path_stage(q.message, chat_id, s)
+    elif data in ("profile:photo", "photo:new"):
         await _ask(q.message, chat_id, s, WAIT_PHOTO, ASK_PHOTO)
+    elif data in ("profile:voice", "voice:new"):
+        await _ask_voice(q.message, chat_id, s, _reel_language(s))
     elif data == "voice_sample":
         # Образец идёт отдельным сообщением: так его удобно держать на экране,
         # пока человек читает вслух.
@@ -1344,26 +1649,6 @@ async def on_button(update, context):
         await q.message.reply_text(
             VOICE_SAMPLE_TEXTS.get(language) or VOICE_SAMPLE_TEXTS["ru"]
         )
-    elif data == "voice:old":
-        await _finish_voice(q.message, chat_id, s)
-    elif data == "voice:new":
-        language = _reel_language(s)
-        voices = dict(s.get("voices") or {})
-        old_voice = voices.pop(language, None)
-        s["voices"] = voices
-        s.pop("voice_id", None)
-        s.pop("voice_language", None)
-        if old_voice:
-            s["pending_previous_voice"] = {
-                "voice_id": old_voice,
-                "language": language,
-            }
-        save_session(chat_id, s)
-        if old_voice:
-            # Старый provider voice удалим только после успешного создания и
-            # сохранения нового. Профиль уже не должен разрешать paid build.
-            clear_client_voice_profile(chat_id, language)
-        await _ask_voice(q.message, chat_id, s, language)
     elif data.startswith("audio_ok:"):
         job = _callback_job(chat_id, s, data)
         if job is None or job.status != "awaiting_audio_approval":
@@ -1447,56 +1732,8 @@ async def on_button(update, context):
 
 
 async def _photo_stage(msg, chat_id: int, s: dict):
-    """Фото обязательно: в первый раз просим, дальше — прежнее или новое."""
-    if s.get("photo"):
-        s["step"] = CHOOSING_PHOTO
-        save_session(chat_id, s)
-        await msg.reply_text("Снимаем по вашему фото. Какому?", reply_markup=_kb_photo())
-    else:
-        await _ask(msg, chat_id, s, WAIT_PHOTO, ASK_PHOTO)
-
-
-async def _voice_stage(msg, chat_id: int, s: dict):
-    """Предложить голос выбранного языка или запросить его первую запись."""
-    language = _reel_language(s)
-    voice_id = _activate_language_voice(s, language)
-    if voice_id:
-        s["step"] = CHOOSING_VOICE
-        save_session(chat_id, s)
-        await msg.reply_text(
-            f"Голос для языка {language_label(language)} уже записан. Что делаем?",
-            reply_markup=_kb_voice(),
-        )
-    else:
-        await _ask_voice(msg, chat_id, s, language)
-
-
-async def _finish_voice(msg, chat_id: int, s: dict):
-    """Голос получен (прежний или новый) — сохраняем профиль и идём к готовности."""
-    language = _reel_language(s)
-    voice_id = _activate_language_voice(s, language)
-    if not voice_id:
-        await _ask_voice(msg, chat_id, s, language)
-        return
-    s["step"] = READY
-    save_session(chat_id, s)
-    save_client_profile(chat_id, s)
-    previous = s.get("pending_previous_voice")
-    if previous and previous.get("language") == language:
-        if previous.get("voice_id") != voice_id:
-            try:
-                await asyncio.to_thread(step_delete_voice, previous["voice_id"])
-            except Exception as e:
-                # Новый профиль уже сохранён и готов. Не блокируем пользователя
-                # из-за best-effort уборки старого клона.
-                log.warning(
-                    "не удалось удалить старый клон голоса %s: %s",
-                    previous["voice_id"],
-                    e,
-                )
-        s.pop("pending_previous_voice", None)
-        save_session(chat_id, s)
-    await msg.reply_text(READY_MSG, reply_markup=_kb_ready())
+    """Фото — второй шаг после языка. Загрузка в HeyGen бесплатна."""
+    await _ask(msg, chat_id, s, WAIT_PHOTO, ASK_PHOTO)
 
 
 # Ссылки на инфопродукты Tribute. Товары создаются вручную в дашборде —
@@ -1563,12 +1800,13 @@ async def cmd_balance(update, context) -> None:
 
 
 async def _blocked_by_negative_balance(msg, chat_id: int) -> bool:
-    """Гейт перед платной генерацией сценария (Клод в step_verbatim/step_ideas/
-    step_scenario). Порог — строго «меньше нуля», а не «меньше либо равно»:
-    свежий пользователь стартует с балансом 0 и должен пройти бесплатный
-    пробный сценарий — иначе трейл сломан. Блокируем только когда баланс УЖЕ
-    ушёл в минус, иначе получится бесконечный бесплатный цикл генераций
-    в убыток заведению."""
+    """Страховка внутри уже оплаченного цикла (выбор идеи -> step_scenario).
+
+    Основной гейт — экран цены: там сверяется, что баланса хватает на весь
+    ролик, и без этого платная часть не начинается. Здесь порог другой,
+    «строго меньше нуля»: человек уже согласился и заплатил, добивать его
+    вторым экраном на каждой мелочи незачем — ловим только реальный минус.
+    """
     billing = _billing()
     if not billing["enabled"]:
         return False
@@ -2009,7 +2247,11 @@ async def on_message(update, context):
         s["photo"] = {"asset_id": asset_id, "file": str(path)}
         save_session(chat_id, s)
         await msg.reply_text(PHOTO_SAVED)
-        await _voice_stage(msg, chat_id, s)
+        language = _reel_language(s)
+        if _has_voice_material(s, language):
+            await _choose_path_stage(msg, chat_id, s)
+        else:
+            await _ask_voice(msg, chat_id, s, language)
         return
 
     if step == WAIT_VOICE:
@@ -2017,23 +2259,27 @@ async def on_message(update, context):
         if rec is None:
             await msg.reply_text("Жду запись голоса — голосовым или файлом.")
             return
+        language = _reel_language(s)
         try:
             path = await _download(context, rec, chat_id)
-            language = _reel_language(s)
-            voice_id = await asyncio.to_thread(
-                step_voice, chat_id, path, language
-            )
         except Exception as e:
-            await msg.reply_text(f"Голос не принялся: {str(e)[:200]}")
+            await msg.reply_text(f"Запись не принялась: {str(e)[:200]}")
             return
-        voices = dict(s.get("voices") or {})
-        voices[language] = voice_id
-        s["voices"] = voices
-        s["voice_id"] = voice_id
-        s["voice_language"] = language
+        # Клон здесь не делаем: он платный и живёт за экраном цены. Файл
+        # запоминаем как исходник, прежний клон этого языка не трогаем — он
+        # останется рабочим, если человек так и не дойдёт до оплаты.
+        old_sample = _voice_sample_for_language(s, language)
+        samples = dict(s.get("voice_samples") or {})
+        samples[language] = str(path)
+        pending = dict(s.get("voice_pending") or {})
+        pending[language] = str(path)
+        s["voice_samples"] = samples
+        s["voice_pending"] = pending
         save_session(chat_id, s)
+        if old_sample and str(old_sample) != str(path):
+            Path(old_sample).unlink(missing_ok=True)
         await msg.reply_text(VOICE_SAVED)
-        await _finish_voice(msg, chat_id, s)
+        await _choose_path_stage(msg, chat_id, s)
         return
 
     text = (msg.text or msg.caption or "").strip()
@@ -2067,32 +2313,24 @@ async def on_message(update, context):
                 reply_markup=_kb_language_mismatch(),
             )
             return
-        if await _blocked_by_negative_balance(msg, chat_id):
-            return
-        await msg.reply_text(WORKING)
-        try:
-            sc = await asyncio.to_thread(
-                step_verbatim, chat_id, cleaned, language
-            )
-        except (ScenarioError, RuntimeError) as e:
-            await msg.reply_text(f"Не получилось разобрать текст: {e}")
-            return
-        s["scenario"] = sc
-        await _show_review(msg, chat_id, s)
+        # Текст только запоминаем: Клод к нему подойдёт после экрана цены.
+        s["material_mode"] = "text"
+        s["material_text"] = cleaned
+        s.pop("ideas", None)
+        save_session(chat_id, s)
+        await _show_price(msg, chat_id, s)
 
     elif step == WAIT_RAW:
-        if await _blocked_by_negative_balance(msg, chat_id):
-            return
-        await msg.reply_text(WORKING)
-        try:
-            ideas = await asyncio.to_thread(
-                step_ideas, chat_id, text, _reel_language(s)
-            )
-        except (ScenarioError, RuntimeError) as e:
-            await msg.reply_text(f"Не получилось вытащить идеи: {e}")
-            return
-        s["ideas"] = ideas
-        await _show_ideas(msg, chat_id, s)
+        s["material_mode"] = "raw"
+        s["material_text"] = text
+        s.pop("ideas", None)
+        save_session(chat_id, s)
+        await _show_price(msg, chat_id, s)
+
+    elif step == CONFIRM_PRICE:
+        # Человек пишет вместо нажатия — показываем тот же экран со свежим
+        # балансом, а не молчим и не теряем уже принятый материал.
+        await _show_price(msg, chat_id, s, checked=True)
 
     elif step == WAIT_EDIT:
         language = _reel_language(s)
