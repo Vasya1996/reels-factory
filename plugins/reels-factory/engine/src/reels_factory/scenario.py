@@ -32,6 +32,9 @@ WORD_LIMIT_HARD = 70   # валидатор: жёсткий предел (ина
 WORD_LIMIT_SOFT = 60   # промпт: целевой предел
 WORDS_PER_SECOND_TARGET = 2.5
 MAX_SUPPORTED_DURATION_S = 90
+# Верхняя граница ролика, когда target_duration_s не задан. Бот берёт её как
+# длину ещё не написанного сценария: до генерации считать больше не из чего.
+DEFAULT_MAX_DURATION_S = 40.0
 
 STYLE_GUIDE_PATH = FACTORY_DIR / "style-guide.md"
 
@@ -97,7 +100,7 @@ def _duration_contract(hypothesis: dict | None) -> dict:
         return {
             "target": 25.0,
             "minimum": 14.0,
-            "maximum": 40.0,
+            "maximum": DEFAULT_MAX_DURATION_S,
             "words_soft": WORD_LIMIT_SOFT,
             "words_hard": WORD_LIMIT_HARD,
             "explicit": False,

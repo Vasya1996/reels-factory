@@ -105,6 +105,37 @@ def _claim_job():
     return job
 
 
+def _паспорт(**over):
+    """Сессия, где всё бесплатное уже собрано: язык, фото, голос языка."""
+    s = {
+        "language": "ru",
+        "photo": {"asset_id": "asset-1", "file": "фото.jpg"},
+        "voices": {"ru": "voice-1"},
+        "voice_id": "voice-1",
+        "voice_language": "ru",
+    }
+    s.update(over)
+    return s
+
+
+def _пополнить(chat_id: int, micro: int) -> None:
+    """Зачислить баланс так же, как это делает вебхук Tribute."""
+    bot._ledger().credit(
+        chat_id,
+        micro,
+        purchase_id=f"test-topup:{chat_id}:{micro}",
+        amount_minor=micro // 10_000,
+        currency="usd",
+    )
+
+
+def _с_балансом(chat_id: int = 7, множитель: float = 3.0) -> None:
+    """Баланса заведомо хватает на любую оценку ролика."""
+    billing = bot._billing()
+    need = bot.estimate_material_micro({"material_mode": "raw"}, billing)
+    _пополнить(chat_id, int(need * множитель))
+
+
 SCENARIO = {"title": "Про подготовку", "blocks": [
     {"role": "hook", "start": 0.0, "end": 3.0, "speech": "Продажи начинаются раньше."},
     {"role": "cta", "start": 3.0, "end": 28.0, "speech": "Сохрани себе."}]}
@@ -188,10 +219,72 @@ def test_load_session_мигрирует_старый_формат_с_индек
     assert "photos" not in s
 
 
-def test_новый_чат_ведёт_к_выбору_пути(work):
+def _старая_сессия(chat_id: int, data: dict) -> None:
+    """Файл сессии прежнего порядка шагов — без метки flow."""
+    d = bot.session_dir(chat_id)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "session.json").write_text(
+        json.dumps(data, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def test_сессия_прежнего_порядка_не_теряет_фото_голос_и_сценарий(work):
+    """Порядок шагов поменялся, а оплаченное — нет: клоны голоса, фото и
+    сценарий остаются, двигается только позиция в разговоре."""
+    _старая_сессия(7, {
+        "step": "choosing_photo",          # экрана с таким шагом больше нет
+        "language": "ru",
+        "scenario": SCENARIO,
+        "photo": {"asset_id": "a1", "file": "ф.jpg"},
+        "voices": {"ru": "voice-1", "kk": "voice-kk"},
+        "voice_id": "voice-1",
+        "voice_language": "ru",
+    })
+
+    s = bot.load_session(7)
+
+    assert s["step"] == bot.CHOOSING
+    assert s["voices"] == {"ru": "voice-1", "kk": "voice-kk"}
+    assert s["photo"] == {"asset_id": "a1", "file": "ф.jpg"}
+    assert s["scenario"] == SCENARIO
+
+
+def test_сессия_прежнего_порядка_без_языка_ведёт_к_выбору_языка(work):
+    _старая_сессия(7, {"step": "wait_text"})
+
+    assert bot.load_session(7)["step"] == bot.CHOOSING_LANGUAGE
+
+
+def test_миграция_не_трогает_разговор_с_оплаченной_сборкой(work):
+    """Job уже оплачена и ждёт решения — сдвинуть шаг значит потерять её."""
+    _старая_сессия(7, {
+        "step": bot.AUDIO_REVIEW,
+        "language": "ru",
+        "current_job_id": "job-1",
+    })
+
+    s = bot.load_session(7)
+
+    assert s["step"] == bot.AUDIO_REVIEW and s["current_job_id"] == "job-1"
+
+
+def test_новый_чат_ведёт_к_выбору_языка(work):
     msg = _Msg("привет")
     asyncio.run(bot.on_message(_Update(msg), None))
-    assert msg.replies == [bot.NOT_NOW]
+    assert msg.replies == [bot.HELLO, bot.ASK_LANGUAGE]
+
+
+def test_текст_вместо_кнопки_показывает_экран_заново(work):
+    """Кнопки уезжают вверх по переписке — повторить экран полезнее отписки."""
+    bot.save_session(7, _паспорт(step=bot.CHOOSING))
+
+    msg = _Msg("ну давай уже")
+    asyncio.run(bot.on_message(_Update(msg), None))
+
+    assert msg.replies[-1] == bot.ASK_PATH
+    assert _labels(msg.markups[-1]) == [
+        "У меня готовый сценарий", "Предложи сценарий"
+    ]
 
 
 def test_loop_session_сохраняет_только_фото_и_голос():
@@ -219,7 +312,7 @@ def test_первый_start_спрашивает_один_язык(work):
     assert bot.load_session(7)["step"] == bot.CHOOSING_LANGUAGE
 
 
-def test_после_выбора_казахского_показывается_выбор_пути(work):
+def test_после_выбора_казахского_новичка_просят_фото(work):
     asyncio.run(bot.cmd_start(_Update(_Msg()), None))
     msg = _Msg()
 
@@ -227,8 +320,19 @@ def test_после_выбора_казахского_показывается_�
 
     s = bot.load_session(7)
     assert s["language"] == "kk"
-    assert s["step"] == bot.CHOOSING
-    assert msg.replies[-1] == bot.HELLO
+    assert s["step"] == bot.WAIT_PHOTO
+    assert "Кисти рук" in msg.replies[-1]
+
+
+def test_выбор_пути_открывается_после_фото_и_голоса(work):
+    bot.save_session(7, _паспорт(step=bot.CHOOSING_LANGUAGE))
+    msg = _Msg()
+
+    _press("reel_language:ru", msg)
+    _press("profile:keep", msg)
+
+    assert bot.load_session(7)["step"] == bot.CHOOSING
+    assert msg.replies[-1] == bot.ASK_PATH
     assert _labels(msg.markups[-1]) == [
         "У меня готовый сценарий", "Предложи сценарий"
     ]
@@ -265,16 +369,24 @@ def test_готовый_казахский_текст_идёт_в_kk_обраб�
         return {**SCENARIO, "language": language}
 
     monkeypatch.setattr(bot, "step_verbatim", fake_step)
-    bot.save_session(7, {
-        "step": bot.WAIT_TEXT,
-        "language": "kk",
-    })
+    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
+    _с_балансом()
+    bot.save_session(7, _паспорт(
+        step=bot.WAIT_TEXT,
+        language="kk",
+        voices={"kk": "voice-kk"},
+        voice_id="voice-kk",
+        voice_language="kk",
+    ))
     msg = _Msg(
         "Бұл қазақша дайын сценарий және біз оны жаңа ролик үшін "
         "қолданғымыз келеді."
     )
 
     asyncio.run(bot.on_message(_Update(msg), None))
+    assert calls == []  # до экрана цены Клод не зовётся
+
+    _press("pay:go", msg)
 
     assert calls == ["kk"]
     assert bot.load_session(7)["scenario"]["language"] == "kk"
@@ -292,78 +404,55 @@ def test_при_смене_ru_на_kk_русский_голос_сохраняе
         ),
     )
     monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
-    bot.save_session(7, {
-        "step": bot.DONE,
-        "photo": {"asset_id": "asset-1", "file": "photo.jpg"},
-        "voices": {"ru": "voice-ru"},
-        "voice_id": "voice-ru",
-        "voice_language": "ru",
-        "language": "ru",
-    })
+    bot.save_session(7, _паспорт(
+        step=bot.DONE,
+        voices={"ru": "voice-ru"},
+        voice_id="voice-ru",
+    ))
 
     asyncio.run(bot.cmd_new(_Update(_Msg()), None))
-    _press("reel_language:kk", _Msg())
+    ask = _Msg()
+    _press("reel_language:kk", ask)
 
     selected = bot.load_session(7)
     assert selected["voices"] == {"ru": "voice-ru"}
     assert "voice_id" not in selected and "voice_language" not in selected
-
-    selected.update({
-        "step": bot.CHOOSING_PHOTO,
-        "scenario": {**SCENARIO, "language": "kk"},
-    })
-    bot.save_session(7, selected)
-    ask = _Msg()
-    _press("photo:old", ask)
-
-    assert bot.load_session(7)["step"] == bot.WAIT_VOICE
+    # фото уже есть, казахской записи нет — просят её, и только её
+    assert selected["step"] == bot.WAIT_VOICE
     assert "🇰🇿 Қазақша" in ask.replies[-1]
 
     asyncio.run(bot.on_message(_Update(_Msg(voice=object())), None))
     recorded = bot.load_session(7)
-    assert captured_languages == ["kk"]
-    assert recorded["voices"] == {
-        "ru": "voice-ru",
-        "kk": "voice-kk",
-    }
-    assert recorded["voice_id"] == "voice-kk"
-    assert recorded["voice_language"] == "kk"
-    assert recorded["step"] == bot.READY
+    assert captured_languages == []  # клон платный, его тут ещё не делают
+    assert recorded["voices"] == {"ru": "voice-ru"}
+    assert recorded["voice_pending"]["kk"] == recorded["voice_samples"]["kk"]
+    assert recorded["step"] == bot.CHOOSING
 
 
 def test_при_возврате_на_ru_бот_активирует_сохранённый_русский_голос(work):
-    bot.save_session(7, {
-        "step": bot.DONE,
-        "photo": {"asset_id": "asset-1", "file": "photo.jpg"},
-        "voices": {"ru": "voice-ru", "kk": "voice-kk"},
-        "voice_id": "voice-kk",
-        "voice_language": "kk",
-        "language": "kk",
-    })
+    bot.save_session(7, _паспорт(
+        step=bot.DONE,
+        language="kk",
+        voices={"ru": "voice-ru", "kk": "voice-kk"},
+        voice_id="voice-kk",
+        voice_language="kk",
+    ))
 
     asyncio.run(bot.cmd_new(_Update(_Msg()), None))
-    _press("reel_language:ru", _Msg())
-    selected = bot.load_session(7)
-    selected.update({
-        "step": bot.CHOOSING_PHOTO,
-        "scenario": {**SCENARIO, "language": "ru"},
-    })
-    bot.save_session(7, selected)
-
     msg = _Msg()
-    _press("photo:old", msg)
+    _press("reel_language:ru", msg)
 
     current = bot.load_session(7)
-    assert current["step"] == bot.CHOOSING_VOICE
+    assert current["step"] == bot.CHOOSING_PROFILE
     assert current["voice_id"] == "voice-ru"
     assert current["voice_language"] == "ru"
-    assert "🇷🇺 Русский" in msg.replies[-1]
+    assert msg.replies[-1] == bot.PROFILE_KEEP_MSG
 
 
 # --- шаг 2: выбор материала --------------------------------------------------
 
 def test_материал_для_новичка_без_кнопки_редактировать(work):
-    bot.save_session(7, {"step": bot.CHOOSING})
+    bot.save_session(7, _паспорт(step=bot.CHOOSING))
     msg = _Msg()
     _press("mode:text", msg)
 
@@ -375,13 +464,23 @@ def test_материал_для_новичка_без_кнопки_редакт
 
 
 def test_материал_с_прошлым_сценарием_предлагает_редактировать(work):
-    bot.save_session(7, {"step": bot.CHOOSING, "scenario": SCENARIO})
+    bot.save_session(7, _паспорт(step=bot.CHOOSING, scenario=SCENARIO))
     msg = _Msg()
     _press("mode:raw", msg)
 
     labels = _labels(msg.markups[-1])
     assert "Редактировать существующий" in labels
     assert "Прислать новое сырьё" in labels
+
+
+def test_без_фото_выбор_пути_уводит_на_фото(work):
+    """Кнопка из истории чата не должна проносить человека мимо паспорта."""
+    bot.save_session(7, {"step": bot.CHOOSING, "language": "ru"})
+    msg = _Msg()
+
+    _press("mode:text", msg)
+
+    assert bot.load_session(7)["step"] == bot.WAIT_PHOTO
 
 
 def test_редактировать_существующий_ведёт_сразу_к_сценарию(work):
@@ -416,37 +515,67 @@ def test_прислать_новое_сырьё_ведёт_к_вводу_сыр�
 
 # --- шаг 3: приём материала ---------------------------------------------------
 
-def test_готовый_текст_превращается_в_сценарий(work, monkeypatch):
+def test_готовый_текст_только_запоминается_и_ведёт_к_цене(work, monkeypatch):
+    вызовы = []
     monkeypatch.setattr(
-        bot, "step_verbatim", lambda chat_id, text, language: SCENARIO
+        bot, "step_verbatim", lambda chat_id, text, language: вызовы.append(text)
     )
-    bot.save_session(7, {
-        "step": bot.WAIT_TEXT, "language": "ru"
-    })
+    _с_балансом()
+    bot.save_session(7, _паспорт(step=bot.WAIT_TEXT))
 
     msg = _Msg("Мой текст.")
     asyncio.run(bot.on_message(_Update(msg), None))
 
-    assert msg.replies[0] == bot.WORKING
-    assert "[хук]" in msg.replies[1]
+    s = bot.load_session(7)
+    assert вызовы == []                      # Клод до оплаты не зовётся
+    assert s["step"] == bot.CONFIRM_PRICE
+    assert s["material_text"] == "Мой текст."
+    assert "Поехали" in " ".join(_labels(msg.markups[-1]))
+
+
+def test_поехали_превращает_текст_в_сценарий(work, monkeypatch):
+    monkeypatch.setattr(
+        bot, "step_verbatim", lambda chat_id, text, language: SCENARIO
+    )
+    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
+    _с_балансом()
+    bot.save_session(7, _паспорт(step=bot.WAIT_TEXT))
+
+    msg = _Msg("Мой текст.")
+    asyncio.run(bot.on_message(_Update(msg), None))
+    _press("pay:go", msg)
+
+    assert bot.WORKING in msg.replies
+    assert "[хук]" in msg.replies[-1]
     s = bot.load_session(7)
     assert s["step"] == bot.REVIEW and s["scenario"] == SCENARIO
 
 
-def test_сырьё_превращается_в_список_идей(work, monkeypatch):
+def test_сырьё_превращается_в_список_идей_после_оплаты(work, monkeypatch):
     ideas = [{"idea": "Раз", "draft_hook": "Хук раз"},
              {"idea": "Два", "draft_hook": "Хук два"}]
-    monkeypatch.setattr(
-        bot, "step_ideas", lambda chat_id, text, language: ideas
-    )
-    bot.save_session(7, {
-        "step": bot.WAIT_RAW, "language": "kk"
-    })
+    вызовы = []
+
+    def fake_ideas(chat_id, text, language):
+        вызовы.append(text)
+        return ideas
+
+    monkeypatch.setattr(bot, "step_ideas", fake_ideas)
+    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
+    _с_балансом()
+    bot.save_session(7, _паспорт(
+        step=bot.WAIT_RAW, language="kk",
+        voices={"kk": "voice-kk"}, voice_id="voice-kk", voice_language="kk",
+    ))
 
     msg = _Msg("Длинное сырьё про продажи.")
     asyncio.run(bot.on_message(_Update(msg), None))
+    assert вызовы == []
+    assert bot.load_session(7)["step"] == bot.CONFIRM_PRICE
 
-    assert "1. Раз" in msg.replies[1] and "2. Два" in msg.replies[1]
+    _press("pay:go", msg)
+
+    assert "1. Раз" in msg.replies[-1] and "2. Два" in msg.replies[-1]
     s = bot.load_session(7)
     assert s["step"] == bot.CHOOSING_IDEA and s["ideas"] == ideas
 
@@ -465,7 +594,7 @@ def test_правленый_текст_становится_итоговым(wor
 # --- назад: ничего не теряем --------------------------------------------------
 
 def test_назад_с_ввода_текста_возвращает_к_материалу(work):
-    bot.save_session(7, {"step": bot.WAIT_TEXT, "material_mode": "text"})
+    bot.save_session(7, _паспорт(step=bot.WAIT_TEXT, material_mode="text"))
 
     msg = _Msg()
     _press("back", msg)
@@ -474,13 +603,22 @@ def test_назад_с_ввода_текста_возвращает_к_мате�
     assert msg.replies[-1] == bot.ASK_MATERIAL
 
 
+def test_назад_с_цены_возвращает_к_вводу_материала(work):
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE, material_mode="raw",
+                                 material_text="сырьё"))
+
+    msg = _Msg()
+    _press("back", msg)
+
+    assert bot.load_session(7)["step"] == bot.WAIT_RAW
+    assert msg.replies[-1] == bot.ASK_RAW
+
+
 def test_назад_с_материала_возвращает_к_выбору_пути_сохраняя_сценарий(work):
     # сценарий уже утверждён (кнопка «Редактировать существующий» видна) —
     # «Назад» отсюда не имеет права его стереть
-    bot.save_session(7, {"step": bot.CHOOSING_MATERIAL, "material_mode": "text",
-                         "scenario": SCENARIO, "photo": {"asset_id": "a1"},
-                         "voice_id": "voice-1", "voice_language": "ru",
-                         "voices": {"ru": "voice-1"}, "language": "ru"})
+    bot.save_session(7, _паспорт(step=bot.CHOOSING_MATERIAL,
+                                 material_mode="text", scenario=SCENARIO))
 
     msg = _Msg()
     _press("back", msg)
@@ -488,8 +626,8 @@ def test_назад_с_материала_возвращает_к_выбору_�
     s = bot.load_session(7)
     assert s["step"] == bot.CHOOSING
     assert s["scenario"] == SCENARIO
-    assert s["photo"] == {"asset_id": "a1"} and s["voice_id"] == "voice-1"
-    assert msg.replies[-1] == bot.HELLO
+    assert s["photo"]["asset_id"] == "asset-1" and s["voice_id"] == "voice-1"
+    assert msg.replies[-1] == bot.ASK_PATH
 
 
 def test_назад_с_правки_возвращает_сценарий(work):
@@ -534,23 +672,43 @@ def test_назад_с_идей_возвращает_к_сырью(work):
     assert msg.replies[-1] == bot.ASK_RAW
 
 
-def test_назад_с_фото_возвращает_к_сценарию(work):
-    bot.save_session(7, {"step": bot.WAIT_PHOTO, "scenario": SCENARIO})
+def test_назад_с_фото_у_новичка_возвращает_к_языку(work):
+    bot.save_session(7, {"step": bot.WAIT_PHOTO, "language": "ru"})
 
     msg = _Msg()
     _press("back", msg)
 
-    assert bot.load_session(7)["step"] == bot.REVIEW
+    assert bot.load_session(7)["step"] == bot.CHOOSING_LANGUAGE
+    assert msg.replies[-1] == bot.ASK_LANGUAGE
 
 
-def test_назад_с_выбора_голоса_возвращает_к_фото(work):
-    bot.save_session(7, {"step": bot.CHOOSING_VOICE, "scenario": SCENARIO,
-                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "v1"})
+def test_назад_с_записи_голоса_у_новичка_возвращает_к_фото(work):
+    bot.save_session(7, {"step": bot.WAIT_VOICE, "language": "ru",
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}})
 
     msg = _Msg()
     _press("back", msg)
 
-    assert bot.load_session(7)["step"] == bot.CHOOSING_PHOTO
+    assert bot.load_session(7)["step"] == bot.WAIT_PHOTO
+
+
+def test_назад_с_замены_голоса_возвращает_к_экрану_профиля(work):
+    bot.save_session(7, _паспорт(step=bot.WAIT_VOICE))
+
+    msg = _Msg()
+    _press("back", msg)
+
+    assert bot.load_session(7)["step"] == bot.CHOOSING_PROFILE
+    assert msg.replies[-1] == bot.PROFILE_KEEP_MSG
+
+
+def test_назад_с_выбора_пути_возвращает_к_профилю(work):
+    bot.save_session(7, _паспорт(step=bot.CHOOSING))
+
+    msg = _Msg()
+    _press("back", msg)
+
+    assert bot.load_session(7)["step"] == bot.CHOOSING_PROFILE
 
 
 # --- «новый ролик»: заново язык и сценарий, профильные медиа сохраняются ------
@@ -602,16 +760,18 @@ def test_start_сбрасывает_язык_и_сценарий_но_не_фо�
     assert msg.replies[-1] == bot.ASK_LANGUAGE
 
 
-def test_after_new_язык_выбирается_до_пути(work):
-    bot.save_session(7, {"step": bot.DONE, "voice_id": "voice-1"})
+def test_after_new_язык_выбирается_до_всего_остального(work):
+    bot.save_session(7, _паспорт(step=bot.DONE))
     msg = _Msg()
     asyncio.run(bot.cmd_new(_Update(msg), None))
+    assert msg.replies[-1] == bot.ASK_LANGUAGE
 
     _press("reel_language:ru", msg)
 
-    assert msg.replies[-1] == bot.HELLO
+    assert msg.replies[-1] == bot.PROFILE_KEEP_MSG
     assert _labels(msg.markups[-1]) == [
-        "У меня готовый сценарий", "Предложи сценарий"
+        "Использовать прежние", "Заменить фото", "Записать голос заново",
+        "← Назад",
     ]
 
 
@@ -688,81 +848,32 @@ def профиль(monkeypatch):
 
 
 async def _fake_download(context, media, chat_id):
-    from pathlib import Path
-    return Path("фото.jpg")
+    """Скачивание телеграма: файл ложится в рабочую папку чата, как в бою."""
+    d = bot.session_dir(chat_id) / "input"
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / "медиа.bin"
+    path.write_bytes(b"media")
+    return path
 
 
-def test_первый_ролик_требует_фото(work, профиль):
-    bot.save_session(7, {"step": bot.REVIEW, "scenario": SCENARIO})
+def test_первый_ролик_требует_фото_сразу_после_языка(work, профиль):
+    bot.save_session(7, {"step": bot.CHOOSING_LANGUAGE})
 
     msg = _Msg()
-    _press("ok", msg)
+    _press("reel_language:ru", msg)
 
     assert bot.load_session(7)["step"] == bot.WAIT_PHOTO
     assert "Кисти рук" in msg.replies[-1]
 
 
-def test_повторный_профиль_предлагает_выбор_фото(work, профиль):
-    bot.save_session(7, {"step": bot.REVIEW, "scenario": SCENARIO,
-                         "photo": {"asset_id": "asset-старый", "file": "старый.jpg"},
-                         "voice_id": "voice-1"})
-
-    _press("ok", _Msg())
-
-    assert bot.load_session(7)["step"] == bot.CHOOSING_PHOTO
-
-
-def test_прежнее_фото_ведёт_к_выбору_голоса(work, профиль):
-    bot.save_session(7, {"step": bot.CHOOSING_PHOTO, "scenario": SCENARIO,
-                         "photo": {"asset_id": "asset-старый", "file": "старый.jpg"},
-                         "voice_id": "voice-1"})
+def test_утверждение_сценария_ведёт_сразу_к_сборке(work, профиль):
+    """Фото и голос собраны до оплаты — после «Утвердить» спрашивать нечего."""
+    bot.save_session(7, _паспорт(step=bot.REVIEW, scenario=SCENARIO))
 
     msg = _Msg()
-    _press("photo:old", msg)
+    _press("ok", msg)
 
-    s = bot.load_session(7)
-    assert s["step"] == bot.CHOOSING_VOICE
-    assert s["photo"]["asset_id"] == "asset-старый"
-
-
-def test_новое_фото_затирает_старое_в_сессии_и_на_диске(work, профиль, tmp_path):
-    старое_фото = tmp_path / "старое.jpg"
-    старое_фото.write_bytes(b"old")
-    bot.save_session(7, {"step": bot.WAIT_PHOTO, "scenario": SCENARIO,
-                         "photo": {"asset_id": "asset-старый", "file": str(старое_фото)},
-                         "voice_id": "voice-1"})
-
-    msg = _Msg(photo=[object()])
-    asyncio.run(bot.on_message(_Update(msg), None))
-
-    s = bot.load_session(7)
-    assert s["photo"]["asset_id"] == "asset-новый"
-    assert s["step"] == bot.CHOOSING_VOICE  # голос уже был — предложат выбор
-    assert not старое_фото.exists()
-
-
-def test_голос_спрашивается_один_раз(work, профиль):
-    bot.save_session(7, {"step": bot.WAIT_PHOTO, "scenario": SCENARIO})
-
-    msg = _Msg(photo=[object()])
-    asyncio.run(bot.on_message(_Update(msg), None))
-    assert bot.load_session(7)["step"] == bot.WAIT_VOICE
-
-    голос = _Msg(voice=object())
-    asyncio.run(bot.on_message(_Update(голос), None))
-    s = bot.load_session(7)
-    assert s["voice_id"] == "voice-1" and s["step"] == bot.READY
-
-
-def test_использовать_прежнюю_запись_ведёт_к_готовности(work, профиль):
-    bot.save_session(7, {"step": bot.CHOOSING_VOICE, "scenario": SCENARIO,
-                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-
-    msg = _Msg()
-    _press("voice:old", msg)
-
-    s = bot.load_session(7)
-    assert s["step"] == bot.READY and s["voice_id"] == "voice-1"
+    assert bot.load_session(7)["step"] == bot.READY
     assert msg.replies[-1] == bot.READY_MSG
     callbacks = [
         b.callback_data
@@ -772,70 +883,225 @@ def test_использовать_прежнюю_запись_ведёт_к_го
     assert "build:montage" in callbacks and "build:plain" in callbacks
 
 
-def test_записать_заново_удаляет_старый_клон_и_просит_новую_запись(work, monkeypatch):
-    удалённые = []
-    monkeypatch.setattr(bot, "step_delete_voice", lambda vid: удалённые.append(vid))
-    bot.save_session(7, {"step": bot.CHOOSING_VOICE, "scenario": SCENARIO,
-                         "photo": {"asset_id": "a1", "file": "ф.jpg"},
-                         "voice_id": "voice-старый"})
+def test_повторный_профиль_показывает_один_экран(work, профиль):
+    bot.save_session(7, _паспорт(step=bot.CHOOSING_LANGUAGE))
 
     msg = _Msg()
-    _press("voice:new", msg)
+    _press("reel_language:ru", msg)
 
-    assert удалённые == []  # удалим только после успешного сохранения нового
+    assert bot.load_session(7)["step"] == bot.CHOOSING_PROFILE
+    assert msg.replies[-1] == bot.PROFILE_KEEP_MSG
+
+
+def test_прежний_профиль_ведёт_к_выбору_пути(work, профиль):
+    bot.save_session(7, _паспорт(step=bot.CHOOSING_PROFILE))
+
+    msg = _Msg()
+    _press("profile:keep", msg)
+
     s = bot.load_session(7)
-    assert s["step"] == bot.WAIT_VOICE and "voice_id" not in s
-    assert s["pending_previous_voice"]["voice_id"] == "voice-старый"
+    assert s["step"] == bot.CHOOSING
+    assert s["photo"]["asset_id"] == "asset-1"
+
+
+def test_новое_фото_затирает_старое_в_сессии_и_на_диске(work, профиль, tmp_path):
+    старое_фото = tmp_path / "старое.jpg"
+    старое_фото.write_bytes(b"old")
+    bot.save_session(7, _паспорт(
+        step=bot.WAIT_PHOTO,
+        photo={"asset_id": "asset-старый", "file": str(старое_фото)},
+    ))
+
+    msg = _Msg(photo=[object()])
+    asyncio.run(bot.on_message(_Update(msg), None))
+
+    s = bot.load_session(7)
+    assert s["photo"]["asset_id"] == "asset-новый"
+    assert s["step"] == bot.CHOOSING  # запись голоса уже есть — сразу к пути
+    assert not старое_фото.exists()
+
+
+def test_запись_голоса_не_создаёт_клон(work, профиль, monkeypatch):
+    """Клон платный: на бесплатном шаге сохраняем только файл записи."""
+    клоны = []
+    monkeypatch.setattr(
+        bot, "step_voice",
+        lambda chat_id, path, language: клоны.append(language) or "voice-новый",
+    )
+    bot.save_session(7, {"step": bot.WAIT_PHOTO, "language": "ru"})
+
+    asyncio.run(bot.on_message(_Update(_Msg(photo=[object()])), None))
+    assert bot.load_session(7)["step"] == bot.WAIT_VOICE
+
+    голос = _Msg(voice=object())
+    asyncio.run(bot.on_message(_Update(голос), None))
+
+    s = bot.load_session(7)
+    assert клоны == []
+    assert "voice_id" not in s and not s.get("voices")
+    assert s["voice_pending"]["ru"] == s["voice_samples"]["ru"]
+    assert s["step"] == bot.CHOOSING
+    assert голос.replies[-2] == bot.VOICE_SAVED
+
+
+def test_клон_делается_после_оплаты_и_старый_удаляется(work, monkeypatch, tmp_path):
+    запись = tmp_path / "запись.ogg"
+    запись.write_bytes(b"voice")
+    удалённые = []
+    monkeypatch.setattr(bot, "step_delete_voice", lambda vid: удалённые.append(vid))
+    monkeypatch.setattr(
+        bot, "step_voice", lambda chat_id, path, language: "voice-новый"
+    )
+    monkeypatch.setattr(
+        bot, "step_verbatim", lambda chat_id, text, language: SCENARIO
+    )
+    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
+    _с_балансом()
+    bot.save_session(7, _паспорт(
+        step=bot.CONFIRM_PRICE,
+        material_mode="text",
+        material_text="Мой текст.",
+        voices={"ru": "voice-старый"},
+        voice_id="voice-старый",
+        voice_samples={"ru": str(запись)},
+        voice_pending={"ru": str(запись)},
+    ))
+
+    msg = _Msg()
+    _press("pay:go", msg)
+
+    s = bot.load_session(7)
+    assert s["voices"] == {"ru": "voice-новый"}
+    assert not s["voice_pending"]
+    assert удалённые == ["voice-старый"]  # только после успеха нового
+    assert s["step"] == bot.REVIEW
+
+
+def test_запись_заново_не_трогает_прежний_клон_до_оплаты(work, профиль, monkeypatch):
+    удалённые = []
+    monkeypatch.setattr(bot, "step_delete_voice", lambda vid: удалённые.append(vid))
+    bot.save_session(7, _паспорт(step=bot.CHOOSING_PROFILE))
+
+    msg = _Msg()
+    _press("profile:voice", msg)
+    asyncio.run(bot.on_message(_Update(_Msg(voice=object())), None))
+
+    s = bot.load_session(7)
+    assert удалённые == []
+    assert s["voices"] == {"ru": "voice-1"}  # рабочий голос остаётся рабочим
+    assert s["voice_pending"]["ru"]
     assert bot.ASK_VOICE in msg.replies[-1]
 
 
-def test_записать_заново_чистит_voice_id_в_профиле_клиента(work, monkeypatch):
-    monkeypatch.setattr(bot, "step_delete_voice", lambda vid: None)
-    вызовы = []
-    monkeypatch.setattr(
-        bot,
-        "clear_client_voice_profile",
-        lambda chat_id, language: вызовы.append((chat_id, language)),
-    )
-    bot.save_session(7, {"step": bot.CHOOSING_VOICE, "voice_id": "voice-старый"})
+def test_ошибка_удаления_старого_голоса_не_блокирует_сборку(
+    work, monkeypatch, tmp_path, caplog
+):
+    запись = tmp_path / "запись.ogg"
+    запись.write_bytes(b"voice")
 
-    _press("voice:new", _Msg())
-
-    assert вызовы == [(7, "ru")]
-
-
-def test_ошибка_удаления_старого_голоса_не_блокирует_запись(work, monkeypatch):
     def падаем(vid):
         raise RuntimeError("сеть упала")
 
     monkeypatch.setattr(bot, "step_delete_voice", падаем)
-    bot.save_session(7, {"step": bot.CHOOSING_VOICE, "voice_id": "voice-старый"})
+    monkeypatch.setattr(
+        bot, "step_voice", lambda chat_id, path, language: "voice-новый"
+    )
+    monkeypatch.setattr(
+        bot, "step_verbatim", lambda chat_id, text, language: SCENARIO
+    )
+    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
+    _с_балансом()
+    bot.save_session(7, _паспорт(
+        step=bot.CONFIRM_PRICE,
+        material_mode="text",
+        material_text="Мой текст.",
+        voices={"ru": "voice-старый"},
+        voice_id="voice-старый",
+        voice_samples={"ru": str(запись)},
+        voice_pending={"ru": str(запись)},
+    ))
+
+    with caplog.at_level(logging.WARNING):
+        _press("pay:go", _Msg())
+
+    assert bot.load_session(7)["step"] == bot.REVIEW
+    assert "voice-старый" in caplog.text and "сеть упала" in caplog.text
+
+
+def test_упавший_клон_не_пускает_в_генерацию(work, monkeypatch, tmp_path):
+    запись = tmp_path / "запись.ogg"
+    запись.write_bytes(b"voice")
+    сценарии = []
+
+    def падаем(chat_id, path, language):
+        raise RuntimeError("ElevenLabs отказал")
+
+    monkeypatch.setattr(bot, "step_voice", падаем)
+    monkeypatch.setattr(
+        bot, "step_verbatim",
+        lambda chat_id, text, language: сценарии.append(text) or SCENARIO,
+    )
+    _с_балансом()
+    bot.save_session(7, _паспорт(
+        step=bot.CONFIRM_PRICE,
+        material_mode="text",
+        material_text="Мой текст.",
+        voices={},
+        voice_id=None,
+        voice_samples={"ru": str(запись)},
+        voice_pending={"ru": str(запись)},
+    ))
 
     msg = _Msg()
-    _press("voice:new", msg)
+    _press("pay:go", msg)
+
+    assert сценарии == []  # Клода не зовём, раз голоса не вышло
+    assert "ElevenLabs отказал" in msg.replies[-2]
     assert bot.load_session(7)["step"] == bot.WAIT_VOICE
 
 
-def test_ошибка_удаления_старого_голоса_логируется(work, monkeypatch, caplog):
-    def падаем(vid):
-        raise RuntimeError("сеть упала")
+def test_полный_путь_новичка_платит_только_после_экрана_цены(work, monkeypatch):
+    """Сквозной прогон: от /start до готовности к сборке. Все платные вызовы
+    (клон голоса, Клод) обязаны случиться строго после «Поехали»."""
+    платные = []
+    monkeypatch.setattr(bot, "_download", _fake_download)
+    monkeypatch.setattr(bot, "step_photo", lambda chat_id, path: "asset-новый")
+    monkeypatch.setattr(
+        bot, "step_voice",
+        lambda chat_id, path, language: платные.append("голос") or "voice-1",
+    )
+    monkeypatch.setattr(
+        bot, "step_verbatim",
+        lambda chat_id, text, language: платные.append("клод") or SCENARIO,
+    )
+    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
 
-    monkeypatch.setattr(bot, "step_delete_voice", падаем)
-    bot.save_session(7, {"step": bot.CHOOSING_VOICE, "voice_id": "voice-старый"})
+    msg = _Msg()
+    asyncio.run(bot.cmd_start(_Update(msg), None))
+    assert msg.replies[-1] == bot.ASK_LANGUAGE
 
-    _press("voice:new", _Msg())
+    _press("reel_language:ru", msg)
+    assert bot.load_session(7)["step"] == bot.WAIT_PHOTO
+
+    asyncio.run(bot.on_message(_Update(_Msg(photo=[object()])), None))
+    assert bot.load_session(7)["step"] == bot.WAIT_VOICE
+
+    asyncio.run(bot.on_message(_Update(_Msg(voice=object())), None))
+    assert bot.load_session(7)["step"] == bot.CHOOSING
+
+    _press("mode:text", msg)
+    _press("material:new", msg)
+    asyncio.run(bot.on_message(_Update(_Msg("Мой текст.")), None))
+    assert bot.load_session(7)["step"] == bot.CONFIRM_PRICE
+    assert платные == []           # всё, что было до сих пор, — бесплатно
+
+    _с_балансом()
+    _press("pay:go", msg)
+    assert платные == ["голос", "клод"]
+
+    _press("ok", msg)
     s = bot.load_session(7)
-    s["voices"] = {"ru": "voice-новый"}
-    s["voice_id"] = "voice-новый"
-    s["voice_language"] = "ru"
-    s["photo"] = {"asset_id": "a1"}
-    bot.save_session(7, s)
-    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, session: None)
-    with caplog.at_level(logging.WARNING):
-        asyncio.run(bot._finish_voice(_Msg(), 7, s))
-
-    assert "voice-старый" in caplog.text
-    assert "сеть упала" in caplog.text
+    assert s["step"] == bot.READY and s["voice_id"] == "voice-1"
 
 
 def test_сбой_движка_не_роняет_разговор(work, monkeypatch):
@@ -843,13 +1109,16 @@ def test_сбой_движка_не_роняет_разговор(work, monkeypa
         raise RuntimeError("claude -p упал")
 
     monkeypatch.setattr(bot, "step_verbatim", падаем)
-    bot.save_session(7, {"step": bot.WAIT_TEXT})
+    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
+    _с_балансом()
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE, material_mode="text",
+                                 material_text="Мой текст."))
 
-    msg = _Msg("Мой текст.")
-    asyncio.run(bot.on_message(_Update(msg), None))
+    msg = _Msg()
+    _press("pay:go", msg)
 
     assert "claude -p упал" in msg.replies[-1]
-    assert bot.load_session(7)["step"] == bot.WAIT_TEXT
+    assert bot.load_session(7)["step"] == bot.CONFIRM_PRICE
 
 
 def _ожидаемое_списание_клода(usd: float) -> int:
@@ -950,7 +1219,7 @@ def test_создать_ролик_сохраняет_профиль_и_став
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
     msg = _Msg()
-    _press("build", msg)
+    _press("build:plain", msg)
 
     assert вызовы == [7]
     s = bot.load_session(7)
@@ -985,7 +1254,7 @@ def test_audio_preview_отправляется_до_рендера_и_job_жд�
         "photo": {"asset_id": "a1", "file": "ф.jpg"},
         "voice_id": "voice-1",
     })
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
 
     job, api = _deliver_audio_preview()
 
@@ -1009,7 +1278,7 @@ def test_утверждённое_audio_переходит_в_render_queue_бе�
         "photo": {"asset_id": "a1", "file": "ф.jpg"},
         "voice_id": "voice-1",
     })
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job, _api = _deliver_audio_preview()
     approved = []
     monkeypatch.setattr(
@@ -1034,7 +1303,7 @@ def test_отказ_от_tts_принимает_одно_telegram_voice_и_ст�
         "photo": {"asset_id": "a1", "file": "ф.jpg"},
         "voice_id": "voice-1",
     })
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job, _api = _deliver_audio_preview()
 
     reject_msg = _Msg()
@@ -1073,7 +1342,7 @@ def test_new_отменяет_job_которая_ждёт_audio_approval(work, �
         "photo": {"asset_id": "a1", "file": "ф.jpg"},
         "voice_id": "voice-1",
     })
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job, _api = _deliver_audio_preview()
     assert bot._job_store().get(job.job_id).status == "awaiting_audio_approval"
     msg = _Msg()
@@ -1095,7 +1364,7 @@ def test_new_не_бросает_реально_идущий_рендер(work, 
         "photo": {"asset_id": "a1", "file": "ф.jpg"},
         "voice_id": "voice-1",
     })
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = bot._job_store().latest_for_chat(7)
     # протолкнуть job в реально исполняемое состояние
     bot._job_store().transition(
@@ -1311,7 +1580,7 @@ def test_нет_профиля_клиента_честно_говорит_и_н�
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
     msg = _Msg()
-    _press("build", msg)
+    _press("build:plain", msg)
 
     assert msg.replies[-1] == bot.CLIENT_NOT_FOUND_MSG
     assert вызвано == []
@@ -1328,7 +1597,7 @@ def test_устаревшая_кнопка_создать_ролик_на_шаг
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
     msg = _Msg()
-    _press("build", msg)
+    _press("build:plain", msg)
 
     assert вызвано == []
     assert msg.replies == [bot.NOT_NOW]
@@ -1341,7 +1610,7 @@ def test_устаревшая_кнопка_создать_ролик_на_шаг
     bot.save_session(7, {"step": bot.CHOOSING})
 
     msg = _Msg()
-    _press("build", msg)
+    _press("build:plain", msg)
 
     assert вызвано == []
     assert msg.replies == [bot.NOT_NOW]
@@ -1362,7 +1631,7 @@ def test_сбой_save_client_profile_не_роняет_бота(work, tmp_path,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
     msg = _Msg()
-    _press("build", msg)
+    _press("build:plain", msg)
 
     assert msg.replies[-1] == bot.CLIENT_NOT_FOUND_MSG
     assert вызвано == []
@@ -1373,7 +1642,7 @@ def test_повторное_нажатие_создать_ролик_пока_с
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
     msg = _Msg()
-    _press("build", msg)
+    _press("build:plain", msg)
     assert msg.replies == [bot.BUSY_MSG]
     assert not msg.videos
 
@@ -1387,7 +1656,7 @@ def test_ролик_шлётся_с_явными_размерами_кадра(w
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     api = _BotAPI()
 
     asyncio.run(bot._process_job(api, _claim_job(), build_fn=fake_run_build))
@@ -1400,7 +1669,7 @@ def test_сценарий_пишется_в_job_workdir_с_uuid(work, клиен
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
 
     job = bot._job_store().latest_for_chat(7)
     assert job.workdir.parent == bot.WORK_ROOT / "jobs"
@@ -1425,22 +1694,82 @@ def test_кнопка_без_монтажа_пишет_montage_false_в_snapshot
     assert bot.load_session(7)["montage"] is False
 
 
-def test_кнопка_с_монтажом_пишет_montage_true_в_snapshot(work, клиент):
-    import yaml
-
+def test_кнопка_с_монтажом_ничего_не_собирает_а_спрашивает_пожелание(work, клиент):
+    """Монтаж ещё не сделан: платная сборка по этой кнопке не запускается."""
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build:montage", _Msg())
+    msg = _Msg()
 
-    job = bot._job_store().latest_for_chat(7)
-    cfg = yaml.safe_load((job.workdir / "build-config.yaml").read_text(encoding="utf-8"))
-    assert cfg["montage"] is True
+    _press("build:montage", msg)
+
+    assert bot._job_store().latest_for_chat(7) is None
+    assert msg.replies[-1] == bot.MONTAGE_WIP_MSG
+    assert _labels(msg.markups[-1]) == ["Пропустить"]
+    assert bot.load_session(7)["step"] == bot.WAIT_WISH
+
+
+def test_старая_кнопка_build_тоже_ведёт_в_заглушку_монтажа(work, клиент):
+    """Инлайн-кнопки живут в чате вечно, а «build» — это монтажный режим."""
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+
+    _press("build", _Msg())
+
+    assert bot._job_store().latest_for_chat(7) is None
+    assert bot.load_session(7)["step"] == bot.WAIT_WISH
+
+
+def test_пожелание_к_монтажу_попадает_в_базу(work, клиент):
+    bot.save_session(7, {"step": bot.WAIT_WISH, "wish_topic": bot.MONTAGE_TOPIC,
+                         "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"},
+                         "voice_id": "voice-1"})
+    msg = _Msg("Хочу перебивки под музыку и крупные титры.")
+    upd = _Update(msg)
+    upd.effective_user = type("U", (), {"username": "vasya"})()
+
+    asyncio.run(bot.on_message(upd, None))
+
+    записи = bot._feedback().list(topic=bot.MONTAGE_TOPIC)
+    assert len(записи) == 1
+    assert записи[0]["chat_id"] == 7
+    assert записи[0]["username"] == "vasya"
+    assert записи[0]["text"] == "Хочу перебивки под музыку и крупные титры."
+    assert msg.replies[0] == bot.WISH_THANKS
+    # и человек не заперт в тупике: снова видит экран сборки
+    assert bot.load_session(7)["step"] == bot.READY
+    assert msg.replies[-1] == bot.READY_MSG
+
+
+def test_пожелание_можно_пропустить(work, клиент):
+    bot.save_session(7, {"step": bot.WAIT_WISH, "wish_topic": bot.MONTAGE_TOPIC,
+                         "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"},
+                         "voice_id": "voice-1"})
+    msg = _Msg()
+
+    _press("wish:skip", msg)
+
+    assert bot._feedback().count() == 0
+    assert bot.load_session(7)["step"] == bot.READY
+
+
+def test_без_имени_пользователя_пожелание_всё_равно_пишется(work, клиент):
+    bot.save_session(7, {"step": bot.WAIT_WISH, "wish_topic": bot.MONTAGE_TOPIC,
+                         "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"},
+                         "voice_id": "voice-1"})
+
+    asyncio.run(bot.on_message(_Update(_Msg("Хочу как у блогеров.")), None))
+
+    записи = bot._feedback().list()
+    assert len(записи) == 1 and записи[0]["username"] is None
 
 
 def test_сбой_сборки_сообщается_человеческим_текстом(work, клиент, monkeypatch):
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     api = _BotAPI()
 
@@ -1461,7 +1790,7 @@ def test_исключение_при_сборке_не_роняет_бота(wor
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     api = _BotAPI()
 
@@ -1478,7 +1807,7 @@ def test_ролик_собран_но_qa_не_пройден_не_отправл
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     api = _BotAPI()
 
@@ -1499,7 +1828,7 @@ def test_ролик_больше_50мб_не_отправляется(work, кл
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     api = _BotAPI()
 
@@ -1532,7 +1861,7 @@ def test_qa_провал_сообщает_сколько_уже_стоил_ре�
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     _зачесть_расход_на_job(job.job_id)
     api = _BotAPI()
@@ -1552,7 +1881,7 @@ def test_слишком_большой_файл_сообщает_сколько_
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     _зачесть_расход_на_job(job.job_id)
     api = _BotAPI()
@@ -1577,7 +1906,7 @@ def test_отказ_telegram_принять_файл_сообщает_сколь
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     _зачесть_расход_на_job(job.job_id)
     api = _ОтказывающийАпи()
@@ -1609,7 +1938,7 @@ def test_qa_провал_с_битым_breakdown_всё_равно_достав�
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     api = _BotAPI()
 
@@ -1639,7 +1968,7 @@ def test_успешная_доставка_с_битым_breakdown_всё_рав
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     _зачесть_расход_на_job(job.job_id)
     api = _BotAPI()
@@ -1661,7 +1990,7 @@ def test_receipt_называет_сумму_рендером_а_не_общим
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     _зачесть_расход_на_job(job.job_id)
     api = _BotAPI()
@@ -1689,7 +2018,7 @@ def test_сбой_статусного_сообщения_не_теряет_dura
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
     msg = FlakyMsg()
-    _press("build", msg)
+    _press("build:plain", msg)
 
     job = bot._job_store().latest_for_chat(7)
     assert job.status == "audio_queued"
@@ -1891,29 +2220,53 @@ def _charge_flat(chat_id: int, micro: int) -> None:
     )
 
 
-def test_отрицательный_баланс_блокирует_готовый_текст(work):
-    _charge_flat(7, 1)  # -0.000001$, но уже < 0 — этого достаточно для гейта
-    bot.save_session(7, {"step": bot.WAIT_TEXT, "language": "ru"})
+def test_нехватка_баланса_показывает_цену_и_кнопки_пополнения(work, monkeypatch):
+    вызовы = []
+    monkeypatch.setattr(
+        bot, "step_verbatim", lambda chat_id, text, language: вызовы.append(text)
+    )
+    bot.save_session(7, _паспорт(step=bot.WAIT_TEXT))
 
     msg = _Msg("Мой текст.")
     asyncio.run(bot.on_message(_Update(msg), None))
 
-    assert "исчерпан" in msg.replies[-1].lower()
-    assert len(msg.markups[-1].inline_keyboard) == len(bot.TOPUP_PRODUCTS)
-    assert bot.WORKING not in msg.replies  # генерация не запускалась
-    assert bot.load_session(7)["step"] == bot.WAIT_TEXT  # шаг не сдвинулся
+    assert "не хватает" in msg.replies[-1].lower()
+    labels = _labels(msg.markups[-1])
+    assert all(label in labels for label, _ in bot.TOPUP_PRODUCTS)
+    assert "Проверить баланс" in labels
+    assert "Поехали" not in " ".join(labels)
+    assert вызовы == [] and bot.WORKING not in msg.replies
+    # материал не потерян: после пополнения продолжим с того же места
+    s = bot.load_session(7)
+    assert s["step"] == bot.CONFIRM_PRICE and s["material_text"] == "Мой текст."
 
 
-def test_отрицательный_баланс_блокирует_сырьё(work):
-    _charge_flat(7, 1)
-    bot.save_session(7, {"step": bot.WAIT_RAW, "language": "ru"})
+def test_поехали_с_пустым_балансом_не_запускает_генерацию(work, monkeypatch):
+    вызовы = []
+    monkeypatch.setattr(
+        bot, "step_verbatim", lambda chat_id, text, language: вызовы.append(text)
+    )
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE, material_mode="text",
+                                 material_text="Мой текст."))
 
-    msg = _Msg("Длинное сырьё про продажи.")
-    asyncio.run(bot.on_message(_Update(msg), None))
+    msg = _Msg()
+    _press("pay:go", msg)
 
-    assert "исчерпан" in msg.replies[-1].lower()
-    assert bot.WORKING not in msg.replies
-    assert bot.load_session(7)["step"] == bot.WAIT_RAW
+    assert вызовы == []
+    assert "не хватает" in msg.replies[-1].lower()
+
+
+def test_проверить_баланс_после_пополнения_открывает_поехали(work):
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE, material_mode="text",
+                                 material_text="Мой текст."))
+    msg = _Msg()
+    _press("pay:check", msg)
+    assert "Поехали" not in " ".join(_labels(msg.markups[-1]))
+
+    _с_балансом()
+    _press("pay:check", msg)
+
+    assert "Поехали" in " ".join(_labels(msg.markups[-1]))
 
 
 def test_отрицательный_баланс_блокирует_выбор_идеи(work):
@@ -1931,33 +2284,35 @@ def test_отрицательный_баланс_блокирует_выбор_�
     assert bot.load_session(7)["step"] == bot.CHOOSING_IDEA
 
 
-def test_нулевой_баланс_не_блокирует_пробную_генерацию(work, monkeypatch):
-    """Ровно 0 — старт бесплатного триала, не «уже потрачено больше, чем было».
-    Порог намеренно «< 0», а не «<= 0»: тут регрессия сломала бы пробу новичку."""
+def test_нулевой_баланс_не_пускает_в_платную_часть(work, monkeypatch):
+    """Бесплатных роликов нет: с нулём человек упирается в экран цены, но
+    материал и паспорт остаются собранными — платить он идёт с готовым."""
+    вызовы = []
     monkeypatch.setattr(
-        bot, "step_verbatim", lambda chat_id, text, language: SCENARIO
+        bot, "step_verbatim", lambda chat_id, text, language: вызовы.append(text)
     )
     assert bot._ledger().balance(7) == 0
-    bot.save_session(7, {"step": bot.WAIT_TEXT, "language": "ru"})
+    bot.save_session(7, _паспорт(step=bot.WAIT_TEXT))
 
     msg = _Msg("Мой текст.")
     asyncio.run(bot.on_message(_Update(msg), None))
 
-    assert msg.replies[0] == bot.WORKING
-    assert bot.load_session(7)["step"] == bot.REVIEW
+    assert вызовы == []
+    assert bot.load_session(7)["step"] == bot.CONFIRM_PRICE
 
 
-def test_биллинг_выключен_не_блокирует_даже_при_минусе(work, monkeypatch):
+def test_биллинг_выключен_ведёт_прямо_в_генерацию(work, monkeypatch):
     _charge_flat(7, 1)
     billing_on = bot._billing()
     monkeypatch.setattr(bot, "_billing", lambda: {**billing_on, "enabled": False})
     monkeypatch.setattr(
         bot, "step_verbatim", lambda chat_id, text, language: SCENARIO
     )
-    bot.save_session(7, {"step": bot.WAIT_TEXT, "language": "ru"})
+    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
+    bot.save_session(7, _паспорт(step=bot.WAIT_TEXT))
 
     msg = _Msg("Мой текст.")
     asyncio.run(bot.on_message(_Update(msg), None))
 
-    assert msg.replies[0] == bot.WORKING
+    assert bot.WORKING in msg.replies
     assert bot.load_session(7)["step"] == bot.REVIEW
