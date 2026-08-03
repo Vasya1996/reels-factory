@@ -268,10 +268,23 @@ def test_миграция_не_трогает_разговор_с_оплачен
     assert s["step"] == bot.AUDIO_REVIEW and s["current_job_id"] == "job-1"
 
 
-def test_новый_чат_ведёт_к_выбору_пути(work):
+def test_новый_чат_ведёт_к_выбору_языка(work):
     msg = _Msg("привет")
     asyncio.run(bot.on_message(_Update(msg), None))
-    assert msg.replies == [bot.NOT_NOW]
+    assert msg.replies == [bot.HELLO, bot.ASK_LANGUAGE]
+
+
+def test_текст_вместо_кнопки_показывает_экран_заново(work):
+    """Кнопки уезжают вверх по переписке — повторить экран полезнее отписки."""
+    bot.save_session(7, _паспорт(step=bot.CHOOSING))
+
+    msg = _Msg("ну давай уже")
+    asyncio.run(bot.on_message(_Update(msg), None))
+
+    assert msg.replies[-1] == bot.ASK_PATH
+    assert _labels(msg.markups[-1]) == [
+        "У меня готовый сценарий", "Предложи сценарий"
+    ]
 
 
 def test_loop_session_сохраняет_только_фото_и_голос():
@@ -1206,7 +1219,7 @@ def test_создать_ролик_сохраняет_профиль_и_став
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
     msg = _Msg()
-    _press("build", msg)
+    _press("build:plain", msg)
 
     assert вызовы == [7]
     s = bot.load_session(7)
@@ -1241,7 +1254,7 @@ def test_audio_preview_отправляется_до_рендера_и_job_жд�
         "photo": {"asset_id": "a1", "file": "ф.jpg"},
         "voice_id": "voice-1",
     })
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
 
     job, api = _deliver_audio_preview()
 
@@ -1265,7 +1278,7 @@ def test_утверждённое_audio_переходит_в_render_queue_бе�
         "photo": {"asset_id": "a1", "file": "ф.jpg"},
         "voice_id": "voice-1",
     })
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job, _api = _deliver_audio_preview()
     approved = []
     monkeypatch.setattr(
@@ -1290,7 +1303,7 @@ def test_отказ_от_tts_принимает_одно_telegram_voice_и_ст�
         "photo": {"asset_id": "a1", "file": "ф.jpg"},
         "voice_id": "voice-1",
     })
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job, _api = _deliver_audio_preview()
 
     reject_msg = _Msg()
@@ -1329,7 +1342,7 @@ def test_new_отменяет_job_которая_ждёт_audio_approval(work, �
         "photo": {"asset_id": "a1", "file": "ф.jpg"},
         "voice_id": "voice-1",
     })
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job, _api = _deliver_audio_preview()
     assert bot._job_store().get(job.job_id).status == "awaiting_audio_approval"
     msg = _Msg()
@@ -1351,7 +1364,7 @@ def test_new_не_бросает_реально_идущий_рендер(work, 
         "photo": {"asset_id": "a1", "file": "ф.jpg"},
         "voice_id": "voice-1",
     })
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = bot._job_store().latest_for_chat(7)
     # протолкнуть job в реально исполняемое состояние
     bot._job_store().transition(
@@ -1567,7 +1580,7 @@ def test_нет_профиля_клиента_честно_говорит_и_н�
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
     msg = _Msg()
-    _press("build", msg)
+    _press("build:plain", msg)
 
     assert msg.replies[-1] == bot.CLIENT_NOT_FOUND_MSG
     assert вызвано == []
@@ -1584,7 +1597,7 @@ def test_устаревшая_кнопка_создать_ролик_на_шаг
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
     msg = _Msg()
-    _press("build", msg)
+    _press("build:plain", msg)
 
     assert вызвано == []
     assert msg.replies == [bot.NOT_NOW]
@@ -1597,7 +1610,7 @@ def test_устаревшая_кнопка_создать_ролик_на_шаг
     bot.save_session(7, {"step": bot.CHOOSING})
 
     msg = _Msg()
-    _press("build", msg)
+    _press("build:plain", msg)
 
     assert вызвано == []
     assert msg.replies == [bot.NOT_NOW]
@@ -1618,7 +1631,7 @@ def test_сбой_save_client_profile_не_роняет_бота(work, tmp_path,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
     msg = _Msg()
-    _press("build", msg)
+    _press("build:plain", msg)
 
     assert msg.replies[-1] == bot.CLIENT_NOT_FOUND_MSG
     assert вызвано == []
@@ -1629,7 +1642,7 @@ def test_повторное_нажатие_создать_ролик_пока_с
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
     msg = _Msg()
-    _press("build", msg)
+    _press("build:plain", msg)
     assert msg.replies == [bot.BUSY_MSG]
     assert not msg.videos
 
@@ -1643,7 +1656,7 @@ def test_ролик_шлётся_с_явными_размерами_кадра(w
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     api = _BotAPI()
 
     asyncio.run(bot._process_job(api, _claim_job(), build_fn=fake_run_build))
@@ -1656,7 +1669,7 @@ def test_сценарий_пишется_в_job_workdir_с_uuid(work, клиен
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
 
     job = bot._job_store().latest_for_chat(7)
     assert job.workdir.parent == bot.WORK_ROOT / "jobs"
@@ -1681,22 +1694,82 @@ def test_кнопка_без_монтажа_пишет_montage_false_в_snapshot
     assert bot.load_session(7)["montage"] is False
 
 
-def test_кнопка_с_монтажом_пишет_montage_true_в_snapshot(work, клиент):
-    import yaml
-
+def test_кнопка_с_монтажом_ничего_не_собирает_а_спрашивает_пожелание(work, клиент):
+    """Монтаж ещё не сделан: платная сборка по этой кнопке не запускается."""
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build:montage", _Msg())
+    msg = _Msg()
 
-    job = bot._job_store().latest_for_chat(7)
-    cfg = yaml.safe_load((job.workdir / "build-config.yaml").read_text(encoding="utf-8"))
-    assert cfg["montage"] is True
+    _press("build:montage", msg)
+
+    assert bot._job_store().latest_for_chat(7) is None
+    assert msg.replies[-1] == bot.MONTAGE_WIP_MSG
+    assert _labels(msg.markups[-1]) == ["Пропустить"]
+    assert bot.load_session(7)["step"] == bot.WAIT_WISH
+
+
+def test_старая_кнопка_build_тоже_ведёт_в_заглушку_монтажа(work, клиент):
+    """Инлайн-кнопки живут в чате вечно, а «build» — это монтажный режим."""
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+
+    _press("build", _Msg())
+
+    assert bot._job_store().latest_for_chat(7) is None
+    assert bot.load_session(7)["step"] == bot.WAIT_WISH
+
+
+def test_пожелание_к_монтажу_попадает_в_базу(work, клиент):
+    bot.save_session(7, {"step": bot.WAIT_WISH, "wish_topic": bot.MONTAGE_TOPIC,
+                         "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"},
+                         "voice_id": "voice-1"})
+    msg = _Msg("Хочу перебивки под музыку и крупные титры.")
+    upd = _Update(msg)
+    upd.effective_user = type("U", (), {"username": "vasya"})()
+
+    asyncio.run(bot.on_message(upd, None))
+
+    записи = bot._feedback().list(topic=bot.MONTAGE_TOPIC)
+    assert len(записи) == 1
+    assert записи[0]["chat_id"] == 7
+    assert записи[0]["username"] == "vasya"
+    assert записи[0]["text"] == "Хочу перебивки под музыку и крупные титры."
+    assert msg.replies[0] == bot.WISH_THANKS
+    # и человек не заперт в тупике: снова видит экран сборки
+    assert bot.load_session(7)["step"] == bot.READY
+    assert msg.replies[-1] == bot.READY_MSG
+
+
+def test_пожелание_можно_пропустить(work, клиент):
+    bot.save_session(7, {"step": bot.WAIT_WISH, "wish_topic": bot.MONTAGE_TOPIC,
+                         "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"},
+                         "voice_id": "voice-1"})
+    msg = _Msg()
+
+    _press("wish:skip", msg)
+
+    assert bot._feedback().count() == 0
+    assert bot.load_session(7)["step"] == bot.READY
+
+
+def test_без_имени_пользователя_пожелание_всё_равно_пишется(work, клиент):
+    bot.save_session(7, {"step": bot.WAIT_WISH, "wish_topic": bot.MONTAGE_TOPIC,
+                         "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"},
+                         "voice_id": "voice-1"})
+
+    asyncio.run(bot.on_message(_Update(_Msg("Хочу как у блогеров.")), None))
+
+    записи = bot._feedback().list()
+    assert len(записи) == 1 and записи[0]["username"] is None
 
 
 def test_сбой_сборки_сообщается_человеческим_текстом(work, клиент, monkeypatch):
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     api = _BotAPI()
 
@@ -1717,7 +1790,7 @@ def test_исключение_при_сборке_не_роняет_бота(wor
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     api = _BotAPI()
 
@@ -1734,7 +1807,7 @@ def test_ролик_собран_но_qa_не_пройден_не_отправл
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     api = _BotAPI()
 
@@ -1755,7 +1828,7 @@ def test_ролик_больше_50мб_не_отправляется(work, кл
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     api = _BotAPI()
 
@@ -1788,7 +1861,7 @@ def test_qa_провал_сообщает_сколько_уже_стоил_ре�
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     _зачесть_расход_на_job(job.job_id)
     api = _BotAPI()
@@ -1808,7 +1881,7 @@ def test_слишком_большой_файл_сообщает_сколько_
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     _зачесть_расход_на_job(job.job_id)
     api = _BotAPI()
@@ -1833,7 +1906,7 @@ def test_отказ_telegram_принять_файл_сообщает_сколь
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     _зачесть_расход_на_job(job.job_id)
     api = _ОтказывающийАпи()
@@ -1865,7 +1938,7 @@ def test_qa_провал_с_битым_breakdown_всё_равно_достав�
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     api = _BotAPI()
 
@@ -1895,7 +1968,7 @@ def test_успешная_доставка_с_битым_breakdown_всё_рав
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     _зачесть_расход_на_job(job.job_id)
     api = _BotAPI()
@@ -1917,7 +1990,7 @@ def test_receipt_называет_сумму_рендером_а_не_общим
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
-    _press("build", _Msg())
+    _press("build:plain", _Msg())
     job = _claim_job()
     _зачесть_расход_на_job(job.job_id)
     api = _BotAPI()
@@ -1945,7 +2018,7 @@ def test_сбой_статусного_сообщения_не_теряет_dura
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
     msg = FlakyMsg()
-    _press("build", msg)
+    _press("build:plain", msg)
 
     job = bot._job_store().latest_for_chat(7)
     assert job.status == "audio_queued"

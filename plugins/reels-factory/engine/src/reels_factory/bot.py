@@ -43,6 +43,7 @@ from reels_factory.billing import (
 from reels_factory.config import (
     OUT_H, OUT_W, WORK_ROOT, load_billing_config, load_config,
 )
+from reels_factory.feedback import FeedbackStore
 from reels_factory.jobs import BuildJob, JobStore
 from reels_factory.language import (
     SUPPORTED_LANGUAGES,
@@ -74,6 +75,7 @@ CHOOSING_IDEA = "choosing_idea"
 REVIEW = "review"                    # сценарий показан, ждём решения
 WAIT_EDIT = "wait_edit"              # ждём отредактированный текст
 READY = "ready"                      # сценарий утверждён, фото и голос собраны
+WAIT_WISH = "wait_wish"              # ждём пожелание к недоделанной функции
 AUDIO_PREPARING = "audio_preparing"  # master TTS стоит в очереди или создаётся
 AUDIO_REVIEW = "audio_review"        # TTS отправлено, ждём approve/reject
 WAIT_FINAL_AUDIO = "wait_final_audio"  # ждём весь сценарий Telegram voice
@@ -235,6 +237,20 @@ PRICE_SHORT_MSG = (
 )
 PRICE_STILL_SHORT_MSG = "Баланс: {have}. Пока не хватает {gap} — оплата ещё не дошла."
 READY_MSG = "Всё на месте: сценарий, фото и голос. Жмите «Создать ролик», когда готовы."
+MONTAGE_WIP_MSG = (
+    "Монтаж пока в разработке — ролик с ним я собрать ещё не могу.\n\n"
+    "Расскажите, чего вы от него ждёте: какие вставки, темп, титры, примеры "
+    "роликов. Постараюсь сделать именно это — напишите одним сообщением.\n\n"
+    "А собрать ролик прямо сейчас можно кнопкой «Без монтажа»."
+)
+WISH_THANKS = "Записал, спасибо. Учту, когда буду доделывать монтаж."
+WISH_SKIPPED = "Хорошо, без пожеланий."
+WISH_EMPTY = "Жду пожелание текстом — одним сообщением."
+MONTAGE_TOPIC = "montage"
+BUILD_FAILED_HINT = (
+    "Прошлый ролик остановлен и не отправлен. Начнём новый — кнопкой ниже "
+    "или командой /new."
+)
 DONE_MSG = (
     "Ролик заказан. Когда будет что снять ещё — жмите «Новый ролик» или "
     "пришлите /new."
@@ -412,6 +428,18 @@ def _ledger() -> LedgerStore:
     if _ledger_cache is None or _ledger_cache[0] != db_path:
         _ledger_cache = (db_path, LedgerStore(db_path))
     return _ledger_cache[1]
+
+
+_feedback_cache: tuple[Path, FeedbackStore] | None = None
+
+
+def _feedback() -> FeedbackStore:
+    """Журнал пожеланий. Кэшируем как _ledger: путь зависит от cwd."""
+    global _feedback_cache
+    db_path = (WORK_ROOT / "feedback.sqlite3").resolve()
+    if _feedback_cache is None or _feedback_cache[0] != db_path:
+        _feedback_cache = (db_path, FeedbackStore(db_path))
+    return _feedback_cache[1]
 
 
 def _billing() -> dict:
@@ -1140,13 +1168,24 @@ def _kb_review():
 
 
 def _kb_ready():
+    """Монтаж пока заглушка: кнопка есть, но она собирает пожелания, а не ролик."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎬 С монтажом", callback_data="build:montage")],
         [InlineKeyboardButton(
-            "🎥 Без монтажа (только аватар)", callback_data="build:plain"
+            "🎥 Создать ролик (аватар без монтажа)", callback_data="build:plain"
+        )],
+        [InlineKeyboardButton(
+            "🎬 С монтажом — в разработке", callback_data="build:montage"
         )],
         [InlineKeyboardButton("← Назад", callback_data="back")],
+    ])
+
+
+def _kb_wish():
+    """Экран пожелания: писать необязательно."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Пропустить", callback_data="wish:skip")],
     ])
 
 
@@ -1252,6 +1291,10 @@ async def _profile_stage(msg, chat_id: int, s: dict):
     Новичка ведём по шагам, у повторного и то и другое уже есть: показываем
     один экран вместо двух подряд «прежнее или новое».
     """
+    if not _reel_language(s, required=False):
+        # Язык — первый шаг; без него голос просят «на всякий русский».
+        await _show_language_choice(msg, chat_id, s)
+        return
     language = _reel_language(s)
     if not s.get("photo"):
         await _photo_stage(msg, chat_id, s)
@@ -1429,6 +1472,12 @@ async def _start_generation(msg, chat_id: int, s: dict):
     await _show_review(msg, chat_id, s)
 
 
+async def _show_ready_screen(msg, chat_id: int, s: dict):
+    s["step"] = READY
+    save_session(chat_id, s)
+    await msg.reply_text(READY_MSG, reply_markup=_kb_ready())
+
+
 async def _ready_stage(msg, chat_id: int, s: dict):
     """Сценарий утверждён, фото и голос собраны раньше — остаётся сборка."""
     s["step"] = READY
@@ -1438,7 +1487,48 @@ async def _ready_stage(msg, chat_id: int, s: dict):
         save_session(chat_id, s)
     except Exception as e:
         log.warning("профиль клиента %s не сохранился: %s", chat_id, e)
-    await msg.reply_text(READY_MSG, reply_markup=_kb_ready())
+    await _show_ready_screen(msg, chat_id, s)
+
+
+async def _ask_wish(msg, chat_id: int, s: dict, topic: str, text: str):
+    """Функция ещё не готова: вместо отказа собираем, чего от неё ждут."""
+    s["step"] = WAIT_WISH
+    s["wish_topic"] = topic
+    save_session(chat_id, s)
+    await msg.reply_text(text, reply_markup=_kb_wish())
+
+
+async def _reshow(msg, chat_id: int, s: dict):
+    """Показать экран текущего шага заново.
+
+    Человек пишет текстом там, где бот ждёт кнопку — чаще всего потому, что
+    кнопки уехали вверх по переписке. Повторить экран полезнее, чем отписаться
+    «нажмите /start».
+    """
+    step = s.get("step", CHOOSING)
+    if not _reel_language(s, required=False):
+        # Разговора ещё не было (или он сброшен) — начинаем с начала.
+        await _show_start(msg, chat_id, s, _keep_all)
+        return
+    if step == CHOOSING:
+        await _choose_path_stage(msg, chat_id, s)
+    elif step == CHOOSING_PROFILE:
+        await _profile_stage(msg, chat_id, s)
+    elif step == CHOOSING_MATERIAL:
+        await _show_material(msg, chat_id, s, s.get("material_mode", "text"))
+    elif step == CHOOSING_IDEA and s.get("ideas"):
+        await _show_ideas(msg, chat_id, s)
+    elif step == REVIEW and s.get("scenario"):
+        await _show_review(msg, chat_id, s)
+    elif step == READY and s.get("scenario"):
+        await _show_ready_screen(msg, chat_id, s)
+    elif step == DONE:
+        await msg.reply_text(DONE_MSG, reply_markup=_kb_done())
+    elif step == BUILD_FAILED:
+        await msg.reply_text(BUILD_FAILED_HINT, reply_markup=_kb_done())
+    else:
+        # Шаги внутри сборки: там своё расписание, звать заново нечего.
+        await msg.reply_text(NOT_NOW)
 
 
 async def _go_back(msg, chat_id: int, s: dict):
@@ -1699,6 +1789,9 @@ async def on_button(update, context):
             await q.message.reply_text(AUDIO_ACTION_STALE)
             return
         await q.message.reply_text(_scenario_speech(job))
+    elif data == "wish:skip":
+        await q.message.reply_text(WISH_SKIPPED)
+        await _show_ready_screen(q.message, chat_id, s)
     elif data == "build" or data.startswith("build:"):
         # инлайн-кнопки живут в истории чата вечно: тап по старому сообщению
         # READY после DONE не должен зазывать платную сборку заново
@@ -1711,9 +1804,12 @@ async def on_button(update, context):
         if _job_store().active_for_chat(chat_id):
             await q.message.reply_text(BUSY_MSG)
             return
-        # build:plain — один проход HeyGen без монтажа; build / build:montage —
-        # полный пайплайн. Старый callback "build" остаётся монтажным (совместимость).
-        s["montage"] = not data.endswith(":plain")
+        if not data.endswith(":plain"):
+            # Монтаж ещё не сделан. Старый callback "build" тоже монтажный,
+            # поэтому и он ведёт сюда, а не в платную сборку.
+            await _ask_wish(q.message, chat_id, s, MONTAGE_TOPIC, MONTAGE_WIP_MSG)
+            return
+        s["montage"] = False
         save_session(chat_id, s)
         try:
             save_client_profile(chat_id, s)
@@ -2230,6 +2326,27 @@ async def on_message(update, context):
         await msg.reply_text(FINAL_AUDIO_ACCEPTED)
         return
 
+    if step == WAIT_WISH:
+        wish = (msg.text or msg.caption or "").strip()
+        if not wish:
+            await msg.reply_text(WISH_EMPTY, reply_markup=_kb_wish())
+            return
+        user = getattr(update, "effective_user", None)
+        try:
+            _feedback().add(
+                chat_id,
+                topic=s.get("wish_topic") or MONTAGE_TOPIC,
+                text=wish,
+                username=getattr(user, "username", None),
+            )
+        except Exception as e:
+            # Пожелание — не деньги и не сборка: молча роняем разговор из-за
+            # него нельзя, но и делать вид, что всё записано, тоже.
+            log.warning("пожелание чата %s не записалось: %s", chat_id, e)
+        await msg.reply_text(WISH_THANKS)
+        await _show_ready_screen(msg, chat_id, s)
+        return
+
     if step == WAIT_PHOTO:
         photo = (msg.photo[-1] if msg.photo else None) or msg.document
         if photo is None:
@@ -2296,8 +2413,10 @@ async def on_message(update, context):
             return
 
     if not text:
-        await msg.reply_text(NOT_NOW if step == CHOOSING else
-                             "Жду текст сообщением или файлом.")
+        if step in (WAIT_TEXT, WAIT_RAW, WAIT_EDIT):
+            await msg.reply_text("Жду текст сообщением или файлом.")
+        else:
+            await _reshow(msg, chat_id, s)
         return
 
     if step == WAIT_TEXT:
@@ -2354,7 +2473,7 @@ async def on_message(update, context):
         await _show_review(msg, chat_id, s)
 
     else:
-        await msg.reply_text(NOT_NOW)
+        await _reshow(msg, chat_id, s)
 
 
 async def _download(context, media, chat_id: int) -> Path:
