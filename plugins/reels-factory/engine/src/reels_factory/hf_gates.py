@@ -104,15 +104,18 @@ def check_media(rdir) -> dict:
     if not index.exists():
         return {"D16_media_use": f"FAIL: нет композиции {index}"}
 
+    # Смотрим все страницы композиции, а не только корневую: блок каталога —
+    # отдельный файл, и картинка вполне может жить внутри него.
     used = []
-    for src, url in _ASSET_REF.findall(index.read_text(encoding="utf-8")):
-        ref = (src or url).split("?")[0].split("#")[0]
-        if ref.startswith(("http://", "https://", "data:")):
-            continue
-        if not ref.lower().endswith(IMAGE_SUFFIXES):
-            continue
-        if (public / ref).exists():
-            used.append(ref)
+    for page in sorted(public.rglob("*.html")):
+        for src, url in _ASSET_REF.findall(page.read_text(encoding="utf-8")):
+            ref = (src or url).split("?")[0].split("#")[0]
+            if ref.startswith(("http://", "https://", "data:")):
+                continue
+            if not ref.lower().endswith(IMAGE_SUFFIXES):
+                continue
+            if (page.parent / ref).exists() or (public / ref).exists():
+                used.append(ref)
 
     ledgers = [p for p in rdir.rglob(".media/manifest.jsonl")]
     problems = []
