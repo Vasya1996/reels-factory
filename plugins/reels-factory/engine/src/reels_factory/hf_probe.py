@@ -10,6 +10,7 @@ index.html сверстать другое. Здесь композиция от
 """
 from __future__ import annotations
 
+import functools
 import json
 import shutil
 import subprocess
@@ -43,6 +44,28 @@ def _node() -> str:
     return node
 
 
+@functools.lru_cache(maxsize=4)
+def chrome_path(hf_version: str) -> str | None:
+    """Браузер, которым рендерит движок. Спрашиваем у них же.
+
+    Свой список путей проба держит на случай системного Chrome, но у нас его
+    нет: `browser ensure` кладёт закреплённую сборку в ~/.cache/hyperframes, и
+    единственный поддерживаемый способ узнать её путь — их команда
+    (`hyperframes-cli/references/doctor-browser.md:51-52`). Судить композицию
+    другим браузером нельзя: они и закрепили версию потому, что кадр между
+    сборками Chrome плывёт (там же:55).
+    """
+    result = subprocess.run(
+        f'npx --yes hyperframes@{hf_version} browser path',
+        shell=True, capture_output=True, text=True, encoding="utf-8",
+        errors="replace")
+    for line in reversed((result.stdout or "").splitlines()):
+        candidate = line.strip()
+        if candidate and Path(candidate).exists():
+            return candidate
+    return None
+
+
 def run_probe(rdir, *, interval: float = DEFAULT_INTERVAL,
               hf_version: str | None = None) -> dict:
     """Снять выборки с композиции `rdir/public` и вернуть отчёт пробы."""
@@ -63,6 +86,9 @@ def run_probe(rdir, *, interval: float = DEFAULT_INTERVAL,
     command = [_node(), str(PROBE_SCRIPT), "--project", str(public),
                "--out", str(out), "--interval", str(interval),
                "--hf-version", hf_version]
+    chrome = chrome_path(hf_version)
+    if chrome:
+        command += ["--chrome", chrome]
     result = subprocess.run(command, capture_output=True, text=True,
                             encoding="utf-8", errors="replace")
     if result.returncode != 0:
