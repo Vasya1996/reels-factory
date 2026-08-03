@@ -33,14 +33,17 @@ def test_упавший_шаг_не_отмечается(tmp_path):
 
 
 def _fakes(monkeypatch, tmp_path, storyboards):
+    from contextlib import contextmanager
+
     from reels_factory import hf_render
 
     calls = []
 
-    def fake_cli(*args, cwd):
+    def fake_cli(*args, cwd, log=None):
         calls.append(args)
         if args[0] == "render":
             Path(args[args.index("--output") + 1]).write_bytes(b"mp4")
+        return ""
 
     monkeypatch.setattr(hf_render, "_cli", fake_cli)
     monkeypatch.setattr(hf_render, "_normalize_loudness",
@@ -50,12 +53,31 @@ def _fakes(monkeypatch, tmp_path, storyboards):
     monkeypatch.setattr(hf_render, "vendor_gsap", lambda public: public)
     monkeypatch.setattr(hf_render, "face_box_for",
                         lambda video, out, **k: {"cx": 540, "cy": 520, "h": 260})
+    monkeypatch.setattr(hf_render, "inject_fonts", lambda public, **k: [])
+
+    # Каталог и проба живой композиции требуют реестра на диске и браузера —
+    # здесь проверяется поток сборки, а не они сами.
+    @contextmanager
+    def fake_catalog():
+        yield "http://127.0.0.1:0"
+
+    monkeypatch.setattr(hf_render, "serve_catalog", fake_catalog)
+    monkeypatch.setattr(hf_render, "probe_gates",
+                        lambda rdir, **k: {"D8_face": "PASS",
+                                           "D14_presenter_moves": "PASS",
+                                           "D15_catalog_blocks": "PASS"})
 
     queue = list(storyboards)
 
     def fake_agent(rdir, *, runner=None):
-        (Path(rdir) / "public").mkdir(parents=True, exist_ok=True)
-        (Path(rdir) / "public" / "index.html").write_text("<html></html>", encoding="utf-8")
+        public = Path(rdir) / "public"
+        (public / "media").mkdir(parents=True, exist_ok=True)
+        (public / "media" / "hands.jpg").write_bytes(b"\xff\xd8\xff")
+        (Path(rdir) / ".media").mkdir(exist_ok=True)
+        (Path(rdir) / ".media" / "manifest.jsonl").write_text(
+            '{"type":"image"}\n', encoding="utf-8")
+        (public / "index.html").write_text(
+            '<html><body><img src="media/hands.jpg"></body></html>', encoding="utf-8")
         board = queue.pop(0)
         (Path(rdir) / "storyboard.json").write_text(json.dumps(board), encoding="utf-8")
         return board
@@ -72,9 +94,29 @@ PLAN = {"windows": [], "phrases": [], "log": [],
         "timeline": {"final_duration_seconds": 6.0}}
 TIMED = {"total": 6.0, "blocks": [{"role": "hook", "start": 0.0, "end": 6.0,
                                    "speech": "кому продаём"}]}
-GOOD = {"cards": []}
-BAD = {"cards": [{"id": "c1", "startSec": 0.0, "endSec": 3.0, "zone": "video-overlay",
-                  "contentRect": {"left": 200, "top": 400, "width": 700, "height": 300}}]}
+
+
+def _board(cards):
+    return {"schemaVersion": 3,
+            "composition": {"fps": 30, "width": 1080, "height": 1920,
+                            "durationSeconds": 6.0, "layout": "portrait"},
+            "videoTrack": {"sourcePath": "clips/clip-00.mp4", "startSec": 0,
+                           "endSec": 6.0,
+                           "bounds": {"x": 0, "y": 0, "width": 1080, "height": 1920}},
+            "subtitles": {"enabled": True},
+            "cards": cards}
+
+
+# Пять карточек — пол их формулы плотности при шести секундах.
+GOOD = _board([{"id": f"c{i}", "intent": "зачем", "accentIndex": 0,
+                "startSec": round(i * 1.2, 3), "endSec": round(i * 1.2 + 1.0, 3),
+                "zone": "video-overlay", "contentHints": {"title": "Т"}}
+               for i in range(5)])
+# Наше прежнее поле сверх схемы: соблюсти его и videoTrack.bounds разом нельзя.
+BAD = _board([{"id": "c1", "intent": "зачем", "accentIndex": 0,
+               "startSec": 0.0, "endSec": 3.0, "zone": "video-overlay",
+               "contentHints": {"title": "Т"},
+               "contentRect": {"left": 200, "top": 400, "width": 700, "height": 300}}])
 
 
 def test_сборка_проходит_все_шаги(tmp_path, monkeypatch):
@@ -93,6 +135,8 @@ def test_сборка_проходит_все_шаги(tmp_path, monkeypatch):
     assert any(a[0] == "render" for a in calls)
     assert res["gates"]["D8_face"] == "PASS"
     assert Path(res["mp4"]).exists()
+    # каталог прописан до того, как агента позвали
+    assert (tmp_path / "hyperframes.json").exists()
 
 
 def test_провал_гейтов_вызывает_повтор(tmp_path, monkeypatch):
@@ -108,10 +152,38 @@ def test_провал_гейтов_вызывает_повтор(tmp_path, monke
     res = hf_render.assemble_hyperframes(
         tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
         master_audio=tmp_path / "voice.wav", alignment_words=[])
-    assert res["gates"]["D8_face"] == "PASS"
-    assert "лицо" in (tmp_path / "BRIEF.md").read_text(encoding="utf-8")
+    assert res["gates"]["D11_schema"] == "PASS"
+    assert "contentRect" in (tmp_path / "BRIEF.md").read_text(encoding="utf-8")
     assert Path(res["mp4"]).exists()
     assert any(a[0] == "check" for a in calls)
+    assert any(a[0] == "render" for a in calls)
+
+
+def test_находки_их_проверки_отправляют_на_повтор(tmp_path, monkeypatch):
+    """Текст за полями или на лице их `check` видит, а мы — нет. Значит его
+    вердикт обязан доходить до агента, а не ронять сборку."""
+    from reels_factory import hf_render
+
+    calls = _fakes(monkeypatch, tmp_path, [GOOD, GOOD])
+    real_cli = hf_render._cli
+    checks = []
+
+    def flaky_cli(*args, cwd, log=None):
+        if args[0] == "check":
+            checks.append(args)
+            if len(checks) == 1:
+                raise RuntimeError("hyperframes check упал (1): canvas_overflow")
+        return real_cli(*args, cwd=cwd, log=log)
+
+    monkeypatch.setattr(hf_render, "_cli", flaky_cli)
+
+    res = hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=[])
+
+    assert len(checks) == 2
+    assert "canvas_overflow" in (tmp_path / "BRIEF.md").read_text(encoding="utf-8")
+    assert Path(res["mp4"]).exists()
     assert any(a[0] == "render" for a in calls)
 
 
@@ -119,7 +191,7 @@ def test_две_неудачи_подряд_роняют_сборку(tmp_path, 
     from reels_factory import hf_render
 
     _fakes(monkeypatch, tmp_path, [BAD, BAD])
-    with pytest.raises(RuntimeError, match="лицо"):
+    with pytest.raises(RuntimeError, match="схемой не предусмотрено"):
         hf_render.assemble_hyperframes(
             tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
             master_audio=tmp_path / "voice.wav", alignment_words=[])

@@ -20,13 +20,21 @@ MIN_BAND_H = 180
 
 def face_box_for(video, out_json, *, width: int = OUT_W, height: int = OUT_H,
                  detect=None) -> dict:
-    """Найти лицо и записать face.json в пикселях."""
-    from reels_factory.zoom import detect_face_anchor
+    """Найти лицо и записать face.json в пикселях.
+
+    Детектор молчит, когда OpenCV нет или он несовместим: в сборке 5.x нет
+    `cv2.CascadeClassifier`, и `detect_face_anchor` тихо отдаёт запасной якорь.
+    Для наездов это приемлемо, для гейта «текст не на лице» — нет: выдуманный
+    прямоугольник охраняет не то место и пропускает надпись на живом лице.
+    Поэтому пишем, найдено оно на самом деле или нет.
+    """
+    from reels_factory.zoom import DEFAULT_ANCHOR, detect_face_anchor
 
     fx, fy = detect_face_anchor(video, detect=detect)
     face = {"cx": round(float(fx) * width),
             "cy": round(float(fy) * height),
-            "h": round(height * FACE_HEIGHT_RATIO)}
+            "h": round(height * FACE_HEIGHT_RATIO),
+            "detected": (float(fx), float(fy)) != DEFAULT_ANCHOR}
     out_json = Path(out_json)
     out_json.parent.mkdir(parents=True, exist_ok=True)
     out_json.write_text(json.dumps(face, ensure_ascii=False), encoding="utf-8")
@@ -34,10 +42,12 @@ def face_box_for(video, out_json, *, width: int = OUT_W, height: int = OUT_H,
 
 
 def load_face(rdir) -> dict | None:
+    """Лицо ведущей, если оно найдено. Ненайденное — не лицо, а догадка."""
     path = Path(rdir) / "face.json"
     if not path.exists():
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    face = json.loads(path.read_text(encoding="utf-8"))
+    return face if face.get("detected", True) else None
 
 
 def free_bands(face: dict | None, *, width: int = OUT_W,

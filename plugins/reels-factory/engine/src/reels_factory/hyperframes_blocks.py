@@ -22,7 +22,10 @@ from pathlib import Path
 from reels_factory.hf_fonts import fonts_css as _fonts_css
 
 HF_DIR = Path(__file__).resolve().parents[2] / "hyperframes"
-_HF_VERSION = "0.7.70"
+# Версия CLI, под которую снято досье docs/research/hyperframes/findings.md и
+# сверена схема раскадровки. Расходиться с досье нельзя: проверки и формат
+# storyboard.json меняются между версиями.
+_HF_VERSION = "0.7.84"
 
 
 # ---------- task_list ----------

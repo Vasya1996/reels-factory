@@ -2,6 +2,7 @@
 import base64
 import io
 import re
+import shutil
 
 import pytest
 from fontTools.ttLib import TTFont
@@ -125,12 +126,21 @@ def test_fonts_css_embeds_every_file_plus_donor_faces(faces):
     assert all(f["bytes"] for f in faces)
 
 
-# ---------- embed_fonts: врезка шрифтов в композицию агента ----------
+# ---------- inject_fonts: врезка шрифтов их скриптом ----------
 #
-# fonts_css() до сих пор подключался только в hyperframes_blocks.py — в наши
-# собственные блоки. Композицию, которую пишет агент по скиллам HyperFrames,
-# рендерит hf_render, и туда шрифты не попадали: кириллица уезжала в подменный
-# системный шрифт, а казахские буквы — в пустоту.
+# Врезает не наш код, а их `scripts/inject-fonts.cjs` из скила
+# embedded-captions: он ставит только те семейства, что реально встретились в
+# font-family файла. Наш прежний embed_fonts врезал всё подряд — каждый HTML
+# утяжелялся полным набором начертаний.
+#
+# Библиотеку шрифтов при этом собираем мы: их сборщик знает только имена вида
+# `<slug>-latin-<вес>-normal.woff2` и не умеет unicode-range, а без него
+# казахские буквы из донорского шрифта не подставить.
+
+pytestmark_node = pytest.mark.skipif(
+    shutil.which("node") is None or not hf_fonts._INJECTOR.exists(),
+    reason="нужен node и установленный скил embedded-captions")
+
 
 def _write(public, name, html):
     public.mkdir(parents=True, exist_ok=True)
@@ -138,42 +148,49 @@ def _write(public, name, html):
     return public / name
 
 
-def test_embed_fonts_inserts_faces_before_head_close(tmp_path):
-    page = _write(tmp_path / "public", "index.html",
-                  "<!doctype html><html><head><title>t</title></head>"
-                  "<body>Привет</body></html>")
+def test_библиотека_склеивает_их_шрифты_с_нашими(tmp_path):
+    _, library = hf_fonts._stage_injector(tmp_path)
+    css = library.read_text(encoding="utf-8")
+    assert "Manrope" in css and "unicode-range" in css
 
-    assert hf_fonts.embed_fonts(tmp_path / "public") == 1
+
+@pytestmark_node
+def test_врезаются_только_использованные_гарнитуры(tmp_path):
+    page = _write(tmp_path / "public", "index.html",
+                  "<!doctype html><html><head><style>"
+                  ".t{font-family:'Manrope',sans-serif}"
+                  "</style></head><body class=t>Привет, әлем</body></html>")
+
+    hf_fonts.inject_fonts(tmp_path / "public", work_dir=tmp_path)
 
     html = page.read_text(encoding="utf-8")
     assert "@font-face" in html
-    assert html.index("@font-face") < html.index("</head>")
+    assert "Manrope" in html
+    # Unbounded в файле не встречается — врезать его незачем
+    assert "Unbounded" not in html
 
 
-def test_embed_fonts_is_idempotent(tmp_path):
+@pytestmark_node
+def test_врезка_идемпотентна(tmp_path):
     page = _write(tmp_path / "public", "index.html",
-                  "<html><head></head><body></body></html>")
+                  "<html><head><style>b{font-family:Manrope}</style></head>"
+                  "<body><b>Привет</b></body></html>")
 
-    hf_fonts.embed_fonts(tmp_path / "public")
+    hf_fonts.inject_fonts(tmp_path / "public", work_dir=tmp_path)
     once = page.read_text(encoding="utf-8")
-    hf_fonts.embed_fonts(tmp_path / "public")
-    twice = page.read_text(encoding="utf-8")
+    hf_fonts.inject_fonts(tmp_path / "public", work_dir=tmp_path)
 
-    assert once == twice
-    assert twice.count("@font-face") == once.count("@font-face")
+    assert page.read_text(encoding="utf-8") == once
 
 
-def test_embed_fonts_covers_every_html_including_nested(tmp_path):
+@pytestmark_node
+def test_обрабатываются_все_html_включая_вложенные(tmp_path):
     public = tmp_path / "public"
-    _write(public, "index.html", "<html><head></head><body></body></html>")
-    _write(public / "cards", "card-01.html", "<html><head></head><body></body></html>")
+    _write(public, "index.html",
+           "<html><head><style>b{font-family:Manrope}</style></head><body></body></html>")
+    _write(public / "cards", "card-01.html",
+           "<html><head><style>b{font-family:Unbounded}</style></head><body></body></html>")
 
-    assert hf_fonts.embed_fonts(public) == 2
-    assert "@font-face" in (public / "cards" / "card-01.html").read_text(encoding="utf-8")
-
-
-def test_embed_fonts_handles_page_without_head(tmp_path):
-    page = _write(tmp_path / "public", "index.html", "<div>Привет, әлем</div>")
-
-    assert hf_fonts.embed_fonts(tmp_path / "public") == 1
-    assert "@font-face" in page.read_text(encoding="utf-8")
+    assert len(hf_fonts.inject_fonts(public, work_dir=tmp_path)) == 2
+    card = (public / "cards" / "card-01.html").read_text(encoding="utf-8")
+    assert "@font-face" in card and "Unbounded" in card

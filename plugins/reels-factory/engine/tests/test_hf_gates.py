@@ -1,73 +1,176 @@
-"""Гейты раскадровки: движок этого не знает, значит проверяем мы."""
-from reels_factory.hf_gates import check_storyboard
+"""Гейты раскадровки: их `check` её не читает вовсе, значит проверяем мы."""
+import pytest
 
-FACE = {"cx": 540, "cy": 520, "h": 260}
+from reels_factory.hf_gates import check_media, check_storyboard, density_bounds
+
+DURATION = 41.5
+# три клипа с ведущей, хвост 34.62–41.5 без неё — как в реальном материале
+CLIPS = [{"file": "clips/clip-00.mp4", "start": 0.0, "duration": 11.72},
+         {"file": "clips/clip-01.mp4", "start": 12.22, "duration": 10.92},
+         {"file": "clips/clip-02.mp4", "start": 23.14, "duration": 11.48}]
 
 
-def _card(**over):
-    card = {"id": "card-01", "startSec": 0.0, "endSec": 3.0, "zone": "video-overlay",
-            "contentRect": {"left": 60, "top": 1400, "width": 960, "height": 400}}
+def _card(index: int, **over):
+    card = {"id": f"card-{index:02d}", "intent": "зачем эта карточка",
+            "startSec": 0.0, "endSec": 3.0, "accentIndex": 0,
+            "zone": "video-overlay",
+            "contentHints": {"kicker": "К", "title": "Т", "detail": "Д"}}
     card.update(over)
     return card
 
 
+def _board(cards, **over):
+    board = {
+        "schemaVersion": 3,
+        "composition": {"fps": 30, "width": 1080, "height": 1920,
+                        "durationSeconds": DURATION, "layout": "portrait",
+                        "themeId": "noir", "seed": 42},
+        "videoTrack": {"sourcePath": "clips/clip-00.mp4", "startSec": 0,
+                       "endSec": DURATION,
+                       "bounds": {"x": 0, "y": 0, "width": 1080, "height": 1920}},
+        "subtitles": {"enabled": True},
+        "cards": cards,
+    }
+    board.update(over)
+    return board
+
+
+def _plausible_cards():
+    """Шесть карточек, из них хвост закрыт полноэкранными — чистый случай."""
+    return [
+        _card(1, startSec=0.0, endSec=5.0),
+        _card(2, startSec=5.033, endSec=11.7),
+        _card(3, zone="fullscreen", startSec=11.733, endSec=12.2),
+        _card(4, startSec=12.233, endSec=23.1),
+        _card(5, startSec=23.167, endSec=34.6),
+        _card(6, zone="fullscreen", startSec=34.633, endSec=41.5),
+    ]
+
+
+def _check(cards, **over):
+    return check_storyboard(_board(cards, **over), clips=CLIPS, duration=DURATION)
+
+
 def test_чистая_раскадровка_проходит():
-    assert set(check_storyboard({"cards": [_card()]}, FACE).values()) == {"PASS"}
+    assert set(_check(_plausible_cards()).values()) == {"PASS"}
 
 
-def test_карточка_на_лице_валится():
-    gates = check_storyboard(
-        {"cards": [_card(contentRect={"left": 300, "top": 300, "width": 500, "height": 300})]},
-        FACE)
-    assert gates["D8_face"].startswith("FAIL")
+# ---------- схема ----------
+
+def test_наши_прежние_поля_больше_не_принимаются():
+    """contentRect и videoRect противоречат videoTrack.bounds их схемы."""
+    cards = _plausible_cards()
+    cards[0]["contentRect"] = {"left": 0, "top": 0, "width": 10, "height": 10}
+    assert _check(cards)["D11_schema"].startswith("FAIL")
 
 
-def test_полноэкранная_карточка_на_лицо_не_проверяется():
-    """Там ведущей в кадре нет — аватар на этот кусок не заказан."""
-    gates = check_storyboard(
-        {"cards": [_card(zone="fullscreen",
-                         contentRect={"left": 0, "top": 0, "width": 1080, "height": 1920})]},
-        FACE)
-    assert gates["D8_face"] == "PASS"
+def test_чужая_версия_схемы_валится():
+    assert _check(_plausible_cards(), schemaVersion=2)["D11_schema"].startswith("FAIL")
 
 
-def test_нижняя_треть_разрешена():
-    gates = check_storyboard({"cards": [_card(zone="lower-third")]}, FACE)
-    assert set(gates.values()) == {"PASS"}
+def test_карточка_без_смысла_валится():
+    cards = _plausible_cards()
+    cards[0].pop("intent")
+    assert _check(cards)["D11_schema"].startswith("FAIL")
 
+
+def test_геометрия_ведущей_обязана_быть_задана():
+    board = _board(_plausible_cards())
+    board["videoTrack"].pop("bounds")
+    gates = check_storyboard(board, clips=CLIPS, duration=DURATION)
+    assert gates["D11_schema"].startswith("FAIL")
+
+
+# ---------- плотность ----------
+
+def test_пустая_раскадровка_валится():
+    """Прошлый гейт перебирал карточки циклом — пустой список проходил всё."""
+    assert _check([])["D13_density"].startswith("FAIL")
+
+
+def test_группы_субтитров_вместо_карточек_валятся():
+    """34 карточки по 1,7 с — это был пересказ субтитров, а не монтаж."""
+    cards = [_card(i, startSec=round(i * 1.2, 3), endSec=round(i * 1.2 + 1.1, 3))
+             for i in range(34)]
+    assert _check(cards)["D13_density"].startswith("FAIL")
+
+
+@pytest.mark.parametrize("duration,expected", [
+    (41.5, (5, 10)),    # короткий рилс: базовый темп 6–8 с
+    (121.2, (7, 22)),   # минута с лишним: 8–12 с
+])
+def test_вилка_плотности_по_их_формуле(duration, expected):
+    assert density_bounds(duration) == expected
+
+
+def test_пол_в_пять_карточек_держится():
+    """«minimum 5 cards» скила: короткий ролик всё равно получает ритм."""
+    assert density_bounds(12.0)[0] == 5
+
+
+# ---------- сетка, зоны, чёрный кадр ----------
 
 def test_время_вне_сетки_кадров_валится():
-    gates = check_storyboard({"cards": [_card(startSec=1.017)]}, FACE)
-    assert gates["D9_frame_grid"].startswith("FAIL")
+    cards = _plausible_cards()
+    cards[0]["startSec"] = 1.017
+    assert _check(cards)["D9_frame_grid"].startswith("FAIL")
 
 
 def test_несуществующая_зона_валится():
-    gates = check_storyboard({"cards": [_card(zone="куда-то")]}, FACE)
-    assert gates["D10_zone"].startswith("FAIL")
-
-
-def test_карточка_без_прямоугольника_валится():
-    card = _card()
-    card.pop("contentRect")
-    gates = check_storyboard({"cards": [card]}, FACE)
-    assert gates["D11_shape"].startswith("FAIL")
+    cards = _plausible_cards()
+    cards[0]["zone"] = "куда-то"
+    assert _check(cards)["D10_zone"].startswith("FAIL")
 
 
 def test_интервал_без_ведущей_обязан_быть_закрыт():
-    window = {"id": "w1", "final_timing": {"start": 0.0, "end": 3.0}}
-    открыт = check_storyboard({"cards": [_card()]}, FACE, [window])
-    assert открыт["D12_faceless_cover"].startswith("FAIL")
-
-    закрыт = check_storyboard(
-        {"cards": [_card(zone="fullscreen", startSec=0.0, endSec=3.0)]}, FACE, [window])
-    assert закрыт["D12_faceless_cover"] == "PASS"
-
-    цепочкой = check_storyboard({"cards": [
-        _card(id="c1", zone="fullscreen", startSec=0.0, endSec=1.5),
-        _card(id="c2", zone="fullscreen", startSec=1.533, endSec=3.0),
-    ]}, FACE, [window])
-    assert цепочкой["D12_faceless_cover"] == "PASS"
+    cards = _plausible_cards()
+    cards[-1]["zone"] = "video-overlay"  # прозрачная зона чёрный кадр не прячет
+    assert _check(cards)["D12_faceless_cover"].startswith("FAIL")
 
 
-def test_пустая_раскадровка_проходит():
-    assert set(check_storyboard({"cards": []}, FACE).values()) == {"PASS"}
+# ---------- вставки ----------
+
+def _project(tmp_path, html: str, *, ledger: bool = True, image: bool = True):
+    public = tmp_path / "public"
+    (public / "media").mkdir(parents=True)
+    if image:
+        (public / "media" / "hands.jpg").write_bytes(b"\xff\xd8\xff")
+    if ledger:
+        (tmp_path / ".media").mkdir()
+        (tmp_path / ".media" / "manifest.jsonl").write_text(
+            '{"type":"image"}\n', encoding="utf-8")
+    (public / "index.html").write_text(html, encoding="utf-8")
+    return tmp_path
+
+
+def test_подобранная_картинка_принимается(tmp_path):
+    project = _project(tmp_path, '<img src="media/hands.jpg">')
+    assert check_media(project)["D16_media_use"] == "PASS"
+
+
+def test_картинка_из_css_тоже_считается(tmp_path):
+    project = _project(tmp_path, '<div style="background:url(media/hands.jpg)">')
+    assert check_media(project)["D16_media_use"] == "PASS"
+
+
+def test_ролик_без_единой_вставки_валится(tmp_path):
+    """Ровно то, чем кончился прошлый прогон: ведущая, субтитры и текст."""
+    project = _project(tmp_path, "<div>ПРОДАЖИ</div>", ledger=False, image=False)
+    assert check_media(project)["D16_media_use"].startswith("FAIL")
+
+
+def test_ссылка_на_несуществующий_файл_не_считается(tmp_path):
+    project = _project(tmp_path, '<img src="media/нет-такого.jpg">', image=False)
+    assert check_media(project)["D16_media_use"].startswith("FAIL")
+
+
+def test_внешняя_ссылка_вставкой_не_считается(tmp_path):
+    project = _project(tmp_path, '<img src="https://example.com/a.jpg">', image=False)
+    assert check_media(project)["D16_media_use"].startswith("FAIL")
+
+
+def test_пропуск_закрывается_цепочкой_карточек():
+    cards = _plausible_cards()
+    cards[-1] = _card(6, zone="fullscreen", startSec=34.633, endSec=38.0)
+    cards.append(_card(7, zone="fullscreen", startSec=38.033, endSec=41.5))
+    assert _check(cards)["D12_faceless_cover"] == "PASS"

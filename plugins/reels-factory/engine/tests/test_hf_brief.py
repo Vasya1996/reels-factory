@@ -4,7 +4,7 @@
 работа агента через hyperframes-creative; когда мы отдавали ему готовые окна,
 он переставал быть режиссёром и просто перекладывал наш чертёж в HTML.
 """
-from reels_factory.hf_brief import STYLE_NAME, write_brief
+from reels_factory.hf_brief import FONTS, write_brief
 
 SCENARIO = {
     "total": 41.5,
@@ -97,8 +97,15 @@ def test_каталог_разрешён_и_назван(tmp_path):
 def test_правила_числами(tmp_path):
     text = _text(tmp_path)
     assert "1080" in text and "1920" in text
-    assert STYLE_NAME in text
     assert "41.5" in text or "41,5" in text
+
+
+def test_стиль_выбирает_агент_а_гарнитуры_наши(tmp_path):
+    """Стиль, раскладка и рамка — работа их жанра; гарнитуры держим сами:
+    другие не несут кириллицу и казахские буквы."""
+    text = _text(tmp_path)
+    assert FONTS in text
+    assert "выбираешь ты" in text
 
 
 def test_свободные_полосы_указаны(tmp_path):
@@ -131,4 +138,28 @@ def test_что_вернуть_названо(tmp_path):
     text = _text(tmp_path)
     assert "public/index.html" in text
     assert "storyboard.json" in text
-    assert "contentRect" in text
+
+
+def test_раскадровка_просится_в_их_схеме(tmp_path):
+    text = _text(tmp_path)
+    assert "schemaVersion" in text and '"videoTrack"' in text
+    assert "contentHints" in text and '"intent"' in text
+    # Поля, которые мы просили сверх схемы, противоречили videoTrack.bounds —
+    # соблюсти оба разом нельзя, значит просить их нельзя тоже.
+    assert "contentRect" not in text and "videoRect" not in text
+
+
+def test_субтитры_карточками_не_считаются(tmp_path):
+    text = _text(tmp_path)
+    assert "subtitles" in text
+    assert "карточк" in text.lower()
+
+
+def test_плотность_карточек_по_их_формуле(tmp_path):
+    assert "плотност" in _text(tmp_path).lower()
+
+
+def test_положение_ведущей_обязано_меняться(tmp_path):
+    text = _text(tmp_path).lower()
+    assert "положение ведущей" in text
+    assert "закадров" in text

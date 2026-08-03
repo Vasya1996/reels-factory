@@ -1,0 +1,115 @@
+"""Наш отобранный каталог блоков как реестр HyperFrames.
+
+Каталог мы держим свой — это единственное исключение из правила «канон
+фреймворка первичен». Но отдавать его агенту надо их способом: через поле
+`registry` в `hyperframes.json`, чтобы работали `hyperframes catalog` и
+`hyperframes add`.
+
+Реестр их CLI тянет по HTTP: `fetch(baseUrl + "/registry.json")` в
+`packages/cli/src/registry/remote.ts:96`. Файловый путь туда положить нельзя —
+`fetch` в Node 22 схему `file:` не поддерживает (проверено: `fetch failed`).
+Поэтому каталог отдаётся статикой на localhost, а в `hyperframes.json`
+попадает её адрес.
+"""
+from __future__ import annotations
+
+import json
+import os
+import socket
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from contextlib import contextmanager
+from pathlib import Path
+
+#: Где лежит наш каталог. Переопределяется переменной окружения — на сервере и
+#: в WSL путь другой, а зашивать в код чужую машину нельзя.
+CATALOG_DIR = Path(os.environ.get("REELS_CATALOG_DIR")
+                   or Path.home() / "projects" / "golden-catalog")
+
+#: Подпапка каталога, разложенная по их схеме реестра:
+#: registry.json + blocks/<имя>/{registry-item.json,<имя>.html}.
+REGISTRY_SUBDIR = "registry"
+
+
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _config(registry_url: str, prefix: str) -> str:
+    return json.dumps({
+        "$schema": "https://hyperframes.heygen.com/schema/hyperframes.json",
+        "registry": registry_url,
+        "paths": {"blocks": f"{prefix}compositions",
+                  "components": f"{prefix}compositions/components",
+                  "assets": f"{prefix}assets"},
+    }, ensure_ascii=False, indent=2) + "\n"
+
+
+def write_project_config(rdir, registry_url: str) -> list[Path]:
+    """`hyperframes.json`: куда смотреть за блоками и куда их класть.
+
+    Раскладка полей — из `hyperframes-registry/references/install-locations.md`.
+    Без этого файла папка не размечена как проект фреймворка, и `add` молча
+    создаёт конфиг с их общим реестром (`install-locations.md:19-31`), то есть
+    с чужими блоками.
+
+    Кладём в обе папки — в корень прогона и в `public/`: `add` ищет конфиг от
+    текущего каталога, а из какой папки агент позовёт команду, мы не знаем и
+    диктовать не хотим. Блоки в обоих случаях приземляются внутрь `public/`,
+    иначе композиция сослалась бы на файл за пределами своей папки.
+    """
+    rdir = Path(rdir)
+    public = rdir / "public"
+    public.mkdir(parents=True, exist_ok=True)
+    written = []
+    for target, prefix in ((rdir, "public/"), (public, "")):
+        path = target / "hyperframes.json"
+        path.write_text(_config(registry_url, prefix), encoding="utf-8")
+        written.append(path)
+    return written
+
+
+@contextmanager
+def serve_catalog(catalog_dir=None, *, timeout_s: float = 10.0):
+    """Поднять реестр статикой на localhost. Отдаёт базовый адрес."""
+    root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
+    manifest = root / "registry.json"
+    if not manifest.exists():
+        raise RuntimeError(
+            f"каталог не разложен реестром: нет {manifest}. "
+            "Реестр собирается из blocks/ каталога.")
+    port = _free_port()
+    process = subprocess.Popen(
+        [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1",
+         "--directory", str(root)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        deadline = time.monotonic() + timeout_s
+        while True:
+            try:
+                with urllib.request.urlopen(f"{base}/registry.json", timeout=1):
+                    break
+            except (urllib.error.URLError, OSError):
+                if time.monotonic() > deadline:
+                    raise RuntimeError(f"каталог не поднялся на {base}")
+                time.sleep(0.2)
+        yield base
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+
+
+def block_names(catalog_dir=None) -> list[str]:
+    """Имена блоков реестра — для сообщений и проверок."""
+    root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
+    manifest = json.loads((root / "registry.json").read_text(encoding="utf-8"))
+    return [item["name"] for item in manifest.get("items") or []]

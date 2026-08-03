@@ -8,6 +8,8 @@
 """
 import base64
 import functools
+import shutil
+import subprocess
 from pathlib import Path
 
 FONTS_DIR = Path(__file__).resolve().parents[2] / "hyperframes" / "_fonts"
@@ -112,34 +114,64 @@ def fonts_css() -> str:
     return "\n      ".join(faces)
 
 
-# Метка врезки: по ней узнаём уже обработанный файл. Повторный запуск шага
-# сборки не должен раздувать HTML вторым мегабайтом data-URI.
-_EMBED_MARK = "data-reels-fonts"
+# Их врезчик: скрипт скила embedded-captions. Он умнее нашего прежнего
+# embed_fonts — врезает только те семейства, что реально встретились в
+# font-family файла, пропускает уже объявленные и канонические, и делает это
+# идемпотентно (scripts/inject-fonts.cjs:109-144). Наш врезал всё подряд, то
+# есть каждый HTML утяжелялся полным набором начертаний.
+CAPTIONS_SKILL = Path.home() / ".claude" / "skills" / "embedded-captions"
+_INJECTOR = CAPTIONS_SKILL / "scripts" / "inject-fonts.cjs"
+#: Их библиотека шрифтов. Скрипт ищет её строго по SKILL_ROOT/modes/standard/
+#: fonts/fonts.css (inject-fonts.cjs:26-27), поэтому раскладку повторяем.
+_LIBRARY_REL = Path("modes") / "standard" / "fonts" / "fonts.css"
 
 
-def embed_fonts(public_dir) -> int:
-    """Врезать @font-face во все HTML композиции, отданной агентом.
+def _stage_injector(work_dir: Path) -> tuple[Path, Path]:
+    """Разложить их скрипт и объединённую библиотеку шрифтов в рабочей папке.
 
-    fonts_css() исторически подключался только в hyperframes_blocks.py — в наши
-    блоки, написанные руками. Композицию по скилам HyperFrames пишет агент, и
-    там наших шрифтов нет: кириллица уезжает в подменный системный шрифт, а
-    казахские буквы не отрисовываются вовсе. Врезаем сами, до гейтов и рендера,
-    чтобы гейты мерили тот же текст, который увидит зритель.
+    Скрипт копируем при каждом запуске из установленного скила, а не держим
+    свою копию: так он всегда их текущей версии. Библиотеку склеиваем — их
+    латинские гарнитуры плюс наши кириллические с казахским донором, потому что
+    их сборщик (`build-fonts-css.cjs:56-82`) знает только имена вида
+    `<slug>-latin-<вес>-normal.woff2` и не умеет `unicode-range`, а без него
+    донорские буквы не подставить.
+    """
+    root = Path(work_dir) / ".hf-fonts"
+    script = root / "scripts" / "inject-fonts.cjs"
+    library = root / _LIBRARY_REL
+    script.parent.mkdir(parents=True, exist_ok=True)
+    library.parent.mkdir(parents=True, exist_ok=True)
+    if not _INJECTOR.exists():
+        raise RuntimeError(
+            f"не найден {_INJECTOR}; выполни "
+            "npx hyperframes skills update embedded-captions")
+    shutil.copyfile(_INJECTOR, script)
+    theirs = (CAPTIONS_SKILL / _LIBRARY_REL)
+    base = theirs.read_text(encoding="utf-8") if theirs.exists() else ""
+    library.write_text(base + "\n" + fonts_css() + "\n", encoding="utf-8")
+    return script, library
 
-    Возвращает число обработанных файлов.
+
+def inject_fonts(public_dir, *, work_dir=None) -> list[str]:
+    """Врезать в композицию агента ровно те начертания, что она использует.
+
+    Композицию по скилам HyperFrames пишет агент, и наших шрифтов там нет:
+    кириллица уезжает в подменный системный шрифт, а казахские буквы не
+    отрисовываются вовсе. Врезаем до гейтов и рендера, чтобы проверки мерили
+    тот же текст, который увидит зритель.
+
+    Возвращает список обработанных файлов.
     """
     public = Path(public_dir)
-    style = f"<style {_EMBED_MARK}>\n      {fonts_css()}\n    </style>"
-    touched = 0
-    for page in sorted(public.rglob("*.html")):
-        html = page.read_text(encoding="utf-8")
-        if _EMBED_MARK in html:
-            continue
-        lower = html.lower()
-        at = lower.find("</head>")
-        if at == -1:
-            head_open = lower.find("<head>")
-            at = head_open + len("<head>") if head_open != -1 else 0
-        page.write_text(html[:at] + style + html[at:], encoding="utf-8")
-        touched += 1
-    return touched
+    pages = [str(p) for p in sorted(public.rglob("*.html"))]
+    if not pages:
+        return []
+    script, _ = _stage_injector(Path(work_dir) if work_dir else public.parent)
+    result = subprocess.run(
+        ["node", str(script), str(public), *pages],
+        capture_output=True, text=True, encoding="utf-8")
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"inject-fonts упал ({result.returncode}): "
+            f"{(result.stderr or result.stdout)[:500]}")
+    return pages

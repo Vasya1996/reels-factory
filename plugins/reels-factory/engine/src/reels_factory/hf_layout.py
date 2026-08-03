@@ -17,13 +17,20 @@ VIDEO_RECTS = {
     "pip": {"left": 690, "top": 28, "width": 360, "height": 203},
 }
 
-# Все пять зон скила разрешены: своих ограничений поверх его геометрии
-# мы не вводим — они однажды уже зажали карточку в центр кадра.
+# Все пять зон скила (talking-head-recut/SKILL.md:180-188) разрешены: своих
+# ограничений поверх его геометрии мы не вводим — они однажды уже зажали
+# карточку в центр кадра. Пиксели зоны выводит сам скил, поэтому дублировать
+# его таблицу у себя незачем.
 ALLOWED_ZONES = {"video-overlay", "fullscreen", "lower-third",
                  "side-panel", "whiteboard-area"}
 
+# Зоны, закрывающие кадр целиком непрозрачной подложкой: ими и закрывается
+# интервал, где аватара нет. `video-overlay` тоже во весь кадр, но по контракту
+# прозрачен (SKILL.md:625-648), поэтому чёрный кадр под собой не прячет.
+FULL_FRAME_ZONES = {"fullscreen"}
+
 # зоны, где ведущей в кадре нет: проверять их на лицо бессмысленно
-FACELESS_ZONES = {"fullscreen"}
+FACELESS_ZONES = FULL_FRAME_ZONES
 
 # запас вокруг центра лица: 0.6 высоты головы в каждую сторону
 FACE_MARGIN = 0.6
@@ -32,6 +39,26 @@ FACE_MARGIN = 0.6
 def quantize(seconds: float) -> float:
     """Округлить время к сетке кадров: движок иначе добавляет до 1/30 секунды."""
     return round(round(float(seconds) * FPS) / FPS, 3)
+
+
+def avatar_gaps(clips: list[dict], duration: float) -> list[tuple[float, float]]:
+    """Интервалы, где клипа с ведущей нет — под ними чёрный кадр.
+
+    Ведущую заказывают кусками, там где она нужна по смыслу. Считаем от клипов,
+    а не от плана монтажа: клипы это факт, план — чужое мнение. Задание агенту и
+    гейт закрытия интервалов берут пропуски отсюда, иначе гейт проверял бы не
+    то, о чём просили.
+    """
+    covered = sorted((float(c["start"]), float(c["start"]) + float(c["duration"]))
+                     for c in clips or [])
+    gaps, cursor = [], 0.0
+    for start, end in covered:
+        if start - cursor > 1.0 / FPS:
+            gaps.append((cursor, start))
+        cursor = max(cursor, end)
+    if duration - cursor > 1.0 / FPS:
+        gaps.append((cursor, duration))
+    return gaps
 
 
 def face_box(face: dict | None) -> dict | None:

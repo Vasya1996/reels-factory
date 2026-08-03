@@ -19,13 +19,21 @@ from reels_factory.face_detect import face_box_for, load_face
 from reels_factory.hf_agent import build_with_agent
 from reels_factory.hf_assets import vendor_gsap
 from reels_factory.hf_brief import write_brief
-from reels_factory.hf_fonts import embed_fonts
-from reels_factory.hf_gates import check_storyboard
+from reels_factory.hf_catalog import serve_catalog, write_project_config
+from reels_factory.hf_fonts import inject_fonts
+from reels_factory.hf_gates import check_media, check_storyboard
 from reels_factory.hf_layout import quantize
+from reels_factory.hf_probe import probe_gates
 from reels_factory.hyperframes_blocks import _HF_VERSION
 
 STEPS = ("prepare", "compose", "gates", "check", "render", "loudness")
 MAX_COMPOSE_ATTEMPTS = 2
+
+# Ключевой кадр на каждый кадр. Их рендерер перематывает видео покадрово, и на
+# редком GOP (по умолчанию у x264 — 250 кадров) перемотка попадает мимо: под
+# графикой встаёт замерший кадр. Требование их же скила —
+# talking-head-recut/SKILL.md:789-794.
+DENSE_GOP = ("-g", str(FPS), "-keyint_min", str(FPS))
 
 
 def _marker(rdir: Path, step: str) -> Path:
@@ -50,7 +58,7 @@ def run_step(rdir, step: str, fn):
     return result
 
 
-def _cli(*args: str, cwd) -> None:
+def _cli(*args: str, cwd, log: Path | None = None) -> str:
     """Вызов CLI движка. На Windows npx резолвится только через shell.
 
     Кавычим КАЖДЫЙ аргумент: пути содержат пробелы, а значения флагов —
@@ -59,11 +67,18 @@ def _cli(*args: str, cwd) -> None:
     quoted = " ".join(f'"{a}"' for a in args)
     command = f'npx --yes hyperframes@{_HF_VERSION} {quoted}'
     result = subprocess.run(command, cwd=str(cwd), capture_output=True,
-                            text=True, encoding="utf-8", shell=True)
+                            text=True, encoding="utf-8", errors="replace",
+                            shell=True)
+    output = result.stdout or ""
+    if log is not None:
+        # Их отчёт нужен целиком и после успеха тоже: предупреждения он не
+        # считает провалом, а судить монтаж по ним всё равно приходится.
+        Path(log).write_text(output or (result.stderr or ""), encoding="utf-8")
     if result.returncode != 0:
         raise RuntimeError(
             f"hyperframes {args[0]} упал ({result.returncode}): "
-            f"{(result.stderr or result.stdout)[:500]}")
+            f"{(result.stderr or output)[:500]}")
+    return output
 
 
 def _normalize_words(words: list[dict]) -> list[dict]:
@@ -128,7 +143,7 @@ def _place_clips(public: Path, avatar_mp4s: list, avatar_render_plan: dict | Non
                      f"crop={OUT_W}:{OUT_H},fps={FPS},setsar=1,"
                      f"tpad=stop_mode=clone:stop_duration={duration:.3f},"
                      f"trim=duration={duration:.3f},setpts=PTS-STARTPTS"),
-             "-an", *VENC, str(target / name)],
+             "-an", *VENC, *DENSE_GOP, str(target / name)],
             check=True, capture_output=True)
         clips.append({"file": f"clips/{name}",
                       "start": quantize(start),
@@ -203,21 +218,6 @@ def _prepare_material(plan: dict, public: Path, rdir: Path) -> list[dict]:
     return media
 
 
-def _faceless_windows(plan: dict) -> list[dict]:
-    """Окна, где аватар действительно не заказан.
-
-    Пометка safe_to_skip_avatar стоит на окне, но HeyGen отменяется по БЛОКУ:
-    covered_block_indexes (editplan.py:2623-2628) смотрит avatar_required, а он
-    выводится по всем фразам блока (editplan.py:1908-1912). Окно с пометкой
-    внутри смешанного блока — ведущая в кадре есть, и требовать закрыть её
-    полноэкранной карточкой нельзя.
-    """
-    faceless_blocks = {b["index"] for b in (plan.get("blocks") or [])
-                       if b.get("avatar_required") is False}
-    return [w for w in (plan.get("windows") or [])
-            if w.get("block_index") in faceless_blocks]
-
-
 def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                          avatar_mp4s: list, master_audio, alignment_words: list,
                          avatar_render_plan: dict | None = None,
@@ -250,44 +250,69 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
 
     run_step(rdir, "prepare", prepare)
 
+    saved_clips = json.loads((rdir / "clips.json").read_text(encoding="utf-8"))
+
     gate_result, reason = None, None
-    for attempt in range(MAX_COMPOSE_ATTEMPTS):
-        if reason is not None:
-            reset_step(rdir, "compose")
-            reset_step(rdir, "gates")
-            reset_step(rdir, "check")
-            reset_step(rdir, "render")
-            reset_step(rdir, "loudness")
-            saved_clips = json.loads((rdir / "clips.json").read_text(encoding="utf-8"))
-            write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
-                        duration=duration, clips=saved_clips, retry_reason=reason)
+    # Каталог поднимаем на всё время сборки: агент ходит в него и когда смотрит
+    # `hyperframes catalog`, и когда ставит блок через `add`.
+    with serve_catalog() as registry_url:
+        write_project_config(rdir, registry_url)
+        for attempt in range(MAX_COMPOSE_ATTEMPTS):
+            if reason is not None:
+                reset_step(rdir, "compose")
+                reset_step(rdir, "gates")
+                reset_step(rdir, "check")
+                reset_step(rdir, "render")
+                reset_step(rdir, "loudness")
+                write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
+                            duration=duration, clips=saved_clips,
+                            retry_reason=reason)
 
-        board = run_step(rdir, "compose",
-                         lambda: build_with_agent(rdir, runner=agent_runner))
-        if board is None:
-            board = json.loads((rdir / "storyboard.json").read_text(encoding="utf-8"))
+            board = run_step(rdir, "compose",
+                             lambda: build_with_agent(rdir, runner=agent_runner))
+            if board is None:
+                board = json.loads(
+                    (rdir / "storyboard.json").read_text(encoding="utf-8"))
 
-        result = check_storyboard(board, load_face(rdir),
-                                  _faceless_windows(edit_plan))
-        failed = [f"{k}: {v}" for k, v in result.items() if v.startswith("FAIL")]
-        if not failed:
-            gate_result = result
-            (rdir / "gates.json").write_text(json.dumps(result, ensure_ascii=False),
-                                             encoding="utf-8")
-            _marker(rdir, "gates").write_text("ok", encoding="utf-8")
-            break
-        reason = "; ".join(failed)
-        if attempt == MAX_COMPOSE_ATTEMPTS - 1:
-            raise RuntimeError("раскадровка не прошла гейты — " + reason)
+            # Шрифты врезаем до всех проверок: и наши гейты, и их `check` меряют
+            # переполнение и перекрытие по отрисованному тексту, а без наших
+            # @font-face кириллица считалась бы по подменному шрифту — судили бы
+            # не тот текст, что увидит зритель. Вызов идемпотентен, поэтому
+            # переживает и возобновление, и повторную сборку.
+            inject_fonts(rdir / "public", work_dir=rdir)
 
-    # Шрифты врезаем ДО check: их гейты меряют переполнение и перекрытие по
-    # отрисованному тексту, а без наших @font-face кириллица считалась бы по
-    # подменному шрифту — гейты судили бы не тот текст, что увидит зритель.
-    # Вызов идемпотентен, поэтому не нуждается в своём маркере шага и
-    # переживает как возобновление, так и повторную сборку.
-    embed_fonts(rdir / "public")
-
-    run_step(rdir, "check", lambda: _cli("check", "public", cwd=rdir))
+            result = check_storyboard(board, clips=saved_clips, duration=duration)
+            result.update(check_media(rdir))
+            # Композиция, которая не открывается, — это тоже провал сборки, а не
+            # авария движка: агенту есть что чинить, и он получит причину.
+            try:
+                result.update(probe_gates(rdir, face=load_face(rdir)))
+            except RuntimeError as error:
+                result["D8_face"] = f"FAIL: {error}"
+            failed = [f"{k}: {v}" for k, v in result.items() if v.startswith("FAIL")]
+            if not failed:
+                # Их проверка идёт внутри цикла, а не после него: её находки —
+                # это то, что агент умеет починить сам, и повтор ради них
+                # дешевле ролика с текстом за полями. `--snapshots` кладёт
+                # кадры (судить монтаж по кадрам — единственный честный
+                # способ), `--at-transitions` добавляет выборки на границах
+                # твинов: на девяти равномерных точках стык не поймать.
+                try:
+                    run_step(rdir, "check",
+                             lambda: _cli("check", "public", "--snapshots",
+                                          "--at-transitions", "--json",
+                                          cwd=rdir, log=rdir / "check.json"))
+                except RuntimeError as error:
+                    failed = [str(error)]
+                else:
+                    gate_result = result
+                    (rdir / "gates.json").write_text(
+                        json.dumps(result, ensure_ascii=False), encoding="utf-8")
+                    _marker(rdir, "gates").write_text("ok", encoding="utf-8")
+                    break
+            reason = "; ".join(failed)
+            if attempt == MAX_COMPOSE_ATTEMPTS - 1:
+                raise RuntimeError("сборка не прошла проверки — " + reason)
 
     raw = rdir / "reel.raw.mp4"
     run_step(rdir, "render",
