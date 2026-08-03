@@ -29,6 +29,12 @@ PROMPT = """/hyperframes
 
 TIMEOUT_S = 1800
 
+#: Что сессии разрешено. Bash нужен ради их же инструментов — media-use ищет
+#: картинки скриптом на node, каталог блоков ставится через npx hyperframes.
+#: Остальное — чтение и правка файлов композиции в своей рабочей папке.
+AGENT_TOOLS = ("Bash", "Read", "Write", "Edit", "Glob", "Grep", "Skill",
+               "TodoWrite")
+
 
 class HeyGenAgentRunner:
     """Headless-сессия в обычном профиле, с правом писать файлы."""
@@ -58,7 +64,15 @@ class HeyGenAgentRunner:
         model_args = ["--model", self.model] if self.model else []
         result = subprocess.run(
             [self.exe, "-p", "--output-format", "json",
-             "--permission-mode", "acceptEdits", *model_args],
+             "--permission-mode", "acceptEdits",
+             # Без явного разрешения Bash сессия получает на `node` и `npx`
+             # ответ «This command requires approval» и молча остаётся без
+             # инструментов: ни подобрать картинку через media-use, ни
+             # заглянуть в каталог блоков. Именно так выходили пустые ролики —
+             # агент не отказывался работать, он рисовал заглушки сам, потому
+             # что все команды ему отбивало. acceptEdits покрывает только
+             # правку файлов.
+             "--allowedTools", *AGENT_TOOLS, *model_args],
             input=prompt, capture_output=True, text=True, encoding="utf-8",
             timeout=self.timeout_s, env=env, cwd=str(cwd) if cwd else None,
         )
