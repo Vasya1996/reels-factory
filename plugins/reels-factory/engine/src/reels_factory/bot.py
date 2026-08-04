@@ -67,7 +67,7 @@ WAIT_PHOTO = "wait_photo"
 WAIT_VOICE = "wait_voice"            # ждём запись голоса; клон здесь не делаем
 VIEWING_STAGE = "viewing_stage"      # пройденный этап: вперёд, назад, изменить
 CHOOSING = "choosing"                # ждём выбора пути
-CHOOSING_MATERIAL = "choosing_material"  # прежний материал или новый
+CHOOSING_MATERIAL = "choosing_material"  # legacy: экран «Что используем?» убран
 WAIT_TEXT = "wait_text"              # ждём готовый текст реплик
 WAIT_RAW = "wait_raw"                # ждём сырьё (мысли, отрывок, запись)
 CONFIRM_PRICE = "confirm_price"      # оценка показана, ждём «Поехали» или оплату
@@ -114,11 +114,14 @@ HELLO = (
     "Пришлите идею или готовый сценарий с репликами — верну вертикальный "
     "ролик для Reels, Shorts и TikTok.\n\n"
     "В кадре будет ваш ИИ-аватар с вашим реалистичным голосом. Снимать и "
-    "монтировать не придётся: нужны только фото и минутная запись голоса.\n\n"
-    "Сначала соберём всё бесплатно — язык, фото, голос и материал. Стоимость "
-    "покажу перед работой, до неё ни одна платная кнопка не нажимается."
+    "монтировать не придётся: нужны только фото и минутная запись голоса."
 )
-ASK_PATH = "С чего начнём?"
+ASK_PATH = (
+    "Пришлите сценарий или просто идею о чём будет рассказывать ваш аватар.\n\n"
+    "Сценарий — если хотите, чтобы аватар дословно шёл по вашим репликам.\n"
+    "Идея, отрывок из книги/статьи, мысли — если хотите, чтобы мы "
+    "сгенерировали готовый сценарий, которому будет следовать аватар."
+)
 ASK_LANGUAGE = (
     "На каком языке хотите сделать ролик?"
 )
@@ -129,17 +132,16 @@ LANGUAGE_MISMATCH = (
     "Похоже, этот сценарий написан на языке: {detected}.\n\n"
     "Для этого ролика выбран язык: {selected}."
 )
-ASK_MATERIAL = "Что используем?"
 ASK_TEXT = (
     "Пришлите текст ролика — ровно те слова, которые должны прозвучать.\n\n"
     "Для расстановки пауз используйте тире или многоточие — голос "
     "воспроизведёт паузы точно там, где вы расставили знаки."
 )
 ASK_RAW = (
-    "Пришлите сырьё — из него соберу сценарий.\n\n"
-    "Подойдёт что угодно: ваши мысли текстом, кусок расшифровки урока, отрывок "
-    "из книги, голосовое, видео или аудиозапись. Чем конкретнее и живее "
-    "исходник, тем меньше воды в ролике."
+    "Пришлите материал — из него соберу качественный сценарий.\n\n"
+    "Подойдёт что угодно: ваши мысли текстом, конспект, отрывок из книги, "
+    "голосовое, видео или аудиозапись. Чем конкретнее и живее исходник, тем "
+    "меньше воды в ролике."
 )
 WORKING = "Работаю, это займёт минуту-другую…"
 TRANSCRIBING = "Распознаю запись, это дольше обычного…"
@@ -149,21 +151,24 @@ ASK_EDIT = (
 )
 APPROVED_MSG = "Сценарий утверждён и сохранён."
 ASK_PHOTO = (
-    "Начнём с фото — с него сделаю говорящего ведущего.\n\n"
-    "Снимите по пояс, чтобы руки были в кадре: тогда ведущий будет "
-    "жестикулировать, а не говорить одной головой. Смотрите в камеру, ровный "
-    "свет, без тёмных очков и без чужих лиц в кадре.\n\n"
-    "Важно: всё, что должно выглядеть настоящим, должно быть видно на фото. "
-    "Кисти рук — чтобы ногти были ваши, кольца, часы, одежда. Чего на фото "
-    "нет, то модель додумает по-своему."
+    "Пришлите своё фото — для генерации идентичного вам AI-аватара.\n\n"
+    "Как правильно сделать фото:\n"
+    "— по пояс, чтобы руки были в кадре: тогда ведущий будет жестикулировать;\n"
+    "— смотрите в камеру, ровный свет, без тёмных очков и без чужих лиц в "
+    "кадре;\n"
+    "— нейтральное выражение лица, без улыбки, с закрытым ртом.\n\n"
+    "Важно.\n"
+    "Всё, что должно выглядеть настоящим, должно быть видно на фото: ногти, "
+    "кольца, часы, одежда. Чего на фото нет, то модель додумает по-своему."
 )
 ASK_VOICE = (
-    "Запишите свой голос — 1–2 минуты. Можно голосовым прямо сюда. Текст для "
-    "чтения пришлю по кнопке ниже.\n\n"
+    "Запишите голосовое сообщение, чтобы аватар говорил вашим голосом.\n"
+    "Текст для прочтения вслух отправим по кнопке ниже.\n\n"
+    "Как правильно записать голос:\n"
     "— Тихая комната: без музыки, телевизора и эха. Только ваш голос.\n"
-    "— Читайте живо, с интонацией — голос скопирует вашу манеру.\n"
+    "— Читайте живо, с интонацией — мы скопируем вашу манеру.\n"
     "— Не переигрывайте: держите один настрой и одну громкость всю запись, "
-    "не переходите с шёпота на крик.\n"
+    "не переходите с шёпота на высокие тона.\n"
     "— Микрофон на одном расстоянии, не отворачивайтесь."
 )
 
@@ -227,11 +232,8 @@ def _ask_voice_text(language: str) -> str:
     )
 
 
-PHOTO_SAVED = "Фото принял."
-VOICE_SAVED = (
-    "Запись принял. Голос по ней сделаю позже — на этом шаге ничего не "
-    "оплачивается."
-)
+PHOTO_SAVED = "✅ Фото получено"
+VOICE_SAVED = "✅ Запись голоса получена"
 CLONING_VOICE_MSG = "Делаю голос по вашей записи, это займёт минуту…"
 PRICE_ENOUGH_MSG = (
     "Материал принял. Ролик обойдётся примерно в {need}, на балансе {have}.\n\n"
@@ -244,7 +246,8 @@ PRICE_SHORT_MSG = (
     "Пополните баланс кнопкой ниже и нажмите «Проверить баланс» — продолжим "
     "с этого места, ничего заново присылать не нужно."
 )
-PRICE_STILL_SHORT_MSG = "Баланс: {have}. Пока не хватает {gap} — оплата ещё не дошла."
+PRICE_STILL_SHORT_MSG = "Баланс: {have}. Не хватает {gap}"
+PAID_ENOUGH_MSG = "✅ Оплата получена. Баланс: {have}"
 READY_MSG = "Всё на месте: сценарий, фото и голос. Жмите «Создать ролик», когда готовы."
 MONTAGE_WIP_MSG = (
     "Монтаж пока в разработке — ролик с ним я собрать ещё не могу.\n\n"
@@ -260,10 +263,7 @@ BUILD_FAILED_HINT = (
     "Прошлый ролик остановлен и не отправлен. Начнём новый — кнопкой ниже "
     "или командой /new."
 )
-DONE_MSG = (
-    "Ролик заказан. Когда будет что снять ещё — жмите «Новый ролик» или "
-    "пришлите /new."
-)
+DONE_MSG = "Ролик уже создан. Чтобы снять ещё один — жмите «Новый ролик»."
 NOT_NOW = "Сначала выберите, с чего начать: /start"
 
 BUILDING_MSG = (
@@ -1097,17 +1097,41 @@ def _kb_start():
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("У меня готовый сценарий", callback_data="mode:text")],
-        [InlineKeyboardButton("Предложи сценарий", callback_data="mode:raw")],
+        [InlineKeyboardButton("Сгенерировать сценарий", callback_data="mode:raw")],
     ])
 
 
-def _kb_language():
+def _kb_language(selected: str | None = None):
+    """Выбранный язык помечаем галочкой прямо на кнопке и добавляем движение
+    дальше: отдельное сообщение «язык такой-то» для этого не нужно."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🇷🇺 Русский", callback_data="reel_language:ru")],
-        [InlineKeyboardButton("🇰🇿 Қазақша", callback_data="reel_language:kk")],
-    ])
+    rows = []
+    for code, label in (("ru", "🇷🇺 Русский"), ("kk", "🇰🇿 Қазақша")):
+        mark = " ✅" if code == selected else ""
+        rows.append([InlineKeyboardButton(
+            f"{label}{mark}", callback_data=f"reel_language:{code}"
+        )])
+    if selected:
+        rows.append([InlineKeyboardButton("Продолжить →", callback_data="stage:next")])
+    return InlineKeyboardMarkup(rows)
+
+
+async def _edit_or_reply(msg, text: str, markup=None):
+    """Заменить экран на месте, а не плодить сообщения.
+
+    edit_text недоступен, когда сообщение прислал не бот (человек написал
+    текстом) и падает, если текст с разметкой не изменились — в обоих случаях
+    честнее прислать новое сообщение, чем потерять экран.
+    """
+    edit = getattr(msg, "edit_text", None)
+    if edit is not None:
+        try:
+            await edit(text, reply_markup=markup)
+            return
+        except Exception:
+            pass
+    await msg.reply_text(text, reply_markup=markup)
 
 
 def _kb_language_mismatch():
@@ -1136,18 +1160,6 @@ def _kb_voice_sample():
         [InlineKeyboardButton("Отправить текст", callback_data="voice_sample")],
         [InlineKeyboardButton("← Назад", callback_data="back")],
     ])
-
-
-def _kb_material(mode: str, has_material: bool):
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    send_label = "Прислать новый текст" if mode == "text" else "Прислать новое сырьё"
-    rows = []
-    if has_material:
-        rows.append([InlineKeyboardButton("Редактировать существующий",
-                                          callback_data="material:edit")])
-    rows.append([InlineKeyboardButton(send_label, callback_data="material:new")])
-    rows.append([InlineKeyboardButton("← Назад", callback_data="back")])
-    return InlineKeyboardMarkup(rows)
 
 
 def _kb_ideas(n: int):
@@ -1265,12 +1277,21 @@ async def _show_language_choice(msg, chat_id: int, s: dict):
 
 
 async def _select_reel_language(msg, chat_id: int, s: dict, language: str):
+    """Язык отмечается галочкой в том же сообщении.
+
+    Новичку сразу показываем следующий шаг — он всё равно ещё ничего не дал;
+    у повторного экран остаётся на месте, чтобы он мог передумать и уйти
+    вперёд кнопкой, а не получить ещё одно сообщение.
+    """
     language = normalize_profile_language(language)
     s["language"] = language
+    s["step"] = VIEWING_STAGE
+    s["stage"] = STAGE_LANGUAGE
     _activate_language_voice(s, language)
     save_session(chat_id, s)
-    await msg.reply_text(LANGUAGE_SAVED.format(language=language_label(language)))
-    await _next_stage(msg, chat_id, s, STAGE_LANGUAGE)
+    await _edit_or_reply(msg, ASK_LANGUAGE, _kb_language(language))
+    if not _stage_filled(s, STAGE_PHOTO):
+        await _next_stage(msg, chat_id, s, STAGE_LANGUAGE)
 
 
 async def _ask(msg, chat_id: int, s: dict, step: str, text: str):
@@ -1321,11 +1342,10 @@ def _stage_summary(s: dict, stage: str) -> str:
             return f"✅ Голос для языка {language_label(language)} уже создан."
         return "✅ Запись голоса принята."
     material = str(s.get("material_text") or "").strip()
-    kind = "Сырьё" if s.get("material_mode") == "raw" else "Текст ролика"
     excerpt = material[:MATERIAL_EXCERPT_CHARS]
     if len(material) > MATERIAL_EXCERPT_CHARS:
         excerpt += "…"
-    return f"✅ {kind} принят:\n\n«{excerpt}»"
+    return f"✅ Материал принят:\n\n«{excerpt}»"
 
 
 def _kb_stage(stage: str):
@@ -1358,6 +1378,13 @@ async def _show_stage(msg, chat_id: int, s: dict, stage: str):
     s["step"] = VIEWING_STAGE
     s["stage"] = stage
     save_session(chat_id, s)
+    if stage == STAGE_LANGUAGE:
+        # У языка выбор и есть содержимое: те же кнопки с галочкой, менять
+        # его отдельной кнопкой «Изменить» незачем.
+        await msg.reply_text(
+            ASK_LANGUAGE, reply_markup=_kb_language(_reel_language(s))
+        )
+        return
     await msg.reply_text(_stage_summary(s, stage), reply_markup=_kb_stage(stage))
 
 
@@ -1409,19 +1436,22 @@ async def _choose_path_stage(msg, chat_id: int, s: dict):
     await msg.reply_text(ASK_PATH, reply_markup=_kb_start())
 
 
-async def _show_material(msg, chat_id: int, s: dict, mode: str):
-    """Шаг 2: прежний материал уже есть — предлагаем взять его или прислать новый."""
+async def _pick_material_mode(msg, chat_id: int, s: dict, mode: str):
+    """Выбран путь — сразу просим материал.
+
+    Промежуточного экрана «Что используем?» больше нет: для новичка он был
+    загадкой («прислать новое сырьё» вместо чего?), а замену прежнего
+    материала теперь делает навигация по этапам.
+    """
     language = _reel_language(s)
     if not s.get("photo") or not _has_voice_material(s, language):
         # Кнопка из истории чата или сессия прежнего порядка шагов: сначала
         # фото и голос, иначе человек упрётся в них уже после оплаты.
         await _profile_stage(msg, chat_id, s)
         return
-    s["step"] = CHOOSING_MATERIAL
     s["material_mode"] = mode
     save_session(chat_id, s)
-    has_material = bool(s.get("scenario"))
-    await msg.reply_text(ASK_MATERIAL, reply_markup=_kb_material(mode, has_material))
+    await _ask_material(msg, chat_id, s, mode)
 
 
 async def _show_ideas(msg, chat_id: int, s: dict):
@@ -1465,14 +1495,21 @@ async def _show_price(msg, chat_id: int, s: dict, *, checked: bool = False):
         )
         return
     gap = format_usd(need - have)
-    text = (
-        PRICE_STILL_SHORT_MSG.format(have=format_usd(have), gap=gap)
-        if checked
-        else PRICE_SHORT_MSG.format(
-            need=format_usd(need), have=format_usd(have), gap=gap
+    if checked:
+        # Человек вернулся кнопкой: длинный текст он уже читал, ему нужны
+        # только свежие цифры — и в том же сообщении, без нового экрана.
+        await _edit_or_reply(
+            msg,
+            PRICE_STILL_SHORT_MSG.format(have=format_usd(have), gap=gap),
+            _kb_price(False),
         )
+        return
+    await msg.reply_text(
+        PRICE_SHORT_MSG.format(
+            need=format_usd(need), have=format_usd(have), gap=gap
+        ),
+        reply_markup=_kb_price(False),
     )
-    await msg.reply_text(text, reply_markup=_kb_price(False))
 
 
 async def _ensure_voice_clone(msg, chat_id: int, s: dict) -> bool:
@@ -1524,6 +1561,11 @@ async def _ensure_voice_clone(msg, chat_id: int, s: dict) -> bool:
 async def _start_paid_part(msg, chat_id: int, s: dict):
     """«Поехали» с экрана цены. Кнопка живёт в истории чата, поэтому баланс
     сверяем заново: между показом экрана и нажатием могло пройти что угодно."""
+    if s.get("step") not in (CONFIRM_PRICE, VIEWING_STAGE):
+        # Тап по старому «Продолжить» после готового ролика заново запустил бы
+        # платную генерацию по прежнему материалу. Отправляем на текущий экран.
+        await _reshow(msg, chat_id, s)
+        return
     billing = _billing()
     if billing["enabled"]:
         need = estimate_material_micro(s, billing)
@@ -1540,7 +1582,7 @@ async def _start_generation(msg, chat_id: int, s: dict):
         return
     material = str(s.get("material_text") or "")
     if not material.strip():
-        await _show_material(msg, chat_id, s, s.get("material_mode", "text"))
+        await _ask_material(msg, chat_id, s, s.get("material_mode", "text"))
         return
     await msg.reply_text(WORKING)
     if s.get("material_mode") == "raw":
@@ -1609,8 +1651,6 @@ async def _reshow(msg, chat_id: int, s: dict):
         await _show_stage(msg, chat_id, s, _current_stage(s))
     elif step == CONFIRM_PRICE:
         await _show_price(msg, chat_id, s, checked=True)
-    elif step == CHOOSING_MATERIAL:
-        await _show_material(msg, chat_id, s, s.get("material_mode", "text"))
     elif step == CHOOSING_IDEA and s.get("ideas"):
         await _show_ideas(msg, chat_id, s)
     elif step == REVIEW and s.get("scenario"):
@@ -1653,9 +1693,7 @@ async def _go_back(msg, chat_id: int, s: dict):
         if _stage_filled(s, STAGE_MATERIAL):
             await _show_stage(msg, chat_id, s, STAGE_MATERIAL)
         else:
-            await _show_material(msg, chat_id, s, s.get("material_mode", "text"))
-    elif step == CHOOSING_MATERIAL:
-        await _choose_path_stage(msg, chat_id, s)
+            await _choose_path_stage(msg, chat_id, s)
     elif step == CHOOSING:
         await _show_stage(msg, chat_id, s, STAGE_VOICE)
     elif step == WAIT_VOICE:
@@ -1776,20 +1814,24 @@ async def on_button(update, context):
     elif data == "mismatch:retry":
         await _ask(q.message, chat_id, s, WAIT_TEXT, ASK_TEXT)
     elif data == "mode:text":
-        await _show_material(q.message, chat_id, s, "text")
+        await _pick_material_mode(q.message, chat_id, s, "text")
     elif data == "mode:raw":
-        await _show_material(q.message, chat_id, s, "raw")
+        await _pick_material_mode(q.message, chat_id, s, "raw")
     elif data == "back":
         await _go_back(q.message, chat_id, s)
-    elif data == "material:edit":
-        await _show_review(q.message, chat_id, s)
-    elif data == "material:new":
-        if s.get("material_mode") == "raw":
-            await _ask(q.message, chat_id, s, WAIT_RAW, ASK_RAW)
-        else:
-            await _ask(q.message, chat_id, s, WAIT_TEXT, ASK_TEXT)
+    elif data in ("material:new", "material:edit"):
+        # Кнопки убранного экрана «Что используем?» — из истории чата.
+        await _ask_material(q.message, chat_id, s, s.get("material_mode", "text"))
     elif data == "topup:start":
         await _show_currency_choice(q.message, chat_id, s)
+    elif data == "topup:cancel":
+        # Возврат к прежним кнопкам того же сообщения, без новых экранов.
+        text = q.message.text or topup_text(None, _ledger().balance(chat_id))
+        await _edit_or_reply(
+            q.message, text,
+            _kb_price(False) if s.get("step") == CONFIRM_PRICE
+            else _kb_topup_entry(),
+        )
     elif data.startswith("topup:cur:"):
         currency = data.rsplit(":", 1)[1]
         if currency not in TOPUP_PRESETS:
@@ -1851,6 +1893,11 @@ async def on_button(update, context):
         # уже оплаченной сборки не должен уводить разговор с её этапа.
         if _job_store().active_for_chat(chat_id):
             await q.message.reply_text(BUSY_MSG)
+            return
+        if s.get("step") in (DONE, BUILD_FAILED):
+            # Ролик уже сделан: навигация по его этапам вела бы к экрану цены
+            # и оттуда — к повторной платной генерации по тому же материалу.
+            await _reshow(q.message, chat_id, s)
             return
         stage = _current_stage(s)
         if data == "stage:next":
@@ -1972,13 +2019,11 @@ async def _photo_stage(msg, chat_id: int, s: dict):
 # language_code (core.telegram.org/bots/api#user), а он у половины Казахстана
 # русский.
 TOPUP_PRESETS = {
-    "usd": ((1_00, "$1 (тест)"), (10_00, "$10"), (25_00, "$25"), (50_00, "$50")),
+    "usd": ((10_00, "$10"), (25_00, "$25"), (50_00, "$50")),
     "rub": ((1000_00, "1000 ₽"), (2500_00, "2500 ₽"), (5000_00, "5000 ₽")),
 }
-CURRENCY_LABEL = {"usd": "долларах", "rub": "рублях"}
 
-ASK_CURRENCY_MSG = "Баланс: {have}\n\nВ какой валюте платить?"
-ASK_AMOUNT_MSG = "Баланс: {have}\n\nНа сколько пополнить?"
+ASK_AMOUNT_MSG = "Баланс: {have}\n\nВыберите сумму для пополнения"
 ORDER_READY_MSG = (
     "Счёт на {amount} готов. Нажмите «Оплатить» — Tribute предложит карту или "
     "СБП.\n\nПосле оплаты баланс пополнится сам; если этого не случилось за "
@@ -1988,7 +2033,6 @@ ORDER_FAILED_MSG = (
     "Не получилось выставить счёт: {error}\n\nПопробуйте ещё раз через минуту."
 )
 ORDER_PENDING_MSG = "Оплата пока не дошла. Баланс: {have}"
-ORDER_PAID_MSG = "Оплата получена. Баланс: {have}"
 
 
 def _tribute_key() -> str:
@@ -2021,10 +2065,20 @@ def _kb_topup_entry():
 
 
 def _kb_currency():
+    """Выбор валюты подменяет кнопки в том же сообщении, поэтому «Назад»
+    возвращает прежние — иначе человек теряет экран цены из виду."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Оплатить в рублях", callback_data="topup:cur:rub")],
-        [InlineKeyboardButton("Оплатить в долларах", callback_data="topup:cur:usd")],
+        [InlineKeyboardButton("Оплатить в RUB", callback_data="topup:cur:rub")],
+        [InlineKeyboardButton("Оплатить в USD", callback_data="topup:cur:usd")],
+        [InlineKeyboardButton("← Назад", callback_data="topup:cancel")],
+    ])
+
+
+def _kb_paid_continue():
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Продолжить ➡️", callback_data="pay:go")],
     ])
 
 
@@ -2061,13 +2115,12 @@ async def _show_topup(msg, chat_id: int, *, need: int | None = None,
 
 
 async def _show_currency_choice(msg, chat_id: int, s: dict) -> None:
-    """Валюта счёта — явным выбором. Прошлый выбор помним, но не навязываем."""
-    have = format_usd(_ledger().balance(chat_id))
-    currency = s.get("pay_currency")
-    if currency in TOPUP_PRESETS:
-        await _show_amounts(msg, chat_id, s, currency)
-        return
-    await msg.reply_text(ASK_CURRENCY_MSG.format(have=have), reply_markup=_kb_currency())
+    """Кнопки валюты встают на место «Пополнить баланс» в том же сообщении:
+    новых экранов «В какой валюте платить?» человек не видит."""
+    # Текст сообщения может быть пустым (например, кнопка висела под фото) —
+    # пустой текст Telegram не примет, поэтому подставляем экран баланса.
+    text = msg.text or topup_text(None, _ledger().balance(chat_id))
+    await _edit_or_reply(msg, text, _kb_currency())
 
 
 async def _show_amounts(msg, chat_id: int, s: dict, currency: str) -> None:
@@ -2102,16 +2155,43 @@ async def _create_topup_order(msg, chat_id: int, s: dict, currency: str,
         log.warning("счёт для чата %s не создан: %s", chat_id, e)
         await msg.reply_text(ORDER_FAILED_MSG.format(error=str(e)[:200]))
         return
+    sent = await msg.reply_text(
+        ORDER_READY_MSG.format(amount=label),
+        reply_markup=_kb_pay(tribute_shop.payment_link(order)),
+    )
     s["pending_order"] = {
         "uuid": order.get("uuid"),
         "amount": amount_minor,
         "currency": currency,
+        # id сообщения со счётом: когда деньги дойдут, его же и правим —
+        # так и вебхук, и кнопка проверки дают один экран, а не два подряд.
+        "message_id": getattr(sent, "message_id", None),
     }
     save_session(chat_id, s)
-    await msg.reply_text(
-        ORDER_READY_MSG.format(amount=label),
-        reply_markup=_kb_pay(tribute_shop.payment_link(order)),
+
+
+def _paid_screen_text_kb(chat_id: int, s: dict):
+    """Экран после зачисления: хватает — «Продолжить», нет — сколько добавить.
+
+    Один и тот же вид для обоих путей (вебхук и кнопка проверки), поэтому
+    человек не получает двух сообщений об одной оплате.
+    """
+    have = _ledger().balance(chat_id)
+    billing = _billing()
+    need = estimate_material_micro(s, billing) if billing["enabled"] else 0
+    if not billing["enabled"] or have >= need:
+        return PAID_ENOUGH_MSG.format(have=format_usd(have)), _kb_paid_continue()
+    return (
+        PRICE_STILL_SHORT_MSG.format(
+            have=format_usd(have), gap=format_usd(need - have)
+        ),
+        _kb_price(False),
     )
+
+
+async def _show_paid_screen(msg, chat_id: int, s: dict) -> None:
+    text, kb = _paid_screen_text_kb(chat_id, s)
+    await _edit_or_reply(msg, text, kb)
 
 
 async def _check_topup_order(msg, chat_id: int, s: dict) -> None:
@@ -2136,12 +2216,12 @@ async def _check_topup_order(msg, chat_id: int, s: dict) -> None:
         ))
         return
     if status == "paid":
+        # credit идемпотентен: если вебхук уже зачислил, второй записи не
+        # будет, а экран всё равно покажем актуальный.
         _credit_paid_order(chat_id, order)
         s.pop("pending_order", None)
         save_session(chat_id, s)
-        await msg.reply_text(ORDER_PAID_MSG.format(
-            have=format_usd(_ledger().balance(chat_id))
-        ))
+        await _show_paid_screen(msg, chat_id, s)
         return
     await msg.reply_text(ORDER_PENDING_MSG.format(
         have=format_usd(_ledger().balance(chat_id))
@@ -2763,24 +2843,41 @@ async def _download(context, media, chat_id: int) -> Path:
     return dest
 
 
-def _notify_credited(bot_api, loop, event: dict) -> None:
-    """Сказать в чат, что деньги дошли.
+async def _apply_credit_to_chat(bot_api, chat_id: int) -> None:
+    """Показать зачисление в том же сообщении со счётом.
 
-    Зовётся из потока вебхук-сервера, поэтому корутину отправки кладём в
-    петлю бота через run_coroutine_threadsafe — иначе сообщение просто не
-    уйдёт, а человек будет гадать, засчиталась ли оплата.
+    Правим сообщение, а не шлём новое: иначе на одну оплату приходит два
+    сообщения — от вебхука и от кнопки «Проверить оплату».
     """
+    s = load_session(chat_id)
+    order = s.get("pending_order") or {}
+    message_id = order.get("message_id")
+    text, kb = _paid_screen_text_kb(chat_id, s)
+    if order:
+        s.pop("pending_order", None)
+        save_session(chat_id, s)
+    if message_id:
+        try:
+            await bot_api.edit_message_text(
+                chat_id=chat_id, message_id=message_id, text=text, reply_markup=kb
+            )
+            return
+        except Exception as e:
+            # Сообщение могли удалить или оно уже с этим текстом — тогда
+            # лучше прислать новое, чем промолчать про деньги.
+            log.info("счёт чата %s не поправился (%s), шлём сообщение", chat_id, e)
+    await bot_api.send_message(chat_id=chat_id, text=text, reply_markup=kb)
+
+
+def _notify_credited(bot_api, loop, event: dict) -> None:
+    """Зовётся из потока вебхук-сервера, поэтому корутину кладём в петлю бота
+    через run_coroutine_threadsafe — иначе она просто не выполнится."""
     chat_id = event.get("chat_id")
     if not chat_id:
         return
-    balance = _ledger().balance(chat_id)
-    text = (
-        f"Оплата получена, зачислено {format_usd(event.get('micro') or 0)}.\n"
-        f"Баланс: {format_usd(balance)}"
-    )
     try:
         asyncio.run_coroutine_threadsafe(
-            bot_api.send_message(chat_id=chat_id, text=text), loop
+            _apply_credit_to_chat(bot_api, int(chat_id)), loop
         )
     except Exception as e:
         log.warning("не удалось сообщить о пополнении чату %s: %s", chat_id, e)

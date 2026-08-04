@@ -22,16 +22,29 @@ class _Msg:
         self.text = text
         self.caption = None
         self.chat_id = chat_id
+        self.message_id = 1
         self.photo = photo
         self.voice = voice
         self.audio = self.video = self.video_note = self.document = None
         self.replies = []
         self.markups = []
+        self.kinds = []      # 'reply' — новое сообщение, 'edit' — правка на месте
         self.videos = []
 
     async def reply_text(self, text, reply_markup=None):
         self.replies.append(text)
         self.markups.append(reply_markup)
+        self.kinds.append("reply")
+        sent = _Msg(chat_id=self.chat_id)
+        sent.message_id = 100 + len(self.replies)
+        return sent
+
+    async def edit_text(self, text, reply_markup=None):
+        """Правка сообщения на месте: экран меняется, нового сообщения нет."""
+        self.text = text
+        self.replies.append(text)
+        self.markups.append(reply_markup)
+        self.kinds.append("edit")
 
     async def reply_video(self, video, caption=None, reply_markup=None,
                           width=None, height=None):
@@ -283,7 +296,7 @@ def test_текст_вместо_кнопки_показывает_экран_з
 
     assert msg.replies[-1] == bot.ASK_PATH
     assert _labels(msg.markups[-1]) == [
-        "У меня готовый сценарий", "Предложи сценарий"
+        "У меня готовый сценарий", "Сгенерировать сценарий"
     ]
 
 
@@ -321,7 +334,7 @@ def test_после_выбора_казахского_новичка_прося�
     s = bot.load_session(7)
     assert s["language"] == "kk"
     assert s["step"] == bot.WAIT_PHOTO
-    assert "Кисти рук" in msg.replies[-1]
+    assert "AI-аватара" in msg.replies[-1]
 
 
 def test_выбор_пути_открывается_после_фото_и_голоса(work):
@@ -334,7 +347,7 @@ def test_выбор_пути_открывается_после_фото_и_го�
     assert bot.load_session(7)["step"] == bot.CHOOSING
     assert msg.replies[-1] == bot.ASK_PATH
     assert _labels(msg.markups[-1]) == [
-        "У меня готовый сценарий", "Предложи сценарий"
+        "У меня готовый сценарий", "Сгенерировать сценарий"
     ]
 
 
@@ -417,9 +430,11 @@ def test_при_смене_ru_на_kk_русский_голос_сохраняе
     selected = bot.load_session(7)
     assert selected["voices"] == {"ru": "voice-ru"}
     assert "voice_id" not in selected and "voice_language" not in selected
-    # фото уже есть — его сводка; дальше по «Вперёд» просят казахскую запись
-    assert selected["step"] == bot.VIEWING_STAGE and selected["stage"] == "photo"
-    _press("stage:next", ask)
+    # язык отмечен галочкой на месте; дальше по «Вперёд» — фото и голос
+    assert selected["step"] == bot.VIEWING_STAGE and selected["stage"] == "language"
+    assert "🇰🇿 Қазақша ✅" in _labels(ask.markups[-1])
+    _press("stage:next", ask)   # фото уже есть
+    _press("stage:next", ask)   # казахской записи нет — просят её
     assert bot.load_session(7)["step"] == bot.WAIT_VOICE
     assert "🇰🇿 Қазақша" in ask.replies[-1]
 
@@ -445,34 +460,34 @@ def test_при_возврате_на_ru_бот_активирует_сохра�
     _press("reel_language:ru", msg)
 
     current = bot.load_session(7)
-    assert current["step"] == bot.VIEWING_STAGE and current["stage"] == "photo"
+    assert current["step"] == bot.VIEWING_STAGE and current["stage"] == "language"
     assert current["voice_id"] == "voice-ru"
     assert current["voice_language"] == "ru"
-    assert "Фото загружено" in msg.replies[-1]
+    assert "🇷🇺 Русский ✅" in _labels(msg.markups[-1])
 
 
 # --- шаг 2: выбор материала --------------------------------------------------
 
-def test_материал_для_новичка_без_кнопки_редактировать(work):
+def test_готовый_сценарий_сразу_просит_текст(work):
+    """Экрана «Что используем?» больше нет: он был загадкой для новичка."""
     bot.save_session(7, _паспорт(step=bot.CHOOSING))
     msg = _Msg()
     _press("mode:text", msg)
 
     s = bot.load_session(7)
-    assert s["step"] == bot.CHOOSING_MATERIAL and s["material_mode"] == "text"
-    labels = _labels(msg.markups[-1])
-    assert "Редактировать существующий" not in labels
-    assert "Прислать новый текст" in labels
+    assert s["step"] == bot.WAIT_TEXT and s["material_mode"] == "text"
+    assert msg.replies[-1] == bot.ASK_TEXT
 
 
-def test_материал_с_прошлым_сценарием_предлагает_редактировать(work):
+def test_сгенерировать_сценарий_сразу_просит_материал(work):
     bot.save_session(7, _паспорт(step=bot.CHOOSING, scenario=SCENARIO))
     msg = _Msg()
     _press("mode:raw", msg)
 
-    labels = _labels(msg.markups[-1])
-    assert "Редактировать существующий" in labels
-    assert "Прислать новое сырьё" in labels
+    s = bot.load_session(7)
+    assert s["step"] == bot.WAIT_RAW and s["material_mode"] == "raw"
+    assert msg.replies[-1] == bot.ASK_RAW
+    assert "Пришлите материал" in msg.replies[-1]
 
 
 def test_без_фото_выбор_пути_уводит_на_фото(work):
@@ -485,29 +500,21 @@ def test_без_фото_выбор_пути_уводит_на_фото(work):
     assert bot.load_session(7)["step"] == bot.WAIT_PHOTO
 
 
-def test_редактировать_существующий_ведёт_сразу_к_сценарию(work):
-    bot.save_session(7, {"step": bot.CHOOSING_MATERIAL, "material_mode": "text",
-                         "scenario": SCENARIO})
+def test_кнопка_убранного_экрана_ведёт_к_вводу_материала(work):
+    """material:edit и material:new живут в истории чата — они не должны
+    вести в никуда."""
+    bot.save_session(7, _паспорт(step=bot.CHOOSING_MATERIAL, material_mode="text",
+                                 scenario=SCENARIO))
     msg = _Msg()
     _press("material:edit", msg)
-
-    assert bot.load_session(7)["step"] == bot.REVIEW
-    assert "[хук]" in msg.replies[-1]
-
-
-def test_прислать_новый_текст_ведёт_к_вводу_текста(work):
-    bot.save_session(7, {"step": bot.CHOOSING_MATERIAL, "material_mode": "text",
-                         "scenario": SCENARIO})
-    msg = _Msg()
-    _press("material:new", msg)
 
     assert bot.load_session(7)["step"] == bot.WAIT_TEXT
     assert msg.replies[-1] == bot.ASK_TEXT
 
 
-def test_прислать_новое_сырьё_ведёт_к_вводу_сырья(work):
-    bot.save_session(7, {"step": bot.CHOOSING_MATERIAL, "material_mode": "raw",
-                         "scenario": SCENARIO})
+def test_старая_кнопка_прислать_новое_сырьё_ведёт_к_вводу(work):
+    bot.save_session(7, _паспорт(step=bot.CHOOSING_MATERIAL, material_mode="raw",
+                                 scenario=SCENARIO))
     msg = _Msg()
     _press("material:new", msg)
 
@@ -595,14 +602,14 @@ def test_правленый_текст_становится_итоговым(wor
 
 # --- назад: ничего не теряем --------------------------------------------------
 
-def test_назад_с_ввода_текста_возвращает_к_материалу(work):
+def test_назад_с_ввода_текста_возвращает_к_выбору_пути(work):
     bot.save_session(7, _паспорт(step=bot.WAIT_TEXT, material_mode="text"))
 
     msg = _Msg()
     _press("back", msg)
 
-    assert bot.load_session(7)["step"] == bot.CHOOSING_MATERIAL
-    assert msg.replies[-1] == bot.ASK_MATERIAL
+    assert bot.load_session(7)["step"] == bot.CHOOSING
+    assert msg.replies[-1] == bot.ASK_PATH
 
 
 def test_назад_с_цены_показывает_принятый_материал_а_не_просит_заново(work):
@@ -616,7 +623,7 @@ def test_назад_с_цены_показывает_принятый_матер
 
     s = bot.load_session(7)
     assert s["step"] == bot.VIEWING_STAGE and s["stage"] == "material"
-    assert "Сырьё принят" in msg.replies[-1]
+    assert "Материал принят" in msg.replies[-1]
     assert "Длинное сырьё про продажи." in msg.replies[-1]
     assert _labels(msg.markups[-1]) == ["← Назад", "Вперёд →", "✏️ Изменить"]
 
@@ -678,6 +685,35 @@ def test_кнопки_этапов_не_работают_во_время_сбо�
     assert bot.load_session(7)["step"] == bot.BUILDING
 
 
+def test_продолжить_после_готового_ролика_не_платит_заново(work, monkeypatch):
+    """Кнопка «Продолжить ➡️» из старого сообщения об оплате не должна
+    запускать вторую платную генерацию по тому же материалу."""
+    вызовы = []
+    monkeypatch.setattr(
+        bot, "step_verbatim", lambda chat_id, text, language: вызовы.append(text)
+    )
+    _с_балансом()
+    bot.save_session(7, _паспорт(step=bot.DONE, material_mode="text",
+                                 material_text="Мой текст."))
+
+    msg = _Msg()
+    _press("pay:go", msg)
+
+    assert вызовы == []
+    assert bot.load_session(7)["step"] == bot.DONE
+
+
+def test_навигация_по_этапам_после_готового_ролика_ведёт_к_новому(work):
+    bot.save_session(7, _паспорт(step=bot.DONE, material_mode="text",
+                                 material_text="Мой текст."))
+
+    msg = _Msg()
+    _press("stage:next", msg)
+
+    assert bot.load_session(7)["step"] == bot.DONE
+    assert "Новый ролик" in _labels(msg.markups[-1])
+
+
 def test_назад_с_первого_этапа_никуда_не_проваливается(work):
     bot.save_session(7, _паспорт(step=bot.VIEWING_STAGE, stage="language"))
 
@@ -688,11 +724,9 @@ def test_назад_с_первого_этапа_никуда_не_провал�
     assert s["step"] == bot.VIEWING_STAGE and s["stage"] == "language"
 
 
-def test_назад_с_материала_возвращает_к_выбору_пути_сохраняя_сценарий(work):
-    # сценарий уже утверждён (кнопка «Редактировать существующий» видна) —
-    # «Назад» отсюда не имеет права его стереть
-    bot.save_session(7, _паспорт(step=bot.CHOOSING_MATERIAL,
-                                 material_mode="text", scenario=SCENARIO))
+def test_назад_с_ввода_материала_не_стирает_сценарий(work):
+    bot.save_session(7, _паспорт(step=bot.WAIT_RAW,
+                                 material_mode="raw", scenario=SCENARIO))
 
     msg = _Msg()
     _press("back", msg)
@@ -754,7 +788,7 @@ def test_назад_с_фото_у_новичка_показывает_выбр�
 
     s = bot.load_session(7)
     assert s["step"] == bot.VIEWING_STAGE and s["stage"] == "language"
-    assert "🇷🇺 Русский" in msg.replies[-1]
+    assert "🇷🇺 Русский ✅" in _labels(msg.markups[-1])
 
 
 def test_назад_с_записи_голоса_у_новичка_возвращает_к_фото(work):
@@ -846,6 +880,10 @@ def test_after_new_язык_выбирается_до_всего_остальн�
     assert msg.replies[-1] == bot.ASK_LANGUAGE
 
     _press("reel_language:ru", msg)
+    # Язык отмечается галочкой в том же сообщении, отдельного экрана нет
+    assert _labels(msg.markups[-1]) == ["🇷🇺 Русский ✅", "🇰🇿 Қазақша", "Продолжить →"]
+
+    _press("stage:next", msg)
 
     # Фото у повторного уже есть — сводка с навигацией, а не просьба прислать
     assert "Фото загружено" in msg.replies[-1]
@@ -940,7 +978,7 @@ def test_первый_ролик_требует_фото_сразу_после_�
     _press("reel_language:ru", msg)
 
     assert bot.load_session(7)["step"] == bot.WAIT_PHOTO
-    assert "Кисти рук" in msg.replies[-1]
+    assert "AI-аватара" in msg.replies[-1]
 
 
 def test_утверждение_сценария_ведёт_сразу_к_сборке(work, профиль):
@@ -965,6 +1003,7 @@ def test_повторный_профиль_показывает_сводки_а_
     msg = _Msg()
 
     _press("reel_language:ru", msg)
+    _press("stage:next", msg)
     assert "Фото загружено" in msg.replies[-1]
 
     _press("stage:next", msg)
@@ -2287,31 +2326,37 @@ def магазин(monkeypatch):
     return вызовы
 
 
-def test_пополнение_спрашивает_валюту_потом_сумму(work, магазин):
+def test_пополнение_меняет_кнопки_в_том_же_сообщении(work, магазин):
+    """Новых экранов «В какой валюте платить?» быть не должно: кнопки валюты
+    встают на место «Пополнить баланс» в том же сообщении."""
     bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE))
-    msg = _Msg()
+    msg = _Msg("Материал принял. Ролик обойдётся примерно в $4.21…")
 
     _press("topup:start", msg)
-    assert "В какой валюте" in msg.replies[-1]
+
+    assert msg.kinds[-1] == "edit"
     assert _labels(msg.markups[-1]) == [
-        "Оплатить в рублях", "Оплатить в долларах"
+        "Оплатить в RUB", "Оплатить в USD", "← Назад"
     ]
 
     _press("topup:cur:rub", msg)
 
     assert bot.load_session(7)["pay_currency"] == "rub"
+    assert "Выберите сумму для пополнения" in msg.replies[-1]
     assert _labels(msg.markups[-1]) == ["1000 ₽", "2500 ₽", "5000 ₽", "← Назад"]
 
 
-def test_валюта_спрашивается_один_раз(work, магазин):
-    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE, pay_currency="usd"))
-    msg = _Msg()
+def test_назад_с_выбора_валюты_возвращает_прежние_кнопки(work, магазин):
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE))
+    msg = _Msg("Материал принял…")
 
     _press("topup:start", msg)
+    _press("topup:cancel", msg)
 
-    # Прошлый выбор помним: сразу суммы, без повторного вопроса о валюте.
-    assert "В какой валюте" not in msg.replies[-1]
-    assert "$10" in _labels(msg.markups[-1])
+    assert msg.kinds[-1] == "edit"
+    assert _labels(msg.markups[-1]) == [
+        "💳 Пополнить баланс", "Проверить баланс", "← Назад"
+    ]
 
 
 def test_сумма_создаёт_счёт_с_chat_id_в_customerId(work, магазин):
@@ -2339,6 +2384,69 @@ def test_проверка_оплаты_зачисляет_оплаченный_�
 
     assert bot._ledger().balance(7) == 10_000_000
     assert "Оплата получена" in msg.replies[-1]
+    assert "pending_order" not in bot.load_session(7)
+
+
+def test_после_оплаты_счёт_превращается_в_продолжить(work, магазин):
+    """Одно сообщение на оплату: счёт правится на месте, новых экранов нет."""
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE, pay_currency="usd",
+                                 material_mode="text", material_text="Мой текст."))
+    msg = _Msg()
+    _press("topup:amt:usd:5000", msg)
+    счёт = msg.replies[-1]
+
+    магазин["status"].append("paid")
+    _press("topup:check", msg)
+
+    assert msg.kinds[-1] == "edit"          # то же сообщение, а не новое
+    assert счёт not in msg.replies[-1:]
+    assert "Оплата получена" in msg.replies[-1]
+    assert _labels(msg.markups[-1]) == ["Продолжить ➡️"]
+
+
+def test_после_оплаты_с_нехваткой_показывает_сколько_добавить(work, магазин):
+    # длинный текст — ролик дороже одного пополнения на $10
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE, pay_currency="usd",
+                                 material_mode="text", material_text="а" * 2000))
+    msg = _Msg()
+    _press("topup:amt:usd:1000", msg)
+
+    магазин["status"].append("paid")
+    _press("topup:check", msg)
+
+    assert "Не хватает" in msg.replies[-1]
+    assert "оплата ещё не дошла" not in msg.replies[-1].lower()
+    assert _labels(msg.markups[-1]) == [
+        "💳 Пополнить баланс", "Проверить баланс", "← Назад"
+    ]
+
+
+def test_вебхук_правит_то_же_сообщение_со_счётом(work, магазин):
+    """Вебхук и кнопка проверки не должны давать двух сообщений об одной
+    оплате: оба правят сообщение со счётом."""
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE, pay_currency="usd",
+                                 material_mode="text", material_text="Мой текст."))
+    _press("topup:amt:usd:5000", _Msg())
+    _пополнить(7, 50_000_000)
+
+    правки = []
+
+    class _BotAPI:
+        async def edit_message_text(self, chat_id, message_id, text,
+                                    reply_markup=None):
+            правки.append((chat_id, message_id, text))
+
+        async def send_message(self, chat_id, text, reply_markup=None):
+            правки.append(("новое сообщение", chat_id, text))
+
+    asyncio.run(bot._apply_credit_to_chat(_BotAPI(), 7))
+
+    assert len(правки) == 1
+    chat_id, message_id, text = правки[0]
+    assert chat_id == 7 and message_id == bot.load_session(7).get(
+        "pending_order", {}
+    ).get("message_id", message_id)
+    assert "Оплата получена" in text
     assert "pending_order" not in bot.load_session(7)
 
 
