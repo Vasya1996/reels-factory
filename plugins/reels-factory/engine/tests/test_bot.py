@@ -660,6 +660,24 @@ def test_изменить_открывает_ввод_того_же_этапа(w
     assert bot.load_session(7)["material_text"] == "новое сырьё"
 
 
+def test_кнопки_этапов_не_работают_во_время_сборки(work, клиент):
+    """Кнопка из истории чата не должна уводить разговор с оплаченной job."""
+    bot.save_session(7, _паспорт(step=bot.READY, scenario=SCENARIO))
+    bot.enqueue_build(7, SCENARIO, language="ru", voice_id="voice-1")
+    _claim_job()
+    s = bot.load_session(7)
+    s.update({"step": bot.BUILDING, "current_job_id": bot._job_store()
+              .latest_for_chat(7).job_id})
+    bot.save_session(7, s)
+
+    msg = _Msg()
+    _press("stage:next", msg)
+    _press("pay:go", msg)
+
+    assert msg.replies == [bot.BUSY_MSG, bot.BUSY_MSG]
+    assert bot.load_session(7)["step"] == bot.BUILDING
+
+
 def test_назад_с_первого_этапа_никуда_не_проваливается(work):
     bot.save_session(7, _паспорт(step=bot.VIEWING_STAGE, stage="language"))
 
