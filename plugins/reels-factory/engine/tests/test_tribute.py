@@ -163,7 +163,47 @@ def test_сервер_принимает_подписанный_вебхук(sto
         srv.shutdown()
 
 
-def test_сервер_отвергает_плохую_подпись(store):
+def test_событие_camelCase_тоже_зачисляется(store):
+    """В доке Tribute событие названо newDigitalProduct, в примере payload —
+    new_digital_product. Промах по написанию = потерянный платёж."""
+    raw = json.dumps({
+        "name": "newDigitalProduct",
+        "payload": {"amount": 100, "currency": "usd",
+                    "telegram_user_id": 777, "purchase_id": "pur_camel"},
+    }).encode()
+
+    res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
+
+    assert res["credited"] is True
+    assert store.balance(777) == 1_000_000
+
+
+def test_незачисленное_событие_печатается_целиком(store, capsys):
+    """Чужой формат разбирается по логу: «unknown_currency» без payload —
+    гадание, а деньги у человека уже списаны."""
+    from reels_factory.tribute import start_webhook_server
+
+    srv = start_webhook_server(store, api_key=KEY, fx=FX, port=0)
+    try:
+        port = srv.server_address[1]
+        raw = body(currency="xtr", amount=7700)
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/tribute",
+            data=raw, method="POST",
+            headers={"trbt-signature": sign(raw)},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            assert resp.status == 200
+    finally:
+        srv.shutdown()
+
+    out = capsys.readouterr().out
+    assert "unknown_currency" in out
+    assert "xtr" in out and "7700" in out
+    assert store.balance(777) == 0
+
+
+def test_сервер_отвергает_плохую_подпись(store, capsys):
     from reels_factory.tribute import start_webhook_server
 
     srv = start_webhook_server(store, api_key=KEY, fx=FX, port=0)
@@ -180,6 +220,9 @@ def test_сервер_отвергает_плохую_подпись(store):
         assert store.balance(777) == 0
     finally:
         srv.shutdown()
+
+    # Перевыпущенный в дашборде ключ иначе выглядит как полная тишина
+    assert "подпись не совпала" in capsys.readouterr().out
 
 
 def test_сервер_отвечает_400_на_битый_content_length(store):
