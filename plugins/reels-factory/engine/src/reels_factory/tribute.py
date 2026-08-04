@@ -22,6 +22,12 @@ TOPUP_EVENT = "new_digital_product"
 # snake_case. Принимаем оба написания: цена ошибки — незачисленный платёж.
 TOPUP_EVENT_ALIASES = (TOPUP_EVENT, "newDigitalProduct")
 
+# Счёт магазина оплачен окончательно. Именно это событие несёт status=paid;
+# shopOrderPaymentReceived и shopOrderPrepaid — промежуточные, по ним деньги
+# продавцу ещё не зачислены (openapi/shop/ru, описание вебхуков).
+SHOP_PAID_EVENTS = ("shop_order", "shopOrder")
+SHOP_REFUND_EVENTS = ("shop_order_refunded", "shopOrderRefunded")
+
 
 class UnknownCurrencyError(ValueError):
     """Валюта события отсутствует в таблице курсов — не угадываем 1:1."""
@@ -60,6 +66,104 @@ def credited_micro(amount_minor: int, currency: str, fx: dict) -> int:
     return to_micro(amount / 100.0 * rate)
 
 
+def credit_shop_order(store: LedgerStore, event: dict, fx: dict) -> dict:
+    """Оплаченный счёт магазина -> пополнение баланса.
+
+    Зачисляем только по `shop_order`: `shopOrderPaymentReceived` их же спека
+    называет промежуточным сигналом («деньги продавцу ещё не зачислены и
+    оплата может не завершиться»), а `shopOrderPrepaid` — вообще про звёзды до
+    подтверждения списания.
+
+    Кто платил, знаем из `customerId` — туда бот кладёт chat_id при создании
+    счёта. Ключ идемпотентности — uuid заказа: ретраи идут сутки.
+    """
+    payload = event.get("payload") or {}
+    if payload.get("isTrial"):
+        # Активация бесплатного пробного периода: денег не было.
+        return {"credited": False, "reason": "trial_activation", "event": event}
+    status = str(payload.get("status") or "").lower()
+    if status and status != "paid":
+        return {"credited": False, "reason": f"status_{status}", "event": event}
+    customer_id = str(payload.get("customerId") or "").strip()
+    if not customer_id:
+        # Счёт создан без customerId (например, руками в дашборде) — зачислять
+        # некому, и угадывать по сумме нельзя.
+        return {"credited": False, "reason": "no_customer_id", "event": event}
+    try:
+        chat_id = int(customer_id)
+    except ValueError:
+        return {"credited": False, "reason": "invalid_customer_id", "event": event}
+    order_uuid = str(payload.get("uuid") or "")
+    if not order_uuid:
+        return {"credited": False, "reason": "no_order_uuid", "event": event}
+    try:
+        micro = credited_micro(
+            payload.get("amount") or 0, payload.get("currency") or "usd", fx
+        )
+    except UnknownCurrencyError:
+        return {"credited": False, "reason": "unknown_currency", "event": event}
+    except InvalidAmountError:
+        return {"credited": False, "reason": "invalid_amount", "event": event}
+    credited = store.credit(
+        chat_id, micro, purchase_id=f"shop:{order_uuid}",
+        amount_minor=int(payload.get("amount") or 0),
+        currency=str(payload.get("currency") or "usd"), raw=event,
+    )
+    return {
+        "credited": credited,
+        "reason": "ok" if credited else "duplicate",
+        "chat_id": chat_id,
+        "micro": micro,
+        "order_uuid": order_uuid,
+    }
+
+
+def refund_shop_order(store: LedgerStore, event: dict, fx: dict) -> dict:
+    """Возврат по счёту -> снять зачисленное обратно.
+
+    Без этого возврат остаётся деньгами на балансе: Tribute вернул покупателю,
+    а у нас он по-прежнему «оплачен». Списываем только по завершённому
+    возврату (`status: completed`), инициированный ещё может не пройти.
+    """
+    payload = event.get("payload") or {}
+    if str(payload.get("status") or "").lower() != "completed":
+        return {"credited": False, "reason": "refund_not_completed", "event": event}
+    customer_id = str(payload.get("customerId") or "").strip()
+    order_uuid = str(payload.get("uuid") or "")
+    if not (customer_id and order_uuid):
+        return {"credited": False, "reason": "no_customer_id", "event": event}
+    try:
+        chat_id = int(customer_id)
+    except ValueError:
+        return {"credited": False, "reason": "invalid_customer_id", "event": event}
+    try:
+        micro = credited_micro(
+            payload.get("amount") or 0, payload.get("currency") or "usd", fx
+        )
+    except (UnknownCurrencyError, InvalidAmountError):
+        return {"credited": False, "reason": "invalid_refund_amount", "event": event}
+    tx_id = payload.get("transactionId")
+    store.charge(
+        chat_id,
+        entry_id=f"refund:{order_uuid}:{tx_id}",
+        job_id=None,
+        provider="tribute_refund",
+        unit="refund",
+        quantity=1,
+        unit_price_micro=micro,
+        cost_micro=micro,
+        charged_micro=micro,
+        meta={"order_uuid": order_uuid, "transaction_id": tx_id},
+    )
+    return {
+        "credited": False,
+        "reason": "refunded",
+        "chat_id": chat_id,
+        "micro": -micro,
+        "order_uuid": order_uuid,
+    }
+
+
 def handle_webhook(store: LedgerStore, raw: bytes, signature: str, *,
                    api_key: str, fx: dict) -> dict:
     """Проверить подпись, разобрать событие, зачислить пополнение.
@@ -70,7 +174,12 @@ def handle_webhook(store: LedgerStore, raw: bytes, signature: str, *,
     if not verify_signature(raw, signature, api_key):
         raise PermissionError("bad signature")
     event = json.loads(raw.decode("utf-8"))
-    if event.get("name") not in TOPUP_EVENT_ALIASES:
+    name = event.get("name")
+    if name in SHOP_PAID_EVENTS:
+        return credit_shop_order(store, event, fx)
+    if name in SHOP_REFUND_EVENTS:
+        return refund_shop_order(store, event, fx)
+    if name not in TOPUP_EVENT_ALIASES:
         return {"credited": False, "reason": "ignored_event", "event": event}
     payload = event.get("payload") or {}
     chat_id = payload.get("telegram_user_id")

@@ -358,6 +358,8 @@ _PROFILE_KEYS = (
     "voice_id",          # active voice текущего языка; legacy-compatible
     "voice_language",
     "pending_previous_voice",
+    "pay_currency",      # валюта счёта: выбрана человеком, спрашиваем один раз
+    "pending_order",     # неоплаченный счёт: /new не должен его терять
 )
 _LOOP_KEYS = _PROFILE_KEYS
 
@@ -1221,12 +1223,11 @@ def _kb_price(enough: bool):
         rows = [[InlineKeyboardButton("🚀 Поехали", callback_data="pay:go")]]
     else:
         rows = [
-            [InlineKeyboardButton(label, url=url)]
-            for label, url in TOPUP_PRODUCTS
+            [InlineKeyboardButton(
+                "💳 Пополнить баланс", callback_data="topup:start"
+            )],
+            [InlineKeyboardButton("Проверить баланс", callback_data="pay:check")],
         ]
-        rows.append([InlineKeyboardButton(
-            "Проверить баланс", callback_data="pay:check"
-        )])
     rows.append([InlineKeyboardButton("← Назад", callback_data="back")])
     return InlineKeyboardMarkup(rows)
 
@@ -1687,6 +1688,22 @@ async def on_button(update, context):
             await _ask(q.message, chat_id, s, WAIT_RAW, ASK_RAW)
         else:
             await _ask(q.message, chat_id, s, WAIT_TEXT, ASK_TEXT)
+    elif data == "topup:start":
+        await _show_currency_choice(q.message, chat_id, s)
+    elif data.startswith("topup:cur:"):
+        currency = data.rsplit(":", 1)[1]
+        if currency not in TOPUP_PRESETS:
+            await q.message.reply_text(NOT_NOW)
+            return
+        await _show_amounts(q.message, chat_id, s, currency)
+    elif data.startswith("topup:amt:"):
+        _, _, currency, amount = data.split(":")
+        if currency not in TOPUP_PRESETS or not amount.isdigit():
+            await q.message.reply_text(NOT_NOW)
+            return
+        await _create_topup_order(q.message, chat_id, s, currency, int(amount))
+    elif data == "topup:check":
+        await _check_topup_order(q.message, chat_id, s)
     elif data == "pay:go":
         await _start_paid_part(q.message, chat_id, s)
     elif data == "pay:check":
@@ -1832,35 +1849,33 @@ async def _photo_stage(msg, chat_id: int, s: dict):
     await _ask(msg, chat_id, s, WAIT_PHOTO, ASK_PHOTO)
 
 
-# Ссылки на инфопродукты Tribute. Товары создаются вручную в дашборде —
-# API для их создания у Tribute нет, поэтому список статичный.
-#
-# Берём поле link (оплата ОТКРЫВАЕТСЯ ВНУТРИ ТЕЛЕГРАМА), а не webLink
-# (страница в браузере). Разница принципиальная: в браузере покупатель может
-# войти по почте, тогда в вебхуке не будет telegram_user_id и зачислять будет
-# некому. Внутри Телеграма пользователь опознан всегда.
-# Актуальные значения обоих полей: GET /api/v1/products с ключом Tribute.
-TOPUP_PRODUCTS = (
-    ("$1 (тест)", "https://t.me/tribute/app?startapp=pAHq"),
-    ("$10", "https://t.me/tribute/app?startapp=pAH1"),
-    ("$25", "https://t.me/tribute/app?startapp=pAHh"),
-    ("$50", "https://t.me/tribute/app?startapp=pAHj"),
-    ("1000 ₽", "https://t.me/tribute/app?startapp=pAHm"),
-    ("2500 ₽", "https://t.me/tribute/app?startapp=pAHn"),
-    ("5000 ₽", "https://t.me/tribute/app?startapp=pAHo"),
+# Суммы пополнения. Товаров в дашборде больше нет: счёт создаётся запросом в
+# Shop API на выбранную сумму (см. tribute_shop). Валюта — выбор человека, а не
+# догадка по языку: страну Телеграм боту не сообщает, в User есть только
+# language_code (core.telegram.org/bots/api#user), а он у половины Казахстана
+# русский.
+TOPUP_PRESETS = {
+    "usd": ((1_00, "$1 (тест)"), (10_00, "$10"), (25_00, "$25"), (50_00, "$50")),
+    "rub": ((1000_00, "1000 ₽"), (2500_00, "2500 ₽"), (5000_00, "5000 ₽")),
+}
+CURRENCY_LABEL = {"usd": "долларах", "rub": "рублях"}
+
+ASK_CURRENCY_MSG = "Баланс: {have}\n\nВ какой валюте платить?"
+ASK_AMOUNT_MSG = "Баланс: {have}\n\nНа сколько пополнить?"
+ORDER_READY_MSG = (
+    "Счёт на {amount} готов. Нажмите «Оплатить» — Tribute предложит карту или "
+    "СБП.\n\nПосле оплаты баланс пополнится сам; если этого не случилось за "
+    "минуту, нажмите «Проверить оплату»."
 )
+ORDER_FAILED_MSG = (
+    "Не получилось выставить счёт: {error}\n\nПопробуйте ещё раз через минуту."
+)
+ORDER_PENDING_MSG = "Оплата пока не дошла. Баланс: {have}"
+ORDER_PAID_MSG = "Оплата получена. Баланс: {have}"
 
 
-def topup_keyboard():
-    # Импорт локальный и аннотации возврата нет — в bot.py telegram-классы
-    # везде импортируются внутри функций, на уровне модуля этих имён не существует.
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
-    rows = [
-        [InlineKeyboardButton(label, url=url)]
-        for label, url in TOPUP_PRODUCTS
-    ]
-    return InlineKeyboardMarkup(rows)
+def _tribute_key() -> str:
+    return (os.environ.get("TRIBUTE_API_KEY") or "").strip()
 
 
 def topup_text(need: int | None, have: int, *, exhausted: bool = False) -> str:
@@ -1881,13 +1896,163 @@ def topup_text(need: int | None, have: int, *, exhausted: bool = False) -> str:
     return "\n".join(lines)
 
 
+def _kb_topup_entry():
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("💳 Пополнить баланс", callback_data="topup:start")],
+    ])
+
+
+def _kb_currency():
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Оплатить в рублях", callback_data="topup:cur:rub")],
+        [InlineKeyboardButton("Оплатить в долларах", callback_data="topup:cur:usd")],
+    ])
+
+
+def _kb_amounts(currency: str):
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    rows = [
+        [InlineKeyboardButton(
+            label, callback_data=f"topup:amt:{currency}:{minor}"
+        )]
+        for minor, label in TOPUP_PRESETS[currency]
+    ]
+    rows.append([InlineKeyboardButton("← Назад", callback_data="topup:start")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _kb_pay(url: str):
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Оплатить", url=url)],
+        [InlineKeyboardButton("Проверить оплату", callback_data="topup:check")],
+        [InlineKeyboardButton("← Назад", callback_data="topup:start")],
+    ])
+
+
 async def _show_topup(msg, chat_id: int, *, need: int | None = None,
                       have: int | None = None, exhausted: bool = False) -> None:
     """Экран пополнения. Принимает telegram-сообщение, а не update/context:
     зовётся и из обработчика команды, и из _enqueue_build, где есть только msg."""
     balance = _ledger().balance(chat_id) if have is None else have
     await msg.reply_text(
-        topup_text(need, balance, exhausted=exhausted), reply_markup=topup_keyboard()
+        topup_text(need, balance, exhausted=exhausted),
+        reply_markup=_kb_topup_entry(),
+    )
+
+
+async def _show_currency_choice(msg, chat_id: int, s: dict) -> None:
+    """Валюта счёта — явным выбором. Прошлый выбор помним, но не навязываем."""
+    have = format_usd(_ledger().balance(chat_id))
+    currency = s.get("pay_currency")
+    if currency in TOPUP_PRESETS:
+        await _show_amounts(msg, chat_id, s, currency)
+        return
+    await msg.reply_text(ASK_CURRENCY_MSG.format(have=have), reply_markup=_kb_currency())
+
+
+async def _show_amounts(msg, chat_id: int, s: dict, currency: str) -> None:
+    s["pay_currency"] = currency
+    save_session(chat_id, s)
+    have = format_usd(_ledger().balance(chat_id))
+    await msg.reply_text(
+        ASK_AMOUNT_MSG.format(have=have), reply_markup=_kb_amounts(currency)
+    )
+
+
+async def _create_topup_order(msg, chat_id: int, s: dict, currency: str,
+                              amount_minor: int) -> None:
+    """Счёт на выбранную сумму. customerId = chat_id, поэтому вебхук всегда
+    знает, кому зачислять — в отличие от прежних цифровых товаров."""
+    from reels_factory import tribute_shop
+
+    label = dict(
+        (minor, text) for minor, text in TOPUP_PRESETS.get(currency, ())
+    ).get(amount_minor, str(amount_minor))
+    try:
+        order = await asyncio.to_thread(
+            tribute_shop.create_order,
+            api_key=_tribute_key(),
+            amount_minor=amount_minor,
+            currency=currency,
+            customer_id=str(chat_id),
+            title=f"Пополнение баланса {label}",
+            description="Депозит на генерацию рилсов",
+        )
+    except Exception as e:
+        log.warning("счёт для чата %s не создан: %s", chat_id, e)
+        await msg.reply_text(ORDER_FAILED_MSG.format(error=str(e)[:200]))
+        return
+    s["pending_order"] = {
+        "uuid": order.get("uuid"),
+        "amount": amount_minor,
+        "currency": currency,
+    }
+    save_session(chat_id, s)
+    await msg.reply_text(
+        ORDER_READY_MSG.format(amount=label),
+        reply_markup=_kb_pay(tribute_shop.payment_link(order)),
+    )
+
+
+async def _check_topup_order(msg, chat_id: int, s: dict) -> None:
+    """Сверка по статусу заказа — чтобы потерянный вебхук не стоил человеку
+    денег и нашей ручной правки базы."""
+    from reels_factory import tribute_shop
+
+    order = s.get("pending_order") or {}
+    order_uuid = order.get("uuid")
+    if not order_uuid:
+        await _show_currency_choice(msg, chat_id, s)
+        return
+    try:
+        status = await asyncio.to_thread(
+            tribute_shop.order_status,
+            api_key=_tribute_key(), order_uuid=order_uuid,
+        )
+    except Exception as e:
+        log.warning("статус заказа %s не получен: %s", order_uuid, e)
+        await msg.reply_text(ORDER_PENDING_MSG.format(
+            have=format_usd(_ledger().balance(chat_id))
+        ))
+        return
+    if status == "paid":
+        _credit_paid_order(chat_id, order)
+        s.pop("pending_order", None)
+        save_session(chat_id, s)
+        await msg.reply_text(ORDER_PAID_MSG.format(
+            have=format_usd(_ledger().balance(chat_id))
+        ))
+        return
+    await msg.reply_text(ORDER_PENDING_MSG.format(
+        have=format_usd(_ledger().balance(chat_id))
+    ))
+
+
+def _credit_paid_order(chat_id: int, order: dict) -> bool:
+    """Зачислить оплаченный счёт при сверке.
+
+    Ключ тот же, что у вебхука (`shop:<uuid>`), поэтому гонка «вебхук пришёл,
+    и человек нажал проверку» не удваивает баланс.
+    """
+    from reels_factory.tribute import credited_micro
+
+    billing = _billing()
+    try:
+        micro = credited_micro(
+            order.get("amount") or 0, order.get("currency") or "usd", billing["fx"]
+        )
+    except Exception as e:
+        log.warning("сверка заказа %s: сумма не пересчиталась: %s", order, e)
+        return False
+    return _ledger().credit(
+        chat_id, micro,
+        purchase_id=f"shop:{order.get('uuid')}",
+        amount_minor=int(order.get("amount") or 0),
+        currency=str(order.get("currency") or "usd"),
+        raw={"source": "status_check", "order": order},
     )
 
 
@@ -2485,6 +2650,29 @@ async def _download(context, media, chat_id: int) -> Path:
     return dest
 
 
+def _notify_credited(bot_api, loop, event: dict) -> None:
+    """Сказать в чат, что деньги дошли.
+
+    Зовётся из потока вебхук-сервера, поэтому корутину отправки кладём в
+    петлю бота через run_coroutine_threadsafe — иначе сообщение просто не
+    уйдёт, а человек будет гадать, засчиталась ли оплата.
+    """
+    chat_id = event.get("chat_id")
+    if not chat_id:
+        return
+    balance = _ledger().balance(chat_id)
+    text = (
+        f"Оплата получена, зачислено {format_usd(event.get('micro') or 0)}.\n"
+        f"Баланс: {format_usd(balance)}"
+    )
+    try:
+        asyncio.run_coroutine_threadsafe(
+            bot_api.send_message(chat_id=chat_id, text=text), loop
+        )
+    except Exception as e:
+        log.warning("не удалось сообщить о пополнении чату %s: %s", chat_id, e)
+
+
 async def _post_init(app):
     """Поднять durable worker и безопасно закрыть осиротевшие running jobs."""
     from telegram import BotCommand
@@ -2518,10 +2706,11 @@ async def _post_init(app):
     tribute_key = os.environ.get("TRIBUTE_API_KEY")
     billing = _billing()
     if tribute_key:
+        loop = asyncio.get_running_loop()
         start_webhook_server(
             _ledger(), api_key=tribute_key, fx=billing["fx"],
             port=int(os.environ.get("TRIBUTE_WEBHOOK_PORT", "8099")),
-            on_credit=lambda ev: None,
+            on_credit=lambda ev: _notify_credited(app.bot, loop, ev),
         )
     elif billing["enabled"]:
         # Кнопки пополнения остаются активны и без ключа: Tribute всё равно
