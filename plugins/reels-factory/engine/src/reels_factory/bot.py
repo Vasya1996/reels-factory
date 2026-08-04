@@ -1805,6 +1805,11 @@ async def on_button(update, context):
     elif data == "topup:check":
         await _check_topup_order(q.message, chat_id, s)
     elif data == "pay:go":
+        # Тот же случай: платить за второй ролик, пока идёт первый, нельзя —
+        # это две параллельные генерации на один профиль.
+        if _job_store().active_for_chat(chat_id):
+            await q.message.reply_text(BUSY_MSG)
+            return
         await _start_paid_part(q.message, chat_id, s)
     elif data == "pay:check":
         # Возврат после пополнения: показываем тот же экран со свежим балансом.
@@ -1841,12 +1846,19 @@ async def on_button(update, context):
         save_session(chat_id, s)
         await q.message.reply_text(APPROVED_MSG)
         await _ready_stage(q.message, chat_id, s)
-    elif data == "stage:next":
-        await _next_stage(q.message, chat_id, s, _current_stage(s))
-    elif data == "stage:prev":
-        await _prev_stage(q.message, chat_id, s, _current_stage(s))
-    elif data == "stage:edit":
-        await _ask_stage(q.message, chat_id, s, _current_stage(s))
+    elif data.startswith("stage:"):
+        # Кнопки живут в истории чата вечно: тап по старому экрану посреди
+        # уже оплаченной сборки не должен уводить разговор с её этапа.
+        if _job_store().active_for_chat(chat_id):
+            await q.message.reply_text(BUSY_MSG)
+            return
+        stage = _current_stage(s)
+        if data == "stage:next":
+            await _next_stage(q.message, chat_id, s, stage)
+        elif data == "stage:prev":
+            await _prev_stage(q.message, chat_id, s, stage)
+        else:
+            await _ask_stage(q.message, chat_id, s, stage)
     elif data in ("profile:keep", "photo:old", "voice:old"):
         # Кнопки прежних версий экрана: живут в истории чата вечно.
         await _choose_path_stage(q.message, chat_id, s)
