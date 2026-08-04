@@ -2166,18 +2166,134 @@ def test_битые_avatar_islands_settings_не_ломают_оценку_пр�
         bot.enqueue_build(4, SCENARIO, language="ru", voice_id="voice-1")
 
 
-def test_кнопки_пополнения_ведут_на_tribute():
-    from reels_factory.bot import TOPUP_PRODUCTS, topup_keyboard
-    assert len(TOPUP_PRODUCTS) == 7
-    for label, url in TOPUP_PRODUCTS:
-        # Только внутрителеграмная ссылка: с веб-страницы может прийти оплата
-        # без telegram_user_id, и зачислить её будет некому.
-        assert url.startswith("https://t.me/tribute/app?startapp=")
-        assert "web.tribute.tg" not in url
-        assert label
-    rows = topup_keyboard().inline_keyboard
-    urls = [btn.url for row in rows for btn in row if btn.url]
-    assert len(urls) == 7
+def test_пресеты_пополнения_в_минимальных_единицах():
+    """Суммы уходят в Shop API как есть: центы для usd, копейки для rub.
+    Опечатка тут — счёт в сто раз больше или меньше."""
+    from reels_factory.bot import TOPUP_PRESETS
+    assert dict(TOPUP_PRESETS["usd"])[10_00] == "$10"
+    assert dict(TOPUP_PRESETS["rub"])[1000_00] == "1000 ₽"
+    for currency, presets in TOPUP_PRESETS.items():
+        assert currency in ("usd", "rub")
+        for minor, label in presets:
+            assert minor > 0 and label
+
+
+@pytest.fixture
+def магазин(monkeypatch):
+    """Shop API без сети: запоминаем, с чем звали, и отдаём готовый заказ."""
+    from reels_factory import tribute_shop
+
+    вызовы = {"created": [], "status": ["pending"]}
+
+    def fake_create(*, api_key, amount_minor, currency, customer_id, title,
+                    description):
+        вызовы["created"].append({
+            "amount": amount_minor, "currency": currency,
+            "customerId": customer_id, "title": title,
+        })
+        return {
+            "uuid": "order-1",
+            "paymentUrl": "https://web.tribute.tg/shop/pay/order-1",
+            "webappPaymentUrl": "https://t.me/tribute/app?startapp=shop_pay_order-1",
+        }
+
+    monkeypatch.setattr(tribute_shop, "create_order", fake_create)
+    monkeypatch.setattr(
+        tribute_shop, "order_status",
+        lambda *, api_key, order_uuid: вызовы["status"][-1],
+    )
+    monkeypatch.setenv("TRIBUTE_API_KEY", "test-key")
+    return вызовы
+
+
+def test_пополнение_спрашивает_валюту_потом_сумму(work, магазин):
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE))
+    msg = _Msg()
+
+    _press("topup:start", msg)
+    assert "В какой валюте" in msg.replies[-1]
+    assert _labels(msg.markups[-1]) == [
+        "Оплатить в рублях", "Оплатить в долларах"
+    ]
+
+    _press("topup:cur:rub", msg)
+
+    assert bot.load_session(7)["pay_currency"] == "rub"
+    assert _labels(msg.markups[-1]) == ["1000 ₽", "2500 ₽", "5000 ₽", "← Назад"]
+
+
+def test_валюта_спрашивается_один_раз(work, магазин):
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE, pay_currency="usd"))
+    msg = _Msg()
+
+    _press("topup:start", msg)
+
+    # Прошлый выбор помним: сразу суммы, без повторного вопроса о валюте.
+    assert "В какой валюте" not in msg.replies[-1]
+    assert "$10" in _labels(msg.markups[-1])
+
+
+def test_сумма_создаёт_счёт_с_chat_id_в_customerId(work, магазин):
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE, pay_currency="rub"))
+    msg = _Msg()
+
+    _press("topup:amt:rub:100000", msg)
+
+    assert магазин["created"] == [{
+        "amount": 100000, "currency": "rub", "customerId": "7",
+        "title": "Пополнение баланса 1000 ₽",
+    }]
+    assert bot.load_session(7)["pending_order"]["uuid"] == "order-1"
+    ссылки = [b.url for row in msg.markups[-1].inline_keyboard for b in row if b.url]
+    assert ссылки == ["https://t.me/tribute/app?startapp=shop_pay_order-1"]
+
+
+def test_проверка_оплаты_зачисляет_оплаченный_счёт(work, магазин):
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE, pay_currency="usd"))
+    msg = _Msg()
+    _press("topup:amt:usd:1000", msg)
+
+    магазин["status"].append("paid")
+    _press("topup:check", msg)
+
+    assert bot._ledger().balance(7) == 10_000_000
+    assert "Оплата получена" in msg.replies[-1]
+    assert "pending_order" not in bot.load_session(7)
+
+
+def test_проверка_оплаты_не_удваивает_баланс_после_вебхука(work, магазин):
+    """Вебхук и кнопка «Проверить оплату» могут сработать оба — ключ
+    идемпотентности у них общий, иначе человек получит деньги дважды."""
+    from reels_factory.tribute import credit_shop_order
+
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE, pay_currency="usd"))
+    _press("topup:amt:usd:1000", _Msg())
+
+    credit_shop_order(bot._ledger(), {
+        "name": "shop_order",
+        "payload": {"uuid": "order-1", "status": "paid", "amount": 1000,
+                    "currency": "usd", "customerId": "7"},
+    }, bot._billing()["fx"])
+    магазин["status"].append("paid")
+    _press("topup:check", _Msg())
+
+    assert bot._ledger().balance(7) == 10_000_000
+
+
+def test_неудачный_счёт_не_молчит(work, monkeypatch):
+    from reels_factory import tribute_shop
+
+    def падаем(**kwargs):
+        raise tribute_shop.TributeShopError("HTTP 500 магазин лёг")
+
+    monkeypatch.setattr(tribute_shop, "create_order", падаем)
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE, pay_currency="usd"))
+    msg = _Msg()
+
+    _press("topup:amt:usd:1000", msg)
+
+    assert "магазин лёг" in msg.replies[-1]
+    assert "pending_order" not in bot.load_session(7)
 
 
 def test_текст_пополнения_при_нехватке_показывает_обе_суммы():
@@ -2232,7 +2348,7 @@ def test_нехватка_баланса_показывает_цену_и_кно
 
     assert "не хватает" in msg.replies[-1].lower()
     labels = _labels(msg.markups[-1])
-    assert all(label in labels for label, _ in bot.TOPUP_PRODUCTS)
+    assert "💳 Пополнить баланс" in labels
     assert "Проверить баланс" in labels
     assert "Поехали" not in " ".join(labels)
     assert вызовы == [] and bot.WORKING not in msg.replies
