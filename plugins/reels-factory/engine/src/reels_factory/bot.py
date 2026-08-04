@@ -65,7 +65,7 @@ log = logging.getLogger(__name__)
 CHOOSING_LANGUAGE = "choosing_language"  # язык нового ролика
 WAIT_PHOTO = "wait_photo"
 WAIT_VOICE = "wait_voice"            # ждём запись голоса; клон здесь не делаем
-CHOOSING_PROFILE = "choosing_profile"  # фото и запись уже есть: взять или заменить
+VIEWING_STAGE = "viewing_stage"      # пройденный этап: вперёд, назад, изменить
 CHOOSING = "choosing"                # ждём выбора пути
 CHOOSING_MATERIAL = "choosing_material"  # прежний материал или новый
 WAIT_TEXT = "wait_text"              # ждём готовый текст реплик
@@ -87,6 +87,18 @@ DONE = "done"                        # ролик заказан, ждём но�
 # после сценария), помечены её отсутствием и переводятся на новый порядок в
 # load_session — с сохранением фото, голосов и всего, за что уже заплачено.
 FLOW_VERSION = 2
+
+# Этапы, где человек что-то даёт. Пройденный этап показывается сводкой с
+# навигацией в обе стороны: возвращаться к нему приходится часто (ушёл на
+# оплату, передумал), а переспрашивать уже собранное — терять его работу.
+STAGE_LANGUAGE = "language"
+STAGE_PHOTO = "photo"
+STAGE_VOICE = "voice"
+STAGE_MATERIAL = "material"
+STAGE_ORDER = (STAGE_LANGUAGE, STAGE_PHOTO, STAGE_VOICE, STAGE_MATERIAL)
+
+# Сколько знаков материала показываем в сводке: целиком он в экран не влезет.
+MATERIAL_EXCERPT_CHARS = 150
 
 # Шаги, привязанные к оплаченной job: их миграция не трогает, иначе разговор
 # отвяжется от уже запущенной сборки.
@@ -219,9 +231,6 @@ PHOTO_SAVED = "Фото принял."
 VOICE_SAVED = (
     "Запись принял. Голос по ней сделаю позже — на этом шаге ничего не "
     "оплачивается."
-)
-PROFILE_KEEP_MSG = (
-    "Фото и запись голоса уже есть. Берём их или что-то заменить?"
 )
 CLONING_VOICE_MSG = "Делаю голос по вашей записи, это займёт минуту…"
 PRICE_ENOUGH_MSG = (
@@ -1149,15 +1158,6 @@ def _kb_ideas(n: int):
         [[InlineKeyboardButton("← Назад", callback_data="back")]])
 
 
-def _kb_profile():
-    """Повторный ролик: фото и запись голоса уже есть — один экран вместо двух."""
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Использовать прежние", callback_data="profile:keep")],
-        [InlineKeyboardButton("Заменить фото", callback_data="profile:photo")],
-        [InlineKeyboardButton("Записать голос заново", callback_data="profile:voice")],
-        [InlineKeyboardButton("← Назад", callback_data="back")],
-    ])
 
 
 def _kb_review():
@@ -1257,6 +1257,9 @@ async def _show_language_choice(msg, chat_id: int, s: dict):
     s.pop("scenario", None)
     s.pop("ideas", None)
     s.pop("material_mode", None)
+    # Материал написан на прежнем языке — держать его в сводке нового ролика
+    # значит показывать человеку «✅ принято» о том, что уже не подходит.
+    s.pop("material_text", None)
     save_session(chat_id, s)
     await msg.reply_text(ASK_LANGUAGE, reply_markup=_kb_language())
 
@@ -1267,7 +1270,7 @@ async def _select_reel_language(msg, chat_id: int, s: dict, language: str):
     _activate_language_voice(s, language)
     save_session(chat_id, s)
     await msg.reply_text(LANGUAGE_SAVED.format(language=language_label(language)))
-    await _profile_stage(msg, chat_id, s)
+    await _next_stage(msg, chat_id, s, STAGE_LANGUAGE)
 
 
 async def _ask(msg, chat_id: int, s: dict, step: str, text: str):
@@ -1287,25 +1290,112 @@ async def _ask_voice(msg, chat_id: int, s: dict, language: str):
 
 
 async def _profile_stage(msg, chat_id: int, s: dict):
-    """Фото и запись голоса — до всего платного.
+    """Первый незаполненный этап — или просмотр первого, если всё уже есть."""
+    for stage in STAGE_ORDER:
+        if not _stage_filled(s, stage):
+            await _ask_stage(msg, chat_id, s, stage)
+            return
+    await _show_stage(msg, chat_id, s, STAGE_ORDER[0])
 
-    Новичка ведём по шагам, у повторного и то и другое уже есть: показываем
-    один экран вместо двух подряд «прежнее или новое».
-    """
-    if not _reel_language(s, required=False):
-        # Язык — первый шаг; без него голос просят «на всякий русский».
-        await _show_language_choice(msg, chat_id, s)
+
+def _stage_filled(s: dict, stage: str) -> bool:
+    """Данные этапа уже собраны — переспрашивать их незачем."""
+    if stage == STAGE_LANGUAGE:
+        return bool(_reel_language(s, required=False))
+    if stage == STAGE_PHOTO:
+        return bool(s.get("photo"))
+    if stage == STAGE_VOICE:
+        return _has_voice_material(s, _reel_language(s))
+    return bool(str(s.get("material_text") or "").strip())
+
+
+def _stage_summary(s: dict, stage: str) -> str:
+    """Короткая сводка пройденного этапа: что именно человек уже дал."""
+    if stage == STAGE_LANGUAGE:
+        return f"✅ Язык ролика: {language_label(_reel_language(s))}"
+    if stage == STAGE_PHOTO:
+        return "✅ Фото загружено."
+    if stage == STAGE_VOICE:
+        language = _reel_language(s)
+        if _voice_for_language(s, language):
+            return f"✅ Голос для языка {language_label(language)} уже создан."
+        return "✅ Запись голоса принята."
+    material = str(s.get("material_text") or "").strip()
+    kind = "Сырьё" if s.get("material_mode") == "raw" else "Текст ролика"
+    excerpt = material[:MATERIAL_EXCERPT_CHARS]
+    if len(material) > MATERIAL_EXCERPT_CHARS:
+        excerpt += "…"
+    return f"✅ {kind} принят:\n\n«{excerpt}»"
+
+
+def _kb_stage(stage: str):
+    """Пройденный этап: вперёд, назад и явная замена. Присланное без
+    «Изменить» прежние данные не затирает."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    nav = []
+    if STAGE_ORDER.index(stage) > 0:
+        nav.append(InlineKeyboardButton("← Назад", callback_data="stage:prev"))
+    nav.append(InlineKeyboardButton("Вперёд →", callback_data="stage:next"))
+    return InlineKeyboardMarkup([
+        nav,
+        [InlineKeyboardButton("✏️ Изменить", callback_data="stage:edit")],
+    ])
+
+
+def _current_stage(s: dict) -> str:
+    """Этап, экран которого сейчас перед человеком. Кнопка из истории чата
+    может прийти когда угодно — тогда честнее отдать первый этап, чем упасть."""
+    stage = (s or {}).get("stage")
+    return stage if stage in STAGE_ORDER else STAGE_ORDER[0]
+
+
+async def _show_stage(msg, chat_id: int, s: dict, stage: str):
+    """Экран этапа: заполненный — сводка с навигацией, пустой — ввод."""
+    if not _stage_filled(s, stage):
+        await _ask_stage(msg, chat_id, s, stage)
         return
-    language = _reel_language(s)
-    if not s.get("photo"):
-        await _photo_stage(msg, chat_id, s)
-        return
-    if not _has_voice_material(s, language):
-        await _ask_voice(msg, chat_id, s, language)
-        return
-    s["step"] = CHOOSING_PROFILE
+    s["step"] = VIEWING_STAGE
+    s["stage"] = stage
     save_session(chat_id, s)
-    await msg.reply_text(PROFILE_KEEP_MSG, reply_markup=_kb_profile())
+    await msg.reply_text(_stage_summary(s, stage), reply_markup=_kb_stage(stage))
+
+
+async def _ask_stage(msg, chat_id: int, s: dict, stage: str):
+    """Экран ввода данных этапа."""
+    if stage == STAGE_LANGUAGE:
+        await _show_language_choice(msg, chat_id, s)
+    elif stage == STAGE_PHOTO:
+        await _ask(msg, chat_id, s, WAIT_PHOTO, ASK_PHOTO)
+    elif stage == STAGE_VOICE:
+        await _ask_voice(msg, chat_id, s, _reel_language(s))
+    elif s.get("material_mode"):
+        await _ask_material(msg, chat_id, s, s["material_mode"])
+    else:
+        await _choose_path_stage(msg, chat_id, s)
+
+
+async def _next_stage(msg, chat_id: int, s: dict, stage: str):
+    """Вперёд: следующий этап, а после последнего — экран цены."""
+    idx = STAGE_ORDER.index(stage)
+    for nxt in STAGE_ORDER[idx + 1:]:
+        await _show_stage(msg, chat_id, s, nxt)
+        return
+    await _show_price(msg, chat_id, s)
+
+
+async def _prev_stage(msg, chat_id: int, s: dict, stage: str):
+    """Назад: предыдущий этап; с первого уходить некуда."""
+    idx = STAGE_ORDER.index(stage)
+    await _show_stage(msg, chat_id, s, STAGE_ORDER[max(idx - 1, 0)])
+
+
+async def _ask_material(msg, chat_id: int, s: dict, mode: str):
+    """Экран ввода материала в выбранном режиме."""
+    if mode == "raw":
+        await _ask(msg, chat_id, s, WAIT_RAW, ASK_RAW)
+    else:
+        await _ask(msg, chat_id, s, WAIT_TEXT, ASK_TEXT)
 
 
 async def _choose_path_stage(msg, chat_id: int, s: dict):
@@ -1513,8 +1603,12 @@ async def _reshow(msg, chat_id: int, s: dict):
         return
     if step == CHOOSING:
         await _choose_path_stage(msg, chat_id, s)
-    elif step == CHOOSING_PROFILE:
-        await _profile_stage(msg, chat_id, s)
+    elif step == VIEWING_STAGE:
+        # Присланное на экране пройденного этапа прежние данные не затирает:
+        # замена — только через «Изменить».
+        await _show_stage(msg, chat_id, s, _current_stage(s))
+    elif step == CONFIRM_PRICE:
+        await _show_price(msg, chat_id, s, checked=True)
     elif step == CHOOSING_MATERIAL:
         await _show_material(msg, chat_id, s, s.get("material_mode", "text"))
     elif step == CHOOSING_IDEA and s.get("ideas"):
@@ -1548,26 +1642,32 @@ async def _go_back(msg, chat_id: int, s: dict):
     elif step == CHOOSING_IDEA:
         await _ask(msg, chat_id, s, WAIT_RAW, ASK_RAW)
     elif step == CONFIRM_PRICE:
-        if s.get("material_mode") == "raw":
-            await _ask(msg, chat_id, s, WAIT_RAW, ASK_RAW)
-        else:
-            await _ask(msg, chat_id, s, WAIT_TEXT, ASK_TEXT)
+        # Материал уже принят: возвращаем к его сводке, а не к пустому вводу.
+        # Оттуда «Вперёд →» вернёт сюда же, ничего не пересылая.
+        await _show_stage(msg, chat_id, s, STAGE_MATERIAL)
+    elif step == VIEWING_STAGE:
+        await _prev_stage(msg, chat_id, s, _current_stage(s))
     elif step in (WAIT_TEXT, WAIT_RAW):
-        await _show_material(msg, chat_id, s, s.get("material_mode", "text"))
+        # Пришли сюда по «Изменить» — возвращаем к прежнему материалу, а не
+        # к выбору пути: иначе замена превращается в путь без отмены.
+        if _stage_filled(s, STAGE_MATERIAL):
+            await _show_stage(msg, chat_id, s, STAGE_MATERIAL)
+        else:
+            await _show_material(msg, chat_id, s, s.get("material_mode", "text"))
     elif step == CHOOSING_MATERIAL:
         await _choose_path_stage(msg, chat_id, s)
     elif step == CHOOSING:
-        await _profile_stage(msg, chat_id, s)
-    elif step == WAIT_VOICE and s.get("photo") and not _has_voice_material(
-        s, _reel_language(s)
-    ):
-        # Новичок записывает голос впервые — назад ему только к фото.
-        await _photo_stage(msg, chat_id, s)
-    elif step in (WAIT_PHOTO, WAIT_VOICE) and s.get("photo") and (
-        _has_voice_material(s, _reel_language(s))
-    ):
-        # Замена фото или голоса на повторном ролике — назад к общему экрану.
-        await _profile_stage(msg, chat_id, s)
+        await _show_stage(msg, chat_id, s, STAGE_VOICE)
+    elif step == WAIT_VOICE:
+        await _show_stage(
+            msg, chat_id, s,
+            STAGE_VOICE if _stage_filled(s, STAGE_VOICE) else STAGE_PHOTO,
+        )
+    elif step == WAIT_PHOTO:
+        await _show_stage(
+            msg, chat_id, s,
+            STAGE_PHOTO if _stage_filled(s, STAGE_PHOTO) else STAGE_LANGUAGE,
+        )
     else:  # первый заход: дальше только выбор языка
         await _show_language_choice(msg, chat_id, s)
 
@@ -1741,9 +1841,14 @@ async def on_button(update, context):
         save_session(chat_id, s)
         await q.message.reply_text(APPROVED_MSG)
         await _ready_stage(q.message, chat_id, s)
+    elif data == "stage:next":
+        await _next_stage(q.message, chat_id, s, _current_stage(s))
+    elif data == "stage:prev":
+        await _prev_stage(q.message, chat_id, s, _current_stage(s))
+    elif data == "stage:edit":
+        await _ask_stage(q.message, chat_id, s, _current_stage(s))
     elif data in ("profile:keep", "photo:old", "voice:old"):
-        # photo:old и voice:old — кнопки прежнего порядка шагов, они живут в
-        # истории чата вечно; ведут туда же, куда «Использовать прежние».
+        # Кнопки прежних версий экрана: живут в истории чата вечно.
         await _choose_path_stage(q.message, chat_id, s)
     elif data in ("profile:photo", "photo:new"):
         await _ask(q.message, chat_id, s, WAIT_PHOTO, ASK_PHOTO)
@@ -2529,11 +2634,7 @@ async def on_message(update, context):
         s["photo"] = {"asset_id": asset_id, "file": str(path)}
         save_session(chat_id, s)
         await msg.reply_text(PHOTO_SAVED)
-        language = _reel_language(s)
-        if _has_voice_material(s, language):
-            await _choose_path_stage(msg, chat_id, s)
-        else:
-            await _ask_voice(msg, chat_id, s, language)
+        await _next_stage(msg, chat_id, s, STAGE_PHOTO)
         return
 
     if step == WAIT_VOICE:
@@ -2561,7 +2662,7 @@ async def on_message(update, context):
         if old_sample and str(old_sample) != str(path):
             Path(old_sample).unlink(missing_ok=True)
         await msg.reply_text(VOICE_SAVED)
-        await _choose_path_stage(msg, chat_id, s)
+        await _next_stage(msg, chat_id, s, STAGE_VOICE)
         return
 
     text = (msg.text or msg.caption or "").strip()

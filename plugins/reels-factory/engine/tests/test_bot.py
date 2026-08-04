@@ -417,8 +417,10 @@ def test_при_смене_ru_на_kk_русский_голос_сохраняе
     selected = bot.load_session(7)
     assert selected["voices"] == {"ru": "voice-ru"}
     assert "voice_id" not in selected and "voice_language" not in selected
-    # фото уже есть, казахской записи нет — просят её, и только её
-    assert selected["step"] == bot.WAIT_VOICE
+    # фото уже есть — его сводка; дальше по «Вперёд» просят казахскую запись
+    assert selected["step"] == bot.VIEWING_STAGE and selected["stage"] == "photo"
+    _press("stage:next", ask)
+    assert bot.load_session(7)["step"] == bot.WAIT_VOICE
     assert "🇰🇿 Қазақша" in ask.replies[-1]
 
     asyncio.run(bot.on_message(_Update(_Msg(voice=object())), None))
@@ -443,10 +445,10 @@ def test_при_возврате_на_ru_бот_активирует_сохра�
     _press("reel_language:ru", msg)
 
     current = bot.load_session(7)
-    assert current["step"] == bot.CHOOSING_PROFILE
+    assert current["step"] == bot.VIEWING_STAGE and current["stage"] == "photo"
     assert current["voice_id"] == "voice-ru"
     assert current["voice_language"] == "ru"
-    assert msg.replies[-1] == bot.PROFILE_KEEP_MSG
+    assert "Фото загружено" in msg.replies[-1]
 
 
 # --- шаг 2: выбор материала --------------------------------------------------
@@ -603,15 +605,69 @@ def test_назад_с_ввода_текста_возвращает_к_мате�
     assert msg.replies[-1] == bot.ASK_MATERIAL
 
 
-def test_назад_с_цены_возвращает_к_вводу_материала(work):
+def test_назад_с_цены_показывает_принятый_материал_а_не_просит_заново(work):
+    """Баг: «Назад» с оплаты просил прислать сырьё снова, хотя оно уже принято,
+    и вперёд пути не было."""
     bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE, material_mode="raw",
-                                 material_text="сырьё"))
+                                 material_text="Длинное сырьё про продажи."))
 
     msg = _Msg()
     _press("back", msg)
 
+    s = bot.load_session(7)
+    assert s["step"] == bot.VIEWING_STAGE and s["stage"] == "material"
+    assert "Сырьё принят" in msg.replies[-1]
+    assert "Длинное сырьё про продажи." in msg.replies[-1]
+    assert _labels(msg.markups[-1]) == ["← Назад", "Вперёд →", "✏️ Изменить"]
+
+
+def test_вперёд_с_материала_возвращает_к_цене_без_пересылки(work):
+    _с_балансом()
+    bot.save_session(7, _паспорт(step=bot.VIEWING_STAGE, stage="material",
+                                 material_mode="raw", material_text="сырьё"))
+
+    msg = _Msg()
+    _press("stage:next", msg)
+
+    s = bot.load_session(7)
+    assert s["step"] == bot.CONFIRM_PRICE and s["material_text"] == "сырьё"
+    assert "Поехали" in " ".join(_labels(msg.markups[-1]))
+
+
+def test_присланное_на_экране_этапа_не_затирает_данные(work):
+    bot.save_session(7, _паспорт(step=bot.VIEWING_STAGE, stage="material",
+                                 material_mode="raw", material_text="старое сырьё"))
+
+    msg = _Msg("совсем другое сырьё")
+    asyncio.run(bot.on_message(_Update(msg), None))
+
+    s = bot.load_session(7)
+    assert s["material_text"] == "старое сырьё"
+    assert "старое сырьё" in msg.replies[-1]
+    assert "✏️ Изменить" in _labels(msg.markups[-1])
+
+
+def test_изменить_открывает_ввод_того_же_этапа(work):
+    bot.save_session(7, _паспорт(step=bot.VIEWING_STAGE, stage="material",
+                                 material_mode="raw", material_text="старое сырьё"))
+
+    msg = _Msg()
+    _press("stage:edit", msg)
     assert bot.load_session(7)["step"] == bot.WAIT_RAW
-    assert msg.replies[-1] == bot.ASK_RAW
+
+    asyncio.run(bot.on_message(_Update(_Msg("новое сырьё")), None))
+
+    assert bot.load_session(7)["material_text"] == "новое сырьё"
+
+
+def test_назад_с_первого_этапа_никуда_не_проваливается(work):
+    bot.save_session(7, _паспорт(step=bot.VIEWING_STAGE, stage="language"))
+
+    msg = _Msg()
+    _press("stage:prev", msg)
+
+    s = bot.load_session(7)
+    assert s["step"] == bot.VIEWING_STAGE and s["stage"] == "language"
 
 
 def test_назад_с_материала_возвращает_к_выбору_пути_сохраняя_сценарий(work):
@@ -672,43 +728,48 @@ def test_назад_с_идей_возвращает_к_сырью(work):
     assert msg.replies[-1] == bot.ASK_RAW
 
 
-def test_назад_с_фото_у_новичка_возвращает_к_языку(work):
+def test_назад_с_фото_у_новичка_показывает_выбранный_язык(work):
     bot.save_session(7, {"step": bot.WAIT_PHOTO, "language": "ru"})
 
     msg = _Msg()
     _press("back", msg)
 
-    assert bot.load_session(7)["step"] == bot.CHOOSING_LANGUAGE
-    assert msg.replies[-1] == bot.ASK_LANGUAGE
+    s = bot.load_session(7)
+    assert s["step"] == bot.VIEWING_STAGE and s["stage"] == "language"
+    assert "🇷🇺 Русский" in msg.replies[-1]
 
 
 def test_назад_с_записи_голоса_у_новичка_возвращает_к_фото(work):
-    bot.save_session(7, {"step": bot.WAIT_VOICE, "language": "ru",
-                         "photo": {"asset_id": "a1", "file": "ф.jpg"}})
+    bot.save_session(7, {"step": bot.WAIT_VOICE, "language": "ru"})
 
     msg = _Msg()
     _press("back", msg)
 
+    # фото ещё нет — показываем экран загрузки, а не пустую сводку
     assert bot.load_session(7)["step"] == bot.WAIT_PHOTO
 
 
-def test_назад_с_замены_голоса_возвращает_к_экрану_профиля(work):
+def test_назад_с_замены_голоса_возвращает_к_прежнему_голосу(work):
+    """Замена начата по «Изменить» — «Назад» должен её отменять, а не
+    проваливать человека на шаг раньше."""
     bot.save_session(7, _паспорт(step=bot.WAIT_VOICE))
 
     msg = _Msg()
     _press("back", msg)
 
-    assert bot.load_session(7)["step"] == bot.CHOOSING_PROFILE
-    assert msg.replies[-1] == bot.PROFILE_KEEP_MSG
+    s = bot.load_session(7)
+    assert s["step"] == bot.VIEWING_STAGE and s["stage"] == "voice"
+    assert s["voices"] == {"ru": "voice-1"}
 
 
-def test_назад_с_выбора_пути_возвращает_к_профилю(work):
+def test_назад_с_выбора_пути_показывает_голос(work):
     bot.save_session(7, _паспорт(step=bot.CHOOSING))
 
     msg = _Msg()
     _press("back", msg)
 
-    assert bot.load_session(7)["step"] == bot.CHOOSING_PROFILE
+    s = bot.load_session(7)
+    assert s["step"] == bot.VIEWING_STAGE and s["stage"] == "voice"
 
 
 # --- «новый ролик»: заново язык и сценарий, профильные медиа сохраняются ------
@@ -768,11 +829,9 @@ def test_after_new_язык_выбирается_до_всего_остальн�
 
     _press("reel_language:ru", msg)
 
-    assert msg.replies[-1] == bot.PROFILE_KEEP_MSG
-    assert _labels(msg.markups[-1]) == [
-        "Использовать прежние", "Заменить фото", "Записать голос заново",
-        "← Назад",
-    ]
+    # Фото у повторного уже есть — сводка с навигацией, а не просьба прислать
+    assert "Фото загружено" in msg.replies[-1]
+    assert _labels(msg.markups[-1]) == ["← Назад", "Вперёд →", "✏️ Изменить"]
 
 
 def test_new_отменяет_незавершённую_перезапись_и_возвращает_старый_голос(work):
@@ -883,24 +942,27 @@ def test_утверждение_сценария_ведёт_сразу_к_сбо
     assert "build:montage" in callbacks and "build:plain" in callbacks
 
 
-def test_повторный_профиль_показывает_один_экран(work, профиль):
+def test_повторный_профиль_показывает_сводки_а_не_вопросы(work, профиль):
     bot.save_session(7, _паспорт(step=bot.CHOOSING_LANGUAGE))
-
     msg = _Msg()
+
     _press("reel_language:ru", msg)
+    assert "Фото загружено" in msg.replies[-1]
 
-    assert bot.load_session(7)["step"] == bot.CHOOSING_PROFILE
-    assert msg.replies[-1] == bot.PROFILE_KEEP_MSG
+    _press("stage:next", msg)
+    s = bot.load_session(7)
+    assert s["step"] == bot.VIEWING_STAGE and s["stage"] == "voice"
+    assert "уже создан" in msg.replies[-1]
 
 
-def test_прежний_профиль_ведёт_к_выбору_пути(work, профиль):
-    bot.save_session(7, _паспорт(step=bot.CHOOSING_PROFILE))
+def test_вперёд_с_голоса_ведёт_к_выбору_пути(work, профиль):
+    bot.save_session(7, _паспорт(step=bot.VIEWING_STAGE, stage="voice"))
 
     msg = _Msg()
-    _press("profile:keep", msg)
+    _press("stage:next", msg)
 
     s = bot.load_session(7)
-    assert s["step"] == bot.CHOOSING
+    assert s["step"] == bot.CHOOSING  # материала ещё нет — спрашиваем путь
     assert s["photo"]["asset_id"] == "asset-1"
 
 
@@ -917,7 +979,8 @@ def test_новое_фото_затирает_старое_в_сессии_и_н
 
     s = bot.load_session(7)
     assert s["photo"]["asset_id"] == "asset-новый"
-    assert s["step"] == bot.CHOOSING  # запись голоса уже есть — сразу к пути
+    # запись голоса уже есть — следующий этап показывается сводкой
+    assert s["step"] == bot.VIEWING_STAGE and s["stage"] == "voice"
     assert not старое_фото.exists()
 
 
@@ -980,10 +1043,10 @@ def test_клон_делается_после_оплаты_и_старый_уд�
 def test_запись_заново_не_трогает_прежний_клон_до_оплаты(work, профиль, monkeypatch):
     удалённые = []
     monkeypatch.setattr(bot, "step_delete_voice", lambda vid: удалённые.append(vid))
-    bot.save_session(7, _паспорт(step=bot.CHOOSING_PROFILE))
+    bot.save_session(7, _паспорт(step=bot.VIEWING_STAGE, stage="voice"))
 
     msg = _Msg()
-    _press("profile:voice", msg)
+    _press("stage:edit", msg)
     asyncio.run(bot.on_message(_Update(_Msg(voice=object())), None))
 
     s = bot.load_session(7)
