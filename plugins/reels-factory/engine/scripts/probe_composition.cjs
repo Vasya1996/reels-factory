@@ -489,26 +489,6 @@ async function collectSample(page) {
       };
     };
 
-    // Окно ведущей. Сначала их же договорённость `#video-wrap`
-    // (talking-head-recut/references/DESIGN_INDEX.md:27), потом — обёртка
-    // любого <video>: у неё overflow:hidden, и именно её границы видит зритель,
-    // а не бокс самого <video>.
-    const presenterElement = () => {
-      const wrap = document.querySelector("#video-wrap");
-      if (wrap) return { element: wrap, how: "#video-wrap" };
-      const videos = Array.from(document.querySelectorAll("video"));
-      const clip = videos.find((v) => /(^|\/)clips\//.test(v.getAttribute("src") || ""));
-      const video = clip || videos[0];
-      if (!video) return null;
-      const parent = video.parentElement;
-      const wrapped =
-        parent && parent !== document.body && getComputedStyle(parent).overflow !== "visible"
-          ? parent
-          : video;
-      return { element: wrapped, how: clip ? "video[src^=clips/]" : "video" };
-    };
-
-    const presenter = presenterElement();
     // `visible` нужен гейту лица: где ведущей на экране нет (аватар на этот
     // кусок не заказан — движок прячет <video> вне его окна), проверять
     // перекрытие лица нечем и незачем.
@@ -523,15 +503,48 @@ async function collectSample(page) {
       }
       return true;
     };
-    const presenterVideo = presenter
-      ? presenter.element.querySelector("video") || presenter.element
-      : null;
+
+    // Окно ведущей. Клип с ведущей живёт либо в общей обёртке `#video-wrap`
+    // (их договорённость, talking-head-recut/references/DESIGN_INDEX.md:27),
+    // либо в слоте блока каталога — сцена с ведущей в пузыре или в PiP держит
+    // её у себя. Поэтому ищем ВИДИМЫЙ клип, а не одну заранее известную
+    // обёртку: иначе гейт подвижности мерил бы пустой `#video-wrap`, пока
+    // ведущая на экране в блоке.
+    const presenterCandidates = () => {
+      const found = [];
+      const wrap = document.querySelector("#video-wrap");
+      if (wrap) found.push({ element: wrap, how: "#video-wrap" });
+      for (const video of document.querySelectorAll("video")) {
+        if (!/(^|\/)clips\//.test(video.getAttribute("src") || "")) continue;
+        if (wrap && wrap.contains(video)) continue;
+        const parent = video.parentElement;
+        const wrapped =
+          parent && parent !== document.body && getComputedStyle(parent).overflow !== "visible"
+            ? parent
+            : video;
+        found.push({ element: wrapped, how: "video[src^=clips/]", video });
+      }
+      if (!found.length) {
+        const any = document.querySelector("video");
+        if (any) found.push({ element: any, how: "video" });
+      }
+      return found;
+    };
+
+    const shown = (candidate) => {
+      const video = candidate.video || candidate.element.querySelector("video");
+      return (
+        presenterVisible(candidate.element) && (!video || presenterVisible(video))
+      );
+    };
+    const candidates = presenterCandidates();
+    const presenter = candidates.find(shown) || candidates[0] || null;
     const videoRect = presenter
       ? {
           ...rect(presenter.element),
           source: presenter.how,
           tag: presenter.element.tagName.toLowerCase(),
-          visible: presenterVisible(presenter.element) && presenterVisible(presenterVideo),
+          visible: shown(presenter),
         }
       : null;
 

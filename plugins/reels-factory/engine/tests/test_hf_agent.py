@@ -1,9 +1,11 @@
-"""Композицию собирает агент под скилами HeyGen, а не наш код."""
+"""Монтаж планирует агент под скилами HeyGen; композицию собирает наш код."""
 import json
 
 import pytest
 
-from reels_factory.hf_agent import build_with_agent
+from reels_factory.hf_agent import plan_with_agent
+
+_BOARD = {"cards": [{"id": "card-01", "startSec": 0, "endSec": 3}]}
 
 
 class _Runner:
@@ -14,9 +16,7 @@ class _Runner:
     def run(self, prompt: str, cwd=None) -> str:
         self.prompts.append(prompt)
         if self.make_files:
-            (self.rdir / "public").mkdir(parents=True, exist_ok=True)
-            (self.rdir / "public" / "index.html").write_text("<html></html>", encoding="utf-8")
-            (self.rdir / "storyboard.json").write_text(json.dumps({"cards": []}),
+            (self.rdir / "storyboard.json").write_text(json.dumps(_BOARD),
                                                        encoding="utf-8")
         return "готово"
 
@@ -24,24 +24,34 @@ class _Runner:
 def test_вход_через_парадную_дверь(tmp_path):
     (tmp_path / "BRIEF.md").write_text("задание", encoding="utf-8")
     runner = _Runner(tmp_path)
-    build_with_agent(tmp_path, runner=runner)
+    plan_with_agent(tmp_path, runner=runner)
     assert runner.prompts and runner.prompts[0].lstrip().startswith("/hyperframes")
 
 
 def test_раскадровка_возвращается(tmp_path):
     (tmp_path / "BRIEF.md").write_text("задание", encoding="utf-8")
-    assert build_with_agent(tmp_path, runner=_Runner(tmp_path)) == {"cards": []}
+    assert plan_with_agent(tmp_path, runner=_Runner(tmp_path)) == _BOARD
 
 
-def test_без_композиции_ошибка(tmp_path):
+def test_без_раскадровки_ошибка(tmp_path):
     (tmp_path / "BRIEF.md").write_text("задание", encoding="utf-8")
-    with pytest.raises(RuntimeError, match="index.html"):
-        build_with_agent(tmp_path, runner=_Runner(tmp_path, make_files=False))
+    with pytest.raises(RuntimeError, match="storyboard"):
+        plan_with_agent(tmp_path, runner=_Runner(tmp_path, make_files=False))
+
+
+def test_пустая_раскадровка_ошибка(tmp_path):
+    (tmp_path / "BRIEF.md").write_text("задание", encoding="utf-8")
+    runner = _Runner(tmp_path)
+    runner.run = lambda prompt, cwd=None: (
+        (tmp_path / "storyboard.json").write_text('{"cards": []}',
+                                                  encoding="utf-8"), "готово")[1]
+    with pytest.raises(RuntimeError, match="ни одной карточки"):
+        plan_with_agent(tmp_path, runner=runner)
 
 
 def test_без_задания_ошибка(tmp_path):
     with pytest.raises(RuntimeError, match="BRIEF"):
-        build_with_agent(tmp_path, runner=_Runner(tmp_path))
+        plan_with_agent(tmp_path, runner=_Runner(tmp_path))
 
 
 def test_команда_видит_обычный_профиль_и_права(monkeypatch, tmp_path):
@@ -188,3 +198,35 @@ def test_модель_явным_аргументом_бьёт_окружени�
     hf_agent.HeyGenAgentRunner(model="claude-opus-5").run("/hyperframes", cwd=tmp_path)
 
     assert seen["cmd"][seen["cmd"].index("--model") + 1] == "claude-opus-5"
+
+
+# ---------- глубина рассуждения ----------
+#
+# На `high` (умолчание Sonnet 5) сессия отдала 42 тысячи токенов выхода и
+# заняла четверть часа на плане из десяти карточек. Регулятор нужен, чтобы
+# мерить это, а не гадать.
+
+def test_усилие_не_задано_флага_нет(monkeypatch, tmp_path):
+    from reels_factory import hf_agent
+
+    monkeypatch.setattr(hf_agent.Path, "home", lambda: tmp_path / "нет-профиля")
+    monkeypatch.delenv("REELS_AGENT_EFFORT", raising=False)
+    seen = {}
+    monkeypatch.setattr(hf_agent.subprocess, "run", _fake_run(seen))
+
+    hf_agent.HeyGenAgentRunner().run("/hyperframes", cwd=tmp_path)
+
+    assert "--effort" not in seen["cmd"]
+
+
+def test_усилие_из_переменной_окружения(monkeypatch, tmp_path):
+    from reels_factory import hf_agent
+
+    monkeypatch.setattr(hf_agent.Path, "home", lambda: tmp_path / "нет-профиля")
+    monkeypatch.setenv("REELS_AGENT_EFFORT", "medium")
+    seen = {}
+    monkeypatch.setattr(hf_agent.subprocess, "run", _fake_run(seen))
+
+    hf_agent.HeyGenAgentRunner().run("/hyperframes", cwd=tmp_path)
+
+    assert seen["cmd"][seen["cmd"].index("--effort") + 1] == "medium"

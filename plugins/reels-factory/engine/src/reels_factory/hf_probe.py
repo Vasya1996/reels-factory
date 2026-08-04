@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import functools
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -137,18 +138,50 @@ def _gate_face(samples: list[dict], face: dict | None) -> str:
     return f"FAIL: текст на лице ведущей — {shown}{tail}"
 
 
+#: Сколько разных положений ведущей требует приёмка. Планка снята с эталонов
+#: покадрово: «положение ведущей меняется не меньше трёх раз»
+#: (`docs/goal-hyperframes-speed.md`, пункт 2 приёмки).
+MIN_PRESENTER_POSITIONS = 3
+
+
 def _gate_presenter_moves(samples: list[dict]) -> str:
     rects = [sample["videoRect"] for sample in samples
              if sample.get("videoRect") and sample["videoRect"].get("visible")]
     if not rects:
         return "FAIL: ведущей нет на экране ни на одной выборке"
     distinct = _distinct_positions(rects)
-    if len(distinct) >= 2:
+    if len(distinct) >= MIN_PRESENTER_POSITIONS:
+        return f"PASS: положений {len(distinct)}"
+    shown = "; ".join(f'{int(r["left"])},{int(r["top"])} '
+                      f'{int(r["width"])}x{int(r["height"])}' for r in distinct)
+    return (f"FAIL: у ведущей за ролик {len(distinct)} положения вместо "
+            f"{MIN_PRESENTER_POSITIONS} — {shown}. Положение задаёт блок: "
+            "возьми блоки с разной раскладкой ведущей")
+
+
+#: Служебная надпись на экране. Ловим три следа, каждый — из разбора прогона
+#: 03.08: плашка-рубрика с разделителем «·» («продажи · база», «вопрос первый ·
+#: кому продаём?»), подпись об источнике («фото из каталога») и недозаполненный
+#: плейсхолдер блока. Эталонные рилсы приёмки не несут ни одной такой надписи.
+SERVICE_TEXT = re.compile(
+    r"·|плейсхолдер|placeholder|lorem|\bslot\b"
+    r"|из каталога|источник\s*[:·]|фото\s*[:·]",
+    re.I)
+
+
+def _gate_service_text(samples: list[dict]) -> str:
+    """На экране нет служебных надписей — ни в блоке, ни в карточке агента."""
+    found: dict[str, float] = {}
+    for sample in samples:
+        for text in sample.get("texts") or []:
+            value = (text.get("text") or "").strip()
+            if value and SERVICE_TEXT.search(value):
+                found.setdefault(value[:60], sample["time"])
+    if not found:
         return "PASS"
-    only = distinct[0]
-    return ("FAIL: окно ведущей за весь ролик стоит на месте — "
-            f'{int(only["left"])},{int(only["top"])} '
-            f'{int(only["width"])}x{int(only["height"])}')
+    shown = "; ".join(f'{time}с: «{value}»' for value, time in
+                      list(found.items())[:5])
+    return f"FAIL: служебная надпись в кадре — {shown}"
 
 
 def _gate_catalog_blocks(report: dict) -> str:
@@ -171,11 +204,12 @@ def gates_from_report(report: dict, face: dict | None = None) -> dict[str, str]:
         reason = ("FAIL: таймлайн не двигался под перемоткой — "
                   "вердикты пробы недостоверны")
         return {"D8_face": reason, "D14_presenter_moves": reason,
-                "D15_catalog_blocks": reason}
+                "D15_catalog_blocks": reason, "D17_service_text": reason}
     return {
         "D8_face": _gate_face(samples, face),
         "D14_presenter_moves": _gate_presenter_moves(samples),
         "D15_catalog_blocks": _gate_catalog_blocks(report),
+        "D17_service_text": _gate_service_text(samples),
     }
 
 

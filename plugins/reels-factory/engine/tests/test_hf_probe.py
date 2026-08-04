@@ -11,6 +11,7 @@ FACE = {"cx": 540, "cy": 520, "h": 260}
 FULL_FRAME = {"left": 0, "top": 0, "width": 1080, "height": 1920, "visible": True}
 # окно ведущей, отодвинутое вправо-вверх: раскладка pip из hf_layout.VIDEO_RECTS
 PIP = {"left": 690, "top": 28, "width": 360, "height": 203, "visible": True}
+ARCH = {"left": 120, "top": 900, "width": 520, "height": 700, "visible": True}
 
 
 def _rect(left, top, width, height):
@@ -49,8 +50,10 @@ def _низ_кадра():
 
 def test_чистая_композиция_проходит():
     samples = [_sample(0.0, texts=[_низ_кадра()]),
-               _sample(3.0, video=PIP, texts=[_низ_кадра()])]
-    assert set(gates_from_report(_report(samples), FACE).values()) == {"PASS"}
+               _sample(3.0, video=PIP, texts=[_низ_кадра()]),
+               _sample(6.0, video=ARCH, texts=[_низ_кадра()])]
+    assert all(value.startswith("PASS")
+               for value in gates_from_report(_report(samples), FACE).values())
 
 
 def test_текст_на_лице_валится():
@@ -100,22 +103,28 @@ def test_неподвижная_ведущая_валится():
 
 
 def test_смена_раскладки_засчитывается():
-    samples = [_sample(0.0), _sample(3.0, video=PIP), _sample(6.0)]
-    assert gates_from_report(_report(samples), FACE)["D14_presenter_moves"] == "PASS"
+    """Приёмка требует трёх разных положений, двух мало."""
+    двух = [_sample(0.0), _sample(3.0, video=PIP), _sample(6.0)]
+    assert gates_from_report(_report(двух), FACE)[
+        "D14_presenter_moves"].startswith("FAIL")
+    трёх = [*двух, _sample(9.0, video=ARCH)]
+    assert gates_from_report(_report(трёх), FACE)[
+        "D14_presenter_moves"].startswith("PASS")
 
 
 def test_дрожание_ниже_порога_за_движение_не_считается():
     """Сдвиг меньше 5% стороны кадра зритель не замечает — это не перестановка."""
+    from reels_factory.hf_probe import _distinct_positions
+
     едва = dict(FULL_FRAME, left=FULL_FRAME["left"] + MOVE_FRACTION * 1080 - 1)
-    samples = [_sample(0.0), _sample(3.0, video=едва)]
-    assert gates_from_report(_report(samples), FACE)[
-        "D14_presenter_moves"].startswith("FAIL")
+    assert len(_distinct_positions([FULL_FRAME, едва])) == 1
 
 
 def test_сдвиг_на_порог_засчитывается():
+    from reels_factory.hf_probe import _distinct_positions
+
     сдвинута = dict(FULL_FRAME, left=FULL_FRAME["left"] + MOVE_FRACTION * 1080)
-    samples = [_sample(0.0), _sample(3.0, video=сдвинута)]
-    assert gates_from_report(_report(samples), FACE)["D14_presenter_moves"] == "PASS"
+    assert len(_distinct_positions([FULL_FRAME, сдвинута])) == 2
 
 
 def test_ведущей_нет_нигде_валится():
@@ -139,7 +148,8 @@ def test_замерший_таймлайн_валит_все_гейты():
     """Их sweep_static: перемотка ничего не двинула, значит зелёный — вранью."""
     samples = [_sample(0.0), _sample(3.0, video=PIP)]
     gates = gates_from_report(_report(samples, sweepStatic=True), FACE)
-    assert set(gates) == {"D8_face", "D14_presenter_moves", "D15_catalog_blocks"}
+    assert set(gates) == {"D8_face", "D14_presenter_moves", "D15_catalog_blocks",
+                          "D17_service_text"}
     assert all(value.startswith("FAIL") for value in gates.values())
 
 
@@ -175,7 +185,8 @@ def test_упавший_скрипт_валится_ошибкой(tmp_path, mon
 def test_гейты_читают_отчёт_с_диска(tmp_path, monkeypatch):
     (tmp_path / "public").mkdir()
     (tmp_path / "public" / "index.html").write_text("<html></html>", encoding="utf-8")
-    report = _report([_sample(0.0), _sample(3.0, video=PIP)])
+    report = _report([_sample(0.0), _sample(3.0, video=PIP),
+                      _sample(6.0, video=ARCH)])
 
     class _Result:
         returncode = 0
@@ -189,4 +200,35 @@ def test_гейты_читают_отчёт_с_диска(tmp_path, monkeypatch)
 
     monkeypatch.setattr("reels_factory.hf_probe.shutil.which", lambda _: "node")
     monkeypatch.setattr("reels_factory.hf_probe.subprocess.run", _run)
-    assert set(probe_gates(tmp_path, face=FACE).values()) == {"PASS"}
+    assert all(value.startswith("PASS")
+               for value in probe_gates(tmp_path, face=FACE).values())
+
+
+# ---------- D17: служебных надписей в кадре не бывает ----------
+#
+# В прогоне 03.08 над карточками стояли плашки-рубрики («продажи · база»,
+# «вопрос первый · кому продаём?»), а под фотографией — подпись «фото из
+# каталога». Это дефект пайплайна, а не одного прогона, поэтому у него свой
+# гейт по живой композиции.
+
+@pytest.mark.parametrize("надпись", [
+    "ПРОДАЖИ · БАЗА",
+    "ВОПРОС ПЕРВЫЙ · КОМУ ПРОДАЁМ?",
+    "фото из каталога",
+    "источник · плейсхолдер",
+    "B-roll slot",
+])
+def test_служебная_надпись_заворачивает_сборку(надпись):
+    report = _report([_sample(1.0, texts=[_text(60, 200, 900, 120, надпись)])])
+    assert gates_from_report(report, FACE)["D17_service_text"].startswith("FAIL")
+
+
+@pytest.mark.parametrize("надпись", [
+    "ВСЕ ПРОДАЖИ СВОДЯТСЯ К ТРЁМ ВОПРОСАМ",
+    "02 ЧТО ПРОДАЁМ?",
+    "ВСЁ ОСТАЛЬНОЕ — НАДСТРОЙКА",
+])
+def test_содержательный_заголовок_проходит(надпись):
+    """Две удачные карточки прошлого прогона — заголовок без рубрики."""
+    report = _report([_sample(1.0, texts=[_text(60, 200, 900, 120, надпись)])])
+    assert gates_from_report(report, FACE)["D17_service_text"] == "PASS"

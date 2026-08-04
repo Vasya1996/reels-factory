@@ -9,25 +9,49 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from reels_factory import hf_captions
 from reels_factory.compose import VENC
 from reels_factory.config import FFMPEG, FPS, LUFS_TARGET, OUT_H, OUT_W, TP_TARGET
 from reels_factory.face_detect import face_box_for, load_face
-from reels_factory.hf_agent import build_with_agent
+from reels_factory.hf_agent import plan_with_agent
 from reels_factory.hf_assets import vendor_gsap
 from reels_factory.hf_brief import write_brief
 from reels_factory.hf_catalog import serve_catalog, write_project_config
+from reels_factory.hf_compose import (
+    build_composition, clear_generated, collect_intents, complete_storyboard,
+)
 from reels_factory.hf_fonts import inject_fonts
 from reels_factory.hf_gates import check_media, check_storyboard
 from reels_factory.hf_layout import quantize
+from reels_factory.hf_media import resolve_all
 from reels_factory.hf_probe import probe_gates
+from reels_factory.hf_rhythm import rhythm_gates
+from reels_factory.hf_sdk import sdk_session
 from reels_factory.hyperframes_blocks import _HF_VERSION
 
-STEPS = ("prepare", "compose", "gates", "check", "render", "loudness")
+#: Качество финального рендера остаётся прежним. Черновой прогон включается
+#: переменной окружения — на нём проверяют монтаж, а не картинку.
+RENDER_QUALITY = os.environ.get("REELS_RENDER_QUALITY", "standard")
+
+#: Рабочих у рендера. Их `auto` считает потолок по ядрам, памяти и размеру
+#: кадра (`render.ts:1411-1419`) и на нашей машине (12 ядер, 7 ГБ) выбирает
+#: слишком осторожно: 4 м 48 с даже на черновом качестве против 4 м 03 с на
+#: чистовом в восемь рабочих. Число переопределяется переменной окружения —
+#: на сервере ядер и памяти другое количество.
+RENDER_WORKERS = os.environ.get("REELS_RENDER_WORKERS", "8")
+
+STEPS = ("prepare", "plan", "compose", "gates", "render", "loudness")
 MAX_COMPOSE_ATTEMPTS = 2
+
+#: Сколько блоков каталога ставим разом. `npx` на каждый вызов тратит секунды
+#: на разрешение пакета, и пять блоков подряд — это полминуты ожидания ни на чём.
+INSTALL_PARALLEL = 4
 
 # Ключевой кадр на каждый кадр. Их рендерер перематывает видео покадрово, и на
 # редком GOP (по умолчанию у x264 — 250 кадров) перемотка попадает мимо: под
@@ -218,11 +242,53 @@ def _prepare_material(plan: dict, public: Path, rdir: Path) -> list[dict]:
     return media
 
 
+def _install_blocks(rdir: Path, names: list[str]) -> None:
+    """Поставить названные блоки их же командой, параллельно."""
+    missing = [name for name in dict.fromkeys(names)
+               if not (rdir / "public" / "compositions" / f"{name}.html").exists()]
+    if not missing:
+        return
+    with ThreadPoolExecutor(max_workers=INSTALL_PARALLEL) as pool:
+        errors = list(pool.map(
+            lambda name: _install_one(rdir, name), missing))
+    failed = [error for error in errors if error]
+    if failed:
+        raise RuntimeError("; ".join(failed))
+
+
+def _install_one(rdir: Path, name: str) -> str | None:
+    try:
+        _cli("add", name, "--no-clipboard", cwd=rdir)
+    except RuntimeError as error:
+        return str(error)
+    if not (rdir / "public" / "compositions" / f"{name}.html").exists():
+        return (f"блок {name} не встал в public/compositions; "
+                "проверь, что он есть в каталоге")
+    return None
+
+
+def _check_findings(log: Path) -> list[str]:
+    """Ошибки из их отчёта `check` — чтобы они дошли до агента словами."""
+    if not log.exists():
+        return []
+    try:
+        report = json.loads(log.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    found = []
+    for item in report.get("errors") or report.get("issues") or []:
+        if isinstance(item, dict):
+            found.append(f'{item.get("code", "?")}: {item.get("message", "")}')
+        else:
+            found.append(str(item))
+    return found
+
+
 def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                          avatar_mp4s: list, master_audio, alignment_words: list,
                          avatar_render_plan: dict | None = None,
                          out_mp4=None, agent_runner=None) -> dict:
-    """Материал -> агент под скилами -> гейты -> рендер -> громкость."""
+    """Материал -> план агента -> сборка кодом -> гейты -> рендер -> громкость."""
     rdir = Path(rdir).resolve()
     public = rdir / "public"
     words = _normalize_words(alignment_words)
@@ -238,12 +304,15 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         face_box_for(public / clips[0]["file"], rdir / "face.json")
         media = _media_from_plan(edit_plan, public) + _prepare_material(
             edit_plan, public, rdir)
+        # Компонент субтитров тянется из их общего реестра по сети: делаем это
+        # пока агент ещё не начал, чтобы сборка потом не ждала загрузку.
+        hf_captions.stage(rdir)
         write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
                     duration=duration, clips=clips)
         (rdir / "clips.json").write_text(
             json.dumps(clips, ensure_ascii=False, indent=1), encoding="utf-8")
-        # media.json задание больше не читает: вставки агент ищет сам через
-        # media-use. Файл остаётся как след того, что план успел положить в
+        # media.json задание больше не читает: вставки подбираются по намерениям
+        # из плана. Файл остаётся как след того, что план успел положить в
         # public/ — на него смотрят при разборе прогона.
         (rdir / "media.json").write_text(
             json.dumps(media, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -253,33 +322,50 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
     saved_clips = json.loads((rdir / "clips.json").read_text(encoding="utf-8"))
 
     gate_result, reason = None, None
-    # Каталог поднимаем на всё время сборки: агент ходит в него и когда смотрит
-    # `hyperframes catalog`, и когда ставит блок через `add`.
+    # Каталог поднимаем на всё время сборки: `hyperframes add` ходит в него за
+    # каждым блоком, который назвал агент.
     with serve_catalog() as registry_url:
         write_project_config(rdir, registry_url)
         for attempt in range(MAX_COMPOSE_ATTEMPTS):
             if reason is not None:
-                reset_step(rdir, "compose")
-                reset_step(rdir, "gates")
-                reset_step(rdir, "check")
-                reset_step(rdir, "render")
-                reset_step(rdir, "loudness")
+                for step in ("plan", "compose", "gates", "render", "loudness"):
+                    reset_step(rdir, step)
                 write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
                             duration=duration, clips=saved_clips,
                             retry_reason=reason)
 
-            board = run_step(rdir, "compose",
-                             lambda: build_with_agent(rdir, runner=agent_runner))
+            board = run_step(rdir, "plan",
+                             lambda: plan_with_agent(rdir, runner=agent_runner))
             if board is None:
                 board = json.loads(
                     (rdir / "storyboard.json").read_text(encoding="utf-8"))
+            board = complete_storyboard(board, clips=saved_clips,
+                                        duration=duration)
 
-            # Шрифты врезаем до всех проверок: и наши гейты, и их `check` меряют
-            # переполнение и перекрытие по отрисованному тексту, а без наших
-            # @font-face кириллица считалась бы по подменному шрифту — судили бы
-            # не тот текст, что увидит зритель. Вызов идемпотентен, поэтому
-            # переживает и возобновление, и повторную сборку.
-            inject_fonts(rdir / "public", work_dir=rdir)
+            def compose() -> dict:
+                clear_generated(public)
+                _install_blocks(rdir, [
+                    (card.get("render") or {}).get("block")
+                    for card in board.get("cards") or []])
+                with sdk_session() as sdk:
+                    found = resolve_all(
+                        public, collect_intents(sdk, public, board))
+                    build_composition(rdir, sdk, storyboard=board,
+                                      clips=saved_clips, duration=duration,
+                                      words=words, resolved=found)
+                # Шрифты врезаем до проверок: и наши гейты, и их `check` меряют
+                # переполнение и перекрытие по отрисованному тексту, а без наших
+                # @font-face кириллица считалась бы по подменному шрифту.
+                inject_fonts(public, work_dir=rdir)
+                return found
+
+            try:
+                run_step(rdir, "compose", compose)
+            except RuntimeError as error:
+                reason = str(error)
+                if attempt == MAX_COMPOSE_ATTEMPTS - 1:
+                    raise RuntimeError("сборка не состоялась — " + reason)
+                continue
 
             result = check_storyboard(board, clips=saved_clips, duration=duration)
             result.update(check_media(rdir))
@@ -289,27 +375,32 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                 result.update(probe_gates(rdir, face=load_face(rdir)))
             except RuntimeError as error:
                 result["D8_face"] = f"FAIL: {error}"
+            # Их проверка идёт здесь же, одним заходом: агент композицию больше
+            # не собирает и `check` не гоняет, значит две проверки подряд
+            # схлопываются в одну, и её находки уходят агенту тем же путём, что
+            # и наши.
+            #
+            # Без `--at-transitions`: выборки на границах твинов стоят четыре
+            # минуты из пяти (34 с против 4 м 8 с на том же проекте), а искали
+            # они дефект ручного твина. Твинов в композиции больше нет — код
+            # ставит стыки, — и то же место плотнее закрывает наша проба: она
+            # снимает живой DOM каждые 0,25 с, то есть 166 точек против их
+            # девяти. `--snapshots` тоже не нужен: монтаж судят по кадрам
+            # готового mp4, а не по снимкам композиции.
+            try:
+                _cli("check", "public", "--json",
+                     cwd=rdir, log=rdir / "check.json")
+            except RuntimeError as error:
+                result["D0_check"] = "FAIL: " + "; ".join(
+                    _check_findings(rdir / "check.json") or [str(error)])
+
             failed = [f"{k}: {v}" for k, v in result.items() if v.startswith("FAIL")]
             if not failed:
-                # Их проверка идёт внутри цикла, а не после него: её находки —
-                # это то, что агент умеет починить сам, и повтор ради них
-                # дешевле ролика с текстом за полями. `--snapshots` кладёт
-                # кадры (судить монтаж по кадрам — единственный честный
-                # способ), `--at-transitions` добавляет выборки на границах
-                # твинов: на девяти равномерных точках стык не поймать.
-                try:
-                    run_step(rdir, "check",
-                             lambda: _cli("check", "public", "--snapshots",
-                                          "--at-transitions", "--json",
-                                          cwd=rdir, log=rdir / "check.json"))
-                except RuntimeError as error:
-                    failed = [str(error)]
-                else:
-                    gate_result = result
-                    (rdir / "gates.json").write_text(
-                        json.dumps(result, ensure_ascii=False), encoding="utf-8")
-                    _marker(rdir, "gates").write_text("ok", encoding="utf-8")
-                    break
+                gate_result = result
+                (rdir / "gates.json").write_text(
+                    json.dumps(result, ensure_ascii=False), encoding="utf-8")
+                _marker(rdir, "gates").write_text("ok", encoding="utf-8")
+                break
             reason = "; ".join(failed)
             if attempt == MAX_COMPOSE_ATTEMPTS - 1:
                 raise RuntimeError("сборка не прошла проверки — " + reason)
@@ -317,16 +408,30 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
     raw = rdir / "reel.raw.mp4"
     run_step(rdir, "render",
              lambda: _cli("render", "public", "--output", str(raw),
-                          "--fps", str(FPS), "--quality", "standard", cwd=rdir))
+                          "--fps", str(FPS), "--quality", RENDER_QUALITY,
+                          "--workers", RENDER_WORKERS, cwd=rdir))
 
     final = Path(out_mp4) if out_mp4 else rdir / "reel.mp4"
     run_step(rdir, "loudness", lambda: _normalize_loudness(raw, final))
+
+    # Ритм меряем по готовому файлу: планка эталонов — про то, что видит
+    # зритель, а раскадровка о смене картинки врать умеет.
+    if gate_result is None:
+        gate_result = json.loads((rdir / "gates.json").read_text(encoding="utf-8"))
+    gate_result.update(rhythm_gates(final))
+    (rdir / "gates.json").write_text(
+        json.dumps(gate_result, ensure_ascii=False), encoding="utf-8")
 
     (rdir / "scenario.timed.json").write_text(
         json.dumps(timed_scenario, ensure_ascii=False, indent=1), encoding="utf-8")
     (rdir / "words.fixed.json").write_text(
         json.dumps(words, ensure_ascii=False, indent=1), encoding="utf-8")
 
+    # Пробелы каталога: чего агенту не хватило. Расширение каталога в это
+    # задание не входит, поэтому список просто доезжает до отчёта.
+    board = json.loads((rdir / "storyboard.json").read_text(encoding="utf-8"))
     return {"mp4": str(final), "dur": duration, "timed_scenario": timed_scenario,
             "words_fixed": words, "gates": gate_result,
-            "agent_cost_usd": getattr(agent_runner, "total_cost_usd", 0.0)}
+            "catalog_gaps": board.get("catalogGaps") or [],
+            "agent_cost_usd": getattr(agent_runner, "total_cost_usd", 0.0),
+            "agent_runs": getattr(agent_runner, "runs", [])}

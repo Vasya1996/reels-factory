@@ -36,14 +36,18 @@ def _board(cards, **over):
 
 
 def _plausible_cards():
-    """Шесть карточек, из них хвост закрыт полноэкранными — чистый случай."""
+    """Шесть карточек с зазорами: и ритм, и покрытие пропуска без ведущей.
+
+    Зазор между соседними обязателен — карточки впритык детектор сцен видит
+    одной склейкой, и планка смен картинки не берётся.
+    """
     return [
-        _card(1, startSec=0.0, endSec=5.0),
-        _card(2, startSec=5.033, endSec=11.7),
-        _card(3, zone="fullscreen", startSec=11.733, endSec=12.2),
-        _card(4, startSec=12.233, endSec=23.1),
-        _card(5, startSec=23.167, endSec=34.6),
-        _card(6, zone="fullscreen", startSec=34.633, endSec=41.5),
+        _card(1, startSec=1.0, endSec=5.0),
+        _card(2, startSec=6.0, endSec=11.7),
+        _card(3, zone="fullscreen", startSec=11.733, endSec=19.0),
+        _card(4, startSec=20.0, endSec=26.0),
+        _card(5, startSec=27.0, endSec=33.5),
+        _card(6, zone="fullscreen", startSec=34.5, endSec=41.5),
     ]
 
 
@@ -171,6 +175,55 @@ def test_внешняя_ссылка_вставкой_не_считается(tm
 
 def test_пропуск_закрывается_цепочкой_карточек():
     cards = _plausible_cards()
-    cards[-1] = _card(6, zone="fullscreen", startSec=34.633, endSec=38.0)
+    cards[-1] = _card(6, zone="fullscreen", startSec=34.5, endSec=38.0)
     cards.append(_card(7, zone="fullscreen", startSec=38.033, endSec=41.5))
     assert _check(cards)["D12_faceless_cover"] == "PASS"
+
+
+# ---------- D20: пустого кадра не бывает ----------
+#
+# Уменьшенное окно ведущей закрывает седьмую часть кадра. Прозрачная карточка
+# над ним оставляет остальное чёрным — так вышло на проверочном прогоне.
+
+def _filled_card(**over):
+    card = {"id": "c1", "intent": "и", "accentIndex": 0, "startSec": 0.0,
+            "endSec": 3.0, "zone": "video-overlay", "contentHints": {},
+            "render": {"kind": "fragment"}}
+    card.update(over)
+    return {"cards": [card]}
+
+
+def test_ведущая_в_углу_под_прозрачной_карточкой_это_чёрный_кадр():
+    from reels_factory.hf_gates import check_frame_filled
+
+    result = check_frame_filled(_filled_card(presenter="pip-bl"))
+    assert result["D20_frame_filled"].startswith("FAIL")
+
+
+def test_ведущая_во_весь_кадр_под_прозрачной_карточкой_норма():
+    from reels_factory.hf_gates import check_frame_filled
+
+    assert check_frame_filled(_filled_card(presenter="full"))["D20_frame_filled"] == "PASS"
+
+
+def test_ведущая_в_углу_под_полноэкранной_карточкой_норма():
+    from reels_factory.hf_gates import check_frame_filled
+
+    result = check_frame_filled(_filled_card(presenter="pip-bl", zone="fullscreen"))
+    assert result["D20_frame_filled"] == "PASS"
+
+
+def test_ведущая_сверху_и_карточка_снизу_закрывают_кадр():
+    from reels_factory.hf_gates import check_frame_filled
+
+    # stack: видео 0–844, side-panel: карточка 1152–1920 — между ними дыра
+    result = check_frame_filled(_filled_card(presenter="stack", zone="side-panel"))
+    assert result["D20_frame_filled"].startswith("FAIL")
+
+
+def test_блок_каталога_закрывает_кадр_сам():
+    from reels_factory.hf_gates import check_frame_filled
+
+    result = check_frame_filled(_filled_card(presenter="none",
+                                      render={"kind": "block", "block": "g07"}))
+    assert result["D20_frame_filled"] == "PASS"

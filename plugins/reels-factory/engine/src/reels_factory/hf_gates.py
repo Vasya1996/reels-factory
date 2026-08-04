@@ -16,10 +16,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from reels_factory.config import FPS
+from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.hf_layout import (
-    ALLOWED_ZONES, FULL_FRAME_ZONES, avatar_gaps, quantize,
+    ALLOWED_ZONES, FULL_FRAME_ZONES, VIDEO_RECTS, ZONE_RECTS, avatar_gaps,
+    quantize,
 )
+from reels_factory.hf_rhythm import MAX_STATIC_SPAN, MIN_CARD_GAP
 
 #: Базовый темп по длительности ролика — таблица «Step 1 — base pace by
 #: duration» из talking-head-recut/SKILL.md:206-214. Ключ — верхняя граница
@@ -134,6 +136,64 @@ def check_media(rdir) -> dict:
             else "FAIL: " + "; ".join(problems)}
 
 
+#: Зоны, где карточке разрешён непрозрачный фон. Для `video-overlay` и
+#: `lower-third` их контракт это прямо запрещает: «the card's .root MUST NOT
+#: paint a full opaque background» (talking-head-recut/SKILL.md:631-637), эти
+#: карточки живут поверх видимого кадра.
+OPAQUE_ZONES = {"fullscreen", "side-panel", "whiteboard-area"}
+
+
+def _covers_frame(rects: list[dict]) -> bool:
+    """Закрывают ли прямоугольники кадр целиком.
+
+    Разрезаем кадр по границам прямоугольников и смотрим каждую клетку: для
+    осевых прямоугольников это точно, а их всего два.
+    """
+    xs = sorted({0, OUT_W} | {r["left"] for r in rects}
+                | {r["left"] + r["width"] for r in rects})
+    ys = sorted({0, OUT_H} | {r["top"] for r in rects}
+                | {r["top"] + r["height"] for r in rects})
+    for x0, x1 in zip(xs, xs[1:]):
+        if x1 <= 0 or x0 >= OUT_W:
+            continue
+        for y0, y1 in zip(ys, ys[1:]):
+            if y1 <= 0 or y0 >= OUT_H:
+                continue
+            cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+            if not any(r["left"] <= cx <= r["left"] + r["width"]
+                       and r["top"] <= cy <= r["top"] + r["height"]
+                       for r in rects):
+                return False
+    return True
+
+
+def check_frame_filled(storyboard: dict) -> dict:
+    """Ни на одной карточке кадр не пустует.
+
+    Уменьшенное окно ведущей закрывает седьмую часть кадра. Если карточка над
+    ним прозрачная, всё остальное — чёрный прямоугольник. Проверяем по
+    геометрии: окно ведущей плюс непрозрачная карточка обязаны закрыть кадр.
+    """
+    problems = []
+    for card in storyboard.get("cards") or []:
+        render = card.get("render") or {}
+        if render.get("kind") == "block":
+            continue                      # блок — сцена во весь кадр
+        zone = card.get("zone")
+        position = card.get("presenter") or "full"
+        rects = []
+        if position != "none" and position in VIDEO_RECTS:
+            rects.append(VIDEO_RECTS[position])
+        if zone in OPAQUE_ZONES and zone in ZONE_RECTS:
+            rects.append(ZONE_RECTS[zone])
+        if not rects or not _covers_frame(rects):
+            problems.append(
+                f'{card.get("id", "?")}: ведущая {position!r} и зона {zone!r} '
+                "не закрывают кадр — остальное будет чёрным")
+    return {"D20_frame_filled": "PASS" if not problems
+            else "FAIL: " + "; ".join(problems)}
+
+
 def check_storyboard(storyboard: dict, *, clips: list[dict] | None = None,
                      duration: float = 0.0) -> dict:
     """Гейты раскадровки. PASS либо FAIL с перечислением карточек."""
@@ -184,7 +244,49 @@ def check_storyboard(storyboard: dict, *, clips: list[dict] | None = None,
     def gate(problems: list[str]) -> str:
         return "PASS" if not problems else "FAIL: " + "; ".join(problems)
 
-    return {"D9_frame_grid": gate(grid_bad), "D10_zone": gate(zone_bad),
-            "D11_schema": gate(_schema_problems(storyboard)),
-            "D12_faceless_cover": gate(cover_bad),
-            "D13_density": gate(density_bad)}
+    result = {"D9_frame_grid": gate(grid_bad), "D10_zone": gate(zone_bad),
+              "D11_schema": gate(_schema_problems(storyboard)),
+              "D12_faceless_cover": gate(cover_bad),
+              "D13_density": gate(density_bad),
+              "D21_card_gaps": gate(_gap_problems(cards, clips or [], duration))}
+    result.update(check_frame_filled(storyboard))
+    return result
+
+
+def _has_clip(clips: list[dict], at: float) -> bool:
+    return any(c["start"] <= at + 1e-6 < c["start"] + c["duration"] for c in clips)
+
+
+def _gap_problems(cards: list[dict], clips: list[dict],
+                  duration: float) -> list[str]:
+    """Между соседними карточками есть зазор, и ни один кусок не длиннее восьми.
+
+    Приход сцены и её уход детектор считает двумя сменами только когда между
+    сценами есть кадр без них: карточки впритык он видит как одну склейку.
+
+    Зазор требуем только там, где есть чем его занять: на интервале без клипа
+    ведущей пустое место — это чёрный кадр, и там карточки обязаны идти
+    встык (это же требует D12). Предел в восемь секунд меряет и D19, но уже на
+    готовом файле — здесь видно до рендера.
+    """
+    problems = []
+    ordered = sorted(
+        ((float(c.get("startSec", 0)), float(c.get("endSec", 0)),
+          c.get("id", "?")) for c in cards if "startSec" in c and "endSec" in c))
+    cursor = 0.0
+    for start, end, card_id in ordered:
+        if (start - cursor < MIN_CARD_GAP - 0.001
+                and _has_clip(clips, cursor)
+                and _has_clip(clips, max(start - 0.001, cursor))):
+            problems.append(
+                f"перед {card_id} зазор {max(start - cursor, 0):.2f} с, нужен "
+                f"хотя бы {MIN_CARD_GAP:g} с — иначе смена картинки не считается")
+        if end - start > MAX_STATIC_SPAN:
+            problems.append(
+                f"{card_id} идёт {end - start:.1f} с, предел {MAX_STATIC_SPAN:g}")
+        cursor = max(cursor, end)
+    if duration - cursor > MAX_STATIC_SPAN:
+        problems.append(
+            f"после последней карточки {duration - cursor:.1f} с без смены "
+            f"картинки, предел {MAX_STATIC_SPAN:g}")
+    return problems

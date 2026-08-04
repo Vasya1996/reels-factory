@@ -42,15 +42,6 @@ def test_поля_которые_знает_движок_проставлены(
     assert "1080x1920" in text
 
 
-def test_смысловые_поля_агент_выводит_сам(tmp_path):
-    text = _text(tmp_path)
-    # message / angle / audience контракт велит выводить, а не спрашивать:
-    # в режиме automation спрашивать не у кого.
-    for field in ("message", "angle", "audience"):
-        assert field in text, f"нет поля {field}"
-    assert "выведи" in text.lower() or "вывести" in text.lower()
-
-
 def test_язык_можно_задать(tmp_path):
     assert "kk" in _text(tmp_path, language="kk")
 
@@ -74,7 +65,6 @@ def test_расписание_клипов_передано(tmp_path):
 def test_материал_перечислен(tmp_path):
     text = _text(tmp_path)
     assert "voice.wav" in text and "words.json" in text
-    assert "gsap" in text
 
 
 # ---------- то, чего в задании быть не должно ----------
@@ -86,10 +76,13 @@ def test_пооконной_раскадровки_нет(tmp_path):
     assert "window-000" not in text
 
 
-def test_каталог_разрешён_и_назван(tmp_path):
+def test_паспорта_блоков_в_задании(tmp_path):
+    """Блоки описаны слотами прямо в задании: открывать их файлы незачем."""
     text = _text(tmp_path)
-    assert "resolve" in text
-    assert "registry" in text
+    assert "g02-avatar-fullscreen-hook" in text
+    assert "`line-1`" in text and "роль presenter" in text
+    # Плашка-рубрика блока агенту не предлагается вовсе.
+    assert "Рубрика · Глава" not in text
 
 
 # ---------- границы ----------
@@ -100,22 +93,17 @@ def test_правила_числами(tmp_path):
     assert "41.5" in text or "41,5" in text
 
 
-def test_стиль_выбирает_агент_а_гарнитуры_наши(tmp_path):
-    """Стиль, раскладка и рамка — работа их жанра; гарнитуры держим сами:
-    другие не несут кириллицу и казахские буквы."""
+def test_гарнитуры_наши(tmp_path):
+    """Гарнитуры держим сами: другие не несут кириллицу и казахские буквы."""
+    assert FONTS in _text(tmp_path)
+
+
+def test_вёрстку_у_агента_не_просят(tmp_path):
+    """Изготовление ушло коду целиком: разметки в ответе агента больше нет."""
     text = _text(tmp_path)
-    assert FONTS in text
-    assert "выбираешь ты" in text
-
-
-def test_свободные_полосы_указаны(tmp_path):
-    assert "left=" in _text(tmp_path)
-
-
-def test_запреты_прописаны(tmp_path):
-    text = _text(tmp_path)
-    assert "Внешних ссылок нет" in text
-    assert "лицо" in text.lower()
+    assert "public/cards/" not in text
+    assert "data-anim" not in text
+    assert "Не пиши HTML" in text
 
 
 def test_интервалы_без_ведущей_названы(tmp_path):
@@ -124,35 +112,39 @@ def test_интервалы_без_ведущей_названы(tmp_path):
     assert "без ведущей" in text.lower() or "ведущей в кадре нет" in text.lower()
 
 
-def test_шрифты_врезает_движок(tmp_path):
-    text = _text(tmp_path)
-    assert "@font-face" not in text or "движок" in text
-    assert "Ссылок на внешние шрифты не пиши" in text
-
-
 def test_причина_повтора_попадает_в_задание(tmp_path):
     assert "лицо перекрыто" in _text(tmp_path, retry_reason="лицо перекрыто")
 
 
 def test_что_вернуть_названо(tmp_path):
     text = _text(tmp_path)
-    assert "public/index.html" in text
     assert "storyboard.json" in text
+    # Композицию собирает код — просить её у агента больше нельзя.
+    assert "public/index.html" not in text
+    assert "catalogGaps" in text
 
 
-def test_раскадровка_просится_в_их_схеме(tmp_path):
+def test_у_агента_просят_только_карточки(tmp_path):
+    """Шапку схемы заполняет код: решений в ней нет, а разойтись есть где —
+    на Sonnet агент отдал videoTrack списком и потерял попытку."""
     text = _text(tmp_path)
-    assert "schemaVersion" in text and '"videoTrack"' in text
+    assert '"cards"' in text
     assert "contentHints" in text and '"intent"' in text
-    # Поля, которые мы просили сверх схемы, противоречили videoTrack.bounds —
-    # соблюсти оба разом нельзя, значит просить их нельзя тоже.
+    assert '"videoTrack"' not in text and '"schemaVersion": 3,' not in text
+    # Поля, которые мы просили сверх схемы, противоречили videoTrack.bounds.
     assert "contentRect" not in text and "videoRect" not in text
 
 
-def test_субтитры_карточками_не_считаются(tmp_path):
+def test_вставки_названы_обязательными(tmp_path):
     text = _text(tmp_path)
-    assert "subtitles" in text
-    assert "карточк" in text.lower()
+    assert "не меньше двух" in text
+    assert "`media`" in text
+
+
+def test_субтитры_снимаются_с_агента(tmp_path):
+    text = _text(tmp_path)
+    assert "Субтитры" in text
+    assert "в карточки не превращай" in text
 
 
 def test_плотность_карточек_по_их_формуле(tmp_path):
@@ -162,4 +154,36 @@ def test_плотность_карточек_по_их_формуле(tmp_path):
 def test_положение_ведущей_обязано_меняться(tmp_path):
     text = _text(tmp_path).lower()
     assert "положение ведущей" in text
-    assert "закадров" in text
+    assert "не меньше трёх раз" in text
+
+
+def test_зазор_между_карточками_назван_числом(tmp_path):
+    """Карточки впритык детектор видит одной склейкой — планка не берётся."""
+    text = _text(tmp_path)
+    assert "зазор" in text and "0.8 с" in text
+
+
+def test_пробел_каталога_записывается_а_не_закрывается_вёрсткой(tmp_path):
+    text = _text(tmp_path)
+    assert "пробел каталога" in text.lower()
+    assert "catalogGaps" in text
+
+
+def test_служебные_надписи_запрещены(tmp_path):
+    text = _text(tmp_path)
+    assert "Служебных надписей на экране не бывает" in text
+    assert "фото из каталога" in text
+
+
+def test_число_карточек_дано_числами(tmp_path):
+    """Sonnet сдал 11 карточек при потолке 10: формулу считаем за него."""
+    text = _text(tmp_path)
+    assert "от 5 до 10" in text
+
+
+def test_лишняя_работа_запрещена_явно(tmp_path):
+    """16 минут на план — это чтение их справочников и попытки собрать самому."""
+    text = _text(tmp_path)
+    assert "Чего не делать" in text
+    assert "hyperframes check" in text
+    assert "справочники по темам" in text

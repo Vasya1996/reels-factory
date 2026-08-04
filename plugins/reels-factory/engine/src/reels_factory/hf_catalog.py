@@ -113,3 +113,29 @@ def block_names(catalog_dir=None) -> list[str]:
     root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
     manifest = json.loads((root / "registry.json").read_text(encoding="utf-8"))
     return [item["name"] for item in manifest.get("items") or []]
+
+
+def block_passports(catalog_dir=None) -> str:
+    """Паспорта всех блоков: что за сцена и какие в ней слоты.
+
+    Раньше агент открывал файл блока сам — по сотне килобайт на блок, из них
+    почти всё base64 шрифтов. Паспорт даёт то же знание в двадцать строк:
+    описание сцены и имена слотов с тем, что в них лежит сейчас.
+    """
+    from reels_factory.hf_sdk import sdk_session
+    from reels_factory.hf_slots import passport
+
+    root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
+    pages = []
+    with sdk_session() as sdk:
+        for name in block_names(catalog_dir):
+            folder = root / "blocks" / name
+            item = json.loads(
+                (folder / "registry-item.json").read_text(encoding="utf-8"))
+            sdk.open(name, folder / f"{name}.html")
+            pages.append(passport(
+                sdk.elements(name), name=name, title=item.get("title", ""),
+                description=item.get("description", ""),
+                duration=item.get("duration")))
+            sdk.close(name)
+    return "\n\n".join(pages)

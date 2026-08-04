@@ -10,11 +10,37 @@ from __future__ import annotations
 
 from reels_factory.config import FPS, OUT_H, OUT_W
 
+#: Окно ведущей. Числа — их таблица раскладок, колонка portrait, строка
+#: «9:16 source video» (references/layouts/{overlay,stack,split,pip}.html).
+#: Прежнее значение `pip` было взято из строки «16:9 source» (360x203) — под
+#: наши вертикальные клипы оно не годится: клип 1080x1920 в таком окне
+#: обрезается до полоски глаз.
 VIDEO_RECTS = {
+    "full": {"left": 0, "top": 0, "width": 1080, "height": 1920},
     "overlay": {"left": 0, "top": 0, "width": 1080, "height": 1920},
     "stack": {"left": 0, "top": 0, "width": 1080, "height": 844},
     "split": {"left": 0, "top": 960, "width": 1080, "height": 960},
-    "pip": {"left": 690, "top": 28, "width": 360, "height": 203},
+    "pip": {"left": 738, "top": 28, "width": 312, "height": 555},
+    "pip-tr": {"left": 738, "top": 28, "width": 312, "height": 555},
+    "pip-tl": {"left": 30, "top": 28, "width": 312, "height": 555},
+    "pip-br": {"left": 738, "top": 1337, "width": 312, "height": 555},
+    "pip-bl": {"left": 30, "top": 1337, "width": 312, "height": 555},
+    # Наезд на ведущую: то же окно, увеличенное на 16% и сдвинутое так, чтобы
+    # голова осталась в верхней трети. Кадр закрывает целиком — окно больше
+    # кадра, лишнее срезает `overflow:hidden` обёртки. В эталонных рилсах такой
+    # «поп»-наезд стоит в каждой паузе между сценами; у нас пауза шла одним
+    # неподвижным планом, и детектор сцен не видел там ни одной смены.
+    "punch": {"left": -87, "top": -170, "width": 1254, "height": 2229},
+}
+
+#: Куда садится карточка при каждой из пяти зон скила. Числа — его же таблица
+#: (talking-head-recut/SKILL.md:181-187), доли пересчитаны на 1080x1920.
+ZONE_RECTS = {
+    "fullscreen": {"left": 0, "top": 0, "width": 1080, "height": 1920},
+    "video-overlay": {"left": 0, "top": 0, "width": 1080, "height": 1920},
+    "whiteboard-area": {"left": 40, "top": 528, "width": 1000, "height": 864},
+    "lower-third": {"left": 0, "top": 1344, "width": 1080, "height": 576},
+    "side-panel": {"left": 0, "top": 1152, "width": 1080, "height": 768},
 }
 
 # Все пять зон скила (talking-head-recut/SKILL.md:180-188) разрешены: своих

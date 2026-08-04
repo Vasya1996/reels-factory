@@ -18,14 +18,16 @@ from pathlib import Path
 
 PROMPT = """/hyperframes
 
-Собери композицию по заданию. Задание — файл BRIEF.md в текущей папке.
+Смонтируй рилс по заданию. Задание — файл BRIEF.md в текущей папке.
 Прочитай его целиком и следуй ему буквально: числа в нём не рекомендации,
 а границы.
 
-Материал уже готов в public/. Своё распознавание речи не запускай.
+Материал уже готов в public/. Своё распознавание речи не запускай, картинки
+сам не ищи, композицию не собирай — это делает код по твоему плану.
 
-Верни ровно два файла: public/index.html и storyboard.json в формате из
-задания. Ничего не спрашивай — все решения принимай сам."""
+Верни один файл `storyboard.json` в формате из задания. Разметку не пиши
+вовсе: ни HTML, ни CSS, ни JavaScript, ни файла, ни строки. Ничего не
+спрашивай — все решения принимай сам."""
 
 TIMEOUT_S = 1800
 
@@ -39,14 +41,21 @@ AGENT_TOOLS = ("Bash", "Read", "Write", "Edit", "Glob", "Grep", "Skill",
 class HeyGenAgentRunner:
     """Headless-сессия в обычном профиле, с правом писать файлы."""
 
-    def __init__(self, timeout_s: int = TIMEOUT_S, model: str | None = None):
+    def __init__(self, timeout_s: int = TIMEOUT_S, model: str | None = None,
+                 effort: str | None = None):
         self.timeout_s = timeout_s
         self.exe = shutil.which("claude") or "claude"
         # Замер себестоимости требует одного и того же задания на разных
         # моделях. Без явного выбора headless-сессия берёт модель по умолчанию,
         # и сравнить Sonnet 5 с Opus 5 нечем. Пусто — модель не навязываем.
         self.model = model or os.environ.get("REELS_AGENT_MODEL") or None
+        # Глубина рассуждения сессии. По умолчанию Sonnet 5 работает на `high`,
+        # и на плане монтажа это видно: 42 тысячи токенов на выходе и четверть
+        # часа времени, притом что решений в плане десяток. Задание сузилось до
+        # раскадровки и коротких фрагментов, думать над ним столько незачем.
+        self.effort = effort or os.environ.get("REELS_AGENT_EFFORT") or None
         self.total_cost_usd = 0.0
+        self.runs: list[dict] = []
 
     def run(self, prompt: str, cwd=None) -> str:
         env = dict(os.environ)
@@ -62,6 +71,8 @@ class HeyGenAgentRunner:
             env["CLAUDE_CODE_OAUTH_TOKEN"] = token_file.read_text(
                 encoding="utf-8").strip()
         model_args = ["--model", self.model] if self.model else []
+        if self.effort:
+            model_args += ["--effort", self.effort]
         result = subprocess.run(
             [self.exe, "-p", "--output-format", "json",
              "--permission-mode", "acceptEdits",
@@ -87,11 +98,22 @@ class HeyGenAgentRunner:
         cost = obj.get("total_cost_usd")
         if cost:
             self.total_cost_usd += float(cost)
+        # Себестоимость прогона считают по этим числам, а не по ощущению:
+        # сколько ходов сделала сессия, сколько токенов прочла и написала.
+        # Под подпиской `total_cost_usd` бывает нулевым, и тогда единственный
+        # честный счёт — токены.
+        self.runs.append({
+            "duration_ms": obj.get("duration_ms"),
+            "num_turns": obj.get("num_turns"),
+            "cost_usd": cost,
+            "usage": obj.get("usage"),
+            "model": self.model,
+        })
         return obj.get("result", "")
 
 
-def build_with_agent(rdir, *, runner=None) -> dict:
-    """Попросить агента собрать композицию. Возвращает раскадровку."""
+def plan_with_agent(rdir, *, runner=None) -> dict:
+    """Попросить агента спланировать монтаж. Возвращает раскадровку."""
     rdir = Path(rdir).resolve()
     if not (rdir / "BRIEF.md").exists():
         raise RuntimeError(f"нет BRIEF.md в {rdir}")
@@ -99,10 +121,10 @@ def build_with_agent(rdir, *, runner=None) -> dict:
     runner = runner or HeyGenAgentRunner()
     runner.run(PROMPT, cwd=rdir)
 
-    composition = rdir / "public" / "index.html"
-    if not composition.exists():
-        raise RuntimeError(f"агент не вернул {composition}")
     storyboard = rdir / "storyboard.json"
     if not storyboard.exists():
         raise RuntimeError(f"агент не вернул {storyboard}")
-    return json.loads(storyboard.read_text(encoding="utf-8"))
+    board = json.loads(storyboard.read_text(encoding="utf-8"))
+    if not (board.get("cards") or []):
+        raise RuntimeError("в раскадровке нет ни одной карточки")
+    return board

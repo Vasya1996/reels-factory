@@ -8,7 +8,7 @@ from reels_factory.hf_render import STEPS, reset_step, run_step, step_done
 
 
 def test_шаги_в_нужном_порядке():
-    assert STEPS == ("prepare", "compose", "gates", "check", "render", "loudness")
+    assert STEPS == ("prepare", "plan", "compose", "gates", "render", "loudness")
 
 
 def test_маркер_отмечает_шаг(tmp_path):
@@ -65,24 +65,47 @@ def _fakes(monkeypatch, tmp_path, storyboards):
     monkeypatch.setattr(hf_render, "probe_gates",
                         lambda rdir, **k: {"D8_face": "PASS",
                                            "D14_presenter_moves": "PASS",
-                                           "D15_catalog_blocks": "PASS"})
+                                           "D15_catalog_blocks": "PASS",
+                                           "D17_service_text": "PASS"})
+    monkeypatch.setattr(hf_render.hf_captions, "stage", lambda rdir: rdir)
+    monkeypatch.setattr(hf_render, "_install_blocks", lambda rdir, names: None)
+    monkeypatch.setattr(hf_render, "collect_intents", lambda sdk, public, board: [])
+    monkeypatch.setattr(hf_render, "resolve_all", lambda public, requests: {})
+    monkeypatch.setattr(hf_render, "rhythm_gates",
+                        lambda mp4: {"D18_change_rate": "PASS",
+                                     "D19_static_span": "PASS"})
 
-    queue = list(storyboards)
-
-    def fake_agent(rdir, *, runner=None):
+    def fake_build(rdir, sdk, *, storyboard, clips, duration, words,
+                   resolved=None):
         public = Path(rdir) / "public"
         (public / "media").mkdir(parents=True, exist_ok=True)
         (public / "media" / "hands.jpg").write_bytes(b"\xff\xd8\xff")
         (Path(rdir) / ".media").mkdir(exist_ok=True)
         (Path(rdir) / ".media" / "manifest.jsonl").write_text(
             '{"type":"image"}\n', encoding="utf-8")
-        (public / "index.html").write_text(
-            '<html><body><img src="media/hands.jpg"></body></html>', encoding="utf-8")
+        target = public / "index.html"
+        target.write_text(
+            '<html><body><img src="media/hands.jpg"></body></html>',
+            encoding="utf-8")
+        return target
+
+    monkeypatch.setattr(hf_render, "build_composition", fake_build)
+
+    @contextmanager
+    def fake_sdk():
+        yield None
+
+    monkeypatch.setattr(hf_render, "sdk_session", fake_sdk)
+
+    queue = list(storyboards)
+
+    def fake_agent(rdir, *, runner=None):
+        (Path(rdir) / "public").mkdir(parents=True, exist_ok=True)
         board = queue.pop(0)
         (Path(rdir) / "storyboard.json").write_text(json.dumps(board), encoding="utf-8")
         return board
 
-    monkeypatch.setattr(hf_render, "build_with_agent", fake_agent)
+    monkeypatch.setattr(hf_render, "plan_with_agent", fake_agent)
     (tmp_path / "src.mp4").write_bytes(b"")
     (tmp_path / "voice.wav").write_bytes(b"")
     (tmp_path / "face.json").write_text(json.dumps({"cx": 540, "cy": 520, "h": 260}),
@@ -107,10 +130,13 @@ def _board(cards):
             "cards": cards}
 
 
-# Пять карточек — пол их формулы плотности при шести секундах.
+# Пять карточек — пол их формулы плотности при шести секундах. Перед каждой
+# зазор 0,8 с: без него смена картинки не считается (гейт D21).
 GOOD = _board([{"id": f"c{i}", "intent": "зачем", "accentIndex": 0,
-                "startSec": round(i * 1.2, 3), "endSec": round(i * 1.2 + 1.0, 3),
-                "zone": "video-overlay", "contentHints": {"title": "Т"}}
+                "startSec": round(i * 1.2 + 0.8, 3),
+                "endSec": round(i * 1.2 + 1.2, 3),
+                "zone": "fullscreen", "contentHints": {"title": "Т"},
+                "render": {"kind": "block", "block": "g99-demo"}}
                for i in range(5)])
 # Наше прежнее поле сверх схемы: соблюсти его и videoTrack.bounds разом нельзя.
 BAD = _board([{"id": "c1", "intent": "зачем", "accentIndex": 0,
@@ -143,9 +169,8 @@ def test_провал_гейтов_вызывает_повтор(tmp_path, monke
     from reels_factory import hf_render
 
     calls = _fakes(monkeypatch, tmp_path, [BAD, GOOD])
-    # как будто прошлый прогон уже дошёл до конца — маркеры check/render/loudness
+    # как будто прошлый прогон уже дошёл до конца — маркеры render/loudness
     # стоят ДО первой попытки этого запуска, на старой (непровалившейся) раскадровке
-    (tmp_path / ".hf-check.done").write_text("ok", encoding="utf-8")
     (tmp_path / ".hf-render.done").write_text("ok", encoding="utf-8")
     (tmp_path / ".hf-loudness.done").write_text("ok", encoding="utf-8")
 
