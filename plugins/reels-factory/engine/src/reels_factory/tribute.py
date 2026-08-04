@@ -18,6 +18,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from reels_factory.billing import LedgerStore, to_micro
 
 TOPUP_EVENT = "new_digital_product"
+# В их доке событие названо camelCase (newDigitalProduct), в примере payload —
+# snake_case. Принимаем оба написания: цена ошибки — незачисленный платёж.
+TOPUP_EVENT_ALIASES = (TOPUP_EVENT, "newDigitalProduct")
 
 
 class UnknownCurrencyError(ValueError):
@@ -67,29 +70,29 @@ def handle_webhook(store: LedgerStore, raw: bytes, signature: str, *,
     if not verify_signature(raw, signature, api_key):
         raise PermissionError("bad signature")
     event = json.loads(raw.decode("utf-8"))
-    if event.get("name") != TOPUP_EVENT:
-        return {"credited": False, "reason": "ignored_event"}
+    if event.get("name") not in TOPUP_EVENT_ALIASES:
+        return {"credited": False, "reason": "ignored_event", "event": event}
     payload = event.get("payload") or {}
     chat_id = payload.get("telegram_user_id")
     if not chat_id:
         # Покупка через веб без входа по Telegram — не знаем, кому зачислять.
-        return {"credited": False, "reason": "no_telegram_user_id"}
+        return {"credited": False, "reason": "no_telegram_user_id", "event": event}
     try:
         chat_id = int(chat_id)
     except (TypeError, ValueError):
         # Нечисловой telegram_user_id — не даём int() уронить обработчик 500-й.
-        return {"credited": False, "reason": "invalid_telegram_user_id"}
+        return {"credited": False, "reason": "invalid_telegram_user_id", "event": event}
     purchase_id = str(payload.get("purchase_id") or payload.get("transaction_id") or "")
     if not purchase_id:
-        return {"credited": False, "reason": "no_purchase_id"}
+        return {"credited": False, "reason": "no_purchase_id", "event": event}
     try:
         micro = credited_micro(payload.get("amount") or 0, payload.get("currency") or "usd", fx)
     except UnknownCurrencyError:
         # Неизвестная валюта — не угадываем курс 1:1, это переплата в нашу пользу.
-        return {"credited": False, "reason": "unknown_currency"}
+        return {"credited": False, "reason": "unknown_currency", "event": event}
     except InvalidAmountError:
         # Ноль и отрицательные суммы бессмысленны, а отрицательная тихо спишет баланс.
-        return {"credited": False, "reason": "invalid_amount"}
+        return {"credited": False, "reason": "invalid_amount", "event": event}
     credited = store.credit(
         chat_id, micro, purchase_id=purchase_id,
         amount_minor=int(payload.get("amount") or 0),
@@ -145,6 +148,13 @@ def start_webhook_server(store: LedgerStore, *, api_key: str, fx: dict,
                     store, raw, signature, api_key=api_key, fx=fx
                 )
             except PermissionError:
+                # Ключ в дашборде Tribute могли перевыпустить: без этой строки
+                # отбитые доставки не видны вообще, а деньги у человека уже
+                # списаны — платёж просто «теряется».
+                print(
+                    "[tribute] отклонено: подпись не совпала с TRIBUTE_API_KEY",
+                    flush=True,
+                )
                 self.send_error(401)
                 return
             except Exception:
@@ -153,6 +163,11 @@ def start_webhook_server(store: LedgerStore, *, api_key: str, fx: dict,
                 self.send_error(500)
                 return
             if result.get("credited"):
+                print(
+                    f"[tribute] зачислено {result.get('micro')} мкдолл "
+                    f"чату {result.get('chat_id')}",
+                    flush=True,
+                )
                 if on_credit is not None:
                     try:
                         on_credit(result)
@@ -161,7 +176,14 @@ def start_webhook_server(store: LedgerStore, *, api_key: str, fx: dict,
             else:
                 # Незачисленный платёж должен быть заметен: дубль ретрая —
                 # норма, а вот no_telegram_user_id означает застрявшие деньги.
-                print(f"[tribute] не зачислено: {result.get('reason')}", flush=True)
+                # Событие печатаем целиком: разбирать чужой формат по одному
+                # слову «unknown_currency» — гадание, а деньги уже списаны.
+                event = result.get("event")
+                tail = f" | {json.dumps(event, ensure_ascii=False)[:800]}" if event else ""
+                print(
+                    f"[tribute] не зачислено: {result.get('reason')}{tail}",
+                    flush=True,
+                )
             payload = json.dumps({"status": "ok"}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
