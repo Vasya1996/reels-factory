@@ -685,6 +685,35 @@ def test_кнопки_этапов_не_работают_во_время_сбо�
     assert bot.load_session(7)["step"] == bot.BUILDING
 
 
+def test_продолжить_после_готового_ролика_не_платит_заново(work, monkeypatch):
+    """Кнопка «Продолжить ➡️» из старого сообщения об оплате не должна
+    запускать вторую платную генерацию по тому же материалу."""
+    вызовы = []
+    monkeypatch.setattr(
+        bot, "step_verbatim", lambda chat_id, text, language: вызовы.append(text)
+    )
+    _с_балансом()
+    bot.save_session(7, _паспорт(step=bot.DONE, material_mode="text",
+                                 material_text="Мой текст."))
+
+    msg = _Msg()
+    _press("pay:go", msg)
+
+    assert вызовы == []
+    assert bot.load_session(7)["step"] == bot.DONE
+
+
+def test_навигация_по_этапам_после_готового_ролика_ведёт_к_новому(work):
+    bot.save_session(7, _паспорт(step=bot.DONE, material_mode="text",
+                                 material_text="Мой текст."))
+
+    msg = _Msg()
+    _press("stage:next", msg)
+
+    assert bot.load_session(7)["step"] == bot.DONE
+    assert "Новый ролик" in _labels(msg.markups[-1])
+
+
 def test_назад_с_первого_этапа_никуда_не_проваливается(work):
     bot.save_session(7, _паспорт(step=bot.VIEWING_STAGE, stage="language"))
 
@@ -852,7 +881,7 @@ def test_after_new_язык_выбирается_до_всего_остальн�
 
     _press("reel_language:ru", msg)
     # Язык отмечается галочкой в том же сообщении, отдельного экрана нет
-    assert _labels(msg.markups[-1]) == ["🇷🇺 Русский ✅", "🇰🇿 Қазақша", "Вперёд →"]
+    assert _labels(msg.markups[-1]) == ["🇷🇺 Русский ✅", "🇰🇿 Қазақша", "Продолжить →"]
 
     _press("stage:next", msg)
 

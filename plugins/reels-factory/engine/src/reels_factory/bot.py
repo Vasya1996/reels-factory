@@ -1116,7 +1116,7 @@ def _kb_language(selected: str | None = None):
             f"{label}{mark}", callback_data=f"reel_language:{code}"
         )])
     if selected:
-        rows.append([InlineKeyboardButton("Вперёд →", callback_data="stage:next")])
+        rows.append([InlineKeyboardButton("Продолжить →", callback_data="stage:next")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -1564,6 +1564,11 @@ async def _ensure_voice_clone(msg, chat_id: int, s: dict) -> bool:
 async def _start_paid_part(msg, chat_id: int, s: dict):
     """«Поехали» с экрана цены. Кнопка живёт в истории чата, поэтому баланс
     сверяем заново: между показом экрана и нажатием могло пройти что угодно."""
+    if s.get("step") not in (CONFIRM_PRICE, VIEWING_STAGE):
+        # Тап по старому «Продолжить» после готового ролика заново запустил бы
+        # платную генерацию по прежнему материалу. Отправляем на текущий экран.
+        await _reshow(msg, chat_id, s)
+        return
     billing = _billing()
     if billing["enabled"]:
         need = estimate_material_micro(s, billing)
@@ -1824,12 +1829,12 @@ async def on_button(update, context):
         await _show_currency_choice(q.message, chat_id, s)
     elif data == "topup:cancel":
         # Возврат к прежним кнопкам того же сообщения, без новых экранов.
-        if s.get("step") == CONFIRM_PRICE:
-            await _edit_or_reply(q.message, q.message.text or "", _kb_price(False))
-        else:
-            await _edit_or_reply(
-                q.message, q.message.text or "", _kb_topup_entry()
-            )
+        text = q.message.text or topup_text(None, _ledger().balance(chat_id))
+        await _edit_or_reply(
+            q.message, text,
+            _kb_price(False) if s.get("step") == CONFIRM_PRICE
+            else _kb_topup_entry(),
+        )
     elif data.startswith("topup:cur:"):
         currency = data.rsplit(":", 1)[1]
         if currency not in TOPUP_PRESETS:
@@ -1891,6 +1896,11 @@ async def on_button(update, context):
         # уже оплаченной сборки не должен уводить разговор с её этапа.
         if _job_store().active_for_chat(chat_id):
             await q.message.reply_text(BUSY_MSG)
+            return
+        if s.get("step") in (DONE, BUILD_FAILED):
+            # Ролик уже сделан: навигация по его этапам вела бы к экрану цены
+            # и оттуда — к повторной платной генерации по тому же материалу.
+            await _reshow(q.message, chat_id, s)
             return
         stage = _current_stage(s)
         if data == "stage:next":
@@ -2110,7 +2120,10 @@ async def _show_topup(msg, chat_id: int, *, need: int | None = None,
 async def _show_currency_choice(msg, chat_id: int, s: dict) -> None:
     """Кнопки валюты встают на место «Пополнить баланс» в том же сообщении:
     новых экранов «В какой валюте платить?» человек не видит."""
-    await _edit_or_reply(msg, msg.text or "", _kb_currency())
+    # Текст сообщения может быть пустым (например, кнопка висела под фото) —
+    # пустой текст Telegram не примет, поэтому подставляем экран баланса.
+    text = msg.text or topup_text(None, _ledger().balance(chat_id))
+    await _edit_or_reply(msg, text, _kb_currency())
 
 
 async def _show_amounts(msg, chat_id: int, s: dict, currency: str) -> None:
