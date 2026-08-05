@@ -1,0 +1,116 @@
+{
+  "source_video": "reels_avatar5.mp4",
+  "audio": "voice_elevenlabs.mp3",
+  "words": "words.json",
+  "output": "reels_avatar5_broll_v8.mp4",
+  "previous_outputs": [
+    "reels_avatar5_broll_v6.mp4 (4 одиночные вставки по 2с, 25% b-roll)",
+    "reels_avatar5_broll_v7.mp4 (3 одиночные вставки по 3-3.5с, 31% b-roll)"
+  ],
+  "duration_seconds": 32.4,
+  "avatar_share": 0.67,
+  "broll_share": 0.33,
+  "strategy": "v6.1 b-roll-first сериями: 3 серии по 2 плана, переход внутри серии, вход/выход hard cut",
+  "broll_context": {
+    "domain_ru": "работа с ИИ-ассистентом на экране ноутбука, интерфейс программы, автоматизация задач в компьютере, текст и контент на экране",
+    "domain_en": "AI assistant software on a laptop screen, app interface, digital workflow automation on computer, writing content on screen",
+    "anti_en": "industrial robotic arm in a factory, manufacturing machinery, humanoid robot, warehouse conveyor belt, heavy equipment",
+    "scoring": "0.65*фраза + 0.35*домен - 0.70*max(0, анти - домен), бонус +0.02 за вертикаль"
+  },
+  "series": [
+    {
+      "id": 1,
+      "start": 8.3,
+      "end": 12.1,
+      "length": 3.8,
+      "transition_inside": "smoothleft (whip pan, 0.18с)",
+      "shots": [
+        {
+          "id": "S1a",
+          "length": 2.21,
+          "speech": "набор инструкций, который нейросеть запоминает",
+          "intent": "рука пишет чек-лист в блокноте",
+          "picked": "pexels_38455504.mp4",
+          "source": "pexels",
+          "score_total": 0.2361
+        },
+        {
+          "id": "S1b",
+          "length": 1.77,
+          "speech": "один раз. Потом ты просто говоришь",
+          "intent": "человек печатает запрос в чате на ноутбуке",
+          "picked": "pexels_7439142.mp4",
+          "source": "pexels",
+          "score_total": 0.2913
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "start": 16.84,
+      "end": 20.64,
+      "length": 3.8,
+      "transition_inside": "fadewhite (flash, 0.18с) — кульминация про автоматизацию",
+      "shots": [
+        {
+          "id": "S2a",
+          "length": 1.85,
+          "speech": "можно автоматизировать почти всё",
+          "intent": "процесс идёт на экране: дашборд, графики, данные",
+          "picked": "pexels_5377697.mp4",
+          "source": "pexels",
+          "score_total": 0.257
+        },
+        {
+          "id": "S2b",
+          "length": 2.13,
+          "speech": "Ответы клиентам, письма, анализ документов",
+          "intent": "почта и задачи в приложении на экране",
+          "picked": "pexels_7448471.mp4",
+          "source": "pexels",
+          "score_total": 0.2625
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "start": 23.14,
+      "end": 26.22,
+      "length": 3.08,
+      "transition_inside": "smoothleft (whip pan, 0.18с)",
+      "shots": [
+        {
+          "id": "S3a",
+          "length": 1.57,
+          "speech": "Один раз настроил",
+          "intent": "настройка приложения на планшете",
+          "picked": "pexels_5075210.mp4",
+          "source": "pexels (из ранее скачанных)",
+          "score_total": 0.2168
+        },
+        {
+          "id": "S3b",
+          "length": 1.69,
+          "speech": "и больше не объясняешь одно и то же",
+          "intent": "код идёт сам по экрану, процесс без человека",
+          "picked": "pexels_34459460.mp4",
+          "source": "pexels",
+          "score_total": 0.2379
+        }
+      ]
+    }
+  ],
+  "avatar_gaps": [
+    { "from": 0, "to": 8.3, "note": "хук на лице" },
+    { "from": 12.1, "to": 16.84, "note": "4.7с лица на фразе про стиль и аудиторию" },
+    { "from": 20.64, "to": 23.14, "note": "2.5с лица" },
+    { "from": 26.22, "to": 32.4, "note": "6.2с лица на CTA" }
+  ],
+  "grade": "eq=brightness=0.015:contrast=1.03:saturation=1.06,colorbalance=rs=0.03:bs=-0.03 — сток подогнан под тёплый свет съёмки",
+  "api_stats_v8_run": {
+    "pexels": { "search_requests": 18, "results": 72, "vertical_kept": 72, "downloaded": 57, "picked": 6 },
+    "pixabay": { "search_requests": 18, "results": 540, "vertical_kept": 21, "skipped_landscape": 511, "downloaded": 10, "picked": 0 },
+    "coverr": { "search_requests": 18, "results": 17, "vertical_kept": 0, "skipped_landscape": 17, "downloaded": 0, "picked": 0 }
+  },
+  "clip_model": "xlm-roberta-base-ViT-B-32 (laion5b_s13b_b90k)"
+}

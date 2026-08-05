@@ -1,0 +1,52 @@
+{
+  "_comment": "Вход для broll_context_retrieval.py. Окна = b-roll вставки, идут сериями по 2 подряд. context общий на весь ролик и участвует в скоре каждого окна.",
+  "context": {
+    "domain_ru": "работа с ИИ-ассистентом на экране ноутбука, интерфейс программы, автоматизация задач в компьютере, текст и контент на экране",
+    "domain_en": "AI assistant software on a laptop screen, app interface, digital workflow automation on computer, writing content on screen",
+    "anti_en": "industrial robotic arm in a factory, manufacturing machinery, humanoid robot, warehouse conveyor belt, heavy equipment"
+  },
+  "windows": [
+    {
+      "id": "S1a", "series": 1, "start": 8.30, "end": 10.42,
+      "speech": "набор инструкций, который нейросеть запоминает",
+      "ru": "список инструкций и правил, чек-лист на бумаге и на экране",
+      "en": "checklist of instructions on notebook and screen close up",
+      "q": ["writing checklist notebook", "notes list on screen", "instructions document closeup"]
+    },
+    {
+      "id": "S1b", "series": 1, "start": 10.42, "end": 12.10,
+      "speech": "один раз. Потом ты просто говоришь",
+      "ru": "человек печатает запрос в чате с ИИ на ноутбуке, диалог на экране",
+      "en": "typing a prompt into ai chat interface on laptop screen",
+      "q": ["typing chat message laptop screen", "chatbot conversation on screen", "person using ai app"]
+    },
+    {
+      "id": "S2a", "series": 2, "start": 16.84, "end": 18.60,
+      "speech": "можно автоматизировать почти всё",
+      "ru": "рабочий процесс автоматически идёт на экране компьютера, дашборд, задачи",
+      "en": "software workflow dashboard running on computer screen automation",
+      "q": ["workflow dashboard screen", "software interface screen closeup", "data process on monitor"]
+    },
+    {
+      "id": "S2b", "series": 2, "start": 18.60, "end": 20.64,
+      "speech": "Ответы клиентам, письма, анализ документов",
+      "ru": "почта и сообщения на экране, письма и документы в приложении",
+      "en": "email inbox and messages on screen, documents in app",
+      "q": ["email inbox on screen", "messaging app phone screen", "reading documents on computer"]
+    },
+    {
+      "id": "S3a", "series": 3, "start": 23.14, "end": 24.62,
+      "speech": "Один раз настроил",
+      "ru": "настройка приложения на экране, переключатели и параметры",
+      "en": "adjusting app settings toggles on screen",
+      "q": ["settings menu on screen", "adjusting settings laptop", "configuring software screen"]
+    },
+    {
+      "id": "S3b", "series": 3, "start": 24.62, "end": 26.22,
+      "speech": "и больше не объясняешь одно и то же",
+      "ru": "процесс идёт сам, уведомления и строки появляются на экране без человека",
+      "en": "automated process running on screen, notifications appearing by itself",
+      "q": ["code running on screen", "notifications on phone screen", "screen working automatically"]
+    }
+  ]
+}
