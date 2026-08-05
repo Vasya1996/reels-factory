@@ -11,7 +11,10 @@ disable-model-invocation: true
 страдает, если брак пройдёт. При сомнении по критерию — fail.
 
 Аргумент вызова — путь к JSON: `{"language", "task": {"idea"?, "length_s"?,
-"quotes"?, "prior_issues"?}, "blocks": [{"role", "speech"}]}`.
+"quotes"?, "gender"?, "prior_issues"?}, "blocks": [{"role", "speech"}]}`.
+
+Если задан `task.gender`, то род рассказчика о себе — критерий: «я сделала»
+при `male` (и наоборот) это fail с претензией на исправление.
 
 ## Порядок
 

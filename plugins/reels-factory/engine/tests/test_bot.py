@@ -122,6 +122,7 @@ def _паспорт(**over):
     """Сессия, где всё бесплатное уже собрано: язык, фото, голос языка."""
     s = {
         "language": "ru",
+        "gender": "male",
         "photo": {"asset_id": "asset-1", "file": "фото.jpg"},
         "voices": {"ru": "voice-1"},
         "voice_id": "voice-1",
@@ -325,7 +326,7 @@ def test_первый_start_спрашивает_один_язык(work):
     assert bot.load_session(7)["step"] == bot.CHOOSING_LANGUAGE
 
 
-def test_после_выбора_казахского_новичка_просят_фото(work):
+def test_после_выбора_казахского_новичка_спрашивают_пол(work):
     asyncio.run(bot.cmd_start(_Update(_Msg()), None))
     msg = _Msg()
 
@@ -333,6 +334,84 @@ def test_после_выбора_казахского_новичка_прося�
 
     s = bot.load_session(7)
     assert s["language"] == "kk"
+    assert s["step"] == bot.CHOOSING_GENDER
+    assert msg.replies[-1] == bot.ASK_GENDER
+    assert _labels(msg.markups[-1]) == ["Мужской", "Женский"]
+
+
+def test_пол_спрашивают_заново_на_каждом_ролике(work):
+    """Ведущего человек меняет от ролика к ролику — прежний пол не наследуем."""
+    bot.save_session(7, _паспорт(step=bot.DONE))
+    msg = _Msg()
+
+    asyncio.run(bot.cmd_new(_Update(msg), None))
+    _press("reel_language:ru", msg)
+
+    assert "gender" not in bot.load_session(7)
+    assert msg.replies[-1] == bot.ASK_GENDER
+
+
+def test_выбранный_пол_отмечен_галочкой(work):
+    bot.save_session(7, {"step": bot.CHOOSING_GENDER, "language": "ru"})
+    msg = _Msg()
+
+    _press("reel_gender:female", msg)
+
+    assert bot.load_session(7)["gender"] == "female"
+    assert _labels(msg.markups[-2]) == ["Мужской", "Женский ✅", "Продолжить →"]
+
+
+def test_смена_пола_сбрасывает_написанный_сценарий(work):
+    """Текст написан под род прежнего ведущего — другому он уже не подходит."""
+    bot.save_session(7, _паспорт(step=bot.VIEWING_STAGE, stage="gender",
+                                 scenario=SCENARIO))
+    msg = _Msg()
+
+    _press("reel_gender:female", msg)
+
+    s = bot.load_session(7)
+    assert s["gender"] == "female"
+    assert "scenario" not in s
+
+
+def test_назад_с_фото_показывает_выбранный_пол(work):
+    bot.save_session(7, {"step": bot.WAIT_PHOTO, "language": "ru",
+                         "gender": "male"})
+    msg = _Msg()
+
+    _press("back", msg)
+
+    s = bot.load_session(7)
+    assert s["step"] == bot.VIEWING_STAGE and s["stage"] == "gender"
+    assert "Мужской ✅" in _labels(msg.markups[-1])
+
+
+def test_пол_доезжает_до_генерации_сценария(work, monkeypatch):
+    """Иначе модель не знает рода и пишет мужчине «сделала»."""
+    захвачено = {}
+    monkeypatch.setattr(
+        bot, "run_generated_path",
+        lambda workdir, idea, runner, language, gender=None: (
+            захвачено.update(language=language, gender=gender)
+            or {"scenario": SCENARIO}
+        ),
+    )
+    monkeypatch.setattr(bot, "_charge_claude", lambda chat_id, runner: None)
+
+    bot.step_scenario(7, {"idea": "тема"}, "ru", "female")
+
+    assert захвачено == {"language": "ru", "gender": "female"}
+
+
+def test_после_пола_новичка_просят_фото(work):
+    asyncio.run(bot.cmd_start(_Update(_Msg()), None))
+    msg = _Msg()
+
+    _press("reel_language:kk", msg)
+    _press("reel_gender:male", msg)
+
+    s = bot.load_session(7)
+    assert s["gender"] == "male"
     assert s["step"] == bot.WAIT_PHOTO
     assert "AI-аватара" in msg.replies[-1]
 
@@ -430,9 +509,10 @@ def test_при_смене_ru_на_kk_русский_голос_сохраняе
     selected = bot.load_session(7)
     assert selected["voices"] == {"ru": "voice-ru"}
     assert "voice_id" not in selected and "voice_language" not in selected
-    # язык отмечен галочкой на месте; дальше по «Вперёд» — фото и голос
-    assert selected["step"] == bot.VIEWING_STAGE and selected["stage"] == "language"
-    assert "🇰🇿 Қазақша ✅" in _labels(ask.markups[-1])
+    # язык отмечен галочкой на месте, следом спрашивается пол
+    assert selected["step"] == bot.CHOOSING_GENDER
+    assert "🇰🇿 Қазақша ✅" in _labels(ask.markups[-2])
+    _press("reel_gender:male", ask)
     _press("stage:next", ask)   # фото уже есть
     _press("stage:next", ask)   # казахской записи нет — просят её
     assert bot.load_session(7)["step"] == bot.WAIT_VOICE
@@ -460,10 +540,10 @@ def test_при_возврате_на_ru_бот_активирует_сохра�
     _press("reel_language:ru", msg)
 
     current = bot.load_session(7)
-    assert current["step"] == bot.VIEWING_STAGE and current["stage"] == "language"
+    assert current["step"] == bot.CHOOSING_GENDER
     assert current["voice_id"] == "voice-ru"
     assert current["voice_language"] == "ru"
-    assert "🇷🇺 Русский ✅" in _labels(msg.markups[-1])
+    assert "🇷🇺 Русский ✅" in _labels(msg.markups[-2])
 
 
 # --- шаг 2: выбор материала --------------------------------------------------
@@ -492,7 +572,8 @@ def test_сгенерировать_сценарий_сразу_просит_м�
 
 def test_без_фото_выбор_пути_уводит_на_фото(work):
     """Кнопка из истории чата не должна проносить человека мимо паспорта."""
-    bot.save_session(7, {"step": bot.CHOOSING, "language": "ru"})
+    bot.save_session(7, {"step": bot.CHOOSING, "language": "ru",
+                         "gender": "male"})
     msg = _Msg()
 
     _press("mode:text", msg)
@@ -780,8 +861,19 @@ def test_назад_с_идей_возвращает_к_сырью(work):
     assert msg.replies[-1] == bot.ASK_RAW
 
 
-def test_назад_с_фото_у_новичка_показывает_выбранный_язык(work):
+def test_назад_с_фото_у_новичка_возвращает_к_полу(work):
+    """Пол — предыдущий этап; ещё не выбран, поэтому экран выбора, а не сводка."""
     bot.save_session(7, {"step": bot.WAIT_PHOTO, "language": "ru"})
+
+    msg = _Msg()
+    _press("back", msg)
+
+    assert bot.load_session(7)["step"] == bot.CHOOSING_GENDER
+    assert _labels(msg.markups[-1]) == ["Мужской", "Женский"]
+
+
+def test_назад_с_пола_показывает_выбранный_язык(work):
+    bot.save_session(7, {"step": bot.CHOOSING_GENDER, "language": "ru"})
 
     msg = _Msg()
     _press("back", msg)
@@ -881,7 +973,10 @@ def test_after_new_язык_выбирается_до_всего_остальн�
 
     _press("reel_language:ru", msg)
     # Язык отмечается галочкой в том же сообщении, отдельного экрана нет
-    assert _labels(msg.markups[-1]) == ["🇷🇺 Русский ✅", "🇰🇿 Қазақша", "Продолжить →"]
+    assert _labels(msg.markups[-2]) == ["🇷🇺 Русский ✅", "🇰🇿 Қазақша", "Продолжить →"]
+    # пол спрашивается каждый ролик: ведущий меняется от ролика к ролику
+    assert msg.replies[-1] == bot.ASK_GENDER
+    _press("reel_gender:female", msg)
 
     _press("stage:next", msg)
 
@@ -971,11 +1066,12 @@ async def _fake_download(context, media, chat_id):
     return path
 
 
-def test_первый_ролик_требует_фото_сразу_после_языка(work, профиль):
+def test_первый_ролик_требует_фото_сразу_после_пола(work, профиль):
     bot.save_session(7, {"step": bot.CHOOSING_LANGUAGE})
 
     msg = _Msg()
     _press("reel_language:ru", msg)
+    _press("reel_gender:male", msg)
 
     assert bot.load_session(7)["step"] == bot.WAIT_PHOTO
     assert "AI-аватара" in msg.replies[-1]
@@ -1003,6 +1099,9 @@ def test_повторный_профиль_показывает_сводки_а_
     msg = _Msg()
 
     _press("reel_language:ru", msg)
+    _press("stage:next", msg)
+    assert msg.replies[-1] == bot.ASK_GENDER
+
     _press("stage:next", msg)
     assert "Фото загружено" in msg.replies[-1]
 
@@ -1201,6 +1300,7 @@ def test_полный_путь_новичка_платит_только_посл
     assert msg.replies[-1] == bot.ASK_LANGUAGE
 
     _press("reel_language:ru", msg)
+    _press("reel_gender:male", msg)
     assert bot.load_session(7)["step"] == bot.WAIT_PHOTO
 
     asyncio.run(bot.on_message(_Update(_Msg(photo=[object()])), None))
@@ -1284,7 +1384,7 @@ def test_провал_step_ideas_после_ретраев_всё_равно_с�
 def test_провал_step_scenario_после_ретраев_всё_равно_списывает_клода(
     work, monkeypatch
 ):
-    def fake_run_generated_path(workdir, idea, runner, language):
+    def fake_run_generated_path(workdir, idea, runner, language, gender=None):
         runner.total_cost_usd = 0.03
         raise bot.ScenarioError("целостность после полировки: [...]")
 

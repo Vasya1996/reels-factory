@@ -512,8 +512,14 @@ def _pick_variant2(attempts: list, best_scenario: dict):
     return None
 
 
-def run_generated_path(workdir, idea: dict, skill_runner, language: str) -> dict:
+def run_generated_path(workdir, idea: dict, skill_runner, language: str,
+                       gender: str | None = None) -> dict:
     """Путь «из сырья»: скилл-генерация -> полировка+судья -> scenario.json.
+
+    `gender` — пол ведущего, «male» или «female». Без него модель не знает, в
+    каком роде рассказчик говорит о себе, и мужчине достаётся «сделала».
+    Значение идёт во все три скилла пути (генерация, полировка, судья): текст
+    правит каждый из них, и знать род должен каждый.
 
     При браке (verdict.pass=False) вместо претензий судьи пользователю
     предлагается второй вариант реплик (scenario.variant2.json), если он
@@ -528,6 +534,8 @@ def run_generated_path(workdir, idea: dict, skill_runner, language: str) -> dict
             "length_s": idea.get("length_s"),
             "quotes": idea.get("quotes") or [],
             "persona": idea.get("persona")}
+    if gender:
+        task["gender"] = str(gender).strip().lower()
     payload = workdir / "idea.json"
     payload.write_text(json.dumps(task, ensure_ascii=False, indent=1),
                        encoding="utf-8")
@@ -537,10 +545,12 @@ def run_generated_path(workdir, idea: dict, skill_runner, language: str) -> dict
     if errs:
         raise ScenarioError(f"черновик генерации: {errs}")
 
+    carried = ["idea", "length_s", "quotes"] + (["gender"] if gender else [])
     final, verdict = refine_loop(skill_runner, workdir, draft,
-                                 {k: task[k] for k in ("idea", "length_s", "quotes")},
-                                 language)
+                                 {k: task[k] for k in carried}, language)
     final["language"] = str(language).strip().lower()
+    if gender:
+        final["gender"] = task["gender"]
     final.setdefault("mode", "generated")
     errs = validate_integrity(final)
     if errs:
