@@ -1323,6 +1323,67 @@ def test_полный_путь_новичка_платит_только_посл
     s = bot.load_session(7)
     assert s["step"] == bot.READY and s["voice_id"] == "voice-1"
 
+    # тот же прогон должен читаться воронкой без пропусков
+    воронка = {r["event"]: r["count"] for r in bot._events().funnel()}
+    for шаг in ("start", "stage:language", "stage:gender", "stage:photo",
+                "stage:voice", "stage:material", "price_shown",
+                "generation_started", "scenario_shown", "scenario_approved"):
+        assert воронка[шаг] == 1, шаг
+    assert воронка["reel_delivered"] == 0   # ролик ещё не собирали
+
+
+def test_второй_ролик_считается_новым_циклом(work, monkeypatch):
+    """Иначе воронка покажет «оплат больше, чем стартов»."""
+    monkeypatch.setattr(bot, "_download", _fake_download)
+    bot.save_session(7, _паспорт(step=bot.DONE))
+
+    asyncio.run(bot.cmd_new(_Update(_Msg()), None))
+
+    assert bot.load_session(7)["cycle"] == 1
+    воронка = {r["event"]: r["count"] for r in bot._events().funnel()}
+    assert воронка["start"] == 1
+
+    bot.save_session(7, {**bot.load_session(7), "step": bot.DONE})
+    asyncio.run(bot.cmd_new(_Update(_Msg()), None))
+
+    assert bot.load_session(7)["cycle"] == 2
+    воронка = {r["event"]: r["count"] for r in bot._events().funnel()}
+    assert воронка["start"] == 2
+    assert bot._events().totals()["chats"] == 1
+
+
+def test_stats_молчит_для_обычного_пользователя(work, monkeypatch):
+    monkeypatch.delenv("ADMIN_CHAT_IDS", raising=False)
+    msg = _Msg("/stats")
+
+    asyncio.run(bot.cmd_stats(_Update(msg), None))
+
+    assert msg.replies == []
+
+
+def test_stats_показывает_воронку_админу(work, monkeypatch):
+    monkeypatch.setenv("ADMIN_CHAT_IDS", "7")
+    bot._events().record(7, 1, "start")
+    bot._events().record(7, 1, "stage:language")
+    msg = _Msg("/stats 30")
+
+    asyncio.run(bot.cmd_stats(_Update(msg), None))
+
+    assert "Воронка за 30 дн." in msg.replies[-1]
+    assert "Запустили бота: 1" in msg.replies[-1]
+    assert "Выбрали язык: 1 (100%)" in msg.replies[-1]
+
+
+def test_возврат_кнопкой_назад_не_считается_новым_запуском(work):
+    bot.save_session(7, _паспорт(step=bot.CHOOSING_MATERIAL, cycle=1))
+
+    msg = _Msg()
+    _press("back", msg)
+
+    воронка = {r["event"]: r["count"] for r in bot._events().funnel()}
+    assert воронка["start"] == 0     # «Назад» — не новый заход
+    assert bot.load_session(7)["cycle"] == 1
+
 
 def test_сбой_движка_не_роняет_разговор(work, monkeypatch):
     def падаем(chat_id, text, language):
