@@ -33,10 +33,12 @@ import logging
 import os
 import subprocess
 import sys
+import time
 import uuid
 from contextlib import suppress
 from pathlib import Path
 
+from reels_factory.analytics import EventStore, render_funnel
 from reels_factory.billing import (
     LedgerStore, apply_markup, claude_cost_micro, estimate_micro,
 )
@@ -127,10 +129,12 @@ HELLO = (
     "монтировать не придётся: нужны только фото и минутная запись голоса."
 )
 ASK_PATH = (
-    "Пришлите сценарий или просто идею о чём будет рассказывать ваш аватар.\n\n"
-    "Сценарий — если хотите, чтобы аватар дословно шёл по вашим репликам.\n"
-    "Идея, отрывок из книги/статьи, мысли — если хотите, чтобы мы "
-    "сгенерировали готовый сценарий, которому будет следовать аватар."
+    "Пришлите сценарий или просто идею о чем будет рассказывать ваш аватар.\n\n"
+    "➡️\"У меня готовый сценарий\" если хотите чтобы аватар дословно следовал "
+    "вашим репликам.\n\n"
+    "➡️\"Сгенерировать сценарий\" если хотите чтобы мы написали сценарий по "
+    "вашему материалу (идея, отрывок из книги/статьи, конспекты и просто ваши "
+    "мысли)"
 )
 ASK_LANGUAGE = (
     "На каком языке хотите сделать ролик?"
@@ -441,6 +445,27 @@ def _job_store() -> JobStore:
 
 
 _ledger_cache: tuple[Path, LedgerStore] | None = None
+
+
+_events_cache: tuple[Path, EventStore] | None = None
+
+
+def _events() -> EventStore:
+    """Журнал событий: путь зависит от cwd, поэтому кэшируем как _ledger."""
+    global _events_cache
+    db_path = (WORK_ROOT / "events.sqlite3").resolve()
+    if _events_cache is None or _events_cache[0] != db_path:
+        _events_cache = (db_path, EventStore(db_path))
+    return _events_cache[1]
+
+
+def _track(chat_id: int, s: dict, event: str, detail: str | None = None) -> None:
+    """Записать шаг воронки. Никогда не мешает разговору: аналитика важнее
+    молча пропущенной строки, чем упавшего ответа человеку."""
+    try:
+        _events().record(chat_id, int((s or {}).get("cycle") or 1), event, detail)
+    except Exception as e:  # pragma: no cover — защита от неожиданного
+        log.warning("событие %s чата %s не записалось: %s", event, chat_id, e)
 
 
 def _ledger() -> LedgerStore:
@@ -1280,6 +1305,16 @@ def _kb_done():
 async def _show_start(msg, chat_id: int, s: dict, session_builder=fresh_session):
     """Начало разговора: язык -> фото -> голос -> выбор пути. Всё бесплатно."""
     next_session = session_builder(s)
+    cycle = int((s or {}).get("cycle") or 0)
+    if session_builder is not _keep_all:
+        # /start и «Новый ролик» — новый цикл: иначе второй ролик человека
+        # смешается с первым и воронка покажет «оплат больше, чем стартов».
+        # Возврат на стартовый экран кнопкой «Назад» новым заходом не считаем.
+        cycle += 1
+        next_session["cycle"] = cycle
+        _track(chat_id, next_session, "start")
+    else:
+        next_session["cycle"] = cycle or 1
     if not _reel_language(next_session, required=False):
         next_session["step"] = CHOOSING_LANGUAGE
         save_session(chat_id, next_session)
@@ -1315,6 +1350,7 @@ async def _select_reel_language(msg, chat_id: int, s: dict, language: str):
     s["language"] = language
     s["step"] = VIEWING_STAGE
     s["stage"] = STAGE_LANGUAGE
+    _track(chat_id, s, "stage:language", language)
     _activate_language_voice(s, language)
     save_session(chat_id, s)
     await _edit_or_reply(msg, ASK_LANGUAGE, _kb_language(language))
@@ -1340,6 +1376,7 @@ async def _select_reel_gender(msg, chat_id: int, s: dict, gender: str):
     s["gender"] = gender
     s["step"] = VIEWING_STAGE
     s["stage"] = STAGE_GENDER
+    _track(chat_id, s, "stage:gender", gender)
     # Сценарий пишется под род ведущего: сменили пол — прежний текст уже не
     # про этого человека.
     s.pop("scenario", None)
@@ -1532,6 +1569,7 @@ async def _show_review(msg, chat_id: int, s: dict):
         return
     s["step"] = REVIEW
     save_session(chat_id, s)
+    _track(chat_id, s, "scenario_shown")
     await msg.reply_text(render_scenario(s["scenario"]), reply_markup=_kb_review())
 
 
@@ -1553,6 +1591,8 @@ async def _show_price(msg, chat_id: int, s: dict, *, checked: bool = False):
     s["step"] = CONFIRM_PRICE
     s["price_need"] = need
     save_session(chat_id, s)
+    if not checked:
+        _track(chat_id, s, "price_shown", format_usd(need))
     if have >= need:
         await msg.reply_text(
             PRICE_ENOUGH_MSG.format(need=format_usd(need), have=format_usd(have)),
@@ -1594,6 +1634,7 @@ async def _ensure_voice_clone(msg, chat_id: int, s: dict) -> bool:
     try:
         voice_id = await asyncio.to_thread(step_voice, chat_id, sample, language)
     except Exception as e:
+        _track(chat_id, s, "error:voice_clone", str(e)[:120])
         await msg.reply_text(f"Голос не принялся: {str(e)[:200]}")
         await _ask_voice(msg, chat_id, s, language)
         return False
@@ -1643,6 +1684,7 @@ async def _start_paid_part(msg, chat_id: int, s: dict):
 async def _start_generation(msg, chat_id: int, s: dict):
     """Платная часть: голос по записи, затем сценарий Клодом."""
     language = _reel_language(s)
+    _track(chat_id, s, "generation_started")
     if not await _ensure_voice_clone(msg, chat_id, s):
         return
     material = str(s.get("material_text") or "")
@@ -1654,6 +1696,7 @@ async def _start_generation(msg, chat_id: int, s: dict):
         try:
             ideas = await asyncio.to_thread(step_ideas, chat_id, material, language)
         except (ScenarioError, RuntimeError) as e:
+            _track(chat_id, s, "error:scenario", str(e)[:120])
             await msg.reply_text(f"Не получилось вытащить идеи: {e}")
             return
         s["ideas"] = ideas
@@ -1664,6 +1707,7 @@ async def _start_generation(msg, chat_id: int, s: dict):
             step_verbatim, chat_id, clean_input(material), language
         )
     except (ScenarioError, RuntimeError) as e:
+        _track(chat_id, s, "error:scenario", str(e)[:120])
         await msg.reply_text(f"Не получилось разобрать текст: {e}")
         return
     s["scenario"] = sc
@@ -1892,6 +1936,7 @@ async def on_button(update, context):
         # Кнопки убранного экрана «Что используем?» — из истории чата.
         await _ask_material(q.message, chat_id, s, s.get("material_mode", "text"))
     elif data == "topup:start":
+        _track(chat_id, s, "topup_opened")
         await _show_currency_choice(q.message, chat_id, s)
     elif data == "topup:cancel":
         # Возврат к прежним кнопкам того же сообщения, без новых экранов.
@@ -1955,6 +2000,7 @@ async def on_button(update, context):
             return
         s["scenario"]["language"] = language
         save_session(chat_id, s)
+        _track(chat_id, s, "scenario_approved")
         await q.message.reply_text(APPROVED_MSG)
         await _ready_stage(q.message, chat_id, s)
     elif data.startswith("stage:"):
@@ -2222,6 +2268,7 @@ async def _create_topup_order(msg, chat_id: int, s: dict, currency: str,
         )
     except Exception as e:
         log.warning("счёт для чата %s не создан: %s", chat_id, e)
+        _track(chat_id, s, "error:invoice", str(e)[:120])
         await msg.reply_text(ORDER_FAILED_MSG.format(error=str(e)[:200]))
         return
     sent = await msg.reply_text(
@@ -2237,6 +2284,7 @@ async def _create_topup_order(msg, chat_id: int, s: dict, currency: str,
         "message_id": getattr(sent, "message_id", None),
     }
     save_session(chat_id, s)
+    _track(chat_id, s, "invoice_created", f"{amount_minor} {currency}")
 
 
 def _paid_screen_text_kb(chat_id: int, s: dict):
@@ -2288,6 +2336,7 @@ async def _check_topup_order(msg, chat_id: int, s: dict) -> None:
         # credit идемпотентен: если вебхук уже зачислил, второй записи не
         # будет, а экран всё равно покажем актуальный.
         _credit_paid_order(chat_id, order)
+        _track(chat_id, s, "payment_received", str(order.get("uuid") or ""))
         s.pop("pending_order", None)
         save_session(chat_id, s)
         await _show_paid_screen(msg, chat_id, s)
@@ -2324,6 +2373,37 @@ def _credit_paid_order(chat_id: int, order: dict) -> bool:
 
 async def cmd_balance(update, context) -> None:
     await _show_topup(update.message, update.effective_chat.id)
+
+
+def _admin_chats() -> set[int]:
+    """Кому показывать воронку. Список в env, через запятую."""
+    raw = os.environ.get("ADMIN_CHAT_IDS") or ""
+    out = set()
+    for part in raw.replace(";", ",").split(","):
+        part = part.strip()
+        if part.isdigit():
+            out.add(int(part))
+    return out
+
+
+async def cmd_stats(update, context) -> None:
+    """Воронка за период: /stats, /stats 30 — за столько дней.
+
+    Команда служебная: обычному пользователю она не отвечает вовсе, чтобы не
+    объяснять в чате, почему цифры не для него.
+    """
+    chat_id = update.effective_chat.id
+    if chat_id not in _admin_chats():
+        return
+    days = 7
+    parts = (update.message.text or "").split()
+    if len(parts) > 1 and parts[1].isdigit():
+        days = max(1, min(int(parts[1]), 365))
+    since = time.time() - days * 86400
+    text = await asyncio.to_thread(
+        render_funnel, _events(), since, title=f"Воронка за {days} дн."
+    )
+    await update.message.reply_text(text)
 
 
 async def _blocked_by_negative_balance(msg, chat_id: int) -> bool:
@@ -2366,6 +2446,7 @@ async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
     s["step"] = AUDIO_PREPARING
     s["current_job_id"] = job.job_id
     save_session(chat_id, s)
+    _track(chat_id, s, "build_queued", job.job_id[:8])
     ahead = _job_store().queued_ahead(job.job_id)
     suffix = f" Перед вами заданий: {ahead}." if ahead else ""
     if _job_wakeup is not None:
@@ -2397,6 +2478,11 @@ def _update_active_session_step(chat_id: int, job_id: str, step: str) -> None:
         return
     s["step"] = step
     save_session(chat_id, s)
+
+
+def _track_job(job: BuildJob, event: str, detail: str | None = None) -> None:
+    """Событие из воркера: сессию читаем только ради номера цикла."""
+    _track(job.chat_id, load_session(job.chat_id), event, detail)
 
 
 async def _safe_job_message(bot_api, chat_id: int, text: str) -> None:
@@ -2465,6 +2551,7 @@ async def _process_audio_job(bot_api, job: BuildJob, preview_fn=None) -> None:
                 reply_markup=_kb_audio_review(job.job_id),
                 title="Озвучка ролика",
             )
+        _track_job(job, "audio_ready")
     except Exception as exc:
         store.finish(
             job.job_id,
@@ -2565,6 +2652,7 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
             error=MISSING_FILE_MSG,
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        _track_job(job, "error:build", "файла ролика нет")
         await _safe_job_message(bot_api, job.chat_id, MISSING_FILE_MSG)
         return
 
@@ -2623,6 +2711,7 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
             error=str(e),
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        _track_job(job, "error:delivery", str(e)[:120])
         await _safe_job_message(
             bot_api,
             job.chat_id,
@@ -2633,6 +2722,7 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         return
 
     store.finish(job.job_id, "completed", result=result, stage="delivery")
+    _track_job(job, "reel_delivered")
     # Чтение бухгалтерии вне защиты _safe_job_message — видео уже доставлено,
     # повторов не будет. Если SQLite заблокирован или битый, чтение не должно
     # уронить обновление сессии: доставленный ролик без чека — это приемлемая
@@ -2794,6 +2884,7 @@ async def on_message(update, context):
             Path(old["file"]).unlink(missing_ok=True)
         s["photo"] = {"asset_id": asset_id, "file": str(path)}
         save_session(chat_id, s)
+        _track(chat_id, s, "stage:photo")
         await msg.reply_text(PHOTO_SAVED)
         await _next_stage(msg, chat_id, s, STAGE_PHOTO)
         return
@@ -2820,6 +2911,7 @@ async def on_message(update, context):
         s["voice_samples"] = samples
         s["voice_pending"] = pending
         save_session(chat_id, s)
+        _track(chat_id, s, "stage:voice", language)
         if old_sample and str(old_sample) != str(path):
             Path(old_sample).unlink(missing_ok=True)
         await msg.reply_text(VOICE_SAVED)
@@ -2864,6 +2956,7 @@ async def on_message(update, context):
         s["material_text"] = cleaned
         s.pop("ideas", None)
         save_session(chat_id, s)
+        _track(chat_id, s, "stage:material", "text")
         await _show_price(msg, chat_id, s)
 
     elif step == WAIT_RAW:
@@ -2871,6 +2964,7 @@ async def on_message(update, context):
         s["material_text"] = text
         s.pop("ideas", None)
         save_session(chat_id, s)
+        _track(chat_id, s, "stage:material", "raw")
         await _show_price(msg, chat_id, s)
 
     elif step == CONFIRM_PRICE:
@@ -2922,6 +3016,7 @@ async def _apply_credit_to_chat(bot_api, chat_id: int) -> None:
     order = s.get("pending_order") or {}
     message_id = order.get("message_id")
     text, kb = _paid_screen_text_kb(chat_id, s)
+    _track(chat_id, s, "payment_received", str(order.get("uuid") or ""))
     if order:
         s.pop("pending_order", None)
         save_session(chat_id, s)
@@ -3034,6 +3129,9 @@ def main():
     app.add_handler(CommandHandler("new", cmd_new))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("balance", cmd_balance))
+    # /stats в меню бота не показываем: она служебная и отвечает
+    # только чатам из ADMIN_CHAT_IDS.
+    app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(MessageHandler(~filters.COMMAND, on_message))
     app.run_polling()
