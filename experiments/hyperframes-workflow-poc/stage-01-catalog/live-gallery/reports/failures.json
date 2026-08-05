@@ -1,0 +1,401 @@
+[
+  {
+    "id": "upstream:block:code-3d-extrude",
+    "safe_id": "upstream-block-code-3d-extrude",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-code-3d-extrude/index.html",
+    "duration": 8,
+    "thumbnail": "thumbnails/upstream-block-code-3d-extrude.jpg",
+    "thumbnail_sha256": "cbc35b59bd39296b9265f9eb325d413960c713dac6fdc17c22c5aecf97fcb35e",
+    "thumbnail_bytes": 13187,
+    "chosen_time_seconds": 1.2,
+    "sampled_times_seconds": [
+      1.2,
+      4,
+      6.8
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+      "pageerror: Cannot read properties of undefined (reading 'WebGLRenderer')"
+    ]
+  },
+  {
+    "id": "upstream:block:code-particle-assemble",
+    "safe_id": "upstream-block-code-particle-assemble",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-code-particle-assemble/index.html",
+    "duration": 8,
+    "thumbnail": "thumbnails/upstream-block-code-particle-assemble.jpg",
+    "thumbnail_sha256": "cbc35b59bd39296b9265f9eb325d413960c713dac6fdc17c22c5aecf97fcb35e",
+    "thumbnail_bytes": 13187,
+    "chosen_time_seconds": 1.2,
+    "sampled_times_seconds": [
+      1.2,
+      4,
+      6.8
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+      "pageerror: Cannot read properties of undefined (reading 'WebGLRenderer')"
+    ]
+  },
+  {
+    "id": "upstream:block:code-shader-dissolve",
+    "safe_id": "upstream-block-code-shader-dissolve",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-code-shader-dissolve/index.html",
+    "duration": 7,
+    "thumbnail": "thumbnails/upstream-block-code-shader-dissolve.jpg",
+    "thumbnail_sha256": "cbc35b59bd39296b9265f9eb325d413960c713dac6fdc17c22c5aecf97fcb35e",
+    "thumbnail_bytes": 13187,
+    "chosen_time_seconds": 1.05,
+    "sampled_times_seconds": [
+      1.05,
+      3.5,
+      5.95
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+      "pageerror: Cannot read properties of undefined (reading 'WebGLRenderer')"
+    ]
+  },
+  {
+    "id": "upstream:block:ios26-liquid-glass",
+    "safe_id": "upstream-block-ios26-liquid-glass",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-ios26-liquid-glass/index.html",
+    "duration": 15,
+    "thumbnail": "thumbnails/upstream-block-ios26-liquid-glass.jpg",
+    "thumbnail_sha256": "e047600bca4aa015c7c636f46b90e254ccf6e22cba0ced57473cb639d64a6840",
+    "thumbnail_bytes": 13135,
+    "chosen_time_seconds": 2.25,
+    "sampled_times_seconds": [
+      2.25,
+      7.5,
+      12.75
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Floaders%2FDRACOLoader.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Floaders%2FGLTFLoader.js",
+      "pageerror: THREE is not defined"
+    ]
+  },
+  {
+    "id": "upstream:block:liquid-glass-context-menu",
+    "safe_id": "upstream-block-liquid-glass-context-menu",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-liquid-glass-context-menu/index.html",
+    "duration": 8,
+    "thumbnail": "thumbnails/upstream-block-liquid-glass-context-menu.jpg",
+    "thumbnail_sha256": "ee08eff67a113fad3fb67f3b6cffce0a4e57570a60e93edd0cc8754c85d98c95",
+    "thumbnail_bytes": 17238,
+    "chosen_time_seconds": 1.2,
+    "sampled_times_seconds": [
+      1.2,
+      4,
+      6.8
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdnjs.cloudflare.com%2Fajax%2Flibs%2Fthree.js%2Fr128%2Fthree.min.js",
+      "pageerror: THREE is not defined"
+    ]
+  },
+  {
+    "id": "upstream:block:liquid-glass-media-controls",
+    "safe_id": "upstream-block-liquid-glass-media-controls",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-liquid-glass-media-controls/index.html",
+    "duration": 8,
+    "thumbnail": "thumbnails/upstream-block-liquid-glass-media-controls.jpg",
+    "thumbnail_sha256": "8b813420daa46b74fe95db17359c31ae77cf8d1c7a7997d7820c986d750cd115",
+    "thumbnail_bytes": 26594,
+    "chosen_time_seconds": 1.2,
+    "sampled_times_seconds": [
+      1.2,
+      4,
+      6.8
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdnjs.cloudflare.com%2Fajax%2Flibs%2Fthree.js%2Fr128%2Fthree.min.js",
+      "pageerror: THREE is not defined"
+    ]
+  },
+  {
+    "id": "upstream:block:liquid-glass-notification",
+    "safe_id": "upstream-block-liquid-glass-notification",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-liquid-glass-notification/index.html",
+    "duration": 8,
+    "thumbnail": "thumbnails/upstream-block-liquid-glass-notification.jpg",
+    "thumbnail_sha256": "74cb37943ed4911212bb28d1d433e0bc58966f80c7b1cd8926ca2c3a642af7ad",
+    "thumbnail_bytes": 13100,
+    "chosen_time_seconds": 1.2,
+    "sampled_times_seconds": [
+      1.2,
+      4,
+      6.8
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdnjs.cloudflare.com%2Fajax%2Flibs%2Fthree.js%2Fr128%2Fthree.min.js",
+      "pageerror: THREE is not defined"
+    ]
+  },
+  {
+    "id": "upstream:block:liquid-glass-widgets",
+    "safe_id": "upstream-block-liquid-glass-widgets",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-liquid-glass-widgets/index.html",
+    "duration": 8,
+    "thumbnail": "thumbnails/upstream-block-liquid-glass-widgets.jpg",
+    "thumbnail_sha256": "7adecea249da85f90f06ae1181324c66f7e3f7e5ae1237a65a7a0e78817e563c",
+    "thumbnail_bytes": 39464,
+    "chosen_time_seconds": 1.2,
+    "sampled_times_seconds": [
+      1.2,
+      4,
+      6.8
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdnjs.cloudflare.com%2Fajax%2Flibs%2Fthree.js%2Fr128%2Fthree.min.js",
+      "pageerror: THREE is not defined"
+    ]
+  },
+  {
+    "id": "upstream:block:macos-tahoe-liquid-glass",
+    "safe_id": "upstream-block-macos-tahoe-liquid-glass",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-macos-tahoe-liquid-glass/index.html",
+    "duration": 15,
+    "thumbnail": "thumbnails/upstream-block-macos-tahoe-liquid-glass.jpg",
+    "thumbnail_sha256": "e047600bca4aa015c7c636f46b90e254ccf6e22cba0ced57473cb639d64a6840",
+    "thumbnail_bytes": 13135,
+    "chosen_time_seconds": 2.25,
+    "sampled_times_seconds": [
+      2.25,
+      7.5,
+      12.75
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Floaders%2FDRACOLoader.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Floaders%2FGLTFLoader.js",
+      "pageerror: THREE is not defined"
+    ]
+  },
+  {
+    "id": "upstream:block:spain-map",
+    "safe_id": "upstream-block-spain-map",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-spain-map/index.html",
+    "duration": 12,
+    "thumbnail": "thumbnails/upstream-block-spain-map.jpg",
+    "thumbnail_sha256": "6a51fd30698dbba609047112bd0c007c576071d1164973c52ff5f5587cb0e068",
+    "thumbnail_bytes": 13501,
+    "chosen_time_seconds": 1.8,
+    "sampled_times_seconds": [
+      1.8,
+      6,
+      10.2
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fd3%407%2Fdist%2Fd3.min.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Ftopojson-client%403.1.0%2Fdist%2Ftopojson-client.min.js",
+      "console: Fetch API cannot load about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fes-atlas%400.6.0%2Fes%2Fautonomous_regions.json. URL scheme \"about\" is not supported.",
+      "pageerror: Failed to fetch"
+    ]
+  },
+  {
+    "id": "upstream:block:us-map",
+    "safe_id": "upstream-block-us-map",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-us-map/index.html",
+    "duration": 12,
+    "thumbnail": "thumbnails/upstream-block-us-map.jpg",
+    "thumbnail_sha256": "6a51fd30698dbba609047112bd0c007c576071d1164973c52ff5f5587cb0e068",
+    "thumbnail_bytes": 13501,
+    "chosen_time_seconds": 1.8,
+    "sampled_times_seconds": [
+      1.8,
+      6,
+      10.2
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fd3%407%2Fdist%2Fd3.min.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Ftopojson-client%403.1.0%2Fdist%2Ftopojson-client.min.js",
+      "console: Fetch API cannot load about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fus-atlas%403%2Fstates-10m.json. URL scheme \"about\" is not supported.",
+      "pageerror: Failed to fetch"
+    ]
+  },
+  {
+    "id": "upstream:block:us-map-bubble",
+    "safe_id": "upstream-block-us-map-bubble",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-us-map-bubble/index.html",
+    "duration": 12,
+    "thumbnail": "thumbnails/upstream-block-us-map-bubble.jpg",
+    "thumbnail_sha256": "6a51fd30698dbba609047112bd0c007c576071d1164973c52ff5f5587cb0e068",
+    "thumbnail_bytes": 13501,
+    "chosen_time_seconds": 1.8,
+    "sampled_times_seconds": [
+      1.8,
+      6,
+      10.2
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fd3%407%2Fdist%2Fd3.min.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Ftopojson-client%403.1.0%2Fdist%2Ftopojson-client.min.js",
+      "pageerror: d3 is not defined"
+    ]
+  },
+  {
+    "id": "upstream:block:us-map-flow",
+    "safe_id": "upstream-block-us-map-flow",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-us-map-flow/index.html",
+    "duration": 12,
+    "thumbnail": "thumbnails/upstream-block-us-map-flow.jpg",
+    "thumbnail_sha256": "6a51fd30698dbba609047112bd0c007c576071d1164973c52ff5f5587cb0e068",
+    "thumbnail_bytes": 13501,
+    "chosen_time_seconds": 1.8,
+    "sampled_times_seconds": [
+      1.8,
+      6,
+      10.2
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fd3%407%2Fdist%2Fd3.min.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Ftopojson-client%403.1.0%2Fdist%2Ftopojson-client.min.js",
+      "pageerror: d3 is not defined"
+    ]
+  },
+  {
+    "id": "upstream:block:vfx-iphone-device",
+    "safe_id": "upstream-block-vfx-iphone-device",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-vfx-iphone-device/index.html",
+    "duration": 15,
+    "thumbnail": "thumbnails/upstream-block-vfx-iphone-device.jpg",
+    "thumbnail_sha256": "e047600bca4aa015c7c636f46b90e254ccf6e22cba0ced57473cb639d64a6840",
+    "thumbnail_bytes": 13135,
+    "chosen_time_seconds": 2.25,
+    "sampled_times_seconds": [
+      2.25,
+      7.5,
+      12.75
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Floaders%2FDRACOLoader.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Floaders%2FGLTFLoader.js",
+      "pageerror: THREE is not defined"
+    ]
+  },
+  {
+    "id": "upstream:block:vfx-liquid-background",
+    "safe_id": "upstream-block-vfx-liquid-background",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-vfx-liquid-background/index.html",
+    "duration": 12,
+    "thumbnail": "thumbnails/upstream-block-vfx-liquid-background.jpg",
+    "thumbnail_sha256": "7e088c1be096b0264b9b19a681225947a6c63d0a763bef786ecd4690c8f6eb10",
+    "thumbnail_bytes": 12998,
+    "chosen_time_seconds": 1.8,
+    "sampled_times_seconds": [
+      1.8,
+      6,
+      10.2
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+      "pageerror: THREE is not defined"
+    ]
+  },
+  {
+    "id": "upstream:block:vfx-liquid-glass",
+    "safe_id": "upstream-block-vfx-liquid-glass",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-vfx-liquid-glass/index.html",
+    "duration": 20,
+    "thumbnail": "thumbnails/upstream-block-vfx-liquid-glass.jpg",
+    "thumbnail_sha256": "8e377e729ec17b353c4c21e9f149b7c1b8c9a94269488c838802b55ac066a90a",
+    "thumbnail_bytes": 13204,
+    "chosen_time_seconds": 3,
+    "sampled_times_seconds": [
+      3,
+      10,
+      17
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Fshaders%2FCopyShader.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Fshaders%2FLuminosityHighPassShader.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Fpostprocessing%2FEffectComposer.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Fpostprocessing%2FRenderPass.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Fpostprocessing%2FShaderPass.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Fpostprocessing%2FUnrealBloomPass.js",
+      "pageerror: THREE is not defined"
+    ]
+  },
+  {
+    "id": "upstream:block:vfx-portal",
+    "safe_id": "upstream-block-vfx-portal",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-vfx-portal/index.html",
+    "duration": 10,
+    "thumbnail": "thumbnails/upstream-block-vfx-portal.jpg",
+    "thumbnail_sha256": "ca5e1a557d5678709c67853fdaa113dc7700d92566b25d6ff8e421a2298d52f6",
+    "thumbnail_bytes": 24550,
+    "chosen_time_seconds": 1.5,
+    "sampled_times_seconds": [
+      1.5,
+      5,
+      8.5
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+      "pageerror: THREE is not defined"
+    ]
+  },
+  {
+    "id": "upstream:block:vfx-shatter",
+    "safe_id": "upstream-block-vfx-shatter",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-vfx-shatter/index.html",
+    "duration": 12,
+    "thumbnail": "thumbnails/upstream-block-vfx-shatter.jpg",
+    "thumbnail_sha256": "123530a094634095f70ad7729630dbbd578e0eff403e7cdd2a2aac61d556bf45",
+    "thumbnail_bytes": 24421,
+    "chosen_time_seconds": 1.8,
+    "sampled_times_seconds": [
+      1.8,
+      6,
+      10.2
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+      "pageerror: THREE is not defined"
+    ]
+  },
+  {
+    "id": "upstream:block:world-map",
+    "safe_id": "upstream-block-world-map",
+    "status": "FAIL",
+    "url": "http://127.0.0.1:4173/previews/upstream-block-world-map/index.html",
+    "duration": 14,
+    "thumbnail": "thumbnails/upstream-block-world-map.jpg",
+    "thumbnail_sha256": "6a51fd30698dbba609047112bd0c007c576071d1164973c52ff5f5587cb0e068",
+    "thumbnail_bytes": 13501,
+    "chosen_time_seconds": 2.1,
+    "sampled_times_seconds": [
+      2.1,
+      7,
+      11.9
+    ],
+    "errors": [
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fd3%407%2Fdist%2Fd3.min.js",
+      "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Ftopojson-client%403.1.0%2Fdist%2Ftopojson-client.min.js",
+      "pageerror: d3 is not defined"
+    ]
+  }
+]

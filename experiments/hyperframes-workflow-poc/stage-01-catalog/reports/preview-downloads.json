@@ -1,0 +1,1621 @@
+{
+  "attempted": true,
+  "entries": [
+    {
+      "id": "approved:layout:avatar_broll_split",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "approved:layout:avatar_cutout_overlay",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "approved:layout:avatar_editorial_bubble",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "approved:layout:avatar_fullscreen",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "approved:layout:avatar_object_overlay",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "approved:layout:broll_archival_collage",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "approved:layout:broll_fullscreen",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "approved:layout:checklist_strike",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "approved:layout:progressive_text_card",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "approved:layout:social_outro",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "approved:transition:hard_cut",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "approved:transition:transition_blur",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "approved:transition:transition_chromatic",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "approved:transition:transition_push_editorial",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "approved:transition:transition_white_flash",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "local:block:before_after",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "local:block:complexity_cloud",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "local:block:concept_nodes",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "local:block:persona_card",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "local:block:sequence_flow",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "local:block:stat_number",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "local:block:task_list",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "local:block:value_layers",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "Для local/approved item remote upstream poster не применяется."
+    },
+    {
+      "id": "upstream:block:app-showcase",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/app-showcase.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-app-showcase.png",
+      "content_type": "image/png",
+      "bytes": 1054050,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:apple-money-count",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/apple-money-count.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-apple-money-count.png",
+      "content_type": "image/png",
+      "bytes": 102531,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:blue-sweater-intro-video",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/blue-sweater-intro-video.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-blue-sweater-intro-video.png",
+      "content_type": "image/png",
+      "bytes": 35274,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:camcorder-hud",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/camcorder-hud.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-camcorder-hud.png",
+      "content_type": "image/png",
+      "bytes": 1473316,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:chromatic-radial-split",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/chromatic-radial-split.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-chromatic-radial-split.png",
+      "content_type": "image/png",
+      "bytes": 85681,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:cinematic-zoom",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/cinematic-zoom.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-cinematic-zoom.png",
+      "content_type": "image/png",
+      "bytes": 82043,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:code-3d-extrude",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-3d-extrude.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-code-3d-extrude.png",
+      "content_type": "image/png",
+      "bytes": 315085,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:code-diff",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-diff.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-code-diff.png",
+      "content_type": "image/png",
+      "bytes": 225562,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:code-highlight",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-highlight.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-code-highlight.png",
+      "content_type": "image/png",
+      "bytes": 263734,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:code-morph",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-morph.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-code-morph.png",
+      "content_type": "image/png",
+      "bytes": 200474,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:code-particle-assemble",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-particle-assemble.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-code-particle-assemble.png",
+      "content_type": "image/png",
+      "bytes": 195281,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:code-scroll",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-scroll.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-code-scroll.png",
+      "content_type": "image/png",
+      "bytes": 479342,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:code-shader-dissolve",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-shader-dissolve.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-code-shader-dissolve.png",
+      "content_type": "image/png",
+      "bytes": 328087,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-basic",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-snippet-apple-terminal-basic.png",
+      "status": "failed",
+      "local_path": null,
+      "content_type": "application/xml",
+      "bytes": 0,
+      "http_status": 403,
+      "error": "HTTP 403"
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-clear-dark",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-snippet-apple-terminal-clear-dark.png",
+      "status": "failed",
+      "local_path": null,
+      "content_type": "application/xml",
+      "bytes": 0,
+      "http_status": 403,
+      "error": "HTTP 403"
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-clear-light",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-snippet-apple-terminal-clear-light.png",
+      "status": "failed",
+      "local_path": null,
+      "content_type": "application/xml",
+      "bytes": 0,
+      "http_status": 403,
+      "error": "HTTP 403"
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-grass",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-snippet-apple-terminal-grass.png",
+      "status": "failed",
+      "local_path": null,
+      "content_type": "application/xml",
+      "bytes": 0,
+      "http_status": 403,
+      "error": "HTTP 403"
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-homebrew",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-snippet-apple-terminal-homebrew.png",
+      "status": "failed",
+      "local_path": null,
+      "content_type": "application/xml",
+      "bytes": 0,
+      "http_status": 403,
+      "error": "HTTP 403"
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-man-page",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-snippet-apple-terminal-man-page.png",
+      "status": "failed",
+      "local_path": null,
+      "content_type": "application/xml",
+      "bytes": 0,
+      "http_status": 403,
+      "error": "HTTP 403"
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-novel",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-snippet-apple-terminal-novel.png",
+      "status": "failed",
+      "local_path": null,
+      "content_type": "application/xml",
+      "bytes": 0,
+      "http_status": 403,
+      "error": "HTTP 403"
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-ocean",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-snippet-apple-terminal-ocean.png",
+      "status": "failed",
+      "local_path": null,
+      "content_type": "application/xml",
+      "bytes": 0,
+      "http_status": 403,
+      "error": "HTTP 403"
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-pro",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-snippet-apple-terminal-pro.png",
+      "status": "failed",
+      "local_path": null,
+      "content_type": "application/xml",
+      "bytes": 0,
+      "http_status": 403,
+      "error": "HTTP 403"
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-red-sands",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-snippet-apple-terminal-red-sands.png",
+      "status": "failed",
+      "local_path": null,
+      "content_type": "application/xml",
+      "bytes": 0,
+      "http_status": 403,
+      "error": "HTTP 403"
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-silver-aerogel",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-snippet-apple-terminal-silver-aerogel.png",
+      "status": "failed",
+      "local_path": null,
+      "content_type": "application/xml",
+      "bytes": 0,
+      "http_status": 403,
+      "error": "HTTP 403"
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-solid-colors",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-snippet-apple-terminal-solid-colors.png",
+      "status": "failed",
+      "local_path": null,
+      "content_type": "application/xml",
+      "bytes": 0,
+      "http_status": 403,
+      "error": "HTTP 403"
+    },
+    {
+      "id": "upstream:block:code-snippet-dark-2026",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:code-snippet-dark-modern",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:code-snippet-dark-plus",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:code-snippet-flight",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-snippet-flight.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-code-snippet-flight.png",
+      "content_type": "image/png",
+      "bytes": 217203,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:code-snippet-high-contrast",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:code-snippet-high-contrast-light",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:code-snippet-light-2026",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:code-snippet-light-modern",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:code-snippet-light-plus",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:code-snippet-monokai",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:code-snippet-solarized-light",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:code-snippet-visual-studio-dark",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:code-snippet-visual-studio-light",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:code-typing",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/code-typing.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-code-typing.png",
+      "content_type": "image/png",
+      "bytes": 256279,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:cross-warp-morph",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/cross-warp-morph.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-cross-warp-morph.png",
+      "content_type": "image/png",
+      "bytes": 107868,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:data-chart",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/data-chart.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-data-chart.png",
+      "content_type": "image/png",
+      "bytes": 68367,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:domain-warp-dissolve",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/domain-warp-dissolve.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-domain-warp-dissolve.png",
+      "content_type": "image/png",
+      "bytes": 193385,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:editorial-flash-overlay",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/editorial-flash-overlay.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-editorial-flash-overlay.png",
+      "content_type": "image/png",
+      "bytes": 1343230,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:flash-through-white",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/flash-through-white.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-flash-through-white.png",
+      "content_type": "image/png",
+      "bytes": 68760,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:flowchart",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/flowchart.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-flowchart.png",
+      "content_type": "image/png",
+      "bytes": 76377,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:flowchart-vertical",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/flowchart-vertical.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-flowchart-vertical.png",
+      "content_type": "image/png",
+      "bytes": 41071,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:freeze-frame-dressing",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/freeze-frame-dressing.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-freeze-frame-dressing.png",
+      "content_type": "image/png",
+      "bytes": 409454,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:glitch",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/glitch.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-glitch.png",
+      "content_type": "image/png",
+      "bytes": 88109,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:gravitational-lens",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/gravitational-lens.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-gravitational-lens.png",
+      "content_type": "image/png",
+      "bytes": 127634,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:instagram-follow",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/instagram-follow.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-instagram-follow.png",
+      "content_type": "image/png",
+      "bytes": 82797,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:ios26-liquid-glass",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/ios26-liquid-glass.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-ios26-liquid-glass.png",
+      "content_type": "image/png",
+      "bytes": 690421,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:light-leak",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/light-leak.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-light-leak.png",
+      "content_type": "image/png",
+      "bytes": 66890,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:liquid-glass-context-menu",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/liquid-glass-context-menu.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-liquid-glass-context-menu.png",
+      "content_type": "image/png",
+      "bytes": 1254937,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:liquid-glass-media-controls",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/liquid-glass-media-controls.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-liquid-glass-media-controls.png",
+      "content_type": "image/png",
+      "bytes": 1241720,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:liquid-glass-notification",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/liquid-glass-notification.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-liquid-glass-notification.png",
+      "content_type": "image/png",
+      "bytes": 1208188,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:liquid-glass-widgets",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/liquid-glass-widgets.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-liquid-glass-widgets.png",
+      "content_type": "image/png",
+      "bytes": 1327407,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:logo-outro",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/logo-outro.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-logo-outro.png",
+      "content_type": "image/png",
+      "bytes": 57145,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:lower-third-bild",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:lt-accent-underline",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:lt-bold-block",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:lt-clean-bar",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:lt-color-block",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:lt-dark-card",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:lt-kicker-name",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:lt-mask-reveal",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:lt-side-rule",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:lt-soft-pill",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:lt-stack-bars",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:macos-notification",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/macos-notification.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-macos-notification.png",
+      "content_type": "image/png",
+      "bytes": 57014,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:macos-tahoe-liquid-glass",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/macos-tahoe-liquid-glass.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-macos-tahoe-liquid-glass.png",
+      "content_type": "image/png",
+      "bytes": 913892,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:news-ticker",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:block:north-korea-locked-down",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/north-korea-locked-down.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-north-korea-locked-down.png",
+      "content_type": "image/png",
+      "bytes": 842750,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:nyc-paris-flight",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/nyc-paris-flight.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-nyc-paris-flight.png",
+      "content_type": "image/png",
+      "bytes": 794435,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:organic-light-leak-overlay",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/organic-light-leak-overlay.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-organic-light-leak-overlay.png",
+      "content_type": "image/png",
+      "bytes": 454520,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:reddit-post",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/reddit-post.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-reddit-post.png",
+      "content_type": "image/png",
+      "bytes": 104576,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:ridged-burn",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/ridged-burn.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-ridged-burn.png",
+      "content_type": "image/png",
+      "bytes": 95864,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:ripple-waves",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/ripple-waves.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-ripple-waves.png",
+      "content_type": "image/png",
+      "bytes": 224630,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:sdf-iris",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/sdf-iris.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-sdf-iris.png",
+      "content_type": "image/png",
+      "bytes": 70237,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:spain-map",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/spain-map.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-spain-map.png",
+      "content_type": "image/png",
+      "bytes": 507256,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:spotify-card",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/spotify-card.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-spotify-card.png",
+      "content_type": "image/png",
+      "bytes": 227947,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:swirl-vortex",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/swirl-vortex.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-swirl-vortex.png",
+      "content_type": "image/png",
+      "bytes": 94103,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:thermal-distortion",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/thermal-distortion.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-thermal-distortion.png",
+      "content_type": "image/png",
+      "bytes": 78352,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:tiktok-follow",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/tiktok-follow.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-tiktok-follow.png",
+      "content_type": "image/png",
+      "bytes": 81497,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:transitions-3d",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/transitions-3d.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-transitions-3d.png",
+      "content_type": "image/png",
+      "bytes": 45399,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:transitions-blur",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/transitions-blur.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-transitions-blur.png",
+      "content_type": "image/png",
+      "bytes": 45297,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:transitions-cover",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/transitions-cover.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-transitions-cover.png",
+      "content_type": "image/png",
+      "bytes": 56933,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:transitions-destruction",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/transitions-destruction.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-transitions-destruction.png",
+      "content_type": "image/png",
+      "bytes": 45297,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:transitions-dissolve",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/transitions-dissolve.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-transitions-dissolve.png",
+      "content_type": "image/png",
+      "bytes": 45297,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:transitions-distortion",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/transitions-distortion.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-transitions-distortion.png",
+      "content_type": "image/png",
+      "bytes": 46297,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:transitions-grid",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/transitions-grid.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-transitions-grid.png",
+      "content_type": "image/png",
+      "bytes": 46297,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:transitions-light",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/transitions-light.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-transitions-light.png",
+      "content_type": "image/png",
+      "bytes": 55079,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:transitions-mechanical",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/transitions-mechanical.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-transitions-mechanical.png",
+      "content_type": "image/png",
+      "bytes": 45297,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:transitions-other",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/transitions-other.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-transitions-other.png",
+      "content_type": "image/png",
+      "bytes": 45297,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:transitions-push",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/transitions-push.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-transitions-push.png",
+      "content_type": "image/png",
+      "bytes": 45297,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:transitions-radial",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/transitions-radial.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-transitions-radial.png",
+      "content_type": "image/png",
+      "bytes": 45399,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:transitions-scale",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/transitions-scale.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-transitions-scale.png",
+      "content_type": "image/png",
+      "bytes": 45297,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:ui-3d-reveal",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/ui-3d-reveal.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-ui-3d-reveal.png",
+      "content_type": "image/png",
+      "bytes": 335850,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:us-map",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/us-map.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-us-map.png",
+      "content_type": "image/png",
+      "bytes": 549483,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:us-map-bubble",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/us-map-bubble.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-us-map-bubble.png",
+      "content_type": "image/png",
+      "bytes": 498344,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:us-map-flow",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/us-map-flow.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-us-map-flow.png",
+      "content_type": "image/png",
+      "bytes": 509009,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:us-map-hex",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/us-map-hex.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-us-map-hex.png",
+      "content_type": "image/png",
+      "bytes": 490572,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:vfx-iphone-device",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/vfx-iphone-device.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-vfx-iphone-device.png",
+      "content_type": "image/png",
+      "bytes": 224211,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:vfx-liquid-background",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/vfx-liquid-background.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-vfx-liquid-background.png",
+      "content_type": "image/png",
+      "bytes": 319528,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:vfx-liquid-glass",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/vfx-liquid-glass.png",
+      "status": "failed",
+      "local_path": null,
+      "content_type": "image/png",
+      "bytes": 0,
+      "http_status": 200,
+      "error": "Content-Length больше 2 MB: 2209369"
+    },
+    {
+      "id": "upstream:block:vfx-magnetic",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/vfx-magnetic.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-vfx-magnetic.png",
+      "content_type": "image/png",
+      "bytes": 378429,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:vfx-portal",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/vfx-portal.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-vfx-portal.png",
+      "content_type": "image/png",
+      "bytes": 102996,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:vfx-shatter",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/vfx-shatter.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-vfx-shatter.png",
+      "content_type": "image/png",
+      "bytes": 296397,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:vfx-text-cursor",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/vfx-text-cursor.png",
+      "status": "failed",
+      "local_path": null,
+      "content_type": "image/png",
+      "bytes": 0,
+      "http_status": 200,
+      "error": "Content-Length больше 2 MB: 4921645"
+    },
+    {
+      "id": "upstream:block:vpn-youtube-spot",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/vpn-youtube-spot.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-vpn-youtube-spot.png",
+      "content_type": "image/png",
+      "bytes": 141915,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:whip-pan",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/whip-pan.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-whip-pan.png",
+      "content_type": "image/png",
+      "bytes": 75178,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:world-map",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/world-map.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-world-map.png",
+      "content_type": "image/png",
+      "bytes": 633610,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:x-post",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/x-post.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-x-post.png",
+      "content_type": "image/png",
+      "bytes": 109059,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:block:yt-lower-third",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/yt-lower-third.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-block-yt-lower-third.png",
+      "content_type": "image/png",
+      "bytes": 58896,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:caption-blend-difference",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:component:caption-clip-wipe",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-clip-wipe.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-caption-clip-wipe.png",
+      "content_type": "image/png",
+      "bytes": 20805,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:caption-editorial-emphasis",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-editorial-emphasis.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-caption-editorial-emphasis.png",
+      "content_type": "image/png",
+      "bytes": 50048,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:caption-emoji-pop",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-emoji-pop.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-caption-emoji-pop.png",
+      "content_type": "image/png",
+      "bytes": 62414,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:caption-glitch-rgb",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-glitch-rgb.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-caption-glitch-rgb.png",
+      "content_type": "image/png",
+      "bytes": 55280,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:caption-gradient-fill",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-gradient-fill.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-caption-gradient-fill.png",
+      "content_type": "image/png",
+      "bytes": 34928,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:caption-highlight",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-highlight.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-caption-highlight.png",
+      "content_type": "image/png",
+      "bytes": 82037,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:caption-kinetic-slam",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-kinetic-slam.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-caption-kinetic-slam.png",
+      "content_type": "image/png",
+      "bytes": 26583,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:caption-matrix-decode",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-matrix-decode.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-caption-matrix-decode.png",
+      "content_type": "image/png",
+      "bytes": 27008,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:caption-neon-accent",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-neon-accent.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-caption-neon-accent.png",
+      "content_type": "image/png",
+      "bytes": 230748,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:caption-neon-glow",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-neon-glow.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-caption-neon-glow.png",
+      "content_type": "image/png",
+      "bytes": 90234,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:caption-parallax-layers",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-parallax-layers.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-caption-parallax-layers.png",
+      "content_type": "image/png",
+      "bytes": 241180,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:caption-particle-burst",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-particle-burst.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-caption-particle-burst.png",
+      "content_type": "image/png",
+      "bytes": 24037,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:caption-pill-karaoke",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-pill-karaoke.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-caption-pill-karaoke.png",
+      "content_type": "image/png",
+      "bytes": 26580,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:caption-texture",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-texture.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-caption-texture.png",
+      "content_type": "image/png",
+      "bytes": 10536,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:caption-weight-shift",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-weight-shift.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-caption-weight-shift.png",
+      "content_type": "image/png",
+      "bytes": 46505,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:grain-overlay",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/grain-overlay.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-grain-overlay.png",
+      "content_type": "image/png",
+      "bytes": 1822985,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:grid-pixelate-wipe",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/grid-pixelate-wipe.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-grid-pixelate-wipe.png",
+      "content_type": "image/png",
+      "bytes": 45866,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:morph-text",
+      "url": null,
+      "status": "not_applicable",
+      "local_path": null,
+      "content_type": null,
+      "bytes": 0,
+      "http_status": null,
+      "error": "У item нет remote poster в frozen manifest."
+    },
+    {
+      "id": "upstream:component:motion-blur",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/motion-blur.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-motion-blur.png",
+      "content_type": "image/png",
+      "bytes": 290845,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:parallax-unzoom",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/parallax-unzoom.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-parallax-unzoom.png",
+      "content_type": "image/png",
+      "bytes": 709014,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:parallax-zoom",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/parallax-zoom.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-parallax-zoom.png",
+      "content_type": "image/png",
+      "bytes": 493782,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:shimmer-sweep",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/shimmer-sweep.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-shimmer-sweep.png",
+      "content_type": "image/png",
+      "bytes": 39322,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:texture-mask-text",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/texture-mask-text.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-texture-mask-text.png",
+      "content_type": "image/png",
+      "bytes": 297407,
+      "http_status": 200,
+      "error": null
+    },
+    {
+      "id": "upstream:component:vignette",
+      "url": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/vignette.png",
+      "status": "downloaded",
+      "local_path": "gallery/assets/posters/upstream-component-vignette.png",
+      "content_type": "image/png",
+      "bytes": 1104601,
+      "http_status": 200,
+      "error": null
+    }
+  ],
+  "counts": {
+    "downloaded": 98,
+    "cached": 0,
+    "failed": 14,
+    "not_applicable": 49
+  }
+}

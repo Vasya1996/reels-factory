@@ -1,0 +1,667 @@
+{
+  "plan_version": "hf-edit-plan-poc-1",
+  "status": "draft",
+  "project_id": "sales-three-questions-poc",
+  "duration_seconds": 42.32,
+  "creative_direction": {
+    "concept": "От визуального шума сложных техник продаж кадр последовательно очищается до трёх опорных вопросов: КТО, ЧТО и КАК. Ведущая удерживает доверие, а HyperFrames показывает логику и порядок.",
+    "mood": "Уверенная editorial-подача: энергичный старт, контролируемое усложнение и ясная развязка без декоративного шума.",
+    "rhythm": "Частые hard cut на перечислениях, спокойнее на объяснении трёх вопросов, один яркий акцент перед формулой и простое закрытие CTA.",
+    "primary_transition_id": "approved:transition:hard_cut",
+    "accent_transition_ids": [
+      "approved:transition:transition_push_editorial",
+      "approved:transition:transition_white_flash"
+    ]
+  },
+  "scenes": [
+    {
+      "scene_id": "s01",
+      "word_start": 0,
+      "word_end": 7,
+      "purpose": "hook",
+      "coverage": "mixed",
+      "layout_id": "approved:layout:avatar_object_overlay",
+      "primary_block_id": "local:block:stat_number",
+      "component_ids": [],
+      "technique_ids": [
+        "avatar_object_overlay",
+        "animated_stat_countup",
+        "caption_kinetic_slam",
+        "hard_cut_transition"
+      ],
+      "transition_in_id": "approved:transition:hard_cut",
+      "content": {
+        "headline": "ВСЕ ПРОДАЖИ = 3 ВОПРОСА",
+        "labels": [
+          "3"
+        ],
+        "emphasis_words": [
+          "ВСЕ",
+          "ТРЁМ",
+          "ВОПРОСАМ"
+        ]
+      },
+      "captions": "bottom",
+      "avatar_direction": "object_overlay",
+      "media_intents": [
+        {
+          "type": "sfx",
+          "query": "короткий уверенный numeric impact при появлении цифры три",
+          "purpose": "Подчеркнуть главный тезис hook без перекрытия голоса.",
+          "required": false
+        }
+      ],
+      "adaptation_requests": [
+        {
+          "catalog_id": "upstream:component:caption-kinetic-slam",
+          "fallback_catalog_id": "local:block:stat_number",
+          "reason": "Кинетический slam слова «ТРЁМ» усилит hook, но компонент нужно параметризовать и сделать seek-safe для точной синхронизации.",
+          "desired_parameters": [
+            {
+              "name": "text",
+              "value": "ТРЁМ"
+            },
+            {
+              "name": "trigger_word_index",
+              "value": "6"
+            },
+            {
+              "name": "accent_color",
+              "value": "#FFE500"
+            }
+          ]
+        }
+      ],
+      "rationale": "Цифра 3 появляется рядом с лицом и мгновенно превращает общий тезис о продажах в конкретное обещание.",
+      "start": 0,
+      "end": 3,
+      "duration": 3,
+      "speech": "Все продажи на свете сводятся к трём вопросам."
+    },
+    {
+      "scene_id": "s02",
+      "word_start": 8,
+      "word_end": 13,
+      "purpose": "hook",
+      "coverage": "mixed",
+      "layout_id": "approved:layout:avatar_editorial_bubble",
+      "primary_block_id": "local:block:sequence_flow",
+      "component_ids": [],
+      "technique_ids": [
+        "avatar_editorial_bubble",
+        "sequence_step_flow",
+        "caption_editorial_emphasis",
+        "hard_cut_transition"
+      ],
+      "transition_in_id": "approved:transition:hard_cut",
+      "content": {
+        "headline": "ПОРЯДОК РЕШАЕТ ВСЁ",
+        "labels": [
+          "КТО",
+          "ЧТО",
+          "КАК"
+        ],
+        "emphasis_words": [
+          "ПОРЯДОК",
+          "РЕШАЕТ",
+          "ВСЁ"
+        ]
+      },
+      "captions": "bottom",
+      "avatar_direction": "editorial_bubble",
+      "media_intents": [],
+      "adaptation_requests": [],
+      "rationale": "Sequence Flow впервые показывает три позиции, но сохраняет интригу: важен не только состав, а их порядок.",
+      "start": 3,
+      "end": 5.333,
+      "duration": 2.333,
+      "speech": "И порядок этих вопросов решает всё."
+    },
+    {
+      "scene_id": "s03",
+      "word_start": 14,
+      "word_end": 20,
+      "purpose": "contrast",
+      "coverage": "hyperframes",
+      "layout_id": "approved:layout:progressive_text_card",
+      "primary_block_id": "local:block:complexity_cloud",
+      "component_ids": [],
+      "technique_ids": [
+        "complexity_to_resolution",
+        "progressive_text_card",
+        "caption_highlight",
+        "hard_cut_transition"
+      ],
+      "transition_in_id": "approved:transition:hard_cut",
+      "content": {
+        "headline": "МЫ УСЛОЖНЯЕМ ПРОДАЖИ",
+        "labels": [
+          "ХИТРЫЕ ПРИЁМЫ"
+        ],
+        "emphasis_words": [
+          "УСЛОЖНЯТЬ",
+          "ХИТРЫЕ",
+          "ПРИЁМЫ"
+        ]
+      },
+      "captions": "bottom",
+      "avatar_direction": "hidden",
+      "media_intents": [
+        {
+          "type": "sfx",
+          "query": "лёгкие быстрые бумажные тики для каскада сложных приёмов",
+          "purpose": "Создать ощущение накапливающейся лишней сложности.",
+          "required": false
+        }
+      ],
+      "adaptation_requests": [
+        {
+          "catalog_id": "upstream:component:caption-highlight",
+          "fallback_catalog_id": "local:block:complexity_cloud",
+          "reason": "Последовательная подсветка слов поддержит накопление сложности, но требует русских content variables и word-index синхронизации.",
+          "desired_parameters": [
+            {
+              "name": "words",
+              "value": "УСЛОЖНЯТЬ|ХИТРЫЕ|ПРИЁМЫ"
+            },
+            {
+              "name": "accent_color",
+              "value": "#FFE500"
+            },
+            {
+              "name": "canvas",
+              "value": "1080x1920"
+            }
+          ]
+        }
+      ],
+      "rationale": "Complexity Cloud материализует привычку накапливать техники вместо поиска основы.",
+      "start": 5.333,
+      "end": 8.74,
+      "duration": 3.407,
+      "speech": "Мы обожаем усложнять продажи. Учим хитрые приёмы."
+    },
+    {
+      "scene_id": "s04",
+      "word_start": 21,
+      "word_end": 25,
+      "purpose": "contrast",
+      "coverage": "hyperframes",
+      "layout_id": "approved:layout:checklist_strike",
+      "primary_block_id": "local:block:task_list",
+      "component_ids": [],
+      "technique_ids": [
+        "checklist_strike_routine",
+        "task_checklist_reveal",
+        "caption_clip_wipe",
+        "hard_cut_transition"
+      ],
+      "transition_in_id": "approved:transition:hard_cut",
+      "content": {
+        "headline": "НЕ В ЭТОМ ОСНОВА",
+        "labels": [
+          "СКРИПТЫ",
+          "ВОЛШЕБНЫЕ ФРАЗЫ"
+        ],
+        "emphasis_words": [
+          "СКРИПТЫ",
+          "ВОЛШЕБНЫЕ",
+          "ФРАЗЫ"
+        ]
+      },
+      "captions": "bottom",
+      "avatar_direction": "hidden",
+      "media_intents": [
+        {
+          "type": "sfx",
+          "query": "два сухих карандашных зачёркивания",
+          "purpose": "Синхронно убрать скрипты и волшебные фразы из центра метода.",
+          "required": false
+        }
+      ],
+      "adaptation_requests": [],
+      "rationale": "Два пункта быстро появляются и зачёркиваются, продолжая перечисление без лишнего третьего образа.",
+      "start": 8.74,
+      "end": 11.52,
+      "duration": 2.78,
+      "speech": "Зубрим скрипты. Ищем волшебные фразы."
+    },
+    {
+      "scene_id": "s05",
+      "word_start": 26,
+      "word_end": 31,
+      "purpose": "payoff",
+      "coverage": "mixed",
+      "layout_id": "approved:layout:avatar_editorial_bubble",
+      "primary_block_id": "local:block:concept_nodes",
+      "component_ids": [],
+      "technique_ids": [
+        "avatar_editorial_bubble",
+        "concept_node_map",
+        "caption_weight_shift",
+        "editorial_push_transition"
+      ],
+      "transition_in_id": "approved:transition:transition_push_editorial",
+      "content": {
+        "headline": "В ОСНОВЕ — 3 ВОПРОСА",
+        "labels": [
+          "КТО",
+          "ЧТО",
+          "КАК"
+        ],
+        "emphasis_words": [
+          "ОСНОВЕ",
+          "ТРИ",
+          "ВОПРОСА"
+        ]
+      },
+      "captions": "bottom",
+      "avatar_direction": "editorial_bubble",
+      "media_intents": [
+        {
+          "type": "sfx",
+          "query": "мягкий собранный whoosh при схлопывании шума в три узла",
+          "purpose": "Озвучить переход от сложности к ясной основе.",
+          "required": false
+        }
+      ],
+      "adaptation_requests": [],
+      "rationale": "Возврат ведущей и три связанных узла дают зрителю ясную опору после двух сцен визуального шума.",
+      "start": 11.52,
+      "end": 13.6,
+      "duration": 2.08,
+      "speech": "А в основе — три больших вопроса."
+    },
+    {
+      "scene_id": "s06",
+      "word_start": 32,
+      "word_end": 43,
+      "purpose": "explain",
+      "coverage": "mixed",
+      "layout_id": "approved:layout:avatar_broll_split",
+      "primary_block_id": "local:block:persona_card",
+      "component_ids": [],
+      "technique_ids": [
+        "avatar_broll_split",
+        "persona_context_card",
+        "caption_editorial_emphasis",
+        "hard_cut_transition"
+      ],
+      "transition_in_id": "approved:transition:hard_cut",
+      "content": {
+        "headline": "1. КОМУ ПРОДАЁМ?",
+        "labels": [
+          "КТО ЭТОТ ЧЕЛОВЕК",
+          "ЧЕМ ЖИВЁТ",
+          "КАКАЯ БОЛЬ"
+        ],
+        "emphasis_words": [
+          "КОМУ",
+          "ЧЕЛОВЕК",
+          "БОЛЬ"
+        ]
+      },
+      "captions": "bottom",
+      "avatar_direction": "split",
+      "media_intents": [
+        {
+          "type": "icon",
+          "query": "нейтральная editorial иконка профиля человека без гендерных стереотипов",
+          "purpose": "Обозначить человека внутри Persona Card без выдуманной фотографии.",
+          "required": false
+        }
+      ],
+      "adaptation_requests": [],
+      "rationale": "Persona Card прямо раскладывает первый вопрос на человека, контекст жизни и боль, сохраняя ведущую рядом.",
+      "start": 13.6,
+      "end": 18.58,
+      "duration": 4.98,
+      "speech": "Первый: кому продаём? Кто этот человек, чем живёт, какая у него боль."
+    },
+    {
+      "scene_id": "s07",
+      "word_start": 44,
+      "word_end": 54,
+      "purpose": "explain",
+      "coverage": "hyperframes",
+      "layout_id": "approved:layout:progressive_text_card",
+      "primary_block_id": "local:block:value_layers",
+      "component_ids": [],
+      "technique_ids": [
+        "value_layer_swap",
+        "progressive_text_card",
+        "caption_gradient_fill",
+        "hard_cut_transition"
+      ],
+      "transition_in_id": "approved:transition:hard_cut",
+      "content": {
+        "headline": "2. ЧТО ПРОДАЁМ?",
+        "labels": [
+          "ПРОДУКТ",
+          "РЕАЛЬНАЯ ЦЕННОСТЬ"
+        ],
+        "emphasis_words": [
+          "ЧТО",
+          "НА САМОМ ДЕЛЕ",
+          "ПОКУПАЕТ"
+        ]
+      },
+      "captions": "bottom",
+      "avatar_direction": "hidden",
+      "media_intents": [
+        {
+          "type": "sfx",
+          "query": "короткий мягкий flip карточки от продукта к ценности",
+          "purpose": "Подчеркнуть смену формального предложения на реальную покупаемую ценность.",
+          "required": false
+        }
+      ],
+      "adaptation_requests": [],
+      "rationale": "Value Layers визуально отделяет название продукта от того, что клиент фактически покупает.",
+      "start": 18.58,
+      "end": 22.74,
+      "duration": 4.16,
+      "speech": "Второй: что продаём? Что человек на самом деле у нас покупает."
+    },
+    {
+      "scene_id": "s08",
+      "word_start": 55,
+      "word_end": 61,
+      "purpose": "explain",
+      "coverage": "mixed",
+      "layout_id": "approved:layout:avatar_object_overlay",
+      "primary_block_id": "local:block:sequence_flow",
+      "component_ids": [],
+      "technique_ids": [
+        "avatar_object_overlay",
+        "sequence_step_flow",
+        "caption_highlight",
+        "hard_cut_transition"
+      ],
+      "transition_in_id": "approved:transition:hard_cut",
+      "content": {
+        "headline": "3. КАК ПРОДАЁМ?",
+        "labels": [
+          "ГДЕ ВСТРЕЧАЕМСЯ"
+        ],
+        "emphasis_words": [
+          "КАК",
+          "ГДЕ",
+          "ВСТРЕЧАЕМСЯ"
+        ]
+      },
+      "captions": "bottom",
+      "avatar_direction": "object_overlay",
+      "media_intents": [
+        {
+          "type": "icon",
+          "query": "минимальная editorial иконка точки контакта или диалога",
+          "purpose": "Показать место встречи с клиентом как первый элемент способа продажи.",
+          "required": false
+        }
+      ],
+      "adaptation_requests": [],
+      "rationale": "Третий вопрос возвращает ведущую, а первый шаг способа продажи фиксирует точку встречи с человеком.",
+      "start": 22.74,
+      "end": 25.96,
+      "duration": 3.22,
+      "speech": "Третий: как продаём? Где встречаемся с ним,"
+    },
+    {
+      "scene_id": "s09",
+      "word_start": 62,
+      "word_end": 68,
+      "purpose": "explain",
+      "coverage": "mixed",
+      "layout_id": "approved:layout:avatar_broll_split",
+      "primary_block_id": "local:block:concept_nodes",
+      "component_ids": [],
+      "technique_ids": [
+        "avatar_broll_split",
+        "concept_node_map",
+        "caption_pill_karaoke",
+        "hard_cut_transition"
+      ],
+      "transition_in_id": "approved:transition:hard_cut",
+      "content": {
+        "headline": "СЛОВА + ФОРМАТ",
+        "labels": [
+          "КАКИМИ СЛОВАМИ",
+          "В КАКОМ ВИДЕ"
+        ],
+        "emphasis_words": [
+          "СЛОВАМИ",
+          "ВИДЕ",
+          "ПРЕДЛАГАЕМ"
+        ]
+      },
+      "captions": "bottom",
+      "avatar_direction": "split",
+      "media_intents": [],
+      "adaptation_requests": [],
+      "rationale": "Два узла дополняют третий вопрос: язык предложения и форма контакта видны рядом с ведущей.",
+      "start": 25.96,
+      "end": 28.88,
+      "duration": 2.92,
+      "speech": "какими словами говорим, в каком виде предлагаем."
+    },
+    {
+      "scene_id": "s10",
+      "word_start": 69,
+      "word_end": 74,
+      "purpose": "explain",
+      "coverage": "hyperframes",
+      "layout_id": "approved:layout:progressive_text_card",
+      "primary_block_id": "local:block:concept_nodes",
+      "component_ids": [],
+      "technique_ids": [
+        "concept_node_map",
+        "complexity_to_resolution",
+        "progressive_text_card",
+        "editorial_push_transition"
+      ],
+      "transition_in_id": "approved:transition:transition_push_editorial",
+      "content": {
+        "headline": "ОСТАЛЬНОЕ — НАДСТРОЙКА",
+        "labels": [
+          "КТО",
+          "ЧТО",
+          "КАК"
+        ],
+        "emphasis_words": [
+          "ОСТАЛЬНОЕ",
+          "НАДСТРОЙКА",
+          "ТРЕМЯ"
+        ]
+      },
+      "captions": "bottom",
+      "avatar_direction": "hidden",
+      "media_intents": [
+        {
+          "type": "sfx",
+          "query": "тонкие слои складываются над устойчивым основанием",
+          "purpose": "Подчеркнуть метафору надстройки над тремя базовыми узлами.",
+          "required": false
+        }
+      ],
+      "adaptation_requests": [],
+      "rationale": "Три базовых узла остаются внизу, а второстепенные слои собираются над ними как надстройка.",
+      "start": 28.88,
+      "end": 31.56,
+      "duration": 2.68,
+      "speech": "Всё остальное — надстройка над этими тремя."
+    },
+    {
+      "scene_id": "s11",
+      "word_start": 75,
+      "word_end": 80,
+      "purpose": "build",
+      "coverage": "avatar",
+      "layout_id": "approved:layout:avatar_fullscreen",
+      "primary_block_id": null,
+      "component_ids": [],
+      "technique_ids": [
+        "avatar_fullscreen_anchor",
+        "caption_weight_shift",
+        "caption_editorial_emphasis",
+        "hard_cut_transition"
+      ],
+      "transition_in_id": "approved:transition:hard_cut",
+      "content": {
+        "headline": "САМОЕ ВАЖНОЕ — ПОРЯДОК",
+        "labels": [],
+        "emphasis_words": [
+          "ПРОСТО",
+          "ВАЖНОЕ",
+          "ПОРЯДОК"
+        ]
+      },
+      "captions": "bottom",
+      "avatar_direction": "fullscreen",
+      "media_intents": [],
+      "adaptation_requests": [],
+      "rationale": "Крупный план ведущей создаёт паузу и личный акцент перед финальной формулой порядка.",
+      "start": 31.56,
+      "end": 34.44,
+      "duration": 2.88,
+      "speech": "Звучит просто. Но самое важное — порядок."
+    },
+    {
+      "scene_id": "s12",
+      "word_start": 81,
+      "word_end": 88,
+      "purpose": "payoff",
+      "coverage": "hyperframes",
+      "layout_id": "approved:layout:progressive_text_card",
+      "primary_block_id": "local:block:sequence_flow",
+      "component_ids": [],
+      "technique_ids": [
+        "sequence_step_flow",
+        "catalog_reference_morph_text",
+        "progressive_text_card",
+        "white_flash_transition"
+      ],
+      "transition_in_id": "approved:transition:transition_white_flash",
+      "content": {
+        "headline": "КТО → ЧТО → КАК",
+        "labels": [
+          "1. КТО",
+          "2. ЧТО",
+          "3. КАК"
+        ],
+        "emphasis_words": [
+          "КТО",
+          "ЧТО",
+          "КАК"
+        ]
+      },
+      "captions": "hidden",
+      "avatar_direction": "hidden",
+      "media_intents": [
+        {
+          "type": "sfx",
+          "query": "три чистых последовательных щелчка с лёгким повышением тона",
+          "purpose": "Зафиксировать правильный порядок КТО, ЧТО, КАК по речи.",
+          "required": true
+        }
+      ],
+      "adaptation_requests": [
+        {
+          "catalog_id": "upstream:component:morph-text",
+          "fallback_catalog_id": "local:block:sequence_flow",
+          "reason": "Морфинг КТО→ЧТО→КАК может усилить кульминацию, но требует русских переменных, word-index триггеров и seek-safe GSAP timeline.",
+          "desired_parameters": [
+            {
+              "name": "words",
+              "value": "КТО|ЧТО|КАК"
+            },
+            {
+              "name": "word_indices",
+              "value": "82|84|88"
+            },
+            {
+              "name": "accent_color",
+              "value": "#FFE500"
+            },
+            {
+              "name": "fallback_mode",
+              "value": "sequence_flow"
+            }
+          ]
+        }
+      ],
+      "rationale": "Полноэкранный Sequence Flow повторяет только кульминационную формулу и поэтому временно заменяет субтитры.",
+      "start": 34.44,
+      "end": 37.96,
+      "duration": 3.52,
+      "speech": "Сначала кто, пото́м что, и только пото́м как."
+    },
+    {
+      "scene_id": "s13",
+      "word_start": 89,
+      "word_end": 99,
+      "purpose": "cta",
+      "coverage": "avatar",
+      "layout_id": "approved:layout:social_outro",
+      "primary_block_id": "local:block:task_list",
+      "component_ids": [],
+      "technique_ids": [
+        "social_outro_lockup",
+        "task_checklist_reveal",
+        "avatar_fullscreen_anchor",
+        "editorial_push_transition"
+      ],
+      "transition_in_id": "approved:transition:transition_push_editorial",
+      "content": {
+        "headline": "СОХРАНИ И ПРОВЕРЬ ПРОДУКТ",
+        "labels": [
+          "КТО?",
+          "ЧТО?",
+          "КАК?",
+          "@julia.agents"
+        ],
+        "emphasis_words": [
+          "СОХРАНИ",
+          "ПРОДУКТ",
+          "СЕГОДНЯ"
+        ]
+      },
+      "captions": "bottom",
+      "avatar_direction": "fullscreen",
+      "media_intents": [
+        {
+          "type": "sfx",
+          "query": "мягкий confirmation click на финальном слове сегодня",
+          "purpose": "Закрыть практический CTA без рекламного джингла.",
+          "required": false
+        }
+      ],
+      "adaptation_requests": [],
+      "rationale": "Ведущая закрывает ролик лично, а Social Outro превращает три вопроса в короткий сохраняемый чек-лист.",
+      "start": 37.96,
+      "end": 42.32,
+      "duration": 4.36,
+      "speech": "Сохрани это видео. Прогони свой продукт по трём вопросам. Прямо сегодня."
+    }
+  ],
+  "global_notes": [
+    "Ведущая должна оставаться главным источником доверия; графика объясняет только те идеи, которые трудно показать лицом.",
+    "Не размещать критичный текст по координатам до анализа safe zones реального avatar video.",
+    "Субтитры используют accumulate-режим и шрифт Unbounded; ключевые слова выделяются #FFE500.",
+    "Все SFX кроме трёх щелчков в payoff необязательны и могут быть удалены, если спорят с голосом.",
+    "Adaptation requests не блокируют сборку: для каждого указан render-ready fallback.",
+    "Фотографический B-roll не обязателен: смысловая графика и лицо полностью покрывают сценарий.",
+    "Watermark @julia.agents появляется после 2.0 секунды и остаётся ненавязчивым до конца.",
+    "Перед рендером проверить читаемость русских строк и ударение в словах озвучки не менять."
+  ],
+  "validation": {
+    "status": "PASS",
+    "errors": [],
+    "warnings": [],
+    "scene_count": 13,
+    "covered_words": 100,
+    "total_words": 100,
+    "max_presenter_hidden_seconds": 6.187,
+    "primary_transition_share": 0.667
+  }
+}

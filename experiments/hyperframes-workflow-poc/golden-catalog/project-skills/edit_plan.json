@@ -1,0 +1,194 @@
+{
+  "plan_version": "hf-edit-plan-golden-2",
+  "status": "draft",
+  "project_id": "ai-skills-poc",
+  "duration_seconds": 32.4,
+  "creative_direction": {
+    "concept": "От боли повторять нейросети одно и то же — к решению («скилы»): один раз настроил и пользуешься. Ведущая держит внимание, графика подтверждает уже сказанное, а не анонсирует и не выдумывает.",
+    "mood": "Быстрый практичный editorial: сильный хук крупным планом, ясная демонстрация выгоды, дружелюбный бесплатный CTA.",
+    "rhythm": "Hard cut на перечислениях, пауза на личных репликах ведущей, мягкий финальный CTA.",
+    "primary_transition_id": "hard_cut"
+  },
+  "scenes": [
+    {
+      "scene_id": "s01",
+      "word_start": 0,
+      "word_end": 10,
+      "start": 0.0,
+      "end": 3.78,
+      "purpose": "hook",
+      "block": "avatarFullscreen",
+      "avatar_direction": "fullscreen",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": { "headline": null, "labels": [], "emphasis_words": ["устал"] },
+      "rationale": "Правило v3 №1: сильная фраза хука обходится без заголовка (headline опционален) — сама первая реплика («если ты устал каждый раз писать нейросети одно и то же») уже держит внимание, отдельный текст поверх неё был бы либо абстракцией («ЗНАКОМО?», запрещено), либо дублем субтитров. Правило v3 №2: fullscreen, не бабл."
+    },
+    {
+      "scene_id": "s02",
+      "word_start": 11,
+      "word_end": 22,
+      "start": 3.78,
+      "end": 8.16,
+      "purpose": "payoff",
+      "block": "avatarBubble",
+      "avatar_direction": "editorial_bubble",
+      "captions": "bottom",
+      "transition_in": "white_flash",
+      "content": {
+        "headline": "СКИЛЫ",
+        "labels": [
+          { "text": "способ есть", "trigger_word_index": 12 },
+          { "text": "один раз", "trigger_word_index": 15 }
+        ],
+        "emphasis_words": ["скилы"]
+      },
+      "rationale": "Headline — одиночный термин-название решения (не абстракция, конкретное слово из речи). Оба label сложены только из слов, реально сказанных в ЭТОЙ сцене (правило v3 №5): «способ»(w12), «есть»(w11/21), «один»(w15), «раз»(w16). Пилюля появляется не раньше слова-триггера (правило v3 №4)."
+    },
+    {
+      "scene_id": "s03",
+      "word_start": 23,
+      "word_end": 30,
+      "start": 8.16,
+      "end": 11.0,
+      "purpose": "explain",
+      "block": "statNumber",
+      "avatar_direction": "hidden",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": "НАВСЕГДА",
+        "labels": [{ "text": "1", "trigger_word_index": 29 }],
+        "emphasis_words": ["запоминает"]
+      },
+      "rationale": "Гигантская цифра «1» = число-эквивалент слова «один» (w29, «запоминает один раз») — источник речевой, не выдуманный факт (правило v3 №5)."
+    },
+    {
+      "scene_id": "s04",
+      "word_start": 31,
+      "word_end": 45,
+      "start": 11.0,
+      "end": 16.58,
+      "purpose": "explain",
+      "block": "avatarBubble",
+      "avatar_direction": "editorial_bubble",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": "ПОД ТЕБЯ",
+        "labels": [
+          { "text": "стиль и формат", "trigger_word_index": 42 },
+          { "text": "аудиторию", "trigger_word_index": 45 }
+        ],
+        "emphasis_words": ["аудиторию"]
+      },
+      "rationale": "Оба label — точные слова из речи сцены: «стиль»(w42), «формат»(w43), «аудиторию»(w45). Долгая реплика про персонализацию — ведущая обязательна на экране (правило avatar-first)."
+    },
+    {
+      "scene_id": "s05",
+      "word_start": 46,
+      "word_end": 51,
+      "start": 16.58,
+      "end": 18.6,
+      "purpose": "contrast",
+      "block": "complexityCloud",
+      "avatar_direction": "fullscreen",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": "ВСЁ",
+        "labels": [
+          { "text": "автоматизировать", "trigger_word_index": 49 },
+          { "text": "почти", "trigger_word_index": 50 },
+          { "text": "все", "trigger_word_index": 51 }
+        ],
+        "emphasis_words": ["автоматизировать"]
+      },
+      "rationale": "Правило v3 №5: облако сокращено с 6 придуманных примеров задач («письма/отчёты/посты» — не звучали в ЭТОЙ сцене) до 3 слов, реально сказанных здесь же: «автоматизировать»(w49), «почти»(w50), «все»(w51). Реже, но честно."
+    },
+    {
+      "scene_id": "s06",
+      "word_start": 52,
+      "word_end": 61,
+      "start": 18.6,
+      "end": 23.14,
+      "purpose": "build",
+      "block": "phoneCase",
+      "avatar_direction": "object_overlay",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": null,
+        "labels": [
+          "Клиент: можете разобрать этот договор?",
+          "Секунду, читаю документ",
+          "Клиент: и подготовьте ответ на письмо",
+          "Уже готово, отправляю"
+        ],
+        "emphasis_words": ["задач"]
+      },
+      "rationale": "phoneCase — иллюстративный вымышленный кейс-переписка (как скриншот-мокап), не цитата речи по своей природе: исключён из проверок v3 №4/№5 (источник/триггер), как и @handle. Мини-PiP аватара держит лицо в кадре."
+    },
+    {
+      "scene_id": "s07",
+      "word_start": 62,
+      "word_end": 72,
+      "start": 23.14,
+      "end": 26.22,
+      "purpose": "payoff",
+      "block": "beforeAfter",
+      "avatar_direction": "object_overlay",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": null,
+        "labels": [
+          { "text": "объясняешь одно и то же", "trigger_word_index": 68 },
+          { "text": "настроил один раз", "trigger_word_index": 64 }
+        ],
+        "emphasis_words": ["настроил"]
+      },
+      "rationale": "Было/стало пересобрано на словах именно этой сцены (правило v3 №5): «объясняешь»(w68, было — по смыслу «больше не объясняешь»), «одно»(w69); «настроил»(w64), «один»(w62), «раз»(w63). Старый вариант «каждый раз заново» использовал слово из ДРУГОЙ сцены (s01) — источника внутри сцены не было."
+    },
+    {
+      "scene_id": "s08",
+      "word_start": 73,
+      "word_end": 80,
+      "start": 26.22,
+      "end": 28.6,
+      "purpose": "cta",
+      "block": "statNumber",
+      "avatar_direction": "hidden",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": null,
+        "labels": [{ "text": "БЕСПЛАТНО", "trigger_word_index": 80 }],
+        "emphasis_words": ["бесплатно"]
+      },
+      "rationale": "Правило v3 №5 буквально по примеру Юлии: сказано «бесплатно» → в кадре «БЕСПЛАТНО», а не выдуманная «0 ₽» (цифра/валюта не звучали и не были в брифе)."
+    },
+    {
+      "scene_id": "s09",
+      "word_start": 81,
+      "word_end": 88,
+      "start": 28.6,
+      "end": 32.4,
+      "purpose": "cta",
+      "block": "avatarFullscreenCta",
+      "avatar_direction": "fullscreen",
+      "captions": "bottom",
+      "transition_in": "white_flash",
+      "content": { "headline": "ПОДПИШИСЬ", "labels": ["@julia.agents"], "emphasis_words": ["подписывайся"] },
+      "rationale": "Финал крупным планом ведущей с хэндлом. @handle — данные из брифа/личности канала, не речь, исключён из проверки источника."
+    }
+  ],
+  "global_notes": [
+    "Правила v3 (фидбек Юлии по ai-skills-poc.mp4) применены ко всем 9 сценам, детали — в rationale каждой сцены.",
+    "Хук (s01) — без headline, чистый fullscreen avatarFullscreen (v3 №1+№2). Fullscreen-аватар суммарно s01+s09 = 7.58s/32.4s = 23.4% (ориентир v3 №2 — ≈20%, близко).",
+    "Мета-слова из tech-лейблов убраны Юлией напрямую в compiler/compile.mjs (LABELS = '' везде) — не трогать при следующих правках плана.",
+    "Решение исполнителя по неоднозначности формулировок v3: №5 «источник» проверяется В РАМКАХ РЕЧИ ЭТОЙ ЖЕ СЦЕНЫ (не всего видео) — иначе trigger_word_index (№4) не может указывать на ещё непрозвучавшее слово. №4 (timing) проверяется только для labels, не для headline (заголовок — не подтверждение слова, а установочный текст). Дублирование-чек (старое правило №2 NEXT-SESSION.md) теперь применяется ТОЛЬКО к headline — иначе он прямо противоречит №5, который требует от labels буквальных слов речи.",
+    "phoneCase (s06 реплики) и @handle (s09) исключены из проверок источника/триггера — они не являются пересказом речи по жанру (кейс-иллюстрация / бренд-данные).",
+    "Видео аватара немое (muted) — звук из мастер-дорожки voice.mp3, ролик непрерывный дубль без монтажных склеек внутри."
+  ]
+}

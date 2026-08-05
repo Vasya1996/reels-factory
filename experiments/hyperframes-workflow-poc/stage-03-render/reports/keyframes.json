@@ -1,0 +1,1773 @@
+﻿{
+  "project": "project",
+  "runtime": "all",
+  "compositions": [
+    {
+      "composition": "index.html",
+      "source": "index.html",
+      "tweens": [
+        {
+          "id": ".white-flash-fromTo-34440-visual",
+          "target": ".white-flash",
+          "method": "fromTo",
+          "group": "visual",
+          "start": 34.44,
+          "duration": 0.12,
+          "end": 34.56,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 34.44,
+              "properties": {
+                "opacity": 1
+              }
+            },
+            {
+              "pct": 100,
+              "time": 34.56,
+              "properties": {
+                "opacity": 0
+              }
+            }
+          ],
+          "path": null
+        },
+        {
+          "id": ".push-accent-fromTo-11520",
+          "target": ".push-accent",
+          "method": "fromTo",
+          "start": 11.52,
+          "duration": 0.28,
+          "end": 11.8,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 11.52,
+              "properties": {
+                "x": -1080,
+                "opacity": 0.9
+              }
+            },
+            {
+              "pct": 100,
+              "time": 11.8,
+              "properties": {
+                "x": 1080,
+                "opacity": 0
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": -1080,
+              "y": 0
+            },
+            {
+              "x": 1080,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".push-accent-fromTo-28880",
+          "target": ".push-accent",
+          "method": "fromTo",
+          "start": 28.88,
+          "duration": 0.28,
+          "end": 29.16,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 28.88,
+              "properties": {
+                "x": -1080,
+                "opacity": 0.9
+              }
+            },
+            {
+              "pct": 100,
+              "time": 29.16,
+              "properties": {
+                "x": 1080,
+                "opacity": 0
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": -1080,
+              "y": 0
+            },
+            {
+              "x": 1080,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".push-accent-fromTo-37960",
+          "target": ".push-accent",
+          "method": "fromTo",
+          "start": 37.96,
+          "duration": 0.28,
+          "end": 38.24,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 37.96,
+              "properties": {
+                "x": -1080,
+                "opacity": 0.9
+              }
+            },
+            {
+              "pct": 100,
+              "time": 38.24,
+              "properties": {
+                "x": 1080,
+                "opacity": 0
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": -1080,
+              "y": 0
+            },
+            {
+              "x": 1080,
+              "y": 0
+            }
+          ]
+        }
+      ],
+      "traces": [
+        {
+          "target": ".push-accent",
+          "strokes": [
+            {
+              "id": ".push-accent-fromTo-11520",
+              "start": 11.52,
+              "end": 11.8,
+              "keyframes": [
+                {
+                  "pct": 0,
+                  "time": 11.52,
+                  "properties": {
+                    "x": -1080,
+                    "opacity": 0.9
+                  }
+                },
+                {
+                  "pct": 100,
+                  "time": 11.8,
+                  "properties": {
+                    "x": 1080,
+                    "opacity": 0
+                  }
+                }
+              ],
+              "points": [
+                {
+                  "x": -1080,
+                  "y": 0
+                },
+                {
+                  "x": 1080,
+                  "y": 0
+                }
+              ]
+            },
+            {
+              "id": ".push-accent-fromTo-28880",
+              "start": 28.88,
+              "end": 29.16,
+              "keyframes": [
+                {
+                  "pct": 0,
+                  "time": 28.88,
+                  "properties": {
+                    "x": -1080,
+                    "opacity": 0.9
+                  }
+                },
+                {
+                  "pct": 100,
+                  "time": 29.16,
+                  "properties": {
+                    "x": 1080,
+                    "opacity": 0
+                  }
+                }
+              ],
+              "points": [
+                {
+                  "x": -1080,
+                  "y": 0
+                },
+                {
+                  "x": 1080,
+                  "y": 0
+                }
+              ]
+            },
+            {
+              "id": ".push-accent-fromTo-37960",
+              "start": 37.96,
+              "end": 38.24,
+              "keyframes": [
+                {
+                  "pct": 0,
+                  "time": 37.96,
+                  "properties": {
+                    "x": -1080,
+                    "opacity": 0.9
+                  }
+                },
+                {
+                  "pct": 100,
+                  "time": 38.24,
+                  "properties": {
+                    "x": 1080,
+                    "opacity": 0
+                  }
+                }
+              ],
+              "points": [
+                {
+                  "x": -1080,
+                  "y": 0
+                },
+                {
+                  "x": 1080,
+                  "y": 0
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "cssKeyframes": [],
+      "anime": []
+    },
+    {
+      "composition": "s01",
+      "source": "compositions/s01.html",
+      "tweens": [
+        {
+          "id": ".block-fromTo-120",
+          "target": ".block",
+          "method": "fromTo",
+          "start": 0.12,
+          "duration": 0.62,
+          "end": 0.74,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.12,
+              "properties": {
+                "opacity": 0,
+                "y": 64,
+                "scale": 0.96
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.74,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 64
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".stat-fromTo-280",
+          "target": ".stat",
+          "method": "fromTo",
+          "start": 0.28,
+          "duration": 1.18,
+          "end": 1.46,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.28,
+              "properties": {
+                "innerText": 0,
+                "scale": 0.72,
+                "opacity": 0
+              }
+            },
+            {
+              "pct": 100,
+              "time": 1.46,
+              "properties": {
+                "innerText": 3,
+                "scale": 1,
+                "opacity": 1
+              }
+            }
+          ],
+          "path": null
+        },
+        {
+          "id": ".block-to-800-scale",
+          "target": ".block",
+          "method": "to",
+          "group": "scale",
+          "start": 0.8,
+          "duration": 2.1,
+          "end": 2.9,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.8,
+              "properties": {
+                "scale": 1
+              }
+            },
+            {
+              "pct": 100,
+              "time": 2.9,
+              "properties": {
+                "scale": 1.018
+              }
+            }
+          ],
+          "path": null
+        }
+      ],
+      "traces": [],
+      "cssKeyframes": [],
+      "anime": []
+    },
+    {
+      "composition": "s02",
+      "source": "compositions/s02.html",
+      "tweens": [
+        {
+          "id": ".block-fromTo-120",
+          "target": ".block",
+          "method": "fromTo",
+          "start": 0.12,
+          "duration": 0.56,
+          "end": 0.68,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.12,
+              "properties": {
+                "opacity": 0,
+                "y": 64,
+                "scale": 0.96
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.68,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 64
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer-fromTo-420",
+          "target": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer",
+          "method": "fromTo",
+          "start": 0.42,
+          "duration": 0.42,
+          "end": 0.84,
+          "shape": "keyframes",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.42,
+              "properties": {
+                "opacity": 0,
+                "y": 44,
+                "scale": 0.9,
+                "stagger": 12
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.84,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1,
+                "stagger": 12
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 44
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".block-to-800-scale",
+          "target": ".block",
+          "method": "to",
+          "group": "scale",
+          "start": 0.8,
+          "duration": 1.433,
+          "end": 2.233,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.8,
+              "properties": {
+                "scale": 1
+              }
+            },
+            {
+              "pct": 100,
+              "time": 2.233,
+              "properties": {
+                "scale": 1.018
+              }
+            }
+          ],
+          "path": null
+        }
+      ],
+      "traces": [],
+      "cssKeyframes": [],
+      "anime": []
+    },
+    {
+      "composition": "s03",
+      "source": "compositions/s03.html",
+      "tweens": [
+        {
+          "id": ".block-fromTo-120",
+          "target": ".block",
+          "method": "fromTo",
+          "start": 0.12,
+          "duration": 0.62,
+          "end": 0.74,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.12,
+              "properties": {
+                "opacity": 0,
+                "y": 64,
+                "scale": 0.96
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.74,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 64
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer-fromTo-420",
+          "target": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer",
+          "method": "fromTo",
+          "start": 0.42,
+          "duration": 0.42,
+          "end": 0.84,
+          "shape": "keyframes",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.42,
+              "properties": {
+                "opacity": 0,
+                "y": 44,
+                "scale": 0.9,
+                "stagger": 12
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.84,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1,
+                "stagger": 12
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 44
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".block-to-800-scale",
+          "target": ".block",
+          "method": "to",
+          "group": "scale",
+          "start": 0.8,
+          "duration": 2.507,
+          "end": 3.307,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.8,
+              "properties": {
+                "scale": 1
+              }
+            },
+            {
+              "pct": 100,
+              "time": 3.307,
+              "properties": {
+                "scale": 1.018
+              }
+            }
+          ],
+          "path": null
+        }
+      ],
+      "traces": [],
+      "cssKeyframes": [],
+      "anime": []
+    },
+    {
+      "composition": "s04",
+      "source": "compositions/s04.html",
+      "tweens": [
+        {
+          "id": ".block-fromTo-120",
+          "target": ".block",
+          "method": "fromTo",
+          "start": 0.12,
+          "duration": 0.62,
+          "end": 0.74,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.12,
+              "properties": {
+                "opacity": 0,
+                "y": 64,
+                "scale": 0.96
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.74,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 64
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer-fromTo-420",
+          "target": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer",
+          "method": "fromTo",
+          "start": 0.42,
+          "duration": 0.42,
+          "end": 0.84,
+          "shape": "keyframes",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.42,
+              "properties": {
+                "opacity": 0,
+                "y": 44,
+                "scale": 0.9,
+                "stagger": 12
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.84,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1,
+                "stagger": 12
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 44
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".block-to-800-scale",
+          "target": ".block",
+          "method": "to",
+          "group": "scale",
+          "start": 0.8,
+          "duration": 1.88,
+          "end": 2.68,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.8,
+              "properties": {
+                "scale": 1
+              }
+            },
+            {
+              "pct": 100,
+              "time": 2.68,
+              "properties": {
+                "scale": 1.018
+              }
+            }
+          ],
+          "path": null
+        }
+      ],
+      "traces": [],
+      "cssKeyframes": [],
+      "anime": []
+    },
+    {
+      "composition": "s05",
+      "source": "compositions/s05.html",
+      "tweens": [
+        {
+          "id": ".block-fromTo-120",
+          "target": ".block",
+          "method": "fromTo",
+          "start": 0.12,
+          "duration": 0.499,
+          "end": 0.619,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.12,
+              "properties": {
+                "opacity": 0,
+                "y": 64,
+                "scale": 0.96
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.619,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 64
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer-fromTo-420",
+          "target": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer",
+          "method": "fromTo",
+          "start": 0.42,
+          "duration": 0.42,
+          "end": 0.84,
+          "shape": "keyframes",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.42,
+              "properties": {
+                "opacity": 0,
+                "y": 44,
+                "scale": 0.9,
+                "stagger": 12
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.84,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1,
+                "stagger": 12
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 44
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".block-to-800-scale",
+          "target": ".block",
+          "method": "to",
+          "group": "scale",
+          "start": 0.8,
+          "duration": 1.18,
+          "end": 1.98,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.8,
+              "properties": {
+                "scale": 1
+              }
+            },
+            {
+              "pct": 100,
+              "time": 1.98,
+              "properties": {
+                "scale": 1.018
+              }
+            }
+          ],
+          "path": null
+        }
+      ],
+      "traces": [],
+      "cssKeyframes": [],
+      "anime": []
+    },
+    {
+      "composition": "s06",
+      "source": "compositions/s06.html",
+      "tweens": [
+        {
+          "id": ".block-fromTo-120",
+          "target": ".block",
+          "method": "fromTo",
+          "start": 0.12,
+          "duration": 0.62,
+          "end": 0.74,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.12,
+              "properties": {
+                "opacity": 0,
+                "y": 64,
+                "scale": 0.96
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.74,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 64
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer-fromTo-420",
+          "target": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer",
+          "method": "fromTo",
+          "start": 0.42,
+          "duration": 0.42,
+          "end": 0.84,
+          "shape": "keyframes",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.42,
+              "properties": {
+                "opacity": 0,
+                "y": 44,
+                "scale": 0.9,
+                "stagger": 12
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.84,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1,
+                "stagger": 12
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 44
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".split-line-fromTo-180-scale",
+          "target": ".split-line",
+          "method": "fromTo",
+          "group": "scale",
+          "start": 0.18,
+          "duration": 0.42,
+          "end": 0.6,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.18,
+              "properties": {
+                "scaleY": 0
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.6,
+              "properties": {
+                "scaleY": 1
+              }
+            }
+          ],
+          "path": null
+        },
+        {
+          "id": ".block-to-800-scale",
+          "target": ".block",
+          "method": "to",
+          "group": "scale",
+          "start": 0.8,
+          "duration": 4.08,
+          "end": 4.88,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.8,
+              "properties": {
+                "scale": 1
+              }
+            },
+            {
+              "pct": 100,
+              "time": 4.88,
+              "properties": {
+                "scale": 1.018
+              }
+            }
+          ],
+          "path": null
+        }
+      ],
+      "traces": [],
+      "cssKeyframes": [],
+      "anime": []
+    },
+    {
+      "composition": "s07",
+      "source": "compositions/s07.html",
+      "tweens": [
+        {
+          "id": ".block-fromTo-120",
+          "target": ".block",
+          "method": "fromTo",
+          "start": 0.12,
+          "duration": 0.62,
+          "end": 0.74,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.12,
+              "properties": {
+                "opacity": 0,
+                "y": 64,
+                "scale": 0.96
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.74,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 64
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer-fromTo-420",
+          "target": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer",
+          "method": "fromTo",
+          "start": 0.42,
+          "duration": 0.42,
+          "end": 0.84,
+          "shape": "keyframes",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.42,
+              "properties": {
+                "opacity": 0,
+                "y": 44,
+                "scale": 0.9,
+                "stagger": 12
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.84,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1,
+                "stagger": 12
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 44
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".block-to-800-scale",
+          "target": ".block",
+          "method": "to",
+          "group": "scale",
+          "start": 0.8,
+          "duration": 3.26,
+          "end": 4.06,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.8,
+              "properties": {
+                "scale": 1
+              }
+            },
+            {
+              "pct": 100,
+              "time": 4.06,
+              "properties": {
+                "scale": 1.018
+              }
+            }
+          ],
+          "path": null
+        }
+      ],
+      "traces": [],
+      "cssKeyframes": [],
+      "anime": []
+    },
+    {
+      "composition": "s08",
+      "source": "compositions/s08.html",
+      "tweens": [
+        {
+          "id": ".block-fromTo-120",
+          "target": ".block",
+          "method": "fromTo",
+          "start": 0.12,
+          "duration": 0.62,
+          "end": 0.74,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.12,
+              "properties": {
+                "opacity": 0,
+                "y": 64,
+                "scale": 0.96
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.74,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 64
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer-fromTo-420",
+          "target": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer",
+          "method": "fromTo",
+          "start": 0.42,
+          "duration": 0.42,
+          "end": 0.84,
+          "shape": "keyframes",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.42,
+              "properties": {
+                "opacity": 0,
+                "y": 44,
+                "scale": 0.9,
+                "stagger": 12
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.84,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1,
+                "stagger": 12
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 44
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".block-to-800-scale",
+          "target": ".block",
+          "method": "to",
+          "group": "scale",
+          "start": 0.8,
+          "duration": 2.32,
+          "end": 3.12,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.8,
+              "properties": {
+                "scale": 1
+              }
+            },
+            {
+              "pct": 100,
+              "time": 3.12,
+              "properties": {
+                "scale": 1.018
+              }
+            }
+          ],
+          "path": null
+        }
+      ],
+      "traces": [],
+      "cssKeyframes": [],
+      "anime": []
+    },
+    {
+      "composition": "s09",
+      "source": "compositions/s09.html",
+      "tweens": [
+        {
+          "id": ".block-fromTo-120",
+          "target": ".block",
+          "method": "fromTo",
+          "start": 0.12,
+          "duration": 0.62,
+          "end": 0.74,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.12,
+              "properties": {
+                "opacity": 0,
+                "y": 64,
+                "scale": 0.96
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.74,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 64
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer-fromTo-420",
+          "target": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer",
+          "method": "fromTo",
+          "start": 0.42,
+          "duration": 0.42,
+          "end": 0.84,
+          "shape": "keyframes",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.42,
+              "properties": {
+                "opacity": 0,
+                "y": 44,
+                "scale": 0.9,
+                "stagger": 12
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.84,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1,
+                "stagger": 12
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 44
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".split-line-fromTo-180-scale",
+          "target": ".split-line",
+          "method": "fromTo",
+          "group": "scale",
+          "start": 0.18,
+          "duration": 0.42,
+          "end": 0.6,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.18,
+              "properties": {
+                "scaleY": 0
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.6,
+              "properties": {
+                "scaleY": 1
+              }
+            }
+          ],
+          "path": null
+        },
+        {
+          "id": ".block-to-800-scale",
+          "target": ".block",
+          "method": "to",
+          "group": "scale",
+          "start": 0.8,
+          "duration": 2.02,
+          "end": 2.82,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.8,
+              "properties": {
+                "scale": 1
+              }
+            },
+            {
+              "pct": 100,
+              "time": 2.82,
+              "properties": {
+                "scale": 1.018
+              }
+            }
+          ],
+          "path": null
+        }
+      ],
+      "traces": [],
+      "cssKeyframes": [],
+      "anime": []
+    },
+    {
+      "composition": "s10",
+      "source": "compositions/s10.html",
+      "tweens": [
+        {
+          "id": ".block-fromTo-120",
+          "target": ".block",
+          "method": "fromTo",
+          "start": 0.12,
+          "duration": 0.62,
+          "end": 0.74,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.12,
+              "properties": {
+                "opacity": 0,
+                "y": 64,
+                "scale": 0.96
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.74,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 64
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer-fromTo-420",
+          "target": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer",
+          "method": "fromTo",
+          "start": 0.42,
+          "duration": 0.42,
+          "end": 0.84,
+          "shape": "keyframes",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.42,
+              "properties": {
+                "opacity": 0,
+                "y": 44,
+                "scale": 0.9,
+                "stagger": 12
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.84,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1,
+                "stagger": 12
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 44
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".block-to-800-scale",
+          "target": ".block",
+          "method": "to",
+          "group": "scale",
+          "start": 0.8,
+          "duration": 1.78,
+          "end": 2.58,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.8,
+              "properties": {
+                "scale": 1
+              }
+            },
+            {
+              "pct": 100,
+              "time": 2.58,
+              "properties": {
+                "scale": 1.018
+              }
+            }
+          ],
+          "path": null
+        }
+      ],
+      "traces": [],
+      "cssKeyframes": [],
+      "anime": []
+    },
+    {
+      "composition": "s11",
+      "source": "compositions/s11.html",
+      "tweens": [
+        {
+          "id": ".block-fromTo-120",
+          "target": ".block",
+          "method": "fromTo",
+          "start": 0.12,
+          "duration": 0.62,
+          "end": 0.74,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.12,
+              "properties": {
+                "opacity": 0,
+                "y": 64,
+                "scale": 0.96
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.74,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 64
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".block-to-800-scale",
+          "target": ".block",
+          "method": "to",
+          "group": "scale",
+          "start": 0.8,
+          "duration": 1.98,
+          "end": 2.78,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.8,
+              "properties": {
+                "scale": 1
+              }
+            },
+            {
+              "pct": 100,
+              "time": 2.78,
+              "properties": {
+                "scale": 1.018
+              }
+            }
+          ],
+          "path": null
+        }
+      ],
+      "traces": [],
+      "cssKeyframes": [],
+      "anime": []
+    },
+    {
+      "composition": "s12",
+      "source": "compositions/s12.html",
+      "tweens": [
+        {
+          "id": ".block-fromTo-120",
+          "target": ".block",
+          "method": "fromTo",
+          "start": 0.12,
+          "duration": 0.62,
+          "end": 0.74,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.12,
+              "properties": {
+                "opacity": 0,
+                "y": 64,
+                "scale": 0.96
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.74,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 64
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer-fromTo-420",
+          "target": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer",
+          "method": "fromTo",
+          "start": 0.42,
+          "duration": 0.42,
+          "end": 0.84,
+          "shape": "keyframes",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.42,
+              "properties": {
+                "opacity": 0,
+                "y": 44,
+                "scale": 0.9,
+                "stagger": 12
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.84,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1,
+                "stagger": 12
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 44
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".block-to-800-scale",
+          "target": ".block",
+          "method": "to",
+          "group": "scale",
+          "start": 0.8,
+          "duration": 2.62,
+          "end": 3.42,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.8,
+              "properties": {
+                "scale": 1
+              }
+            },
+            {
+              "pct": 100,
+              "time": 3.42,
+              "properties": {
+                "scale": 1.018
+              }
+            }
+          ],
+          "path": null
+        }
+      ],
+      "traces": [],
+      "cssKeyframes": [],
+      "anime": []
+    },
+    {
+      "composition": "s13",
+      "source": "compositions/s13.html",
+      "tweens": [
+        {
+          "id": ".block-fromTo-120",
+          "target": ".block",
+          "method": "fromTo",
+          "start": 0.12,
+          "duration": 0.62,
+          "end": 0.74,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.12,
+              "properties": {
+                "opacity": 0,
+                "y": 64,
+                "scale": 0.96
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.74,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 64
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer-fromTo-420",
+          "target": ".flow-step,.task-row,.cloud-chip,.persona-row,.node,.layer",
+          "method": "fromTo",
+          "start": 0.42,
+          "duration": 0.42,
+          "end": 0.84,
+          "shape": "keyframes",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.42,
+              "properties": {
+                "opacity": 0,
+                "y": 44,
+                "scale": 0.9,
+                "stagger": 12
+              }
+            },
+            {
+              "pct": 100,
+              "time": 0.84,
+              "properties": {
+                "opacity": 1,
+                "y": 0,
+                "scale": 1,
+                "stagger": 12
+              }
+            }
+          ],
+          "path": [
+            {
+              "x": 0,
+              "y": 44
+            },
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": ".block-to-800-scale",
+          "target": ".block",
+          "method": "to",
+          "group": "scale",
+          "start": 0.8,
+          "duration": 3.46,
+          "end": 4.26,
+          "shape": "flat",
+          "keyframes": [
+            {
+              "pct": 0,
+              "time": 0.8,
+              "properties": {
+                "scale": 1
+              }
+            },
+            {
+              "pct": 100,
+              "time": 4.26,
+              "properties": {
+                "scale": 1.018
+              }
+            }
+          ],
+          "path": null
+        }
+      ],
+      "traces": [],
+      "cssKeyframes": [],
+      "anime": []
+    }
+  ],
+  "_meta": {
+    "version": "0.7.88",
+    "latestVersion": "0.7.88",
+    "updateAvailable": false
+  }
+}

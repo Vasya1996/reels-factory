@@ -1,0 +1,810 @@
+{
+  "catalog_version": 1,
+  "decisions": [
+    {
+      "id": "approved:layout:avatar_broll_split",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "approved:layout:avatar_cutout_overlay",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "approved:layout:avatar_editorial_bubble",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "approved:layout:avatar_fullscreen",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "approved:layout:avatar_object_overlay",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "approved:layout:broll_archival_collage",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "approved:layout:broll_fullscreen",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "approved:layout:checklist_strike",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "approved:layout:progressive_text_card",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "approved:layout:social_outro",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "approved:transition:hard_cut",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "approved:transition:transition_blur",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "approved:transition:transition_chromatic",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "approved:transition:transition_push_editorial",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "approved:transition:transition_white_flash",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "local:block:before_after",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "local:block:complexity_cloud",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "local:block:concept_nodes",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "local:block:persona_card",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "local:block:sequence_flow",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "local:block:stat_number",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "local:block:task_list",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "local:block:value_layers",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:app-showcase",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:apple-money-count",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:blue-sweater-intro-video",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:camcorder-hud",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:chromatic-radial-split",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:cinematic-zoom",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-3d-extrude",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-diff",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-highlight",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-morph",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-particle-assemble",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-scroll",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-shader-dissolve",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-basic",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-clear-dark",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-clear-light",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-grass",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-homebrew",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-man-page",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-novel",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-ocean",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-pro",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-red-sands",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-silver-aerogel",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-solid-colors",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-dark-2026",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-dark-modern",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-dark-plus",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-flight",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-high-contrast",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-high-contrast-light",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-light-2026",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-light-modern",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-light-plus",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-monokai",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-solarized-light",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-visual-studio-dark",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-snippet-visual-studio-light",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:code-typing",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:cross-warp-morph",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:data-chart",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:domain-warp-dissolve",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:editorial-flash-overlay",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:flash-through-white",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:flowchart",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:flowchart-vertical",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:freeze-frame-dressing",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:glitch",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:gravitational-lens",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:instagram-follow",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:ios26-liquid-glass",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:light-leak",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:liquid-glass-context-menu",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:liquid-glass-media-controls",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:liquid-glass-notification",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:liquid-glass-widgets",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:logo-outro",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:lower-third-bild",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:lt-accent-underline",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:lt-bold-block",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:lt-clean-bar",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:lt-color-block",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:lt-dark-card",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:lt-kicker-name",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:lt-mask-reveal",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:lt-side-rule",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:lt-soft-pill",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:lt-stack-bars",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:macos-notification",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:macos-tahoe-liquid-glass",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:news-ticker",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:north-korea-locked-down",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:nyc-paris-flight",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:organic-light-leak-overlay",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:reddit-post",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:ridged-burn",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:ripple-waves",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:sdf-iris",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:spain-map",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:spotify-card",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:swirl-vortex",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:thermal-distortion",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:tiktok-follow",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:transitions-3d",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:transitions-blur",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:transitions-cover",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:transitions-destruction",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:transitions-dissolve",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:transitions-distortion",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:transitions-grid",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:transitions-light",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:transitions-mechanical",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:transitions-other",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:transitions-push",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:transitions-radial",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:transitions-scale",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:ui-3d-reveal",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:us-map",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:us-map-bubble",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:us-map-flow",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:us-map-hex",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:vfx-iphone-device",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:vfx-liquid-background",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:vfx-liquid-glass",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:vfx-magnetic",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:vfx-portal",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:vfx-shatter",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:vfx-text-cursor",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:vpn-youtube-spot",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:whip-pan",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:world-map",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:x-post",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:block:yt-lower-third",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:caption-blend-difference",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:caption-clip-wipe",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:caption-editorial-emphasis",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:caption-emoji-pop",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:caption-glitch-rgb",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:caption-gradient-fill",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:caption-highlight",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:caption-kinetic-slam",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:caption-matrix-decode",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:caption-neon-accent",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:caption-neon-glow",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:caption-parallax-layers",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:caption-particle-burst",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:caption-pill-karaoke",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:caption-texture",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:caption-weight-shift",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:grain-overlay",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:grid-pixelate-wipe",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:morph-text",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:motion-blur",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:parallax-unzoom",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:parallax-zoom",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:shimmer-sweep",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:texture-mask-text",
+      "decision": "undecided",
+      "notes": ""
+    },
+    {
+      "id": "upstream:component:vignette",
+      "decision": "undecided",
+      "notes": ""
+    }
+  ]
+}

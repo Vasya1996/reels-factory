@@ -1,0 +1,3006 @@
+{
+  "catalog_version": 1,
+  "source_text_files_inspected": [
+    "assets/catalog.css",
+    "assets/catalog.js",
+    "catalog/catalog.json",
+    "registry/blocks/app-showcase/app-showcase.html",
+    "registry/blocks/app-showcase/registry-item.json",
+    "registry/blocks/apple-money-count/apple-money-count.html",
+    "registry/blocks/apple-money-count/registry-item.json",
+    "registry/blocks/blue-sweater-intro-video/blue-sweater-intro-video.html",
+    "registry/blocks/blue-sweater-intro-video/registry-item.json",
+    "registry/blocks/camcorder-hud/camcorder-hud.html",
+    "registry/blocks/camcorder-hud/registry-item.json",
+    "registry/blocks/chromatic-radial-split/chromatic-radial-split.html",
+    "registry/blocks/chromatic-radial-split/registry-item.json",
+    "registry/blocks/cinematic-zoom/cinematic-zoom.html",
+    "registry/blocks/cinematic-zoom/registry-item.json",
+    "registry/blocks/code-3d-extrude/code-3d-extrude.html",
+    "registry/blocks/code-3d-extrude/registry-item.json",
+    "registry/blocks/code-diff/code-diff.html",
+    "registry/blocks/code-diff/registry-item.json",
+    "registry/blocks/code-highlight/code-highlight.html",
+    "registry/blocks/code-highlight/registry-item.json",
+    "registry/blocks/code-morph/code-morph.html",
+    "registry/blocks/code-morph/registry-item.json",
+    "registry/blocks/code-particle-assemble/code-particle-assemble.html",
+    "registry/blocks/code-particle-assemble/registry-item.json",
+    "registry/blocks/code-scroll/code-scroll.html",
+    "registry/blocks/code-scroll/registry-item.json",
+    "registry/blocks/code-shader-dissolve/code-shader-dissolve.html",
+    "registry/blocks/code-shader-dissolve/registry-item.json",
+    "registry/blocks/code-snippet-apple-terminal-basic/code-snippet-apple-terminal-basic.html",
+    "registry/blocks/code-snippet-apple-terminal-basic/registry-item.json",
+    "registry/blocks/code-snippet-apple-terminal-clear-dark/code-snippet-apple-terminal-clear-dark.html",
+    "registry/blocks/code-snippet-apple-terminal-clear-dark/registry-item.json",
+    "registry/blocks/code-snippet-apple-terminal-clear-light/code-snippet-apple-terminal-clear-light.html",
+    "registry/blocks/code-snippet-apple-terminal-clear-light/registry-item.json",
+    "registry/blocks/code-snippet-apple-terminal-grass/code-snippet-apple-terminal-grass.html",
+    "registry/blocks/code-snippet-apple-terminal-grass/registry-item.json",
+    "registry/blocks/code-snippet-apple-terminal-homebrew/code-snippet-apple-terminal-homebrew.html",
+    "registry/blocks/code-snippet-apple-terminal-homebrew/registry-item.json",
+    "registry/blocks/code-snippet-apple-terminal-man-page/code-snippet-apple-terminal-man-page.html",
+    "registry/blocks/code-snippet-apple-terminal-man-page/registry-item.json",
+    "registry/blocks/code-snippet-apple-terminal-novel/code-snippet-apple-terminal-novel.html",
+    "registry/blocks/code-snippet-apple-terminal-novel/registry-item.json",
+    "registry/blocks/code-snippet-apple-terminal-ocean/code-snippet-apple-terminal-ocean.html",
+    "registry/blocks/code-snippet-apple-terminal-ocean/registry-item.json",
+    "registry/blocks/code-snippet-apple-terminal-pro/code-snippet-apple-terminal-pro.html",
+    "registry/blocks/code-snippet-apple-terminal-pro/registry-item.json",
+    "registry/blocks/code-snippet-apple-terminal-red-sands/code-snippet-apple-terminal-red-sands.html",
+    "registry/blocks/code-snippet-apple-terminal-red-sands/registry-item.json",
+    "registry/blocks/code-snippet-apple-terminal-silver-aerogel/code-snippet-apple-terminal-silver-aerogel.html",
+    "registry/blocks/code-snippet-apple-terminal-silver-aerogel/registry-item.json",
+    "registry/blocks/code-snippet-apple-terminal-solid-colors/code-snippet-apple-terminal-solid-colors.html",
+    "registry/blocks/code-snippet-apple-terminal-solid-colors/registry-item.json",
+    "registry/blocks/code-snippet-dark-2026/code-snippet-dark-2026.html",
+    "registry/blocks/code-snippet-dark-2026/registry-item.json",
+    "registry/blocks/code-snippet-dark-modern/code-snippet-dark-modern.html",
+    "registry/blocks/code-snippet-dark-modern/registry-item.json",
+    "registry/blocks/code-snippet-dark-plus/code-snippet-dark-plus.html",
+    "registry/blocks/code-snippet-dark-plus/registry-item.json",
+    "registry/blocks/code-snippet-flight/code-snippet-flight.html",
+    "registry/blocks/code-snippet-flight/registry-item.json",
+    "registry/blocks/code-snippet-high-contrast-light/code-snippet-high-contrast-light.html",
+    "registry/blocks/code-snippet-high-contrast-light/registry-item.json",
+    "registry/blocks/code-snippet-high-contrast/code-snippet-high-contrast.html",
+    "registry/blocks/code-snippet-high-contrast/registry-item.json",
+    "registry/blocks/code-snippet-light-2026/code-snippet-light-2026.html",
+    "registry/blocks/code-snippet-light-2026/registry-item.json",
+    "registry/blocks/code-snippet-light-modern/code-snippet-light-modern.html",
+    "registry/blocks/code-snippet-light-modern/registry-item.json",
+    "registry/blocks/code-snippet-light-plus/code-snippet-light-plus.html",
+    "registry/blocks/code-snippet-light-plus/registry-item.json",
+    "registry/blocks/code-snippet-monokai/code-snippet-monokai.html",
+    "registry/blocks/code-snippet-monokai/registry-item.json",
+    "registry/blocks/code-snippet-solarized-light/code-snippet-solarized-light.html",
+    "registry/blocks/code-snippet-solarized-light/registry-item.json",
+    "registry/blocks/code-snippet-visual-studio-dark/code-snippet-visual-studio-dark.html",
+    "registry/blocks/code-snippet-visual-studio-dark/registry-item.json",
+    "registry/blocks/code-snippet-visual-studio-light/code-snippet-visual-studio-light.html",
+    "registry/blocks/code-snippet-visual-studio-light/registry-item.json",
+    "registry/blocks/code-typing/code-typing.html",
+    "registry/blocks/code-typing/registry-item.json",
+    "registry/blocks/cross-warp-morph/cross-warp-morph.html",
+    "registry/blocks/cross-warp-morph/registry-item.json",
+    "registry/blocks/data-chart/data-chart.html",
+    "registry/blocks/data-chart/registry-item.json",
+    "registry/blocks/domain-warp-dissolve/domain-warp-dissolve.html",
+    "registry/blocks/domain-warp-dissolve/registry-item.json",
+    "registry/blocks/editorial-flash-overlay/editorial-flash-overlay.html",
+    "registry/blocks/editorial-flash-overlay/registry-item.json",
+    "registry/blocks/flash-through-white/flash-through-white.html",
+    "registry/blocks/flash-through-white/registry-item.json",
+    "registry/blocks/flowchart-vertical/flowchart-vertical.html",
+    "registry/blocks/flowchart-vertical/registry-item.json",
+    "registry/blocks/flowchart/flowchart.html",
+    "registry/blocks/flowchart/registry-item.json",
+    "registry/blocks/freeze-frame-dressing/freeze-frame-dressing.html",
+    "registry/blocks/freeze-frame-dressing/registry-item.json",
+    "registry/blocks/glitch/glitch.html",
+    "registry/blocks/glitch/registry-item.json",
+    "registry/blocks/gravitational-lens/gravitational-lens.html",
+    "registry/blocks/gravitational-lens/registry-item.json",
+    "registry/blocks/instagram-follow/instagram-follow.html",
+    "registry/blocks/instagram-follow/registry-item.json",
+    "registry/blocks/ios26-liquid-glass/ios26-liquid-glass.html",
+    "registry/blocks/ios26-liquid-glass/lib/liquid-glass.iife.js",
+    "registry/blocks/ios26-liquid-glass/registry-item.json",
+    "registry/blocks/light-leak/light-leak.html",
+    "registry/blocks/light-leak/registry-item.json",
+    "registry/blocks/liquid-glass-context-menu/lib/liquid-glass.iife.js",
+    "registry/blocks/liquid-glass-context-menu/liquid-glass-context-menu.html",
+    "registry/blocks/liquid-glass-context-menu/registry-item.json",
+    "registry/blocks/liquid-glass-media-controls/lib/liquid-glass.iife.js",
+    "registry/blocks/liquid-glass-media-controls/liquid-glass-media-controls.html",
+    "registry/blocks/liquid-glass-media-controls/registry-item.json",
+    "registry/blocks/liquid-glass-notification/lib/liquid-glass.iife.js",
+    "registry/blocks/liquid-glass-notification/liquid-glass-notification.html",
+    "registry/blocks/liquid-glass-notification/registry-item.json",
+    "registry/blocks/liquid-glass-widgets/lib/liquid-glass.iife.js",
+    "registry/blocks/liquid-glass-widgets/liquid-glass-widgets.html",
+    "registry/blocks/liquid-glass-widgets/registry-item.json",
+    "registry/blocks/logo-outro/logo-outro.html",
+    "registry/blocks/logo-outro/registry-item.json",
+    "registry/blocks/lower-third-bild/lower-third-bild.html",
+    "registry/blocks/lower-third-bild/registry-item.json",
+    "registry/blocks/lt-accent-underline/lt-accent-underline.html",
+    "registry/blocks/lt-accent-underline/registry-item.json",
+    "registry/blocks/lt-bold-block/lt-bold-block.html",
+    "registry/blocks/lt-bold-block/registry-item.json",
+    "registry/blocks/lt-clean-bar/lt-clean-bar.html",
+    "registry/blocks/lt-clean-bar/registry-item.json",
+    "registry/blocks/lt-color-block/lt-color-block.html",
+    "registry/blocks/lt-color-block/registry-item.json",
+    "registry/blocks/lt-dark-card/lt-dark-card.html",
+    "registry/blocks/lt-dark-card/registry-item.json",
+    "registry/blocks/lt-kicker-name/lt-kicker-name.html",
+    "registry/blocks/lt-kicker-name/registry-item.json",
+    "registry/blocks/lt-mask-reveal/lt-mask-reveal.html",
+    "registry/blocks/lt-mask-reveal/registry-item.json",
+    "registry/blocks/lt-side-rule/lt-side-rule.html",
+    "registry/blocks/lt-side-rule/registry-item.json",
+    "registry/blocks/lt-soft-pill/lt-soft-pill.html",
+    "registry/blocks/lt-soft-pill/registry-item.json",
+    "registry/blocks/lt-stack-bars/lt-stack-bars.html",
+    "registry/blocks/lt-stack-bars/registry-item.json",
+    "registry/blocks/macos-notification/macos-notification.html",
+    "registry/blocks/macos-notification/registry-item.json",
+    "registry/blocks/macos-tahoe-liquid-glass/macos-tahoe-liquid-glass.html",
+    "registry/blocks/macos-tahoe-liquid-glass/registry-item.json",
+    "registry/blocks/news-ticker/news-ticker.html",
+    "registry/blocks/news-ticker/registry-item.json",
+    "registry/blocks/north-korea-locked-down/north-korea-locked-down.html",
+    "registry/blocks/north-korea-locked-down/registry-item.json",
+    "registry/blocks/nyc-paris-flight/nyc-paris-flight.html",
+    "registry/blocks/nyc-paris-flight/registry-item.json",
+    "registry/blocks/organic-light-leak-overlay/organic-light-leak-overlay.html",
+    "registry/blocks/organic-light-leak-overlay/registry-item.json",
+    "registry/blocks/reddit-post/reddit-post.html",
+    "registry/blocks/reddit-post/registry-item.json",
+    "registry/blocks/ridged-burn/registry-item.json",
+    "registry/blocks/ridged-burn/ridged-burn.html",
+    "registry/blocks/ripple-waves/registry-item.json",
+    "registry/blocks/ripple-waves/ripple-waves.html",
+    "registry/blocks/sdf-iris/registry-item.json",
+    "registry/blocks/sdf-iris/sdf-iris.html",
+    "registry/blocks/spain-map/registry-item.json",
+    "registry/blocks/spain-map/spain-map.html",
+    "registry/blocks/spotify-card/registry-item.json",
+    "registry/blocks/spotify-card/spotify-card.html",
+    "registry/blocks/swirl-vortex/registry-item.json",
+    "registry/blocks/swirl-vortex/swirl-vortex.html",
+    "registry/blocks/thermal-distortion/registry-item.json",
+    "registry/blocks/thermal-distortion/thermal-distortion.html",
+    "registry/blocks/tiktok-follow/registry-item.json",
+    "registry/blocks/tiktok-follow/tiktok-follow.html",
+    "registry/blocks/transitions-3d/registry-item.json",
+    "registry/blocks/transitions-3d/transitions-3d.html",
+    "registry/blocks/transitions-blur/registry-item.json",
+    "registry/blocks/transitions-blur/transitions-blur.html",
+    "registry/blocks/transitions-cover/registry-item.json",
+    "registry/blocks/transitions-cover/transitions-cover.html",
+    "registry/blocks/transitions-destruction/registry-item.json",
+    "registry/blocks/transitions-destruction/transitions-destruction.html",
+    "registry/blocks/transitions-dissolve/registry-item.json",
+    "registry/blocks/transitions-dissolve/transitions-dissolve.html",
+    "registry/blocks/transitions-distortion/registry-item.json",
+    "registry/blocks/transitions-distortion/transitions-distortion.html",
+    "registry/blocks/transitions-grid/registry-item.json",
+    "registry/blocks/transitions-grid/transitions-grid.html",
+    "registry/blocks/transitions-light/registry-item.json",
+    "registry/blocks/transitions-light/transitions-light.html",
+    "registry/blocks/transitions-mechanical/registry-item.json",
+    "registry/blocks/transitions-mechanical/transitions-mechanical.html",
+    "registry/blocks/transitions-other/registry-item.json",
+    "registry/blocks/transitions-other/transitions-other.html",
+    "registry/blocks/transitions-push/registry-item.json",
+    "registry/blocks/transitions-push/transitions-push.html",
+    "registry/blocks/transitions-radial/registry-item.json",
+    "registry/blocks/transitions-radial/transitions-radial.html",
+    "registry/blocks/transitions-scale/registry-item.json",
+    "registry/blocks/transitions-scale/transitions-scale.html",
+    "registry/blocks/ui-3d-reveal/registry-item.json",
+    "registry/blocks/ui-3d-reveal/ui-3d-reveal.html",
+    "registry/blocks/us-map-bubble/registry-item.json",
+    "registry/blocks/us-map-bubble/us-map-bubble.html",
+    "registry/blocks/us-map-flow/registry-item.json",
+    "registry/blocks/us-map-flow/us-map-flow.html",
+    "registry/blocks/us-map-hex/registry-item.json",
+    "registry/blocks/us-map-hex/us-map-hex.html",
+    "registry/blocks/us-map/registry-item.json",
+    "registry/blocks/us-map/us-map.html",
+    "registry/blocks/vfx-iphone-device/registry-item.json",
+    "registry/blocks/vfx-iphone-device/vfx-iphone-device.html",
+    "registry/blocks/vfx-liquid-background/registry-item.json",
+    "registry/blocks/vfx-liquid-background/vfx-liquid-background.html",
+    "registry/blocks/vfx-liquid-glass/registry-item.json",
+    "registry/blocks/vfx-liquid-glass/vfx-liquid-glass.html",
+    "registry/blocks/vfx-magnetic/registry-item.json",
+    "registry/blocks/vfx-magnetic/vfx-magnetic.html",
+    "registry/blocks/vfx-portal/registry-item.json",
+    "registry/blocks/vfx-portal/vfx-portal.html",
+    "registry/blocks/vfx-shatter/registry-item.json",
+    "registry/blocks/vfx-shatter/vfx-shatter.html",
+    "registry/blocks/vfx-text-cursor/registry-item.json",
+    "registry/blocks/vfx-text-cursor/vfx-text-cursor.html",
+    "registry/blocks/vpn-youtube-spot/registry-item.json",
+    "registry/blocks/vpn-youtube-spot/vpn-youtube-spot.html",
+    "registry/blocks/whip-pan/registry-item.json",
+    "registry/blocks/whip-pan/whip-pan.html",
+    "registry/blocks/world-map/registry-item.json",
+    "registry/blocks/world-map/world-map.html",
+    "registry/blocks/x-post/registry-item.json",
+    "registry/blocks/x-post/x-post.html",
+    "registry/blocks/yt-lower-third/registry-item.json",
+    "registry/blocks/yt-lower-third/yt-lower-third.html",
+    "registry/components/caption-blend-difference/caption-blend-difference.html",
+    "registry/components/caption-blend-difference/registry-item.json",
+    "registry/components/caption-clip-wipe/caption-clip-wipe.html",
+    "registry/components/caption-clip-wipe/registry-item.json",
+    "registry/components/caption-editorial-emphasis/caption-editorial-emphasis.html",
+    "registry/components/caption-editorial-emphasis/registry-item.json",
+    "registry/components/caption-emoji-pop/caption-emoji-pop.html",
+    "registry/components/caption-emoji-pop/registry-item.json",
+    "registry/components/caption-glitch-rgb/caption-glitch-rgb.html",
+    "registry/components/caption-glitch-rgb/registry-item.json",
+    "registry/components/caption-gradient-fill/caption-gradient-fill.html",
+    "registry/components/caption-gradient-fill/registry-item.json",
+    "registry/components/caption-highlight/caption-highlight.html",
+    "registry/components/caption-highlight/registry-item.json",
+    "registry/components/caption-kinetic-slam/caption-kinetic-slam.html",
+    "registry/components/caption-kinetic-slam/registry-item.json",
+    "registry/components/caption-matrix-decode/caption-matrix-decode.html",
+    "registry/components/caption-matrix-decode/registry-item.json",
+    "registry/components/caption-neon-accent/caption-neon-accent.html",
+    "registry/components/caption-neon-accent/registry-item.json",
+    "registry/components/caption-neon-glow/caption-neon-glow.html",
+    "registry/components/caption-neon-glow/registry-item.json",
+    "registry/components/caption-parallax-layers/caption-parallax-layers.html",
+    "registry/components/caption-parallax-layers/registry-item.json",
+    "registry/components/caption-particle-burst/caption-particle-burst.html",
+    "registry/components/caption-particle-burst/registry-item.json",
+    "registry/components/caption-pill-karaoke/caption-pill-karaoke.html",
+    "registry/components/caption-pill-karaoke/registry-item.json",
+    "registry/components/caption-texture/caption-texture.html",
+    "registry/components/caption-texture/registry-item.json",
+    "registry/components/caption-weight-shift/caption-weight-shift.html",
+    "registry/components/caption-weight-shift/registry-item.json",
+    "registry/components/grain-overlay/grain-overlay.html",
+    "registry/components/grain-overlay/registry-item.json",
+    "registry/components/grid-pixelate-wipe/grid-pixelate-wipe.html",
+    "registry/components/grid-pixelate-wipe/registry-item.json",
+    "registry/components/morph-text/morph-text.html",
+    "registry/components/morph-text/registry-item.json",
+    "registry/components/motion-blur/motion-blur.html",
+    "registry/components/motion-blur/registry-item.json",
+    "registry/components/parallax-unzoom/parallax-unzoom.html",
+    "registry/components/parallax-unzoom/registry-item.json",
+    "registry/components/parallax-zoom/parallax-zoom.html",
+    "registry/components/parallax-zoom/registry-item.json",
+    "registry/components/shimmer-sweep/registry-item.json",
+    "registry/components/shimmer-sweep/shimmer-sweep.html",
+    "registry/components/texture-mask-text/registry-item.json",
+    "registry/components/texture-mask-text/texture-mask-text.html",
+    "registry/components/vignette/registry-item.json",
+    "registry/components/vignette/vignette.html"
+  ],
+  "item_mappings": [
+    {
+      "item_id": "approved:layout:avatar_broll_split",
+      "reviewed": true,
+      "technique_ids": [
+        "avatar_broll_split"
+      ],
+      "evidence_refs": [
+        {
+          "path": "assets/catalog.js",
+          "symbol": "renderSplit",
+          "line_start": 332,
+          "line_end": 339,
+          "reason_ru": "Функция renderSplit содержит доказанный JS-контракт и хореографию approved pattern."
+        },
+        {
+          "path": "assets/catalog.js",
+          "symbol": "animateSplit",
+          "line_start": 513,
+          "line_end": 523,
+          "reason_ru": "Функция animateSplit содержит доказанный JS-контракт и хореографию approved pattern."
+        }
+      ]
+    },
+    {
+      "item_id": "approved:layout:avatar_cutout_overlay",
+      "reviewed": true,
+      "technique_ids": [
+        "forbidden_avatar_cutout_overlay"
+      ],
+      "evidence_refs": [
+        {
+          "path": "assets/catalog.js",
+          "symbol": "renderCutout",
+          "line_start": 359,
+          "line_end": 390,
+          "reason_ru": "Функция renderCutout содержит доказанный JS-контракт и хореографию approved pattern."
+        },
+        {
+          "path": "assets/catalog.js",
+          "symbol": "animateCutout",
+          "line_start": 543,
+          "line_end": 555,
+          "reason_ru": "Функция animateCutout содержит доказанный JS-контракт и хореографию approved pattern."
+        }
+      ]
+    },
+    {
+      "item_id": "approved:layout:avatar_editorial_bubble",
+      "reviewed": true,
+      "technique_ids": [
+        "avatar_editorial_bubble"
+      ],
+      "evidence_refs": [
+        {
+          "path": "assets/catalog.js",
+          "symbol": "renderEditorial",
+          "line_start": 234,
+          "line_end": 254,
+          "reason_ru": "Функция renderEditorial содержит доказанный JS-контракт и хореографию approved pattern."
+        },
+        {
+          "path": "assets/catalog.js",
+          "symbol": "animateEditorial",
+          "line_start": 467,
+          "line_end": 477,
+          "reason_ru": "Функция animateEditorial содержит доказанный JS-контракт и хореографию approved pattern."
+        }
+      ]
+    },
+    {
+      "item_id": "approved:layout:avatar_fullscreen",
+      "reviewed": true,
+      "technique_ids": [
+        "avatar_fullscreen_anchor"
+      ],
+      "evidence_refs": [
+        {
+          "path": "assets/catalog.js",
+          "symbol": "renderAvatarFullscreen",
+          "line_start": 218,
+          "line_end": 232,
+          "reason_ru": "Функция renderAvatarFullscreen содержит доказанный JS-контракт и хореографию approved pattern."
+        },
+        {
+          "path": "assets/catalog.js",
+          "symbol": "animateAvatar",
+          "line_start": 453,
+          "line_end": 465,
+          "reason_ru": "Функция animateAvatar содержит доказанный JS-контракт и хореографию approved pattern."
+        }
+      ]
+    },
+    {
+      "item_id": "approved:layout:avatar_object_overlay",
+      "reviewed": true,
+      "technique_ids": [
+        "avatar_object_overlay"
+      ],
+      "evidence_refs": [
+        {
+          "path": "assets/catalog.js",
+          "symbol": "renderObject",
+          "line_start": 392,
+          "line_end": 429,
+          "reason_ru": "Функция renderObject содержит доказанный JS-контракт и хореографию approved pattern."
+        },
+        {
+          "path": "assets/catalog.js",
+          "symbol": "animateObject",
+          "line_start": 557,
+          "line_end": 571,
+          "reason_ru": "Функция animateObject содержит доказанный JS-контракт и хореографию approved pattern."
+        }
+      ]
+    },
+    {
+      "item_id": "approved:layout:broll_archival_collage",
+      "reviewed": true,
+      "technique_ids": [
+        "archival_broll_collage"
+      ],
+      "evidence_refs": [
+        {
+          "path": "assets/catalog.js",
+          "symbol": "renderCollage",
+          "line_start": 341,
+          "line_end": 357,
+          "reason_ru": "Функция renderCollage содержит доказанный JS-контракт и хореографию approved pattern."
+        },
+        {
+          "path": "assets/catalog.js",
+          "symbol": "animateCollage",
+          "line_start": 525,
+          "line_end": 541,
+          "reason_ru": "Функция animateCollage содержит доказанный JS-контракт и хореографию approved pattern."
+        }
+      ]
+    },
+    {
+      "item_id": "approved:layout:broll_fullscreen",
+      "reviewed": true,
+      "technique_ids": [
+        "broll_fullscreen"
+      ],
+      "evidence_refs": [
+        {
+          "path": "assets/catalog.js",
+          "symbol": "renderBroll",
+          "line_start": 325,
+          "line_end": 330,
+          "reason_ru": "Функция renderBroll содержит доказанный JS-контракт и хореографию approved pattern."
+        },
+        {
+          "path": "assets/catalog.js",
+          "symbol": "animateBroll",
+          "line_start": 506,
+          "line_end": 511,
+          "reason_ru": "Функция animateBroll содержит доказанный JS-контракт и хореографию approved pattern."
+        }
+      ]
+    },
+    {
+      "item_id": "approved:layout:checklist_strike",
+      "reviewed": true,
+      "technique_ids": [
+        "checklist_strike_routine"
+      ],
+      "evidence_refs": [
+        {
+          "path": "assets/catalog.js",
+          "symbol": "renderChecklist",
+          "line_start": 264,
+          "line_end": 297,
+          "reason_ru": "Функция renderChecklist содержит доказанный JS-контракт и хореографию approved pattern."
+        },
+        {
+          "path": "assets/catalog.js",
+          "symbol": "animateChecklist",
+          "line_start": 479,
+          "line_end": 492,
+          "reason_ru": "Функция animateChecklist содержит доказанный JS-контракт и хореографию approved pattern."
+        }
+      ]
+    },
+    {
+      "item_id": "approved:layout:progressive_text_card",
+      "reviewed": true,
+      "technique_ids": [
+        "progressive_text_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "assets/catalog.js",
+          "symbol": "renderProgressive",
+          "line_start": 299,
+          "line_end": 323,
+          "reason_ru": "Функция renderProgressive содержит доказанный JS-контракт и хореографию approved pattern."
+        },
+        {
+          "path": "assets/catalog.js",
+          "symbol": "animateProgressive",
+          "line_start": 494,
+          "line_end": 504,
+          "reason_ru": "Функция animateProgressive содержит доказанный JS-контракт и хореографию approved pattern."
+        }
+      ]
+    },
+    {
+      "item_id": "approved:layout:social_outro",
+      "reviewed": true,
+      "technique_ids": [
+        "social_outro_lockup"
+      ],
+      "evidence_refs": [
+        {
+          "path": "assets/catalog.js",
+          "symbol": "renderOutro",
+          "line_start": 431,
+          "line_end": 451,
+          "reason_ru": "Функция renderOutro содержит доказанный JS-контракт и хореографию approved pattern."
+        },
+        {
+          "path": "assets/catalog.js",
+          "symbol": "animateOutro",
+          "line_start": 573,
+          "line_end": 585,
+          "reason_ru": "Функция animateOutro содержит доказанный JS-контракт и хореографию approved pattern."
+        }
+      ]
+    },
+    {
+      "item_id": "approved:transition:hard_cut",
+      "reviewed": true,
+      "technique_ids": [
+        "hard_cut_transition"
+      ],
+      "evidence_refs": [
+        {
+          "path": "assets/catalog.js",
+          "symbol": "addTransition",
+          "line_start": 587,
+          "line_end": 618,
+          "reason_ru": "Функция addTransition содержит доказанный JS-контракт и хореографию approved pattern."
+        }
+      ]
+    },
+    {
+      "item_id": "approved:transition:transition_blur",
+      "reviewed": true,
+      "technique_ids": [
+        "blur_soft_transition"
+      ],
+      "evidence_refs": [
+        {
+          "path": "assets/catalog.js",
+          "symbol": "addTransition",
+          "line_start": 587,
+          "line_end": 618,
+          "reason_ru": "Функция addTransition содержит доказанный JS-контракт и хореографию approved pattern."
+        }
+      ]
+    },
+    {
+      "item_id": "approved:transition:transition_chromatic",
+      "reviewed": true,
+      "technique_ids": [
+        "chromatic_accent_transition"
+      ],
+      "evidence_refs": [
+        {
+          "path": "assets/catalog.js",
+          "symbol": "addTransition",
+          "line_start": 587,
+          "line_end": 618,
+          "reason_ru": "Функция addTransition содержит доказанный JS-контракт и хореографию approved pattern."
+        }
+      ]
+    },
+    {
+      "item_id": "approved:transition:transition_push_editorial",
+      "reviewed": true,
+      "technique_ids": [
+        "editorial_push_transition"
+      ],
+      "evidence_refs": [
+        {
+          "path": "assets/catalog.js",
+          "symbol": "addTransition",
+          "line_start": 587,
+          "line_end": 618,
+          "reason_ru": "Функция addTransition содержит доказанный JS-контракт и хореографию approved pattern."
+        }
+      ]
+    },
+    {
+      "item_id": "approved:transition:transition_white_flash",
+      "reviewed": true,
+      "technique_ids": [
+        "white_flash_transition"
+      ],
+      "evidence_refs": [
+        {
+          "path": "assets/catalog.js",
+          "symbol": "addTransition",
+          "line_start": 587,
+          "line_end": 618,
+          "reason_ru": "Функция addTransition содержит доказанный JS-контракт и хореографию approved pattern."
+        }
+      ]
+    },
+    {
+      "item_id": "local:block:before_after",
+      "reviewed": true,
+      "technique_ids": [
+        "before_after_comparison"
+      ],
+      "evidence_refs": [
+        {
+          "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "symbol": "build_before_after_html",
+          "line_start": 294,
+          "line_end": 295,
+          "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+        }
+      ]
+    },
+    {
+      "item_id": "local:block:complexity_cloud",
+      "reviewed": true,
+      "technique_ids": [
+        "complexity_to_resolution"
+      ],
+      "evidence_refs": [
+        {
+          "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "symbol": "build_complexity_cloud_html",
+          "line_start": 374,
+          "line_end": 375,
+          "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+        }
+      ]
+    },
+    {
+      "item_id": "local:block:concept_nodes",
+      "reviewed": true,
+      "technique_ids": [
+        "concept_node_map"
+      ],
+      "evidence_refs": [
+        {
+          "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "symbol": "build_concept_nodes_html",
+          "line_start": 496,
+          "line_end": 497,
+          "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+        }
+      ]
+    },
+    {
+      "item_id": "local:block:persona_card",
+      "reviewed": true,
+      "technique_ids": [
+        "persona_context_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "symbol": "build_persona_card_html",
+          "line_start": 423,
+          "line_end": 424,
+          "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+        }
+      ]
+    },
+    {
+      "item_id": "local:block:sequence_flow",
+      "reviewed": true,
+      "technique_ids": [
+        "sequence_step_flow"
+      ],
+      "evidence_refs": [
+        {
+          "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "symbol": "build_sequence_flow_html",
+          "line_start": 540,
+          "line_end": 541,
+          "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+        }
+      ]
+    },
+    {
+      "item_id": "local:block:stat_number",
+      "reviewed": true,
+      "technique_ids": [
+        "animated_stat_countup"
+      ],
+      "evidence_refs": [
+        {
+          "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "symbol": "build_stat_number_html",
+          "line_start": 214,
+          "line_end": 215,
+          "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+        }
+      ]
+    },
+    {
+      "item_id": "local:block:task_list",
+      "reviewed": true,
+      "technique_ids": [
+        "task_checklist_reveal"
+      ],
+      "evidence_refs": [
+        {
+          "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "symbol": "build_task_list_html",
+          "line_start": 132,
+          "line_end": 133,
+          "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+        }
+      ]
+    },
+    {
+      "item_id": "local:block:value_layers",
+      "reviewed": true,
+      "technique_ids": [
+        "value_layer_swap"
+      ],
+      "evidence_refs": [
+        {
+          "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "symbol": "build_value_layers_html",
+          "line_start": 460,
+          "line_end": 461,
+          "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:app-showcase",
+      "reviewed": true,
+      "technique_ids": [
+        "brand_showcase_app_showcase"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/app-showcase/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:apple-money-count",
+      "reviewed": true,
+      "technique_ids": [
+        "brand_showcase_apple_money_count"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/apple-money-count/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:blue-sweater-intro-video",
+      "reviewed": true,
+      "technique_ids": [
+        "brand_showcase_blue_sweater_intro_video"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/blue-sweater-intro-video/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:camcorder-hud",
+      "reviewed": true,
+      "technique_ids": [
+        "media_treatment_camcorder_hud"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/camcorder-hud/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:chromatic-radial-split",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_chromatic_radial_split"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/chromatic-radial-split/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:cinematic-zoom",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_cinematic_zoom"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/cinematic-zoom/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-3d-extrude",
+      "reviewed": true,
+      "technique_ids": [
+        "code_3d_extrude"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-3d-extrude/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-diff",
+      "reviewed": true,
+      "technique_ids": [
+        "code_diff"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-diff/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-highlight",
+      "reviewed": true,
+      "technique_ids": [
+        "code_highlight"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-highlight/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-morph",
+      "reviewed": true,
+      "technique_ids": [
+        "code_morph"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-morph/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-particle-assemble",
+      "reviewed": true,
+      "technique_ids": [
+        "code_particle_assemble"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-particle-assemble/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-scroll",
+      "reviewed": true,
+      "technique_ids": [
+        "code_scroll"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-scroll/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-shader-dissolve",
+      "reviewed": true,
+      "technique_ids": [
+        "code_shader_dissolve"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-shader-dissolve/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-basic",
+      "reviewed": true,
+      "technique_ids": [
+        "apple_terminal_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-apple-terminal-basic/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-clear-dark",
+      "reviewed": true,
+      "technique_ids": [
+        "apple_terminal_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-apple-terminal-clear-dark/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-clear-light",
+      "reviewed": true,
+      "technique_ids": [
+        "apple_terminal_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-apple-terminal-clear-light/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-grass",
+      "reviewed": true,
+      "technique_ids": [
+        "apple_terminal_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-apple-terminal-grass/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-homebrew",
+      "reviewed": true,
+      "technique_ids": [
+        "apple_terminal_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-apple-terminal-homebrew/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-man-page",
+      "reviewed": true,
+      "technique_ids": [
+        "apple_terminal_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-apple-terminal-man-page/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-novel",
+      "reviewed": true,
+      "technique_ids": [
+        "apple_terminal_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-apple-terminal-novel/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-ocean",
+      "reviewed": true,
+      "technique_ids": [
+        "apple_terminal_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-apple-terminal-ocean/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-pro",
+      "reviewed": true,
+      "technique_ids": [
+        "apple_terminal_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-apple-terminal-pro/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-red-sands",
+      "reviewed": true,
+      "technique_ids": [
+        "apple_terminal_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-apple-terminal-red-sands/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-silver-aerogel",
+      "reviewed": true,
+      "technique_ids": [
+        "apple_terminal_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-apple-terminal-silver-aerogel/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-solid-colors",
+      "reviewed": true,
+      "technique_ids": [
+        "apple_terminal_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-apple-terminal-solid-colors/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-dark-2026",
+      "reviewed": true,
+      "technique_ids": [
+        "code_editor_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-dark-2026/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-dark-modern",
+      "reviewed": true,
+      "technique_ids": [
+        "code_editor_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-dark-modern/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-dark-plus",
+      "reviewed": true,
+      "technique_ids": [
+        "code_editor_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-dark-plus/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-flight",
+      "reviewed": true,
+      "technique_ids": [
+        "code_editor_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-flight/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-high-contrast",
+      "reviewed": true,
+      "technique_ids": [
+        "code_editor_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-high-contrast/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-high-contrast-light",
+      "reviewed": true,
+      "technique_ids": [
+        "code_editor_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-high-contrast-light/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-light-2026",
+      "reviewed": true,
+      "technique_ids": [
+        "code_editor_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-light-2026/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-light-modern",
+      "reviewed": true,
+      "technique_ids": [
+        "code_editor_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-light-modern/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-light-plus",
+      "reviewed": true,
+      "technique_ids": [
+        "code_editor_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-light-plus/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-monokai",
+      "reviewed": true,
+      "technique_ids": [
+        "code_editor_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-monokai/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-solarized-light",
+      "reviewed": true,
+      "technique_ids": [
+        "code_editor_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-solarized-light/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-visual-studio-dark",
+      "reviewed": true,
+      "technique_ids": [
+        "code_editor_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-visual-studio-dark/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-snippet-visual-studio-light",
+      "reviewed": true,
+      "technique_ids": [
+        "code_editor_theme_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-snippet-visual-studio-light/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:code-typing",
+      "reviewed": true,
+      "technique_ids": [
+        "code_typing"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/code-typing/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:cross-warp-morph",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_cross_warp_morph"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/cross-warp-morph/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:data-chart",
+      "reviewed": true,
+      "technique_ids": [
+        "catalog_reference_data_chart"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/data-chart/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:domain-warp-dissolve",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_domain_warp_dissolve"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/domain-warp-dissolve/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:editorial-flash-overlay",
+      "reviewed": true,
+      "technique_ids": [
+        "catalog_reference_editorial_flash_overlay"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/editorial-flash-overlay/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:flash-through-white",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_flash_through_white"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/flash-through-white/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:flowchart",
+      "reviewed": true,
+      "technique_ids": [
+        "map_diagram_flowchart"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/flowchart/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:flowchart-vertical",
+      "reviewed": true,
+      "technique_ids": [
+        "map_diagram_flowchart_vertical"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/flowchart-vertical/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:freeze-frame-dressing",
+      "reviewed": true,
+      "technique_ids": [
+        "media_treatment_freeze_frame_dressing"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/freeze-frame-dressing/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:glitch",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_glitch"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/glitch/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:gravitational-lens",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_gravitational_lens"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/gravitational-lens/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:instagram-follow",
+      "reviewed": true,
+      "technique_ids": [
+        "social_overlay_instagram_follow"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/instagram-follow/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:ios26-liquid-glass",
+      "reviewed": true,
+      "technique_ids": [
+        "vfx_ios26_liquid_glass"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/ios26-liquid-glass/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:light-leak",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_light_leak"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/light-leak/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:liquid-glass-context-menu",
+      "reviewed": true,
+      "technique_ids": [
+        "vfx_liquid_glass_context_menu"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/liquid-glass-context-menu/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:liquid-glass-media-controls",
+      "reviewed": true,
+      "technique_ids": [
+        "vfx_liquid_glass_media_controls"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/liquid-glass-media-controls/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:liquid-glass-notification",
+      "reviewed": true,
+      "technique_ids": [
+        "social_overlay_liquid_glass_notification"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/liquid-glass-notification/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:liquid-glass-widgets",
+      "reviewed": true,
+      "technique_ids": [
+        "vfx_liquid_glass_widgets"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/liquid-glass-widgets/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:logo-outro",
+      "reviewed": true,
+      "technique_ids": [
+        "brand_showcase_logo_outro"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/logo-outro/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:lower-third-bild",
+      "reviewed": true,
+      "technique_ids": [
+        "lower_third_bild"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/lower-third-bild/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        },
+        {
+          "path": "registry/blocks/lower-third-bild/lower-third-bild.html",
+          "symbol": null,
+          "line_start": 97,
+          "line_end": 97,
+          "reason_ru": "Строка содержит реальное объявление data-composition-variables."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:lt-accent-underline",
+      "reviewed": true,
+      "technique_ids": [
+        "lower_third_accent_underline"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/lt-accent-underline/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:lt-bold-block",
+      "reviewed": true,
+      "technique_ids": [
+        "lower_third_bold_block"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/lt-bold-block/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:lt-clean-bar",
+      "reviewed": true,
+      "technique_ids": [
+        "lower_third_clean_bar"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/lt-clean-bar/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:lt-color-block",
+      "reviewed": true,
+      "technique_ids": [
+        "lower_third_color_block"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/lt-color-block/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:lt-dark-card",
+      "reviewed": true,
+      "technique_ids": [
+        "lower_third_dark_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/lt-dark-card/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:lt-kicker-name",
+      "reviewed": true,
+      "technique_ids": [
+        "lower_third_kicker_name"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/lt-kicker-name/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:lt-mask-reveal",
+      "reviewed": true,
+      "technique_ids": [
+        "lower_third_mask_reveal"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/lt-mask-reveal/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:lt-side-rule",
+      "reviewed": true,
+      "technique_ids": [
+        "lower_third_side_rule"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/lt-side-rule/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:lt-soft-pill",
+      "reviewed": true,
+      "technique_ids": [
+        "lower_third_soft_pill"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/lt-soft-pill/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:lt-stack-bars",
+      "reviewed": true,
+      "technique_ids": [
+        "lower_third_stack_bars"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/lt-stack-bars/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:macos-notification",
+      "reviewed": true,
+      "technique_ids": [
+        "social_overlay_macos_notification"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/macos-notification/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:macos-tahoe-liquid-glass",
+      "reviewed": true,
+      "technique_ids": [
+        "vfx_macos_tahoe_liquid_glass"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/macos-tahoe-liquid-glass/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:news-ticker",
+      "reviewed": true,
+      "technique_ids": [
+        "lower_third_news_ticker"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/news-ticker/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:north-korea-locked-down",
+      "reviewed": true,
+      "technique_ids": [
+        "catalog_reference_north_korea_locked_down"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/north-korea-locked-down/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:nyc-paris-flight",
+      "reviewed": true,
+      "technique_ids": [
+        "brand_showcase_nyc_paris_flight"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/nyc-paris-flight/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:organic-light-leak-overlay",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_organic_light_leak_overlay"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/organic-light-leak-overlay/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:reddit-post",
+      "reviewed": true,
+      "technique_ids": [
+        "social_overlay_reddit_post"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/reddit-post/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:ridged-burn",
+      "reviewed": true,
+      "technique_ids": [
+        "catalog_reference_ridged_burn"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/ridged-burn/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:ripple-waves",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_ripple_waves"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/ripple-waves/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:sdf-iris",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_sdf_iris"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/sdf-iris/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:spain-map",
+      "reviewed": true,
+      "technique_ids": [
+        "map_diagram_spain_map"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/spain-map/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:spotify-card",
+      "reviewed": true,
+      "technique_ids": [
+        "social_overlay_spotify_card"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/spotify-card/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:swirl-vortex",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_swirl_vortex"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/swirl-vortex/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:thermal-distortion",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_thermal_distortion"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/thermal-distortion/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:tiktok-follow",
+      "reviewed": true,
+      "technique_ids": [
+        "social_overlay_tiktok_follow"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/tiktok-follow/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:transitions-3d",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_3d_card_flip"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/transitions-3d/transitions-3d.html",
+          "symbol": null,
+          "line_start": 274,
+          "line_end": 276,
+          "reason_ru": "Исходник называет единственный вариант: 3D Card Flip."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:transitions-blur",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_blur_through",
+        "transition_directional_blur",
+        "transition_calm_blur_through"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/transitions-blur/transitions-blur.html",
+          "symbol": null,
+          "line_start": 179,
+          "line_end": 190,
+          "reason_ru": "Исходник перечисляет Blur Through, Directional Blur и Calm Blur Through."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:transitions-cover",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_staggered_blocks",
+        "transition_horizontal_blinds",
+        "transition_vertical_blinds"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/transitions-cover/transitions-cover.html",
+          "symbol": null,
+          "line_start": 286,
+          "line_end": 288,
+          "reason_ru": "Конфигурация перечисляет Staggered Blocks, Horizontal Blinds и Vertical Blinds."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:transitions-destruction",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_page_burn"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/transitions-destruction/transitions-destruction.html",
+          "symbol": null,
+          "line_start": 187,
+          "line_end": 187,
+          "reason_ru": "Исходник называет единственный вариант: Page Burn."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:transitions-dissolve",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_crossfade",
+        "transition_blur_crossfade",
+        "transition_focus_pull",
+        "transition_dip_to_black"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/transitions-dissolve/transitions-dissolve.html",
+          "symbol": null,
+          "line_start": 179,
+          "line_end": 195,
+          "reason_ru": "Исходник перечисляет Crossfade, Blur Crossfade, Focus Pull и Color Dip."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:transitions-distortion",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_distortion_glitch",
+        "transition_chromatic_aberration",
+        "transition_ripple_distortion"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/transitions-distortion/transitions-distortion.html",
+          "symbol": null,
+          "line_start": 210,
+          "line_end": 218,
+          "reason_ru": "Исходник перечисляет Glitch, Chromatic Aberration и Ripple."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:transitions-grid",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_grid_dissolve"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/transitions-grid/transitions-grid.html",
+          "symbol": null,
+          "line_start": 166,
+          "line_end": 166,
+          "reason_ru": "Исходник называет единственный вариант: Grid Dissolve."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:transitions-light",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_light_leak",
+        "transition_overexposure_burn",
+        "transition_film_burn"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/transitions-light/transitions-light.html",
+          "symbol": null,
+          "line_start": 304,
+          "line_end": 306,
+          "reason_ru": "Конфигурация перечисляет Light Leak, Overexposure Burn и Film Burn."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:transitions-mechanical",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_mechanical_shutter",
+        "transition_clock_wipe"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/transitions-mechanical/transitions-mechanical.html",
+          "symbol": null,
+          "line_start": 205,
+          "line_end": 210,
+          "reason_ru": "Исходник перечисляет Shutter и Clock Wipe."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:transitions-other",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_flash_cut",
+        "transition_gravity_drop",
+        "transition_morph_circle"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/transitions-other/transitions-other.html",
+          "symbol": null,
+          "line_start": 210,
+          "line_end": 220,
+          "reason_ru": "Исходник перечисляет Flash Cut, Gravity Drop и Morph Circle."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:transitions-push",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_push_slide",
+        "transition_vertical_push",
+        "transition_elastic_push",
+        "transition_squeeze"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/transitions-push/transitions-push.html",
+          "symbol": null,
+          "line_start": 179,
+          "line_end": 195,
+          "reason_ru": "Исходник перечисляет Push Slide, Vertical Push, Elastic Push и Squeeze."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:transitions-radial",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_circle_iris",
+        "transition_diamond_iris",
+        "transition_diagonal_split"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/transitions-radial/transitions-radial.html",
+          "symbol": null,
+          "line_start": 273,
+          "line_end": 321,
+          "reason_ru": "Timeline называет Circle Iris, Diamond Iris и Diagonal Split."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:transitions-scale",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_zoom_through",
+        "transition_zoom_out"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/transitions-scale/transitions-scale.html",
+          "symbol": null,
+          "line_start": 179,
+          "line_end": 184,
+          "reason_ru": "Исходник перечисляет Zoom Through и Zoom Out."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:ui-3d-reveal",
+      "reviewed": true,
+      "technique_ids": [
+        "vfx_ui_3d_reveal"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/ui-3d-reveal/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:us-map",
+      "reviewed": true,
+      "technique_ids": [
+        "map_diagram_us_map"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/us-map/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:us-map-bubble",
+      "reviewed": true,
+      "technique_ids": [
+        "map_diagram_us_map_bubble"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/us-map-bubble/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:us-map-flow",
+      "reviewed": true,
+      "technique_ids": [
+        "map_diagram_us_map_flow"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/us-map-flow/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:us-map-hex",
+      "reviewed": true,
+      "technique_ids": [
+        "map_diagram_us_map_hex"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/us-map-hex/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:vfx-iphone-device",
+      "reviewed": true,
+      "technique_ids": [
+        "vfx_iphone_device"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/vfx-iphone-device/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:vfx-liquid-background",
+      "reviewed": true,
+      "technique_ids": [
+        "vfx_liquid_background"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/vfx-liquid-background/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:vfx-liquid-glass",
+      "reviewed": true,
+      "technique_ids": [
+        "vfx_liquid_glass"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/vfx-liquid-glass/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        },
+        {
+          "path": "registry/blocks/vfx-liquid-glass/vfx-liquid-glass.html",
+          "symbol": null,
+          "line_start": 418,
+          "line_end": 441,
+          "reason_ru": "Код создаёт отдельные стеклянные фрагменты через Voronoi-разбиение."
+        },
+        {
+          "path": "registry/blocks/vfx-liquid-glass/vfx-liquid-glass.html",
+          "symbol": null,
+          "line_start": 660,
+          "line_end": 678,
+          "reason_ru": "Код связывает поворот стеклянного слоя с указателем и управляет разлётом фрагментов."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:vfx-magnetic",
+      "reviewed": true,
+      "technique_ids": [
+        "vfx_magnetic"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/vfx-magnetic/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        },
+        {
+          "path": "registry/blocks/vfx-magnetic/vfx-magnetic.html",
+          "symbol": null,
+          "line_start": 180,
+          "line_end": 207,
+          "reason_ru": "Текст и shader-комментарий описывают притяжение пикселей к курсору, Gaussian warp и chromatic aberration."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:vfx-portal",
+      "reviewed": true,
+      "technique_ids": [
+        "vfx_portal"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/vfx-portal/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        },
+        {
+          "path": "registry/blocks/vfx-portal/vfx-portal.html",
+          "symbol": null,
+          "line_start": 595,
+          "line_end": 614,
+          "reason_ru": "Fragment shader задаёт радиальное искажение, цветное расщепление, маску и светящееся кольцо портала."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:vfx-shatter",
+      "reviewed": true,
+      "technique_ids": [
+        "vfx_shatter"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/vfx-shatter/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        },
+        {
+          "path": "registry/blocks/vfx-shatter/vfx-shatter.html",
+          "symbol": null,
+          "line_start": 737,
+          "line_end": 811,
+          "reason_ru": "Shader строит расходящийся Voronoi-рисунок трещин перед разрушением плоскости."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:vfx-text-cursor",
+      "reviewed": true,
+      "technique_ids": [
+        "code_text_cursor"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/vfx-text-cursor/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:vpn-youtube-spot",
+      "reviewed": true,
+      "technique_ids": [
+        "brand_showcase_vpn_youtube_spot"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/vpn-youtube-spot/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:whip-pan",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_whip_pan"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/whip-pan/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:world-map",
+      "reviewed": true,
+      "technique_ids": [
+        "map_diagram_world_map"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/world-map/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:x-post",
+      "reviewed": true,
+      "technique_ids": [
+        "social_overlay_x_post"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/x-post/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:block:yt-lower-third",
+      "reviewed": true,
+      "technique_ids": [
+        "lower_third_yt_lower_third"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/blocks/yt-lower-third/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:caption-blend-difference",
+      "reviewed": true,
+      "technique_ids": [
+        "caption_blend_difference"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/caption-blend-difference/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:caption-clip-wipe",
+      "reviewed": true,
+      "technique_ids": [
+        "caption_clip_wipe"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/caption-clip-wipe/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:caption-editorial-emphasis",
+      "reviewed": true,
+      "technique_ids": [
+        "caption_editorial_emphasis"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/caption-editorial-emphasis/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:caption-emoji-pop",
+      "reviewed": true,
+      "technique_ids": [
+        "caption_emoji_pop"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/caption-emoji-pop/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:caption-glitch-rgb",
+      "reviewed": true,
+      "technique_ids": [
+        "caption_glitch_rgb"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/caption-glitch-rgb/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:caption-gradient-fill",
+      "reviewed": true,
+      "technique_ids": [
+        "caption_gradient_fill"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/caption-gradient-fill/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:caption-highlight",
+      "reviewed": true,
+      "technique_ids": [
+        "caption_highlight"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/caption-highlight/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:caption-kinetic-slam",
+      "reviewed": true,
+      "technique_ids": [
+        "caption_kinetic_slam"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/caption-kinetic-slam/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:caption-matrix-decode",
+      "reviewed": true,
+      "technique_ids": [
+        "caption_matrix_decode"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/caption-matrix-decode/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:caption-neon-accent",
+      "reviewed": true,
+      "technique_ids": [
+        "caption_neon_accent"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/caption-neon-accent/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:caption-neon-glow",
+      "reviewed": true,
+      "technique_ids": [
+        "caption_neon_glow"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/caption-neon-glow/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:caption-parallax-layers",
+      "reviewed": true,
+      "technique_ids": [
+        "caption_parallax_layers"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/caption-parallax-layers/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:caption-particle-burst",
+      "reviewed": true,
+      "technique_ids": [
+        "caption_particle_burst"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/caption-particle-burst/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:caption-pill-karaoke",
+      "reviewed": true,
+      "technique_ids": [
+        "caption_pill_karaoke"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/caption-pill-karaoke/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:caption-texture",
+      "reviewed": true,
+      "technique_ids": [
+        "caption_texture"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/caption-texture/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        },
+        {
+          "path": "registry/components/caption-texture/caption-texture.html",
+          "symbol": null,
+          "line_start": 98,
+          "line_end": 98,
+          "reason_ru": "Строка содержит реальное объявление data-composition-variables."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:caption-weight-shift",
+      "reviewed": true,
+      "technique_ids": [
+        "caption_weight_shift"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/caption-weight-shift/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:grain-overlay",
+      "reviewed": true,
+      "technique_ids": [
+        "media_treatment_grain_overlay"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/grain-overlay/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:grid-pixelate-wipe",
+      "reviewed": true,
+      "technique_ids": [
+        "catalog_reference_grid_pixelate_wipe"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/grid-pixelate-wipe/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:morph-text",
+      "reviewed": true,
+      "technique_ids": [
+        "catalog_reference_morph_text"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/morph-text/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:motion-blur",
+      "reviewed": true,
+      "technique_ids": [
+        "spatial_motion_blur"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/motion-blur/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:parallax-unzoom",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_parallax_unzoom"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/parallax-unzoom/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:parallax-zoom",
+      "reviewed": true,
+      "technique_ids": [
+        "transition_parallax_zoom"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/parallax-zoom/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:shimmer-sweep",
+      "reviewed": true,
+      "technique_ids": [
+        "media_treatment_shimmer_sweep"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/shimmer-sweep/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:texture-mask-text",
+      "reviewed": true,
+      "technique_ids": [
+        "media_treatment_texture_mask_text"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/texture-mask-text/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    },
+    {
+      "item_id": "upstream:component:vignette",
+      "reviewed": true,
+      "technique_ids": [
+        "media_treatment_vignette"
+      ],
+      "evidence_refs": [
+        {
+          "path": "registry/components/vignette/registry-item.json",
+          "symbol": null,
+          "line_start": 6,
+          "line_end": 6,
+          "reason_ru": "Manifest прямо описывает назначение и видимое поведение registry item."
+        }
+      ]
+    }
+  ]
+}

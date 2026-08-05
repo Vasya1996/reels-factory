@@ -1,0 +1,2818 @@
+{
+  "generated_by": "capture-live-gallery.mjs",
+  "entries": [
+    {
+      "id": "approved:layout:avatar_broll_split",
+      "safe_id": "approved-layout-avatar_broll_split",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/approved-layout-avatar_broll_split/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/approved-layout-avatar_broll_split.jpg",
+      "thumbnail_sha256": "29664ae0a1ef37da0f13d4edede0cb9ef0e3a6016b60b0790c5e099152d22e71",
+      "thumbnail_bytes": 153591,
+      "chosen_time_seconds": 4.08,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "approved:layout:avatar_cutout_overlay",
+      "safe_id": "approved-layout-avatar_cutout_overlay",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/approved-layout-avatar_cutout_overlay/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/approved-layout-avatar_cutout_overlay.jpg",
+      "thumbnail_sha256": "971b88d8d6e82d34089eab80d8ae5989104140b7bb1c35108b48afcedf420762",
+      "thumbnail_bytes": 115636,
+      "chosen_time_seconds": 0.72,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "approved:layout:avatar_editorial_bubble",
+      "safe_id": "approved-layout-avatar_editorial_bubble",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/approved-layout-avatar_editorial_bubble/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/approved-layout-avatar_editorial_bubble.jpg",
+      "thumbnail_sha256": "809dc1d43f33e63d3654e89a3c5b454810fd6d142d1c84d700a3b22f8b77d180",
+      "thumbnail_bytes": 120088,
+      "chosen_time_seconds": 0.72,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "approved:layout:avatar_fullscreen",
+      "safe_id": "approved-layout-avatar_fullscreen",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/approved-layout-avatar_fullscreen/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/approved-layout-avatar_fullscreen.jpg",
+      "thumbnail_sha256": "ea15bf73110bad6afd967e1b6b3024945350899e2a3f73540b883ffe03fb8c5f",
+      "thumbnail_bytes": 132355,
+      "chosen_time_seconds": 2.4,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "approved:layout:avatar_object_overlay",
+      "safe_id": "approved-layout-avatar_object_overlay",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/approved-layout-avatar_object_overlay/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/approved-layout-avatar_object_overlay.jpg",
+      "thumbnail_sha256": "4369f26fad147134f62ec1b0fe6bb47daa8821302d4e08553d91529f7ff50fd1",
+      "thumbnail_bytes": 112216,
+      "chosen_time_seconds": 2.4,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "approved:layout:broll_archival_collage",
+      "safe_id": "approved-layout-broll_archival_collage",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/approved-layout-broll_archival_collage/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/approved-layout-broll_archival_collage.jpg",
+      "thumbnail_sha256": "a8412eff84a35d89805ad7eac0a7b43ab2d0512c686dfc08c8a8a69c20383c50",
+      "thumbnail_bytes": 153743,
+      "chosen_time_seconds": 4.08,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "approved:layout:broll_fullscreen",
+      "safe_id": "approved-layout-broll_fullscreen",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/approved-layout-broll_fullscreen/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/approved-layout-broll_fullscreen.jpg",
+      "thumbnail_sha256": "8032966e1156671f96ff91b08cd53b946150878ce94f744a28dd57fa8c382a6a",
+      "thumbnail_bytes": 116474,
+      "chosen_time_seconds": 0.72,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "approved:layout:checklist_strike",
+      "safe_id": "approved-layout-checklist_strike",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/approved-layout-checklist_strike/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/approved-layout-checklist_strike.jpg",
+      "thumbnail_sha256": "433b3dec076199dc6a33b63d399574af92c3415fcbbd766cdd3e79b0b75fd12c",
+      "thumbnail_bytes": 100770,
+      "chosen_time_seconds": 0.72,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "approved:layout:progressive_text_card",
+      "safe_id": "approved-layout-progressive_text_card",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/approved-layout-progressive_text_card/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/approved-layout-progressive_text_card.jpg",
+      "thumbnail_sha256": "04aa0bf34a734d4750284a55384259fce625cbfbbb383f7d4d56997c0007a5a1",
+      "thumbnail_bytes": 81762,
+      "chosen_time_seconds": 2.4,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "approved:layout:social_outro",
+      "safe_id": "approved-layout-social_outro",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/approved-layout-social_outro/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/approved-layout-social_outro.jpg",
+      "thumbnail_sha256": "950f382a6bcbbca8969f8cadf731a9441704f1ca1c5030f3f40f92610d5282e6",
+      "thumbnail_bytes": 70011,
+      "chosen_time_seconds": 2.4,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "approved:transition:hard_cut",
+      "safe_id": "approved-transition-hard_cut",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/approved-transition-hard_cut/index.html",
+      "duration": 4.2,
+      "thumbnail": "thumbnails/approved-transition-hard_cut.jpg",
+      "thumbnail_sha256": "32e99fb68f10ac8d7eb48d7150586fb9de6e59a35e5f709ae56eb5f558c9e5d7",
+      "thumbnail_bytes": 73629,
+      "chosen_time_seconds": 2.1,
+      "sampled_times_seconds": [
+        1.05,
+        2.1,
+        3.444
+      ],
+      "errors": []
+    },
+    {
+      "id": "approved:transition:transition_blur",
+      "safe_id": "approved-transition-transition_blur",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/approved-transition-transition_blur/index.html",
+      "duration": 4.2,
+      "thumbnail": "thumbnails/approved-transition-transition_blur.jpg",
+      "thumbnail_sha256": "135be3c30b8aae9f375e433b576470f88410620cab3c9ed1b63390729ea688e7",
+      "thumbnail_bytes": 68938,
+      "chosen_time_seconds": 2.1,
+      "sampled_times_seconds": [
+        1.05,
+        2.1,
+        3.444
+      ],
+      "errors": []
+    },
+    {
+      "id": "approved:transition:transition_chromatic",
+      "safe_id": "approved-transition-transition_chromatic",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/approved-transition-transition_chromatic/index.html",
+      "duration": 4.2,
+      "thumbnail": "thumbnails/approved-transition-transition_chromatic.jpg",
+      "thumbnail_sha256": "04375f209825a072b6d275bcc4faba32841b890f230d7e0760960150b20143a2",
+      "thumbnail_bytes": 61172,
+      "chosen_time_seconds": 2.1,
+      "sampled_times_seconds": [
+        1.05,
+        2.1,
+        3.444
+      ],
+      "errors": []
+    },
+    {
+      "id": "approved:transition:transition_push_editorial",
+      "safe_id": "approved-transition-transition_push_editorial",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/approved-transition-transition_push_editorial/index.html",
+      "duration": 4.2,
+      "thumbnail": "thumbnails/approved-transition-transition_push_editorial.jpg",
+      "thumbnail_sha256": "df8aee7200b05f1a0827add508f306321273ca0909906640101ebd94e331976d",
+      "thumbnail_bytes": 66668,
+      "chosen_time_seconds": 2.1,
+      "sampled_times_seconds": [
+        1.05,
+        2.1,
+        3.444
+      ],
+      "errors": []
+    },
+    {
+      "id": "approved:transition:transition_white_flash",
+      "safe_id": "approved-transition-transition_white_flash",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/approved-transition-transition_white_flash/index.html",
+      "duration": 4.2,
+      "thumbnail": "thumbnails/approved-transition-transition_white_flash.jpg",
+      "thumbnail_sha256": "51120432c0d6ddb65e38e9b53aea1587505f06453d16487663af3bab581e863f",
+      "thumbnail_bytes": 53860,
+      "chosen_time_seconds": 2.1,
+      "sampled_times_seconds": [
+        1.05,
+        2.1,
+        3.444
+      ],
+      "errors": []
+    },
+    {
+      "id": "local:block:before_after",
+      "safe_id": "local-block-before_after",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/local-block-before_after/index.html",
+      "duration": 4.2,
+      "thumbnail": "thumbnails/local-block-before_after.jpg",
+      "thumbnail_sha256": "32f2931e4583d9be3033b21ac70647cc7f49b51abd7bc24edf5ea986aaff38d7",
+      "thumbnail_bytes": 39485,
+      "chosen_time_seconds": 2.1,
+      "sampled_times_seconds": [
+        0.63,
+        2.1,
+        3.57
+      ],
+      "errors": []
+    },
+    {
+      "id": "local:block:complexity_cloud",
+      "safe_id": "local-block-complexity_cloud",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/local-block-complexity_cloud/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/local-block-complexity_cloud.jpg",
+      "thumbnail_sha256": "69771fe3b367b857886359e7cd825db61014ce33b9c6cca19fd247912d295b10",
+      "thumbnail_bytes": 44218,
+      "chosen_time_seconds": 4.25,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "local:block:concept_nodes",
+      "safe_id": "local-block-concept_nodes",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/local-block-concept_nodes/index.html",
+      "duration": 4.5,
+      "thumbnail": "thumbnails/local-block-concept_nodes.jpg",
+      "thumbnail_sha256": "982979517a09a1b39720f613de912eb6b84a549e777a3e9772dec52341f848c3",
+      "thumbnail_bytes": 49880,
+      "chosen_time_seconds": 0.675,
+      "sampled_times_seconds": [
+        0.675,
+        2.25,
+        3.825
+      ],
+      "errors": []
+    },
+    {
+      "id": "local:block:persona_card",
+      "safe_id": "local-block-persona_card",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/local-block-persona_card/index.html",
+      "duration": 4.5,
+      "thumbnail": "thumbnails/local-block-persona_card.jpg",
+      "thumbnail_sha256": "f71129df4b2b95b1bd70237a6638ebc477b12114e707ccf8716d483c9b9138b8",
+      "thumbnail_bytes": 59880,
+      "chosen_time_seconds": 0.675,
+      "sampled_times_seconds": [
+        0.675,
+        2.25,
+        3.825
+      ],
+      "errors": []
+    },
+    {
+      "id": "local:block:sequence_flow",
+      "safe_id": "local-block-sequence_flow",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/local-block-sequence_flow/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/local-block-sequence_flow.jpg",
+      "thumbnail_sha256": "5f178b9ab3da7b5a1ec49d76b63da547df10b491e341e2f41e39911d77930d38",
+      "thumbnail_bytes": 58050,
+      "chosen_time_seconds": 2.4,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "local:block:stat_number",
+      "safe_id": "local-block-stat_number",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/local-block-stat_number/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/local-block-stat_number.jpg",
+      "thumbnail_sha256": "094da91cd66d2b948de4b68db71721cbd8d07f80d414cd7c569e8f63a504f128",
+      "thumbnail_bytes": 38570,
+      "chosen_time_seconds": 2,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "local:block:task_list",
+      "safe_id": "local-block-task_list",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/local-block-task_list/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/local-block-task_list.jpg",
+      "thumbnail_sha256": "e686d0cd59dd39847adb65e19dce0f46027e63e80db8365d673e2f20d1502e5c",
+      "thumbnail_bytes": 50527,
+      "chosen_time_seconds": 4.08,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "local:block:value_layers",
+      "safe_id": "local-block-value_layers",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/local-block-value_layers/index.html",
+      "duration": 4.5,
+      "thumbnail": "thumbnails/local-block-value_layers.jpg",
+      "thumbnail_sha256": "af32f97906697ab489bc33950b577b55b68c0e2bd06f7f092a563815acb31dcd",
+      "thumbnail_bytes": 54472,
+      "chosen_time_seconds": 0.675,
+      "sampled_times_seconds": [
+        0.675,
+        2.25,
+        3.825
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:app-showcase",
+      "safe_id": "upstream-block-app-showcase",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-app-showcase/index.html",
+      "duration": 5.5,
+      "thumbnail": "thumbnails/upstream-block-app-showcase.jpg",
+      "thumbnail_sha256": "99dc2ec99e21a10f4050b781aec1d68158b7fc64244bddf225f7b2ea37f8d336",
+      "thumbnail_bytes": 65589,
+      "chosen_time_seconds": 4.675,
+      "sampled_times_seconds": [
+        0.825,
+        2.75,
+        4.675
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:apple-money-count",
+      "safe_id": "upstream-block-apple-money-count",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-apple-money-count/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-block-apple-money-count.jpg",
+      "thumbnail_sha256": "a1f5d1dfeab534c556560011c4fd011fcc155f995650af6338d808332451d350",
+      "thumbnail_bytes": 87977,
+      "chosen_time_seconds": 4.25,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:blue-sweater-intro-video",
+      "safe_id": "upstream-block-blue-sweater-intro-video",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-blue-sweater-intro-video/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-blue-sweater-intro-video.jpg",
+      "thumbnail_sha256": "4502d3aa860eb47e6fb943c2961d3d0381be184ad449a68a8b16649b1763967b",
+      "thumbnail_bytes": 36146,
+      "chosen_time_seconds": 10.2,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:camcorder-hud",
+      "safe_id": "upstream-block-camcorder-hud",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-camcorder-hud/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-camcorder-hud.jpg",
+      "thumbnail_sha256": "c1f7e62444664cdf080ecb9e775ea4332a9ac2dab5e56d5665bbddbf36d6f329",
+      "thumbnail_bytes": 20696,
+      "chosen_time_seconds": 3.4,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:chromatic-radial-split",
+      "safe_id": "upstream-block-chromatic-radial-split",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-chromatic-radial-split/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-chromatic-radial-split.jpg",
+      "thumbnail_sha256": "4a87b10bafd6a6064afc74f523d055b5929abbe4d5cb56e60448bf17e966b93e",
+      "thumbnail_bytes": 20575,
+      "chosen_time_seconds": 3.4,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:cinematic-zoom",
+      "safe_id": "upstream-block-cinematic-zoom",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-cinematic-zoom/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-cinematic-zoom.jpg",
+      "thumbnail_sha256": "c6569e3d0574d60e2432eefa235cc4ddb0a0793529bd23e20773dfea127cd28d",
+      "thumbnail_bytes": 22111,
+      "chosen_time_seconds": 3.4,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-3d-extrude",
+      "safe_id": "upstream-block-code-3d-extrude",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-3d-extrude/index.html",
+      "duration": 8,
+      "thumbnail": "thumbnails/upstream-block-code-3d-extrude.jpg",
+      "thumbnail_sha256": "cbc35b59bd39296b9265f9eb325d413960c713dac6fdc17c22c5aecf97fcb35e",
+      "thumbnail_bytes": 13187,
+      "chosen_time_seconds": 1.2,
+      "sampled_times_seconds": [
+        1.2,
+        4,
+        6.8
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+        "pageerror: Cannot read properties of undefined (reading 'WebGLRenderer')"
+      ]
+    },
+    {
+      "id": "upstream:block:code-diff",
+      "safe_id": "upstream-block-code-diff",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-diff/index.html",
+      "duration": 6,
+      "thumbnail": "thumbnails/upstream-block-code-diff.jpg",
+      "thumbnail_sha256": "94021000f581cfd8d22a17c345330b7f12ecce5312be82700cc3e56bbfa5f0b7",
+      "thumbnail_bytes": 41776,
+      "chosen_time_seconds": 3,
+      "sampled_times_seconds": [
+        0.9,
+        3,
+        5.1
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-highlight",
+      "safe_id": "upstream-block-code-highlight",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-highlight/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-block-code-highlight.jpg",
+      "thumbnail_sha256": "aa24e80cfa0e62b2e6f406cf1b2dc192056c47511875c4d5693b69da904dc4cf",
+      "thumbnail_bytes": 47954,
+      "chosen_time_seconds": 0.75,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-morph",
+      "safe_id": "upstream-block-code-morph",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-morph/index.html",
+      "duration": 7,
+      "thumbnail": "thumbnails/upstream-block-code-morph.jpg",
+      "thumbnail_sha256": "0d32bf9fd5ced72d55650056e17bb9eb7a9766b984cf85d5750271c66421577d",
+      "thumbnail_bytes": 42898,
+      "chosen_time_seconds": 1.05,
+      "sampled_times_seconds": [
+        1.05,
+        3.5,
+        5.95
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-particle-assemble",
+      "safe_id": "upstream-block-code-particle-assemble",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-particle-assemble/index.html",
+      "duration": 8,
+      "thumbnail": "thumbnails/upstream-block-code-particle-assemble.jpg",
+      "thumbnail_sha256": "cbc35b59bd39296b9265f9eb325d413960c713dac6fdc17c22c5aecf97fcb35e",
+      "thumbnail_bytes": 13187,
+      "chosen_time_seconds": 1.2,
+      "sampled_times_seconds": [
+        1.2,
+        4,
+        6.8
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+        "pageerror: Cannot read properties of undefined (reading 'WebGLRenderer')"
+      ]
+    },
+    {
+      "id": "upstream:block:code-scroll",
+      "safe_id": "upstream-block-code-scroll",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-scroll/index.html",
+      "duration": 6,
+      "thumbnail": "thumbnails/upstream-block-code-scroll.jpg",
+      "thumbnail_sha256": "8c04f64bd3b633737acd8ffbd49f1315774ce0383f0543e55f636afe0dde2024",
+      "thumbnail_bytes": 73298,
+      "chosen_time_seconds": 0.9,
+      "sampled_times_seconds": [
+        0.9,
+        3,
+        5.1
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-shader-dissolve",
+      "safe_id": "upstream-block-code-shader-dissolve",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-shader-dissolve/index.html",
+      "duration": 7,
+      "thumbnail": "thumbnails/upstream-block-code-shader-dissolve.jpg",
+      "thumbnail_sha256": "cbc35b59bd39296b9265f9eb325d413960c713dac6fdc17c22c5aecf97fcb35e",
+      "thumbnail_bytes": 13187,
+      "chosen_time_seconds": 1.05,
+      "sampled_times_seconds": [
+        1.05,
+        3.5,
+        5.95
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+        "pageerror: Cannot read properties of undefined (reading 'WebGLRenderer')"
+      ]
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-basic",
+      "safe_id": "upstream-block-code-snippet-apple-terminal-basic",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-apple-terminal-basic/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-apple-terminal-basic.jpg",
+      "thumbnail_sha256": "aab135de2ef120be3338e2471cb394941c595be2afe4cee0b70f8bcf9ff54443",
+      "thumbnail_bytes": 61869,
+      "chosen_time_seconds": 10.2,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-clear-dark",
+      "safe_id": "upstream-block-code-snippet-apple-terminal-clear-dark",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-apple-terminal-clear-dark/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-apple-terminal-clear-dark.jpg",
+      "thumbnail_sha256": "2fa4ea3d37f68b44eaf49c3ab257363dadffe0fd013d356758bc09dba0a012ca",
+      "thumbnail_bytes": 38914,
+      "chosen_time_seconds": 10.2,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-clear-light",
+      "safe_id": "upstream-block-code-snippet-apple-terminal-clear-light",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-apple-terminal-clear-light/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-apple-terminal-clear-light.jpg",
+      "thumbnail_sha256": "99ac226187bb862adfe7d719c28c975d995d62960180dac60f1019db71934f8f",
+      "thumbnail_bytes": 53726,
+      "chosen_time_seconds": 10.2,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-grass",
+      "safe_id": "upstream-block-code-snippet-apple-terminal-grass",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-apple-terminal-grass/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-apple-terminal-grass.jpg",
+      "thumbnail_sha256": "9eb75c9ed5bd305564ab2286a1410f0c1cbf6a30de0187336bf671756a63c7bd",
+      "thumbnail_bytes": 38798,
+      "chosen_time_seconds": 10.2,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-homebrew",
+      "safe_id": "upstream-block-code-snippet-apple-terminal-homebrew",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-apple-terminal-homebrew/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-apple-terminal-homebrew.jpg",
+      "thumbnail_sha256": "11a97fe5488dedbc039ea861ad4e06c3ba92ea42bc2a818c7774d6c704109071",
+      "thumbnail_bytes": 43467,
+      "chosen_time_seconds": 10.2,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-man-page",
+      "safe_id": "upstream-block-code-snippet-apple-terminal-man-page",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-apple-terminal-man-page/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-apple-terminal-man-page.jpg",
+      "thumbnail_sha256": "4803216de3ccff693b8b4784f2b747e0ef667fd987a25e7594f1f99c27103a6c",
+      "thumbnail_bytes": 41308,
+      "chosen_time_seconds": 10.2,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-novel",
+      "safe_id": "upstream-block-code-snippet-apple-terminal-novel",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-apple-terminal-novel/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-apple-terminal-novel.jpg",
+      "thumbnail_sha256": "bbb34765462e2e606e7be8315968b2b3faa77ec6ca541c8c154d3636eb80a7f6",
+      "thumbnail_bytes": 43421,
+      "chosen_time_seconds": 10.2,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-ocean",
+      "safe_id": "upstream-block-code-snippet-apple-terminal-ocean",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-apple-terminal-ocean/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-apple-terminal-ocean.jpg",
+      "thumbnail_sha256": "b703da349c4fb9c781688c6b1495ad01d1d16b8b43b847ef79722d105aed5b81",
+      "thumbnail_bytes": 49978,
+      "chosen_time_seconds": 10.2,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-pro",
+      "safe_id": "upstream-block-code-snippet-apple-terminal-pro",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-apple-terminal-pro/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-apple-terminal-pro.jpg",
+      "thumbnail_sha256": "8259aeebffa918730423c369188d2fecbb45e98212975f2ad993cc224bd90552",
+      "thumbnail_bytes": 43269,
+      "chosen_time_seconds": 10.2,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-red-sands",
+      "safe_id": "upstream-block-code-snippet-apple-terminal-red-sands",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-apple-terminal-red-sands/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-apple-terminal-red-sands.jpg",
+      "thumbnail_sha256": "884e350592ab46f0eef0d2e1f2e43359538c030740726a9c1950a2b6e4267703",
+      "thumbnail_bytes": 43107,
+      "chosen_time_seconds": 1.8,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-silver-aerogel",
+      "safe_id": "upstream-block-code-snippet-apple-terminal-silver-aerogel",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-apple-terminal-silver-aerogel/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-apple-terminal-silver-aerogel.jpg",
+      "thumbnail_sha256": "54c85f79fdefd30522b2ee6cd60155f56d34e0543fe59ba146d1a3020910ce2f",
+      "thumbnail_bytes": 42052,
+      "chosen_time_seconds": 10.2,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-apple-terminal-solid-colors",
+      "safe_id": "upstream-block-code-snippet-apple-terminal-solid-colors",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-apple-terminal-solid-colors/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-apple-terminal-solid-colors.jpg",
+      "thumbnail_sha256": "13a4aaedb652d771b26a3796aa80c5e61524ea754999d05b76744baf86d235d2",
+      "thumbnail_bytes": 42882,
+      "chosen_time_seconds": 10.2,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-dark-2026",
+      "safe_id": "upstream-block-code-snippet-dark-2026",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-dark-2026/index.html",
+      "duration": 11,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-dark-2026.jpg",
+      "thumbnail_sha256": "7e088c1be096b0264b9b19a681225947a6c63d0a763bef786ecd4690c8f6eb10",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 1.65,
+      "sampled_times_seconds": [
+        1.65,
+        5.5,
+        9.35
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-dark-modern",
+      "safe_id": "upstream-block-code-snippet-dark-modern",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-dark-modern/index.html",
+      "duration": 11,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-dark-modern.jpg",
+      "thumbnail_sha256": "7e088c1be096b0264b9b19a681225947a6c63d0a763bef786ecd4690c8f6eb10",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 1.65,
+      "sampled_times_seconds": [
+        1.65,
+        5.5,
+        9.35
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-dark-plus",
+      "safe_id": "upstream-block-code-snippet-dark-plus",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-dark-plus/index.html",
+      "duration": 11,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-dark-plus.jpg",
+      "thumbnail_sha256": "7e088c1be096b0264b9b19a681225947a6c63d0a763bef786ecd4690c8f6eb10",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 1.65,
+      "sampled_times_seconds": [
+        1.65,
+        5.5,
+        9.35
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-flight",
+      "safe_id": "upstream-block-code-snippet-flight",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-flight/index.html",
+      "duration": 6,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-flight.jpg",
+      "thumbnail_sha256": "929d67a4f0838505cb47685c1d92e3c213814ea4b1792d2abe58ef7eaf5f7927",
+      "thumbnail_bytes": 39052,
+      "chosen_time_seconds": 3,
+      "sampled_times_seconds": [
+        0.9,
+        3,
+        5.1
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-high-contrast",
+      "safe_id": "upstream-block-code-snippet-high-contrast",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-high-contrast/index.html",
+      "duration": 11,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-high-contrast.jpg",
+      "thumbnail_sha256": "7e088c1be096b0264b9b19a681225947a6c63d0a763bef786ecd4690c8f6eb10",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 1.65,
+      "sampled_times_seconds": [
+        1.65,
+        5.5,
+        9.35
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-high-contrast-light",
+      "safe_id": "upstream-block-code-snippet-high-contrast-light",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-high-contrast-light/index.html",
+      "duration": 11,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-high-contrast-light.jpg",
+      "thumbnail_sha256": "7e088c1be096b0264b9b19a681225947a6c63d0a763bef786ecd4690c8f6eb10",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 1.65,
+      "sampled_times_seconds": [
+        1.65,
+        5.5,
+        9.35
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-light-2026",
+      "safe_id": "upstream-block-code-snippet-light-2026",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-light-2026/index.html",
+      "duration": 11,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-light-2026.jpg",
+      "thumbnail_sha256": "7e088c1be096b0264b9b19a681225947a6c63d0a763bef786ecd4690c8f6eb10",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 1.65,
+      "sampled_times_seconds": [
+        1.65,
+        5.5,
+        9.35
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-light-modern",
+      "safe_id": "upstream-block-code-snippet-light-modern",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-light-modern/index.html",
+      "duration": 11,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-light-modern.jpg",
+      "thumbnail_sha256": "7e088c1be096b0264b9b19a681225947a6c63d0a763bef786ecd4690c8f6eb10",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 1.65,
+      "sampled_times_seconds": [
+        1.65,
+        5.5,
+        9.35
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-light-plus",
+      "safe_id": "upstream-block-code-snippet-light-plus",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-light-plus/index.html",
+      "duration": 11,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-light-plus.jpg",
+      "thumbnail_sha256": "7e088c1be096b0264b9b19a681225947a6c63d0a763bef786ecd4690c8f6eb10",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 1.65,
+      "sampled_times_seconds": [
+        1.65,
+        5.5,
+        9.35
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-monokai",
+      "safe_id": "upstream-block-code-snippet-monokai",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-monokai/index.html",
+      "duration": 11,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-monokai.jpg",
+      "thumbnail_sha256": "7e088c1be096b0264b9b19a681225947a6c63d0a763bef786ecd4690c8f6eb10",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 1.65,
+      "sampled_times_seconds": [
+        1.65,
+        5.5,
+        9.35
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-solarized-light",
+      "safe_id": "upstream-block-code-snippet-solarized-light",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-solarized-light/index.html",
+      "duration": 11,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-solarized-light.jpg",
+      "thumbnail_sha256": "7e088c1be096b0264b9b19a681225947a6c63d0a763bef786ecd4690c8f6eb10",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 1.65,
+      "sampled_times_seconds": [
+        1.65,
+        5.5,
+        9.35
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-visual-studio-dark",
+      "safe_id": "upstream-block-code-snippet-visual-studio-dark",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-visual-studio-dark/index.html",
+      "duration": 11,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-visual-studio-dark.jpg",
+      "thumbnail_sha256": "7e088c1be096b0264b9b19a681225947a6c63d0a763bef786ecd4690c8f6eb10",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 1.65,
+      "sampled_times_seconds": [
+        1.65,
+        5.5,
+        9.35
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-snippet-visual-studio-light",
+      "safe_id": "upstream-block-code-snippet-visual-studio-light",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-snippet-visual-studio-light/index.html",
+      "duration": 11,
+      "thumbnail": "thumbnails/upstream-block-code-snippet-visual-studio-light.jpg",
+      "thumbnail_sha256": "7e088c1be096b0264b9b19a681225947a6c63d0a763bef786ecd4690c8f6eb10",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 1.65,
+      "sampled_times_seconds": [
+        1.65,
+        5.5,
+        9.35
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:code-typing",
+      "safe_id": "upstream-block-code-typing",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-code-typing/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-block-code-typing.jpg",
+      "thumbnail_sha256": "feb09ba9d68511871c9f4741ade60706f6fa5896d6a9a2ce451e23b52ba855d2",
+      "thumbnail_bytes": 45542,
+      "chosen_time_seconds": 4.25,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:cross-warp-morph",
+      "safe_id": "upstream-block-cross-warp-morph",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-cross-warp-morph/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-cross-warp-morph.jpg",
+      "thumbnail_sha256": "abb70b176b3c8e8a0da3c69a06601e7231c993a6adbb86cc76b52086b161f2bc",
+      "thumbnail_bytes": 71106,
+      "chosen_time_seconds": 0.6,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:data-chart",
+      "safe_id": "upstream-block-data-chart",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-data-chart/index.html",
+      "duration": 15,
+      "thumbnail": "thumbnails/upstream-block-data-chart.jpg",
+      "thumbnail_sha256": "27a4eac5c94027633d5a289fd72c763948ee453d6c2944d8707854b58965ccac",
+      "thumbnail_bytes": 45947,
+      "chosen_time_seconds": 12.75,
+      "sampled_times_seconds": [
+        2.25,
+        7.5,
+        12.75
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:domain-warp-dissolve",
+      "safe_id": "upstream-block-domain-warp-dissolve",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-domain-warp-dissolve/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-domain-warp-dissolve.jpg",
+      "thumbnail_sha256": "2eb5d38ba2d47f1888abbb3777819ec9a1fb4fb88b2dd3aab513575287ae0c78",
+      "thumbnail_bytes": 185250,
+      "chosen_time_seconds": 2,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:editorial-flash-overlay",
+      "safe_id": "upstream-block-editorial-flash-overlay",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-editorial-flash-overlay/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-editorial-flash-overlay.jpg",
+      "thumbnail_sha256": "7e088c1be096b0264b9b19a681225947a6c63d0a763bef786ecd4690c8f6eb10",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 0.6,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:flash-through-white",
+      "safe_id": "upstream-block-flash-through-white",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-flash-through-white/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-flash-through-white.jpg",
+      "thumbnail_sha256": "f48e284528358053ad68a0e2da7390a7a617e03c02b7d74af9a28f121bae997d",
+      "thumbnail_bytes": 23651,
+      "chosen_time_seconds": 3.4,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:flowchart",
+      "safe_id": "upstream-block-flowchart",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-flowchart/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-flowchart.jpg",
+      "thumbnail_sha256": "989210c6bdcab99bb7e2b4baedb1c29da95f5964e18296f98d312a6428afc58f",
+      "thumbnail_bytes": 76738,
+      "chosen_time_seconds": 6,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:flowchart-vertical",
+      "safe_id": "upstream-block-flowchart-vertical",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-flowchart-vertical/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-flowchart-vertical.jpg",
+      "thumbnail_sha256": "77a0d608a34c5a4769eaf5a517b704e144ced471c4d3fdac5ac77d38dbc2ca92",
+      "thumbnail_bytes": 101648,
+      "chosen_time_seconds": 6,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:freeze-frame-dressing",
+      "safe_id": "upstream-block-freeze-frame-dressing",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-freeze-frame-dressing/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-freeze-frame-dressing.jpg",
+      "thumbnail_sha256": "87391b34d57ae0f6d540f7964d124c5c1d927fca9e2e5d2f2dd57b9c498979ca",
+      "thumbnail_bytes": 23225,
+      "chosen_time_seconds": 0.6,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:glitch",
+      "safe_id": "upstream-block-glitch",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-glitch/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-glitch.jpg",
+      "thumbnail_sha256": "b692b07042406d0c627c01a8f9478e9bad59035cfc9ac0d268dbab03dce3898d",
+      "thumbnail_bytes": 64936,
+      "chosen_time_seconds": 2,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:gravitational-lens",
+      "safe_id": "upstream-block-gravitational-lens",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-gravitational-lens/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-gravitational-lens.jpg",
+      "thumbnail_sha256": "a1762dd6656c720783f9543ce96a1d606c75f4371350afc4b12a9dce4e74aa5f",
+      "thumbnail_bytes": 29354,
+      "chosen_time_seconds": 2,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:instagram-follow",
+      "safe_id": "upstream-block-instagram-follow",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-instagram-follow/index.html",
+      "duration": 4.5,
+      "thumbnail": "thumbnails/upstream-block-instagram-follow.jpg",
+      "thumbnail_sha256": "964b3a2d7d281dfbc170f9ee2371c77bb1540cb70999e57f5bf161bbeab8d812",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 0.675,
+      "sampled_times_seconds": [
+        0.675,
+        2.25,
+        3.825
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:ios26-liquid-glass",
+      "safe_id": "upstream-block-ios26-liquid-glass",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-ios26-liquid-glass/index.html",
+      "duration": 15,
+      "thumbnail": "thumbnails/upstream-block-ios26-liquid-glass.jpg",
+      "thumbnail_sha256": "e047600bca4aa015c7c636f46b90e254ccf6e22cba0ced57473cb639d64a6840",
+      "thumbnail_bytes": 13135,
+      "chosen_time_seconds": 2.25,
+      "sampled_times_seconds": [
+        2.25,
+        7.5,
+        12.75
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Floaders%2FDRACOLoader.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Floaders%2FGLTFLoader.js",
+        "pageerror: THREE is not defined"
+      ]
+    },
+    {
+      "id": "upstream:block:light-leak",
+      "safe_id": "upstream-block-light-leak",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-light-leak/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-light-leak.jpg",
+      "thumbnail_sha256": "eef3eee08aced38b09d223b1c74b9976e5a51bb05428adda7f97d950e9838344",
+      "thumbnail_bytes": 25327,
+      "chosen_time_seconds": 2,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:liquid-glass-context-menu",
+      "safe_id": "upstream-block-liquid-glass-context-menu",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-liquid-glass-context-menu/index.html",
+      "duration": 8,
+      "thumbnail": "thumbnails/upstream-block-liquid-glass-context-menu.jpg",
+      "thumbnail_sha256": "ee08eff67a113fad3fb67f3b6cffce0a4e57570a60e93edd0cc8754c85d98c95",
+      "thumbnail_bytes": 17238,
+      "chosen_time_seconds": 1.2,
+      "sampled_times_seconds": [
+        1.2,
+        4,
+        6.8
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdnjs.cloudflare.com%2Fajax%2Flibs%2Fthree.js%2Fr128%2Fthree.min.js",
+        "pageerror: THREE is not defined"
+      ]
+    },
+    {
+      "id": "upstream:block:liquid-glass-media-controls",
+      "safe_id": "upstream-block-liquid-glass-media-controls",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-liquid-glass-media-controls/index.html",
+      "duration": 8,
+      "thumbnail": "thumbnails/upstream-block-liquid-glass-media-controls.jpg",
+      "thumbnail_sha256": "8b813420daa46b74fe95db17359c31ae77cf8d1c7a7997d7820c986d750cd115",
+      "thumbnail_bytes": 26594,
+      "chosen_time_seconds": 1.2,
+      "sampled_times_seconds": [
+        1.2,
+        4,
+        6.8
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdnjs.cloudflare.com%2Fajax%2Flibs%2Fthree.js%2Fr128%2Fthree.min.js",
+        "pageerror: THREE is not defined"
+      ]
+    },
+    {
+      "id": "upstream:block:liquid-glass-notification",
+      "safe_id": "upstream-block-liquid-glass-notification",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-liquid-glass-notification/index.html",
+      "duration": 8,
+      "thumbnail": "thumbnails/upstream-block-liquid-glass-notification.jpg",
+      "thumbnail_sha256": "74cb37943ed4911212bb28d1d433e0bc58966f80c7b1cd8926ca2c3a642af7ad",
+      "thumbnail_bytes": 13100,
+      "chosen_time_seconds": 1.2,
+      "sampled_times_seconds": [
+        1.2,
+        4,
+        6.8
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdnjs.cloudflare.com%2Fajax%2Flibs%2Fthree.js%2Fr128%2Fthree.min.js",
+        "pageerror: THREE is not defined"
+      ]
+    },
+    {
+      "id": "upstream:block:liquid-glass-widgets",
+      "safe_id": "upstream-block-liquid-glass-widgets",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-liquid-glass-widgets/index.html",
+      "duration": 8,
+      "thumbnail": "thumbnails/upstream-block-liquid-glass-widgets.jpg",
+      "thumbnail_sha256": "7adecea249da85f90f06ae1181324c66f7e3f7e5ae1237a65a7a0e78817e563c",
+      "thumbnail_bytes": 39464,
+      "chosen_time_seconds": 1.2,
+      "sampled_times_seconds": [
+        1.2,
+        4,
+        6.8
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdnjs.cloudflare.com%2Fajax%2Flibs%2Fthree.js%2Fr128%2Fthree.min.js",
+        "pageerror: THREE is not defined"
+      ]
+    },
+    {
+      "id": "upstream:block:logo-outro",
+      "safe_id": "upstream-block-logo-outro",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-logo-outro/index.html",
+      "duration": 6,
+      "thumbnail": "thumbnails/upstream-block-logo-outro.jpg",
+      "thumbnail_sha256": "9fe9828f4ea0b0aa242372a0b43198ad4fb456120984b79fea2d076aa141ea7e",
+      "thumbnail_bytes": 26722,
+      "chosen_time_seconds": 0.9,
+      "sampled_times_seconds": [
+        0.9,
+        3,
+        5.1
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:lower-third-bild",
+      "safe_id": "upstream-block-lower-third-bild",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-lower-third-bild/index.html",
+      "duration": 8,
+      "thumbnail": "thumbnails/upstream-block-lower-third-bild.jpg",
+      "thumbnail_sha256": "cafd29e461d0f5182cc11851bb8ea6123e87b6598ca3c220e25ff1ae06ba43fa",
+      "thumbnail_bytes": 32389,
+      "chosen_time_seconds": 1.2,
+      "sampled_times_seconds": [
+        1.2,
+        4,
+        6.8
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:lt-accent-underline",
+      "safe_id": "upstream-block-lt-accent-underline",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-lt-accent-underline/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/upstream-block-lt-accent-underline.jpg",
+      "thumbnail_sha256": "a4a8d459795da68ae447c3894f3cb7310c6f7cc55ecc814585823dbf1ee25cd0",
+      "thumbnail_bytes": 28109,
+      "chosen_time_seconds": 0.72,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:lt-bold-block",
+      "safe_id": "upstream-block-lt-bold-block",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-lt-bold-block/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/upstream-block-lt-bold-block.jpg",
+      "thumbnail_sha256": "c37eac8c66e81279cce2b06cd62ae28cf0ec467d71045f833755802142729209",
+      "thumbnail_bytes": 24509,
+      "chosen_time_seconds": 2.4,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:lt-clean-bar",
+      "safe_id": "upstream-block-lt-clean-bar",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-lt-clean-bar/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/upstream-block-lt-clean-bar.jpg",
+      "thumbnail_sha256": "eb73b594ddbcfee040746652f3468e0eb4b03cb43ea57c2ce2a30e7739334d28",
+      "thumbnail_bytes": 24432,
+      "chosen_time_seconds": 0.72,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:lt-color-block",
+      "safe_id": "upstream-block-lt-color-block",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-lt-color-block/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/upstream-block-lt-color-block.jpg",
+      "thumbnail_sha256": "e0a8d3d31f77545e89200f9705feceb15df192d00fdbcaa4d5f747bc306d6a79",
+      "thumbnail_bytes": 32713,
+      "chosen_time_seconds": 0.72,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:lt-dark-card",
+      "safe_id": "upstream-block-lt-dark-card",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-lt-dark-card/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/upstream-block-lt-dark-card.jpg",
+      "thumbnail_sha256": "fed766be6be33f06e382599c4a03e39d9b3f00b68bd5d143047c5a17b663a516",
+      "thumbnail_bytes": 23248,
+      "chosen_time_seconds": 0.72,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:lt-kicker-name",
+      "safe_id": "upstream-block-lt-kicker-name",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-lt-kicker-name/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/upstream-block-lt-kicker-name.jpg",
+      "thumbnail_sha256": "4a831c5e5f6127f87916a6c83257e63711098c1cd2b2b4efab8914f36e8ff0a5",
+      "thumbnail_bytes": 22542,
+      "chosen_time_seconds": 0.72,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:lt-mask-reveal",
+      "safe_id": "upstream-block-lt-mask-reveal",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-lt-mask-reveal/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/upstream-block-lt-mask-reveal.jpg",
+      "thumbnail_sha256": "91474a0e97fdbccf625f1393f0e3753e21fe7dc2407c90daf13ed876fa90fecb",
+      "thumbnail_bytes": 25095,
+      "chosen_time_seconds": 2.4,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:lt-side-rule",
+      "safe_id": "upstream-block-lt-side-rule",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-lt-side-rule/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/upstream-block-lt-side-rule.jpg",
+      "thumbnail_sha256": "774a0915e4aae2a799839a5e015958c84d356aeb12fc984fd13460fab018b1de",
+      "thumbnail_bytes": 29390,
+      "chosen_time_seconds": 2.4,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:lt-soft-pill",
+      "safe_id": "upstream-block-lt-soft-pill",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-lt-soft-pill/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/upstream-block-lt-soft-pill.jpg",
+      "thumbnail_sha256": "8b66cd822bc2f238965a4660fd65f4c2cc3d5287b89d4f87642b6abb1250162b",
+      "thumbnail_bytes": 22588,
+      "chosen_time_seconds": 2.4,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:lt-stack-bars",
+      "safe_id": "upstream-block-lt-stack-bars",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-lt-stack-bars/index.html",
+      "duration": 4.8,
+      "thumbnail": "thumbnails/upstream-block-lt-stack-bars.jpg",
+      "thumbnail_sha256": "2855d17d8a29ecdc5fa498bbc15b47bf38f87ef234d6a00dc699c0df1e712131",
+      "thumbnail_bytes": 22395,
+      "chosen_time_seconds": 2.4,
+      "sampled_times_seconds": [
+        0.72,
+        2.4,
+        4.08
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:macos-notification",
+      "safe_id": "upstream-block-macos-notification",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-macos-notification/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-block-macos-notification.jpg",
+      "thumbnail_sha256": "7e088c1be096b0264b9b19a681225947a6c63d0a763bef786ecd4690c8f6eb10",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 0.75,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:macos-tahoe-liquid-glass",
+      "safe_id": "upstream-block-macos-tahoe-liquid-glass",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-macos-tahoe-liquid-glass/index.html",
+      "duration": 15,
+      "thumbnail": "thumbnails/upstream-block-macos-tahoe-liquid-glass.jpg",
+      "thumbnail_sha256": "e047600bca4aa015c7c636f46b90e254ccf6e22cba0ced57473cb639d64a6840",
+      "thumbnail_bytes": 13135,
+      "chosen_time_seconds": 2.25,
+      "sampled_times_seconds": [
+        2.25,
+        7.5,
+        12.75
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Floaders%2FDRACOLoader.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Floaders%2FGLTFLoader.js",
+        "pageerror: THREE is not defined"
+      ]
+    },
+    {
+      "id": "upstream:block:news-ticker",
+      "safe_id": "upstream-block-news-ticker",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-news-ticker/index.html",
+      "duration": 7,
+      "thumbnail": "thumbnails/upstream-block-news-ticker.jpg",
+      "thumbnail_sha256": "d4533da08e2d53df8d48a20196a495ae571ce2af01ee506952e8508653a7801a",
+      "thumbnail_bytes": 49867,
+      "chosen_time_seconds": 5.95,
+      "sampled_times_seconds": [
+        1.05,
+        3.5,
+        5.95
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:north-korea-locked-down",
+      "safe_id": "upstream-block-north-korea-locked-down",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-north-korea-locked-down/index.html",
+      "duration": 7,
+      "thumbnail": "thumbnails/upstream-block-north-korea-locked-down.jpg",
+      "thumbnail_sha256": "10778a1a8b06a8743bd8d537f9aca57ffc5bf837e961210a9a81b898b6628ecd",
+      "thumbnail_bytes": 154617,
+      "chosen_time_seconds": 5.95,
+      "sampled_times_seconds": [
+        1.05,
+        3.5,
+        5.95
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:nyc-paris-flight",
+      "safe_id": "upstream-block-nyc-paris-flight",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-nyc-paris-flight/index.html",
+      "duration": 6,
+      "thumbnail": "thumbnails/upstream-block-nyc-paris-flight.jpg",
+      "thumbnail_sha256": "4ab3cb53297010e9dfc791dc7e3086467c132d4b86105dc1a35e6cd96c4f864f",
+      "thumbnail_bytes": 76382,
+      "chosen_time_seconds": 3,
+      "sampled_times_seconds": [
+        0.9,
+        3,
+        5.1
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:organic-light-leak-overlay",
+      "safe_id": "upstream-block-organic-light-leak-overlay",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-organic-light-leak-overlay/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-organic-light-leak-overlay.jpg",
+      "thumbnail_sha256": "666d06e9875f3f98584ed49c028658f1cfe1dedbe221bd2a036d673f1f1ba073",
+      "thumbnail_bytes": 27249,
+      "chosen_time_seconds": 2,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:reddit-post",
+      "safe_id": "upstream-block-reddit-post",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-reddit-post/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-block-reddit-post.jpg",
+      "thumbnail_sha256": "b7f1b1ee2647dc4fdb0a86d2c165af5d4497cd59579b6032d944f731a04300e7",
+      "thumbnail_bytes": 48679,
+      "chosen_time_seconds": 2.5,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:ridged-burn",
+      "safe_id": "upstream-block-ridged-burn",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-ridged-burn/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-ridged-burn.jpg",
+      "thumbnail_sha256": "0267695a36253e7054339b18c21d3a989d636993599274842934625e2add963a",
+      "thumbnail_bytes": 140924,
+      "chosen_time_seconds": 2,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:ripple-waves",
+      "safe_id": "upstream-block-ripple-waves",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-ripple-waves/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-ripple-waves.jpg",
+      "thumbnail_sha256": "26a5d77f9a356e8bc94ff69922ecb8a21ebaefe12f1fdcd4b05c2d9fc67b2d12",
+      "thumbnail_bytes": 25708,
+      "chosen_time_seconds": 2,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:sdf-iris",
+      "safe_id": "upstream-block-sdf-iris",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-sdf-iris/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-sdf-iris.jpg",
+      "thumbnail_sha256": "69cebe2f3d27f9be546853b31974750af14a7e19182150c1168a7a2e032c5de2",
+      "thumbnail_bytes": 47813,
+      "chosen_time_seconds": 2,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:spain-map",
+      "safe_id": "upstream-block-spain-map",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-spain-map/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-spain-map.jpg",
+      "thumbnail_sha256": "6a51fd30698dbba609047112bd0c007c576071d1164973c52ff5f5587cb0e068",
+      "thumbnail_bytes": 13501,
+      "chosen_time_seconds": 1.8,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fd3%407%2Fdist%2Fd3.min.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Ftopojson-client%403.1.0%2Fdist%2Ftopojson-client.min.js",
+        "console: Fetch API cannot load about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fes-atlas%400.6.0%2Fes%2Fautonomous_regions.json. URL scheme \"about\" is not supported.",
+        "pageerror: Failed to fetch"
+      ]
+    },
+    {
+      "id": "upstream:block:spotify-card",
+      "safe_id": "upstream-block-spotify-card",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-spotify-card/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-block-spotify-card.jpg",
+      "thumbnail_sha256": "9777a9c0b619503bd979397cd706b12ae6b0369de676f385ee193818a5f81b95",
+      "thumbnail_bytes": 29720,
+      "chosen_time_seconds": 2.5,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:swirl-vortex",
+      "safe_id": "upstream-block-swirl-vortex",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-swirl-vortex/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-swirl-vortex.jpg",
+      "thumbnail_sha256": "9aea2babbb7e9c223d579a6fe7a0f5eff650914bcb2d499d939c7cb9d707c856",
+      "thumbnail_bytes": 22167,
+      "chosen_time_seconds": 2,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:thermal-distortion",
+      "safe_id": "upstream-block-thermal-distortion",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-thermal-distortion/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-thermal-distortion.jpg",
+      "thumbnail_sha256": "fbd07a3ffce8f5573dc289e6e1aa74da6f891a192585fded523505884710e00e",
+      "thumbnail_bytes": 20299,
+      "chosen_time_seconds": 3.4,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:tiktok-follow",
+      "safe_id": "upstream-block-tiktok-follow",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-tiktok-follow/index.html",
+      "duration": 4.5,
+      "thumbnail": "thumbnails/upstream-block-tiktok-follow.jpg",
+      "thumbnail_sha256": "964b3a2d7d281dfbc170f9ee2371c77bb1540cb70999e57f5bf161bbeab8d812",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 0.675,
+      "sampled_times_seconds": [
+        0.675,
+        2.25,
+        3.825
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:transitions-3d",
+      "safe_id": "upstream-block-transitions-3d",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-transitions-3d/index.html",
+      "duration": 11,
+      "thumbnail": "thumbnails/upstream-block-transitions-3d.jpg",
+      "thumbnail_sha256": "0cc29bd0633e8cf8582edcc1851d31bc8041a798cb8b3bfac1fce82e9d1cb028",
+      "thumbnail_bytes": 23607,
+      "chosen_time_seconds": 1.65,
+      "sampled_times_seconds": [
+        1.65,
+        5.5,
+        9.35
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:transitions-blur",
+      "safe_id": "upstream-block-transitions-blur",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-transitions-blur/index.html",
+      "duration": 20,
+      "thumbnail": "thumbnails/upstream-block-transitions-blur.jpg",
+      "thumbnail_sha256": "da785e903e90a4d4d703497707aa6a3504e364ab4ca5138867a42e863a9dd203",
+      "thumbnail_bytes": 25066,
+      "chosen_time_seconds": 10,
+      "sampled_times_seconds": [
+        3,
+        10,
+        17
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:transitions-cover",
+      "safe_id": "upstream-block-transitions-cover",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-transitions-cover/index.html",
+      "duration": 21,
+      "thumbnail": "thumbnails/upstream-block-transitions-cover.jpg",
+      "thumbnail_sha256": "a583ed10e3a96c6d42c80c470ddf62a9f377dc138249439c40939fceebf658ad",
+      "thumbnail_bytes": 22923,
+      "chosen_time_seconds": 10.5,
+      "sampled_times_seconds": [
+        3.15,
+        10.5,
+        17.85
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:transitions-destruction",
+      "safe_id": "upstream-block-transitions-destruction",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-transitions-destruction/index.html",
+      "duration": 14,
+      "thumbnail": "thumbnails/upstream-block-transitions-destruction.jpg",
+      "thumbnail_sha256": "33fe363f74997ec7ebbbc93ca72b92ecd748875d5492fefb6bb5ad1f44c0f798",
+      "thumbnail_bytes": 34450,
+      "chosen_time_seconds": 7,
+      "sampled_times_seconds": [
+        2.1,
+        7,
+        11.9
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:transitions-dissolve",
+      "safe_id": "upstream-block-transitions-dissolve",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-transitions-dissolve/index.html",
+      "duration": 24,
+      "thumbnail": "thumbnails/upstream-block-transitions-dissolve.jpg",
+      "thumbnail_sha256": "cd367472f700c4058b3257d5c3f9c0d08f9f3fa287c51014f55de45d4b8506e8",
+      "thumbnail_bytes": 23500,
+      "chosen_time_seconds": 20.4,
+      "sampled_times_seconds": [
+        3.6,
+        12,
+        20.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:transitions-distortion",
+      "safe_id": "upstream-block-transitions-distortion",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-transitions-distortion/index.html",
+      "duration": 21,
+      "thumbnail": "thumbnails/upstream-block-transitions-distortion.jpg",
+      "thumbnail_sha256": "2bc7b81b69914d02a81c10173e91d52381d6dd6aa12f66702f9089a7cf2647e2",
+      "thumbnail_bytes": 24095,
+      "chosen_time_seconds": 17.85,
+      "sampled_times_seconds": [
+        3.15,
+        10.5,
+        17.85
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:transitions-grid",
+      "safe_id": "upstream-block-transitions-grid",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-transitions-grid/index.html",
+      "duration": 11,
+      "thumbnail": "thumbnails/upstream-block-transitions-grid.jpg",
+      "thumbnail_sha256": "38524f650e917a864ddfd7137e2b9ea023a7846371091ec53fdd16595363d420",
+      "thumbnail_bytes": 23613,
+      "chosen_time_seconds": 1.65,
+      "sampled_times_seconds": [
+        1.65,
+        5.5,
+        9.35
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:transitions-light",
+      "safe_id": "upstream-block-transitions-light",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-transitions-light/index.html",
+      "duration": 21,
+      "thumbnail": "thumbnails/upstream-block-transitions-light.jpg",
+      "thumbnail_sha256": "a87b598ef8f683b1e6331e55e09b26386ee11dbe4d364a65907388238b247b99",
+      "thumbnail_bytes": 20934,
+      "chosen_time_seconds": 10.5,
+      "sampled_times_seconds": [
+        3.15,
+        10.5,
+        17.85
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:transitions-mechanical",
+      "safe_id": "upstream-block-transitions-mechanical",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-transitions-mechanical/index.html",
+      "duration": 15,
+      "thumbnail": "thumbnails/upstream-block-transitions-mechanical.jpg",
+      "thumbnail_sha256": "a61033e62acb27a57f248d1017e99d2641e1b4b3752104c8a0c2a26679b34d2a",
+      "thumbnail_bytes": 28200,
+      "chosen_time_seconds": 2.25,
+      "sampled_times_seconds": [
+        2.25,
+        7.5,
+        12.75
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:transitions-other",
+      "safe_id": "upstream-block-transitions-other",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-transitions-other/index.html",
+      "duration": 20,
+      "thumbnail": "thumbnails/upstream-block-transitions-other.jpg",
+      "thumbnail_sha256": "ec8ee8f0749e34bbbec114464dc9d252f8083b529ccf05a200b9b8012c8edd27",
+      "thumbnail_bytes": 23631,
+      "chosen_time_seconds": 10,
+      "sampled_times_seconds": [
+        3,
+        10,
+        17
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:transitions-push",
+      "safe_id": "upstream-block-transitions-push",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-transitions-push/index.html",
+      "duration": 24,
+      "thumbnail": "thumbnails/upstream-block-transitions-push.jpg",
+      "thumbnail_sha256": "ef7abcf5c973efe5134d7c1892d243565dec30b0e892f3a9c0ce034e080cf2ce",
+      "thumbnail_bytes": 22857,
+      "chosen_time_seconds": 20.4,
+      "sampled_times_seconds": [
+        3.6,
+        12,
+        20.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:transitions-radial",
+      "safe_id": "upstream-block-transitions-radial",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-transitions-radial/index.html",
+      "duration": 20,
+      "thumbnail": "thumbnails/upstream-block-transitions-radial.jpg",
+      "thumbnail_sha256": "98bf8ac7bf3bbe030aea94c5bd96538fae5d3f60d3d4dca3b0148662904b7930",
+      "thumbnail_bytes": 18261,
+      "chosen_time_seconds": 17,
+      "sampled_times_seconds": [
+        3,
+        10,
+        17
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:transitions-scale",
+      "safe_id": "upstream-block-transitions-scale",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-transitions-scale/index.html",
+      "duration": 15,
+      "thumbnail": "thumbnails/upstream-block-transitions-scale.jpg",
+      "thumbnail_sha256": "98076952859fb7d0f7f8dc354a8e60d2c19bb9232c59cdf5e1ab238287f8187c",
+      "thumbnail_bytes": 26431,
+      "chosen_time_seconds": 2.25,
+      "sampled_times_seconds": [
+        2.25,
+        7.5,
+        12.75
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:ui-3d-reveal",
+      "safe_id": "upstream-block-ui-3d-reveal",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-ui-3d-reveal/index.html",
+      "duration": 13,
+      "thumbnail": "thumbnails/upstream-block-ui-3d-reveal.jpg",
+      "thumbnail_sha256": "d3735c029eedb03c923a0dcfe1b9471bef4a002efd4dfddebffbe6c2a7639dac",
+      "thumbnail_bytes": 63508,
+      "chosen_time_seconds": 6.5,
+      "sampled_times_seconds": [
+        1.95,
+        6.5,
+        11.05
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:us-map",
+      "safe_id": "upstream-block-us-map",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-us-map/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-us-map.jpg",
+      "thumbnail_sha256": "6a51fd30698dbba609047112bd0c007c576071d1164973c52ff5f5587cb0e068",
+      "thumbnail_bytes": 13501,
+      "chosen_time_seconds": 1.8,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fd3%407%2Fdist%2Fd3.min.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Ftopojson-client%403.1.0%2Fdist%2Ftopojson-client.min.js",
+        "console: Fetch API cannot load about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fus-atlas%403%2Fstates-10m.json. URL scheme \"about\" is not supported.",
+        "pageerror: Failed to fetch"
+      ]
+    },
+    {
+      "id": "upstream:block:us-map-bubble",
+      "safe_id": "upstream-block-us-map-bubble",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-us-map-bubble/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-us-map-bubble.jpg",
+      "thumbnail_sha256": "6a51fd30698dbba609047112bd0c007c576071d1164973c52ff5f5587cb0e068",
+      "thumbnail_bytes": 13501,
+      "chosen_time_seconds": 1.8,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fd3%407%2Fdist%2Fd3.min.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Ftopojson-client%403.1.0%2Fdist%2Ftopojson-client.min.js",
+        "pageerror: d3 is not defined"
+      ]
+    },
+    {
+      "id": "upstream:block:us-map-flow",
+      "safe_id": "upstream-block-us-map-flow",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-us-map-flow/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-us-map-flow.jpg",
+      "thumbnail_sha256": "6a51fd30698dbba609047112bd0c007c576071d1164973c52ff5f5587cb0e068",
+      "thumbnail_bytes": 13501,
+      "chosen_time_seconds": 1.8,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fd3%407%2Fdist%2Fd3.min.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Ftopojson-client%403.1.0%2Fdist%2Ftopojson-client.min.js",
+        "pageerror: d3 is not defined"
+      ]
+    },
+    {
+      "id": "upstream:block:us-map-hex",
+      "safe_id": "upstream-block-us-map-hex",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-us-map-hex/index.html",
+      "duration": 10,
+      "thumbnail": "thumbnails/upstream-block-us-map-hex.jpg",
+      "thumbnail_sha256": "36a147a563b972949c248108ca93bad8bf32ca1393e3dd6cea0ed1bad7b24975",
+      "thumbnail_bytes": 88595,
+      "chosen_time_seconds": 8.5,
+      "sampled_times_seconds": [
+        1.5,
+        5,
+        8.5
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:vfx-iphone-device",
+      "safe_id": "upstream-block-vfx-iphone-device",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-vfx-iphone-device/index.html",
+      "duration": 15,
+      "thumbnail": "thumbnails/upstream-block-vfx-iphone-device.jpg",
+      "thumbnail_sha256": "e047600bca4aa015c7c636f46b90e254ccf6e22cba0ced57473cb639d64a6840",
+      "thumbnail_bytes": 13135,
+      "chosen_time_seconds": 2.25,
+      "sampled_times_seconds": [
+        2.25,
+        7.5,
+        12.75
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Floaders%2FDRACOLoader.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Floaders%2FGLTFLoader.js",
+        "pageerror: THREE is not defined"
+      ]
+    },
+    {
+      "id": "upstream:block:vfx-liquid-background",
+      "safe_id": "upstream-block-vfx-liquid-background",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-vfx-liquid-background/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-vfx-liquid-background.jpg",
+      "thumbnail_sha256": "7e088c1be096b0264b9b19a681225947a6c63d0a763bef786ecd4690c8f6eb10",
+      "thumbnail_bytes": 12998,
+      "chosen_time_seconds": 1.8,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+        "pageerror: THREE is not defined"
+      ]
+    },
+    {
+      "id": "upstream:block:vfx-liquid-glass",
+      "safe_id": "upstream-block-vfx-liquid-glass",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-vfx-liquid-glass/index.html",
+      "duration": 20,
+      "thumbnail": "thumbnails/upstream-block-vfx-liquid-glass.jpg",
+      "thumbnail_sha256": "8e377e729ec17b353c4c21e9f149b7c1b8c9a94269488c838802b55ac066a90a",
+      "thumbnail_bytes": 13204,
+      "chosen_time_seconds": 3,
+      "sampled_times_seconds": [
+        3,
+        10,
+        17
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Fshaders%2FCopyShader.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Fshaders%2FLuminosityHighPassShader.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Fpostprocessing%2FEffectComposer.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Fpostprocessing%2FRenderPass.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Fpostprocessing%2FShaderPass.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fexamples%2Fjs%2Fpostprocessing%2FUnrealBloomPass.js",
+        "pageerror: THREE is not defined"
+      ]
+    },
+    {
+      "id": "upstream:block:vfx-magnetic",
+      "safe_id": "upstream-block-vfx-magnetic",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-vfx-magnetic/index.html",
+      "duration": 15,
+      "thumbnail": "thumbnails/upstream-block-vfx-magnetic.jpg",
+      "thumbnail_sha256": "50a2f7cdad095ea28fd22737f65599186f001dd62fe654d258bde631cf9d76f3",
+      "thumbnail_bytes": 23708,
+      "chosen_time_seconds": 2.25,
+      "sampled_times_seconds": [
+        2.25,
+        7.5,
+        12.75
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:vfx-portal",
+      "safe_id": "upstream-block-vfx-portal",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-vfx-portal/index.html",
+      "duration": 10,
+      "thumbnail": "thumbnails/upstream-block-vfx-portal.jpg",
+      "thumbnail_sha256": "ca5e1a557d5678709c67853fdaa113dc7700d92566b25d6ff8e421a2298d52f6",
+      "thumbnail_bytes": 24550,
+      "chosen_time_seconds": 1.5,
+      "sampled_times_seconds": [
+        1.5,
+        5,
+        8.5
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+        "pageerror: THREE is not defined"
+      ]
+    },
+    {
+      "id": "upstream:block:vfx-shatter",
+      "safe_id": "upstream-block-vfx-shatter",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-vfx-shatter/index.html",
+      "duration": 12,
+      "thumbnail": "thumbnails/upstream-block-vfx-shatter.jpg",
+      "thumbnail_sha256": "123530a094634095f70ad7729630dbbd578e0eff403e7cdd2a2aac61d556bf45",
+      "thumbnail_bytes": 24421,
+      "chosen_time_seconds": 1.8,
+      "sampled_times_seconds": [
+        1.8,
+        6,
+        10.2
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fthree%400.147.0%2Fbuild%2Fthree.min.js",
+        "pageerror: THREE is not defined"
+      ]
+    },
+    {
+      "id": "upstream:block:vfx-text-cursor",
+      "safe_id": "upstream-block-vfx-text-cursor",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-vfx-text-cursor/index.html",
+      "duration": 8,
+      "thumbnail": "thumbnails/upstream-block-vfx-text-cursor.jpg",
+      "thumbnail_sha256": "18be389d10e84e113c0e2a3740a55e9ad070fa2887d5b5c7d9dcce1db351417e",
+      "thumbnail_bytes": 619431,
+      "chosen_time_seconds": 1.2,
+      "sampled_times_seconds": [
+        1.2,
+        4,
+        6.8
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:vpn-youtube-spot",
+      "safe_id": "upstream-block-vpn-youtube-spot",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-vpn-youtube-spot/index.html",
+      "duration": 7,
+      "thumbnail": "thumbnails/upstream-block-vpn-youtube-spot.jpg",
+      "thumbnail_sha256": "c84b081ee6b7ab9de53d7c3eacd01319b5bf0af3bf2bef452d3d189bbc89650d",
+      "thumbnail_bytes": 76336,
+      "chosen_time_seconds": 1.05,
+      "sampled_times_seconds": [
+        1.05,
+        3.5,
+        5.95
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:whip-pan",
+      "safe_id": "upstream-block-whip-pan",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-whip-pan/index.html",
+      "duration": 4,
+      "thumbnail": "thumbnails/upstream-block-whip-pan.jpg",
+      "thumbnail_sha256": "72d5c9b4173dacdebbf2098443ed840338eb1e836084f45ffef43e9f3f6e36d8",
+      "thumbnail_bytes": 22332,
+      "chosen_time_seconds": 3.4,
+      "sampled_times_seconds": [
+        0.6,
+        2,
+        3.4
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:world-map",
+      "safe_id": "upstream-block-world-map",
+      "status": "FAIL",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-world-map/index.html",
+      "duration": 14,
+      "thumbnail": "thumbnails/upstream-block-world-map.jpg",
+      "thumbnail_sha256": "6a51fd30698dbba609047112bd0c007c576071d1164973c52ff5f5587cb0e068",
+      "thumbnail_bytes": 13501,
+      "chosen_time_seconds": 2.1,
+      "sampled_times_seconds": [
+        2.1,
+        7,
+        11.9
+      ],
+      "errors": [
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Fd3%407%2Fdist%2Fd3.min.js",
+        "pageerror: Missing local runtime dependency: about:blank#remote-dependency-not-localized:https%3A%2F%2Fcdn.jsdelivr.net%2Fnpm%2Ftopojson-client%403.1.0%2Fdist%2Ftopojson-client.min.js",
+        "pageerror: d3 is not defined"
+      ]
+    },
+    {
+      "id": "upstream:block:x-post",
+      "safe_id": "upstream-block-x-post",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-x-post/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-block-x-post.jpg",
+      "thumbnail_sha256": "f8f95e7535d90af2268c79ffe80f58bb8be09e8cac37bb8942a09ab58793b7d9",
+      "thumbnail_bytes": 56029,
+      "chosen_time_seconds": 2.5,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:block:yt-lower-third",
+      "safe_id": "upstream-block-yt-lower-third",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-block-yt-lower-third/index.html",
+      "duration": 4.5,
+      "thumbnail": "thumbnails/upstream-block-yt-lower-third.jpg",
+      "thumbnail_sha256": "21762e4331fe425da019c2a9847c6837a235f3d420c7c15d8764e852953b3228",
+      "thumbnail_bytes": 24586,
+      "chosen_time_seconds": 2.25,
+      "sampled_times_seconds": [
+        0.675,
+        2.25,
+        3.825
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:caption-blend-difference",
+      "safe_id": "upstream-component-caption-blend-difference",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-caption-blend-difference/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-caption-blend-difference.jpg",
+      "thumbnail_sha256": "130e72baa0782399e378d688baded58cff1f3f2657b19ee628cc3e44f2dfd573",
+      "thumbnail_bytes": 39666,
+      "chosen_time_seconds": 0.75,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:caption-clip-wipe",
+      "safe_id": "upstream-component-caption-clip-wipe",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-caption-clip-wipe/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-caption-clip-wipe.jpg",
+      "thumbnail_sha256": "dd70ff1c49c4d427cbb6cb529a700f64f5fdac46ba6b2933d97d614eb7528a0e",
+      "thumbnail_bytes": 32846,
+      "chosen_time_seconds": 4.25,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:caption-editorial-emphasis",
+      "safe_id": "upstream-component-caption-editorial-emphasis",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-caption-editorial-emphasis/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-caption-editorial-emphasis.jpg",
+      "thumbnail_sha256": "7e0493bc64a55319ece7953a61ab0c8a0dd8939fa452511d2edf1bc9da054869",
+      "thumbnail_bytes": 34704,
+      "chosen_time_seconds": 0.75,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:caption-emoji-pop",
+      "safe_id": "upstream-component-caption-emoji-pop",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-caption-emoji-pop/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-caption-emoji-pop.jpg",
+      "thumbnail_sha256": "659a6bf4aab5fb28c9250e23103707ec94aaf102c94ace91e1e92e3d1a433c86",
+      "thumbnail_bytes": 37779,
+      "chosen_time_seconds": 0.75,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:caption-glitch-rgb",
+      "safe_id": "upstream-component-caption-glitch-rgb",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-caption-glitch-rgb/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-caption-glitch-rgb.jpg",
+      "thumbnail_sha256": "ca1368e5fb7fd997e8c0c08ce17f960eff117a4378e736791fea7df2cc853fcb",
+      "thumbnail_bytes": 87154,
+      "chosen_time_seconds": 0.75,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:caption-gradient-fill",
+      "safe_id": "upstream-component-caption-gradient-fill",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-caption-gradient-fill/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-caption-gradient-fill.jpg",
+      "thumbnail_sha256": "10ff906ee35f660e91cf68489518d25267d5e55b77d594532511bb902257765e",
+      "thumbnail_bytes": 35322,
+      "chosen_time_seconds": 0.75,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:caption-highlight",
+      "safe_id": "upstream-component-caption-highlight",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-caption-highlight/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-caption-highlight.jpg",
+      "thumbnail_sha256": "7b5446270f2f466fa0480226ccb457a9e244fc060c8f1109608bfdd9ddf5ae93",
+      "thumbnail_bytes": 45094,
+      "chosen_time_seconds": 0.75,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:caption-kinetic-slam",
+      "safe_id": "upstream-component-caption-kinetic-slam",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-caption-kinetic-slam/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-caption-kinetic-slam.jpg",
+      "thumbnail_sha256": "d00157619c4d959f896d1812f4f5ea9b8ddf5b98038bcae0a309627a491ca0d1",
+      "thumbnail_bytes": 42286,
+      "chosen_time_seconds": 4.25,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:caption-matrix-decode",
+      "safe_id": "upstream-component-caption-matrix-decode",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-caption-matrix-decode/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-caption-matrix-decode.jpg",
+      "thumbnail_sha256": "72be23253923f20a382533d3dca8a09611be767310ca7515af2709c1e1ffa71b",
+      "thumbnail_bytes": 34094,
+      "chosen_time_seconds": 4.25,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:caption-neon-accent",
+      "safe_id": "upstream-component-caption-neon-accent",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-caption-neon-accent/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-caption-neon-accent.jpg",
+      "thumbnail_sha256": "9666fbc51f31412cf36aaa8b4b68b4119702181e5503c4b57167c3767bdb8069",
+      "thumbnail_bytes": 45458,
+      "chosen_time_seconds": 0.75,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:caption-neon-glow",
+      "safe_id": "upstream-component-caption-neon-glow",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-caption-neon-glow/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-caption-neon-glow.jpg",
+      "thumbnail_sha256": "b604b6576bcf60be0e990f392c286929d30ad1912901aaab472f4ace20301992",
+      "thumbnail_bytes": 32307,
+      "chosen_time_seconds": 2.5,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:caption-parallax-layers",
+      "safe_id": "upstream-component-caption-parallax-layers",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-caption-parallax-layers/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-caption-parallax-layers.jpg",
+      "thumbnail_sha256": "b1e8d5e88ae06fc9c149acff0ac125a6c06d66e50e5aabb06fbe041da09fee46",
+      "thumbnail_bytes": 52942,
+      "chosen_time_seconds": 4.25,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:caption-particle-burst",
+      "safe_id": "upstream-component-caption-particle-burst",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-caption-particle-burst/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-caption-particle-burst.jpg",
+      "thumbnail_sha256": "4a9f0b145b5efd9f48a1fd2feb6909574b22ce01b5be2c670d793b7b6839840d",
+      "thumbnail_bytes": 33609,
+      "chosen_time_seconds": 4.25,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:caption-pill-karaoke",
+      "safe_id": "upstream-component-caption-pill-karaoke",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-caption-pill-karaoke/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-caption-pill-karaoke.jpg",
+      "thumbnail_sha256": "f9cc4fb89d33ebd44d1214ffbc834522c2207738f0ef0654fc74ec4c90f16fca",
+      "thumbnail_bytes": 35501,
+      "chosen_time_seconds": 0.75,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:caption-texture",
+      "safe_id": "upstream-component-caption-texture",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-caption-texture/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-caption-texture.jpg",
+      "thumbnail_sha256": "c324023233f4da369978e718415b6608b4a5228ebb30ddee218692a158c0bced",
+      "thumbnail_bytes": 44735,
+      "chosen_time_seconds": 4.25,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:caption-weight-shift",
+      "safe_id": "upstream-component-caption-weight-shift",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-caption-weight-shift/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-caption-weight-shift.jpg",
+      "thumbnail_sha256": "892f3ba228ab48b744b9c9464e984ba661150941e1f3c95b6b44db7657e47258",
+      "thumbnail_bytes": 39167,
+      "chosen_time_seconds": 0.75,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:grain-overlay",
+      "safe_id": "upstream-component-grain-overlay",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-grain-overlay/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-grain-overlay.jpg",
+      "thumbnail_sha256": "777dee9c7d8940e6301d4ce4f2c8056c0a627c21ed730fa7828f352a62e7b9e1",
+      "thumbnail_bytes": 73005,
+      "chosen_time_seconds": 2.5,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:grid-pixelate-wipe",
+      "safe_id": "upstream-component-grid-pixelate-wipe",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-grid-pixelate-wipe/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-grid-pixelate-wipe.jpg",
+      "thumbnail_sha256": "16d410186da64e33e0d01f8179888c8148f193c8a18b7e2567cfc7f822f25bd0",
+      "thumbnail_bytes": 36430,
+      "chosen_time_seconds": 0.75,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:morph-text",
+      "safe_id": "upstream-component-morph-text",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-morph-text/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-morph-text.jpg",
+      "thumbnail_sha256": "6353df833df1e43781583922f72373c6efd48ceecf9291cc23fb0135d68c389b",
+      "thumbnail_bytes": 30764,
+      "chosen_time_seconds": 4.25,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:motion-blur",
+      "safe_id": "upstream-component-motion-blur",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-motion-blur/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-motion-blur.jpg",
+      "thumbnail_sha256": "34315a7d861e559810a5959471e2e4a402d91c31cbfa30fd6323a14f4ef54315",
+      "thumbnail_bytes": 43146,
+      "chosen_time_seconds": 2.5,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:parallax-unzoom",
+      "safe_id": "upstream-component-parallax-unzoom",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-parallax-unzoom/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-parallax-unzoom.jpg",
+      "thumbnail_sha256": "7bb5b6631e97d0d0706fbbff88c36acad37fa4bf483d33c04f54130b2d20d5a9",
+      "thumbnail_bytes": 35507,
+      "chosen_time_seconds": 0.75,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:parallax-zoom",
+      "safe_id": "upstream-component-parallax-zoom",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-parallax-zoom/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-parallax-zoom.jpg",
+      "thumbnail_sha256": "daaedd69c5f9d9ec12840adbd5b56da410f5841b9dcd57bbb68baa541ddb294e",
+      "thumbnail_bytes": 44547,
+      "chosen_time_seconds": 0.75,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:shimmer-sweep",
+      "safe_id": "upstream-component-shimmer-sweep",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-shimmer-sweep/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-shimmer-sweep.jpg",
+      "thumbnail_sha256": "bc78723290802bbca1acaa1e7f9cbe08f162400905e99b298759b64c47c830ac",
+      "thumbnail_bytes": 40973,
+      "chosen_time_seconds": 4.25,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:texture-mask-text",
+      "safe_id": "upstream-component-texture-mask-text",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-texture-mask-text/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-texture-mask-text.jpg",
+      "thumbnail_sha256": "f2869f64a9af8039dfadc00a49b00d46f87bd90a919b346668c532605c094112",
+      "thumbnail_bytes": 38467,
+      "chosen_time_seconds": 2.5,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    },
+    {
+      "id": "upstream:component:vignette",
+      "safe_id": "upstream-component-vignette",
+      "status": "PASS",
+      "url": "http://127.0.0.1:4173/previews/upstream-component-vignette/index.html",
+      "duration": 5,
+      "thumbnail": "thumbnails/upstream-component-vignette.jpg",
+      "thumbnail_sha256": "4d4b898d491b290ba1318b449b49cc20c4bbd15c28a3e54a361a7b50836dccbd",
+      "thumbnail_bytes": 44093,
+      "chosen_time_seconds": 2.5,
+      "sampled_times_seconds": [
+        0.75,
+        2.5,
+        4.25
+      ],
+      "errors": []
+    }
+  ]
+}

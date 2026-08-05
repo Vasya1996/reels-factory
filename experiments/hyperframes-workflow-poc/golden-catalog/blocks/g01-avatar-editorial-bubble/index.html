@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>G01 · avatar_editorial_bubble</title>
+<link rel="stylesheet" href="../../tokens.css">
+<style>
+  #row{display:flex;gap:50px;margin-top:80px;align-items:flex-start}
+  #left{flex:1;display:flex;flex-direction:column}
+  /* аватар в рамке-«пузыре» от руки */
+  #bubble{width:400px;height:1000px;flex:none;border:6px solid var(--ink);
+    border-radius:200px 34px 200px 38px / 38px 200px 34px 200px;
+    background:rgba(252,251,246,.6);box-shadow:var(--shadow-card);transform:rotate(.8deg) translateY(30px);opacity:0;
+    display:flex;align-items:center;justify-content:center;position:relative}
+  #bubble.in{opacity:1;transform:rotate(.8deg) translateY(0);transition:opacity .34s var(--ease),transform .44s var(--ease)}
+  #bubble span{font-family:JBMonoX,monospace;font-size:22px;letter-spacing:.12em;color:rgba(27,27,24,.5);text-transform:uppercase;text-align:center}
+  #bubble .pin{position:absolute;top:-34px;left:50%;transform:translateX(-50%) rotate(-2deg);
+    background:var(--yellow);border:5px solid var(--ink);font-family:CaveatX,cursive;font-size:40px;padding:4px 26px;color:var(--ink)}
+  .points{display:flex;flex-direction:column;gap:36px;margin-top:70px}
+</style>
+</head>
+<body>
+<div id="fit"><div id="scene">
+  <div class="tech" data-t="0"><span class="dash"></span><span class="lbl">Продажи · Глава 01</span></div>
+  <div id="row">
+    <div id="left">
+      <div class="sticker" data-t="300">01</div>
+      <h1 style="font-size:96px"><span class="w" data-t="800">КОМУ</span><br><span class="w hl" data-t="1050"><i></i>ПРОДАЁМ?</span></h1>
+      <div class="points">
+        <div class="pill r1" style="--rot:-.5deg" data-t="2000"><span class="idx">01</span><span class="txt">кто этот человек</span></div>
+        <div class="pill r2" style="--rot:.5deg" data-t="3300"><span class="idx">02</span><span class="txt">чем он живёт</span></div>
+      </div>
+    </div>
+    <div id="bubble" data-t="1400"><div class="pin">это ты ↓</div><span>аватар<br>(placeholder)</span></div>
+  </div>
+  <div class="spacer"></div>
+</div></div>
+<script src="../../shared.js"></script>
+</body>
+</html>

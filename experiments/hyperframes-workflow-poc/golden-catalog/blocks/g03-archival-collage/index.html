@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>G03 · broll_archival_collage</title>
+<link rel="stylesheet" href="../../tokens.css">
+<style>
+  #board{position:relative;flex:1;margin-top:60px}
+  .pol{position:absolute;width:520px;background:var(--card);border:6px solid var(--ink);
+    padding:26px 26px 30px;box-shadow:var(--shadow-card);opacity:0;
+    transform:rotate(var(--rot)) translateY(-60px) scale(.9)}
+  .pol.in{opacity:1;transform:rotate(var(--rot)) translateY(0) scale(1);
+    transition:opacity .3s var(--ease-pop),transform .42s var(--ease-pop)}
+  .pol .img{height:380px;border:4px solid rgba(27,27,24,.3);display:flex;align-items:center;justify-content:center;
+    background:repeating-linear-gradient(45deg, rgba(168,220,203,.3) 0 26px, rgba(255,216,77,.25) 26px 52px)}
+  .pol .img span{font-family:JBMonoX,monospace;font-size:22px;color:rgba(27,27,24,.5);letter-spacing:.1em;text-transform:uppercase}
+  .pol .cap{font-family:CaveatX,cursive;font-size:46px;color:var(--ink);margin-top:18px;text-align:center}
+  .tape{position:absolute;top:-26px;left:50%;transform:translateX(-50%) rotate(-3deg);width:180px;height:52px;
+    background:rgba(255,216,77,.85);border:3px solid rgba(27,27,24,.5)}
+  #badge{position:absolute;right:30px;top:44%;background:var(--red);color:var(--card);border:6px solid var(--ink);
+    font-family:MontserratX,sans-serif;font-weight:900;font-size:52px;padding:26px 44px;
+    border-radius:38px 225px 34px 240px / 240px 34px 225px 38px;box-shadow:var(--shadow-cta);
+    transform:rotate(3deg) scale(.6);opacity:0;z-index:5}
+  #badge.in{opacity:1;transform:rotate(3deg) scale(1);transition:opacity .24s var(--ease-pop),transform .38s var(--ease-pop)}
+</style>
+</head>
+<body>
+<div id="fit"><div id="scene">
+  <div class="tech" data-t="0"><span class="dash"></span><span class="lbl">Доказательства · Источники</span></div>
+  <h1 style="font-size:92px"><span class="w" data-t="300">НЕ</span> <span class="w" data-t="480">ВЕРЬ</span> <span class="w hl" data-t="700"><i></i>НА СЛОВО</span></h1>
+  <div id="board">
+    <div class="pol" style="--rot:-4deg;left:10px;top:40px" data-t="1500"><div class="tape"></div><div class="img"><span>фото 1</span></div><div class="cap">кейс клиента</div></div>
+    <div class="pol" style="--rot:3deg;right:20px;top:330px" data-t="2400"><div class="tape"></div><div class="img"><span>фото 2</span></div><div class="cap">статистика охватов</div></div>
+    <div class="pol" style="--rot:-2deg;left:120px;top:640px" data-t="3300"><div class="tape"></div><div class="img"><span>фото 3</span></div><div class="cap">скрин переписки</div></div>
+    <div id="badge" data-t="4400">3 ИСТОЧНИКА</div>
+  </div>
+</div></div>
+<script src="../../shared.js"></script>
+</body>
+</html>

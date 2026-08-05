@@ -1,0 +1,51 @@
+{
+  "generated_at": "2026-08-01T11:41:03.676Z",
+  "branch": "codex/hyperframes-workflow-poc",
+  "preflight": {
+    "branch": "codex/hyperframes-workflow-poc",
+    "status": "?? docs/HYPERFRAMES-WORKFLOW-POC-STAGE-01-1-CATALOG-CORRECTION.md\n?? docs/HYPERFRAMES-WORKFLOW-POC-STAGE-01-CATALOG.md\n?? experiments/\n",
+    "node": "v24.13.1",
+    "baseline_items": 161,
+    "baseline_techniques": 157
+  },
+  "sources": {
+    "upstream_snapshot": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reference-audit\\hyperframes-main-20260801-complete\\hyperframes-main",
+    "upstream_zip": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reference-audit\\hyperframes-main-20260801.zip",
+    "local_blocks_py": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\plugins\\reels-factory\\engine\\src\\reels_factory\\hyperframes_blocks.py",
+    "local_hyperframes_dir": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\plugins\\reels-factory\\engine\\hyperframes",
+    "approved_catalog": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\plan-previews\\two-reel-catalog-proxy-20260729"
+  },
+  "upstream_zip_sha256": "CCA9B08B39A4A5FA29E55D9260F49020B1B6D455C68A674B42D4C3661D185BE3",
+  "package_versions": {
+    "cli": "0.7.87",
+    "core": "0.7.87",
+    "producer": "0.7.87",
+    "sdk": "0.7.87"
+  },
+  "expected_counts": {
+    "upstream_blocks": 113,
+    "upstream_components": 25,
+    "upstream_examples": 8,
+    "local_blocks": 8,
+    "approved_layouts": 10,
+    "approved_transitions": 5,
+    "total_items": 161
+  },
+  "actual_counts": {
+    "upstream_blocks": 113,
+    "upstream_components": 25,
+    "local_blocks": 8,
+    "approved_layouts": 10,
+    "approved_transitions": 5,
+    "total_items": 161,
+    "upstream_examples": 8
+  },
+  "network_registry_update": false,
+  "project_decision_documents_read": [
+    "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\REELS-FACTORY-MEMORY.md",
+    "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\TZ-HYPERFRAMES-CATALOG-PIPELINE.md",
+    "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\AGENTS.md",
+    "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\docs\\EDIT-PLAN.md",
+    "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\docs\\VISUAL-DIRECTOR.md"
+  ]
+}

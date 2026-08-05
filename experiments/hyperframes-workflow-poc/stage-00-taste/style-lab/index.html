@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Style Lab — выбор стиля монтажа</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Manrope:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+  @font-face { font-family:'Unbounded'; src:url('fonts/Unbounded-800.ttf') format('truetype'); }
+  @font-face { font-family:'Serpantin'; src:url('fonts/Serpantin.ttf') format('truetype'); }
+  @font-face { font-family:'Accidental'; src:url('fonts/accid___(Ru)_0.ttf') format('truetype'); }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:Inter,system-ui,sans-serif; background:#efece4; color:#111; padding:24px clamp(12px,4vw,48px) 80px; }
+  h1 { font-size:20px; margin-bottom:4px; }
+  .sub { color:#666; font-size:13px; margin-bottom:28px; }
+  section { margin-bottom:44px; }
+  h2 { font-size:16px; text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; }
+  .q { color:#666; font-size:13px; margin-bottom:14px; }
+  .row { display:flex; gap:16px; flex-wrap:wrap; }
+  .card { background:#fff; border:3px solid transparent; border-radius:12px; padding:10px; cursor:pointer; transition:border-color .15s; width:216px; }
+  .card:hover { border-color:#bbb; }
+  .card.sel { border-color:#111; }
+  .card .label { font-size:12px; font-weight:700; margin-top:8px; }
+  .card .tag { font-size:11px; color:#888; }
+  .mini { width:196px; height:340px; border-radius:8px; overflow:hidden; position:relative; display:flex; flex-direction:column; padding:14px; }
+  textarea { width:100%; max-width:640px; border:1px solid #ccc; border-radius:8px; padding:8px; font:13px Inter; margin-top:10px; }
+  #finish { position:fixed; bottom:0; left:0; right:0; background:#111; color:#fff; padding:12px 24px; display:flex; align-items:center; gap:16px; }
+  #finish button { font:inherit; font-weight:700; background:#ffe500; border:0; border-radius:6px; padding:10px 22px; cursor:pointer; }
+  #status { font-size:13px; }
+  /* ---------- палитры ---------- */
+  .p-tag { font-size:8px; font-weight:800; letter-spacing:.08em; padding:2px 6px; align-self:flex-start; margin-bottom:10px; }
+  .p-num { font-size:34px; font-weight:800; line-height:1; }
+  .p-head { font-size:17px; font-weight:800; line-height:1.15; text-transform:uppercase; margin-top:4px; }
+  .p-strike { font-size:11px; margin-top:10px; position:relative; align-self:flex-start; }
+  .p-strike::after { content:''; position:absolute; left:0; right:0; top:55%; height:2px; }
+  .p-cap { font-size:10px; font-weight:700; margin-top:auto; padding:5px 8px; border-radius:4px; align-self:flex-start; }
+  .p-btn { font-size:10px; font-weight:800; padding:7px 10px; margin-top:8px; align-self:flex-start; }
+  /* ---------- анимации ---------- */
+  .a-stage { width:196px; height:120px; background:#111; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  .a-word { color:#fff; font-weight:800; font-size:20px; font-family:Unbounded,Inter; }
+  @keyframes ed-smooth { 0%{opacity:0;transform:translateY(26px)} 18%{opacity:1;transform:translateY(0)} 80%{opacity:1;transform:translateY(0)} 92%,100%{opacity:0} }
+  @keyframes snap-pop { 0%{opacity:0;transform:scale(.7)} 10%{opacity:1;transform:scale(1.07)} 15%{transform:scale(1)} 80%{opacity:1} 92%,100%{opacity:0} }
+  @keyframes slam { 0%{opacity:0;transform:scale(1.9);filter:blur(6px)} 8%{opacity:1;transform:scale(1);filter:blur(0)} 10%{transform:scale(1) translateX(2px)} 12%{transform:translateX(-2px)} 14%{transform:translateX(0)} 80%{opacity:1} 92%,100%{opacity:0} }
+  .a1 .a-word { animation:ed-smooth 2.6s cubic-bezier(.16,1,.3,1) infinite; }
+  .a2 .a-word { animation:snap-pop 2.6s cubic-bezier(.34,1.56,.64,1) infinite; }
+  .a3 .a-word { animation:slam 2.6s cubic-bezier(.22,1,.36,1) infinite; }
+  .a4 .a-word span { display:inline-block; opacity:0; animation:wpop 2.6s infinite; }
+  @keyframes wpop { 0%{opacity:0;transform:translateY(8px)} 6%{opacity:1;transform:translateY(0)} 80%{opacity:1} 92%,100%{opacity:0} }
+  /* ---------- кнопки ---------- */
+  .b-stage { width:196px; height:90px; border-radius:8px; background:#f2ede2; display:flex; align-items:center; justify-content:center; }
+  /* ---------- акценты ---------- */
+  .k-stage { width:196px; height:90px; border-radius:8px; background:#fff; border:1px solid #eee; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:15px; text-transform:uppercase; font-family:Unbounded,Inter; color:#111; text-align:center; line-height:1.3; }
+</style>
+</head>
+<body>
+<h1>Style Lab</h1>
+<div class="sub">5 выборов. Кликни вариант в каждой секции; в конце «Скопировать» → пришли в чат. Комментарии необязательны.</div>
+
+<!-- ПАЛИТРА -->
+<section data-sec="palette">
+  <h2>1. Палитра</h2>
+  <div class="q">Одна и та же сцена в четырёх палитрах. Тёмный вариант будет парным языком к любому выбору.</div>
+  <div class="row" id="palettes"></div>
+  <textarea data-note="palette" placeholder="Комментарий к палитре (необязательно)"></textarea>
+</section>
+
+<!-- ШРИФТ -->
+<section data-sec="font">
+  <h2>2. Шрифт заголовков</h2>
+  <div class="q">Каким шрифтом говорят большие заголовки и цифры.</div>
+  <div class="row" id="fonts"></div>
+  <textarea data-note="font" placeholder="Комментарий к шрифту (необязательно)"></textarea>
+</section>
+
+<!-- АНИМАЦИЯ -->
+<section data-sec="anim">
+  <h2>3. Характер анимации</h2>
+  <div class="q">Как появляется главное слово. Смотри на ощущение: спокойно / упруго / удар / по словам.</div>
+  <div class="row">
+    <div class="card" data-v="editorial-smooth"><div class="a-stage a1"><div class="a-word">ПОРЯДОК</div></div><div class="label">Editorial smooth</div><div class="tag">мягко снизу, дорого, 0.5s</div></div>
+    <div class="card" data-v="snappy-pop"><div class="a-stage a2"><div class="a-word">ПОРЯДОК</div></div><div class="label">Snappy pop</div><div class="tag">упруго с overshoot, 0.3s</div></div>
+    <div class="card" data-v="slam"><div class="a-stage a3"><div class="a-word">ПОРЯДОК</div></div><div class="label">Slam</div><div class="tag">удар: масштаб+блюр+встряска</div></div>
+    <div class="card" data-v="word-by-word"><div class="a-stage a4"><div class="a-word"><span style="animation-delay:.1s">ПОРЯДОК</span> <span style="animation-delay:.35s">РЕШАЕТ</span> <span style="animation-delay:.6s">ВСЁ</span></div></div><div class="label">Word-by-word</div><div class="tag">по словам, karaoke-ритм</div></div>
+  </div>
+  <textarea data-note="anim" placeholder="Комментарий к анимации (необязательно)"></textarea>
+</section>
+
+<!-- КНОПКИ -->
+<section data-sec="button">
+  <h2>4. Кнопки и плашки</h2>
+  <div class="q">Форма CTA, тегов и пилюль во всех блоках.</div>
+  <div class="row">
+    <div class="card" data-v="sharp"><div class="b-stage"><span style="background:#e0322c;color:#fff;font-weight:800;font-size:12px;padding:10px 16px">СОХРАНИ ЭТО ВИДЕО</span></div><div class="label">Sharp</div><div class="tag">острые углы, editorial</div></div>
+    <div class="card" data-v="pill"><div class="b-stage"><span style="background:#ffe500;color:#111;font-weight:800;font-size:12px;padding:10px 18px;border-radius:99px">СОХРАНИ ЭТО ВИДЕО</span></div><div class="label">Pill</div><div class="tag">полный скругл, дружелюбно</div></div>
+    <div class="card" data-v="soft"><div class="b-stage"><span style="background:#fff;color:#111;font-weight:800;font-size:12px;padding:10px 16px;border-radius:8px;border:2px solid #111">СОХРАНИ ЭТО ВИДЕО</span></div><div class="label">Soft + border</div><div class="tag">скругление 8px, рамка</div></div>
+  </div>
+  <textarea data-note="button" placeholder="Комментарий к кнопкам (необязательно)"></textarea>
+</section>
+
+<!-- АКЦЕНТ -->
+<section data-sec="keyword">
+  <h2>5. Акцент ключевого слова</h2>
+  <div class="q">Как выделяется главное слово фразы в субтитрах и заголовках.</div>
+  <div class="row">
+    <div class="card" data-v="color-word"><div class="k-stage"><span>СВОДЯТСЯ К&nbsp;<span style="color:#e0322c">ТРЁМ</span>&nbsp;ВОПРОСАМ</span></div><div class="label">Цвет</div><div class="tag">слово красится акцентом</div></div>
+    <div class="card" data-v="marker"><div class="k-stage"><span>СВОДЯТСЯ К&nbsp;<span style="background:#ffe500;padding:0 4px">ТРЁМ</span>&nbsp;ВОПРОСАМ</span></div><div class="label">Маркер</div><div class="tag">жёлтая подложка-хайлайт</div></div>
+    <div class="card" data-v="underline"><div class="k-stage"><span>СВОДЯТСЯ К&nbsp;<span style="border-bottom:3px solid #6f1d1b">ТРЁМ</span>&nbsp;ВОПРОСАМ</span></div><div class="label">Подчёркивание</div><div class="tag">тонкая линия под словом</div></div>
+    <div class="card" data-v="pill-word"><div class="k-stage"><span>СВОДЯТСЯ К&nbsp;<span style="background:#111;color:#fff;padding:2px 8px;border-radius:99px">ТРЁМ</span>&nbsp;ВОПРОСАМ</span></div><div class="label">Плашка</div><div class="tag">слово в тёмной пилюле</div></div>
+  </div>
+  <textarea data-note="keyword" placeholder="Комментарий к акценту (необязательно)"></textarea>
+</section>
+
+<div id="finish"><button id="copy">Скопировать выбор</button><div id="status">Выбрано: 0 / 5</div></div>
+
+<script>
+const PALETTES=[
+ {v:'editorial-red', name:'Editorial Red', tag:'как output.mp4: белый + чёрный + красный',
+  bg:'#faf8f4',ink:'#111',acc:'#e0322c',sec:'#ffe500',capBg:'#fff',capInk:'#111'},
+ {v:'brand-cream', name:'Brand Cream', tag:'бренд-кит каруселей: крем + эспрессо + вино',
+  bg:'#FFE6A7',ink:'#432818',acc:'#6F1D1B',sec:'#BB9457',capBg:'#432818',capInk:'#FFE6A7'},
+ {v:'cream-red', name:'Cream + Red', tag:'гибрид: кремовый фон + красный акцент',
+  bg:'#f6efdd',ink:'#1a1512',acc:'#e0322c',sec:'#ffe500',capBg:'#1a1512',capInk:'#fff'},
+ {v:'mono-red', name:'Mono + Red', tag:'жёстче: чисто белый, только красный, без жёлтого',
+  bg:'#ffffff',ink:'#000',acc:'#e0322c',sec:'#e0322c',capBg:'#000',capInk:'#fff'},
+];
+document.getElementById('palettes').innerHTML=PALETTES.map(p=>`
+ <div class="card" data-v="${p.v}">
+  <div class="mini" style="background:${p.bg};color:${p.ink}">
+    <div class="p-tag" style="background:${p.acc};color:#fff">ПРОДАЖИ · 01</div>
+    <div class="p-num" style="color:${p.acc}">01</div>
+    <div class="p-head">КОМУ<br>ПРОДАЁМ?</div>
+    <div class="p-head" style="font-size:13px;color:${p.acc}">ТРИ ВОПРОСА</div>
+    <div class="p-strike" style="color:${p.ink};opacity:.75">хитрые приёмы<style></style></div>
+    <div class="p-cap" style="background:${p.capBg};color:${p.capInk}">кто этот человек</div>
+    <div class="p-btn" style="background:${p.acc};color:#fff">СОХРАНИ ВИДЕО</div>
+  </div>
+  <div class="label">${p.name}</div><div class="tag">${p.tag}</div>
+ </div>`).join('');
+document.querySelectorAll('#palettes .p-strike').forEach((el,i)=>{el.style.setProperty('--c',PALETTES[i].acc);el.insertAdjacentHTML('beforeend',`<i style="position:absolute;left:0;right:0;top:55%;height:2px;background:${PALETTES[i].acc}"></i>`)});
+
+const FONTS=[
+ {v:'unbounded', css:'Unbounded', tag:'широкий, техно-дорогой (твои рилсы)'},
+ {v:'serpantin-accidental', css:'Serpantin', css2:'Accidental', tag:'бренд-пара каруселей'},
+ {v:'manrope', css:'Manrope', tag:'нейтральный чистый гротеск'},
+];
+document.getElementById('fonts').innerHTML=FONTS.map(f=>`
+ <div class="card" data-v="${f.v}">
+  <div class="mini" style="background:#111;color:#fff;justify-content:center">
+    <div style="font-family:${f.css};font-weight:800;font-size:22px;line-height:1.15">ПОРЯДОК<br>РЕШАЕТ</div>
+    <div style="font-family:${f.css2||f.css};font-weight:${f.css2?'400':'600'};font-size:${f.css2?'26px':'15px'};color:#ffe500;margin-top:6px">всё решает</div>
+    <div style="font-family:${f.css};font-weight:800;font-size:44px;color:#e0322c;margin-top:14px">03</div>
+  </div>
+  <div class="label">${f.css}${f.css2?' + '+f.css2:''}</div><div class="tag">${f.tag}</div>
+ </div>`).join('');
+
+const sel={}, KEY='style-lab-v1';
+Object.assign(sel, JSON.parse(localStorage.getItem(KEY)||'{}'));
+function paint(){
+  document.querySelectorAll('section').forEach(s=>{
+    const k=s.dataset.sec;
+    s.querySelectorAll('.card').forEach(c=>c.classList.toggle('sel', sel[k]===c.dataset.v));
+  });
+  document.getElementById('status').textContent='Выбрано: '+Object.keys(sel).filter(k=>sel[k]).length+' / 5';
+}
+document.querySelectorAll('section').forEach(s=>{
+  s.querySelectorAll('.card').forEach(c=>c.onclick=()=>{ sel[s.dataset.sec]=c.dataset.v; localStorage.setItem(KEY,JSON.stringify(sel)); paint(); });
+});
+paint();
+document.getElementById('copy').onclick=()=>{
+  const notes={}; document.querySelectorAll('textarea[data-note]').forEach(t=>{ if(t.value.trim()) notes[t.dataset.note]=t.value.trim(); });
+  const lines=['palette','font','anim','button','keyword'].map(k=>k+' = '+(sel[k]||'—')+(notes[k]?('  # '+notes[k]):''));
+  navigator.clipboard.writeText(lines.join('\n'));
+  document.getElementById('copy').textContent='Скопировано ✓';
+  setTimeout(()=>document.getElementById('copy').textContent='Скопировать выбор',1500);
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>G20 · cta_pill_word</title>
+<link rel="stylesheet" href="../../tokens.css">
+<style>
+  #scene{align-items:center;text-align:center;padding-top:280px}
+  .tech{align-self:center}
+  h1{font-size:100px}
+  #pillword{margin-top:110px;background:var(--yellow);border:6px solid var(--ink);
+    border-radius:38px 240px 34px 225px / 225px 34px 240px 38px;
+    padding:54px 110px;font-family:MontserratX,sans-serif;font-weight:900;font-size:140px;letter-spacing:.02em;
+    color:var(--ink);box-shadow:var(--shadow-cta);opacity:0;transform:rotate(-1.5deg) scale(.5)}
+  #pillword.in{opacity:1;transform:rotate(-1.5deg) scale(1);transition:opacity .24s var(--ease-pop),transform .42s var(--ease-pop)}
+  #pillword.bounce{animation:bnc 2.2s var(--ease) 1s infinite}
+  @keyframes bnc{0%,100%{transform:rotate(-1.5deg) scale(1)}6%{transform:rotate(-1.5deg) scale(1.06)}12%{transform:rotate(-1.5deg) scale(1)}}
+  .arrow{font-family:CaveatX,cursive;font-size:150px;color:var(--red);margin-top:40px;opacity:0;transform:translateY(-20px) rotate(6deg)}
+  .arrow.in{opacity:1;transform:translateY(0) rotate(6deg);transition:opacity .26s var(--ease),transform .32s var(--ease)}
+  .sub{margin-top:44px;font-size:44px;font-weight:600;color:var(--ink)}
+  .handle{margin-top:130px;display:flex;align-items:center;gap:22px;justify-content:center;opacity:0;transform:translateY(14px)}
+  .handle.in{opacity:1;transform:none;transition:opacity .3s var(--ease),transform .3s var(--ease)}
+  .handle .at{font-family:JBMonoX,monospace;font-weight:700;font-size:38px;letter-spacing:.1em;color:var(--card);
+    background:var(--ink);padding:16px 34px;border-radius:16px;transform:rotate(-.8deg)}
+</style>
+</head>
+<body>
+<div id="fit"><div id="scene">
+  <div class="tech" data-t="0"><span class="dash"></span><span class="lbl">Финал · Слово в комменты</span></div>
+  <h1><span class="w" data-t="350">НАПИШИ</span> <span class="w" data-t="570">В</span> <span class="w hl" data-t="790"><i></i>КОММЕНТЫ</span></h1>
+  <div id="pillword" data-t="1500">РИЛС</div>
+  <div class="arrow" data-t="2100">↑</div>
+  <div class="sub"><span class="w" data-t="2400">и я скину</span> <span class="w" data-t="2650">весь пайплайн</span></div>
+  <div class="handle" data-t="3300"><span class="at">@julia.agents</span></div>
+</div></div>
+<script src="../../shared.js"></script>
+<script>
+addEventListener('DOMContentLoaded',()=>{
+  const p=document.getElementById('pillword');
+  const orig=SKB.play; let t=[];
+  function playP(){
+    t.forEach(clearTimeout); t=[]; p.classList.remove('bounce'); orig();
+    t.push(setTimeout(()=>p.classList.add('bounce'),2200));
+  }
+  document.getElementById('replay').onclick=playP;
+  playP();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "sales-three-questions-stage-03-render",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "npx --yes hyperframes@0.7.88 lint --json",
+    "check": "npx --yes hyperframes@0.7.88 check --json",
+    "snapshot": "npx --yes hyperframes@0.7.88 snapshot",
+    "render": "npx --yes hyperframes@0.7.88 render --quality draft --fps 30 --output ../renders/sales-three-questions-draft.mp4"
+  },
+  "dependencies": {}
+}

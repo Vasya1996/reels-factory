@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo — task_list · стиль «Скетчбук»</title>
+<style>
+  @font-face { font-family:'MontserratX'; src:url('../fonts/Montserrat-900.ttf') format('truetype'); font-weight:900; }
+  @font-face { font-family:'ManropeX'; src:url('../fonts/Manrope-600.ttf') format('truetype'); font-weight:600; }
+  @font-face { font-family:'CaveatX'; src:url('../fonts/Caveat-700.ttf') format('truetype'); }
+  @font-face { font-family:'JBMonoX'; src:url('../fonts/JetBrainsMono-700.ttf') format('truetype'); }
+  :root{
+    --paper:#F2F0E9; --card:#FCFBF6; --ink:#1B1B18;
+    --yellow:#FFD84D; --mint:#A8DCCB; --red:#E0503A;
+    --ease:cubic-bezier(.22,1,.36,1);
+    --ease-pop:cubic-bezier(.34,1.56,.64,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:#cfc9bb;display:flex;align-items:center;justify-content:center;font-family:ManropeX,system-ui,sans-serif}
+  #fit{transform-origin:center center}
+  #scene{width:1080px;height:1920px;position:relative;overflow:hidden;display:flex;flex-direction:column;padding:118px 84px 104px;
+    background-color:var(--paper);
+    background-image:linear-gradient(rgba(20,60,80,.18) 1px,transparent 1px),linear-gradient(90deg,rgba(20,60,80,.18) 1px,transparent 1px);
+    background-size:67px 67px;}
+
+  .tech{display:flex;align-items:center;gap:26px;margin-bottom:54px;opacity:0;transform:translateY(12px)}
+  .tech .dash{width:68px;height:8px;background:var(--ink);display:block;transform:rotate(-1.5deg)}
+  .tech .lbl{font-family:JBMonoX,monospace;font-weight:700;font-size:28px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink)}
+
+  .num{align-self:flex-start;background:var(--yellow);padding:6px 30px;transform:rotate(-1.2deg) scale(.7);
+    font-family:MontserratX,sans-serif;font-weight:900;font-size:150px;line-height:1.05;letter-spacing:-.03em;color:var(--ink);opacity:0}
+  .num.in{opacity:1;transform:rotate(-1.2deg) scale(1);transition:opacity .28s var(--ease-pop),transform .38s var(--ease-pop)}
+
+  h1{font-family:MontserratX,sans-serif;font-weight:900;font-size:108px;line-height:1.12;letter-spacing:-.02em;color:var(--ink);margin-top:42px;text-transform:uppercase}
+  h1 .w{display:inline-block;opacity:0;transform:translateY(14px)}
+  h1 .w.in{opacity:1;transform:none;transition:opacity .22s var(--ease),transform .22s var(--ease)}
+  .hl{position:relative;padding:0 16px}
+  .hl i{position:absolute;inset:0;background:var(--mint);transform:scaleX(0);transform-origin:left center;z-index:-1}
+  .hl.on i{transform:scaleX(1);transition:transform .3s var(--ease)}
+
+  #list{display:flex;flex-direction:column;gap:46px;margin-top:112px}
+  .item{display:flex;align-items:center;gap:34px;background:var(--card);border:6px solid var(--ink);padding:40px 50px;
+    box-shadow:8px 10px 0 rgba(27,27,24,.16);opacity:0}
+  .item:nth-child(1){border-radius:255px 34px 225px 38px / 38px 225px 34px 255px;--rot:-.7deg}
+  .item:nth-child(2){border-radius:38px 240px 34px 225px / 225px 34px 240px 38px;--rot:.6deg}
+  .item:nth-child(3){border-radius:225px 38px 255px 34px / 34px 255px 38px 225px;--rot:-.4deg}
+  .item{transform:rotate(var(--rot)) translateY(30px)}
+  .item.in{opacity:1;transform:rotate(var(--rot)) translateY(0);transition:opacity .34s var(--ease),transform .42s var(--ease)}
+  .item .idx{font-family:CaveatX,cursive;font-weight:700;font-size:66px;line-height:1;color:var(--ink);width:76px;flex:none}
+  .item .txt{flex:1;font-size:40px;font-weight:600;color:var(--ink)}
+  .item .txt .w{display:inline-block;opacity:0;transform:translateY(10px)}
+  .item .txt .w.in{opacity:1;transform:none;transition:opacity .2s var(--ease),transform .2s var(--ease)}
+  .item .tick{font-family:CaveatX,cursive;font-size:76px;line-height:.8;color:var(--red);flex:none;opacity:0;transform:scale(.4) rotate(-20deg)}
+  .item .tick.in{opacity:1;transform:scale(1) rotate(0);transition:opacity .18s var(--ease-pop),transform .3s var(--ease-pop)}
+
+  .spacer{flex:1}
+  #cta{align-self:flex-start;background:var(--red);color:var(--card);border:6px solid var(--ink);
+    border-radius:240px 38px 225px 34px / 34px 225px 38px 240px;padding:44px 58px;
+    font-family:MontserratX,sans-serif;font-weight:900;font-size:40px;text-transform:uppercase;
+    display:flex;gap:34px;align-items:center;opacity:0;transform:rotate(-1deg) translateY(24px);box-shadow:10px 12px 0 var(--ink)}
+  #cta.in{opacity:1;transform:rotate(-1deg) translateY(0);transition:opacity .3s var(--ease-pop),transform .4s var(--ease-pop)}
+
+  #replay{position:fixed;top:16px;right:16px;z-index:9;font:700 14px system-ui;background:var(--ink);color:#fff;border:0;border-radius:8px;padding:10px 18px;cursor:pointer}
+  .tech.in{opacity:1;transform:none;transition:opacity .34s var(--ease),transform .34s var(--ease)}
+</style>
+</head>
+<body>
+<button id="replay">↻ Ещё раз</button>
+<div id="fit"><div id="scene">
+  <div class="tech" data-t="0"><span class="dash"></span><span class="lbl">Продажи · Глава 01</span></div>
+  <div class="num" data-t="250">01</div>
+  <h1><span class="w" data-t="650">КОМУ</span><br><span class="w hl" data-t="900"><i></i>ПРОДАЁМ?</span></h1>
+  <div id="list"></div>
+  <div class="spacer"></div>
+  <div id="cta" data-t="6600"><span>Разбери свой продукт</span><span>→</span></div>
+</div></div>
+
+<script>
+const ITEMS=[
+  {idx:'01',words:['кто','этот','человек'],t:1900},
+  {idx:'02',words:['чем','он','живёт'],t:3400},
+  {idx:'03',words:['какая','у','него','боль'],t:4900},
+];
+const list=document.getElementById('list');
+ITEMS.forEach(it=>{
+  const d=document.createElement('div'); d.className='item'; d.dataset.t=it.t;
+  d.innerHTML='<span class="idx">'+it.idx+'</span><span class="txt">'+
+    it.words.map((w,i)=>'<span class="w" data-t="'+(it.t+180+i*150)+'">'+w+'</span>').join(' ')+
+    '</span><span class="tick" data-t="'+(it.t+180+it.words.length*150+200)+'">✓</span>';
+  list.appendChild(d);
+});
+let timers=[];
+function play(){
+  timers.forEach(clearTimeout); timers=[];
+  document.querySelectorAll('.in').forEach(e=>e.classList.remove('in'));
+  document.querySelectorAll('.hl.on').forEach(e=>e.classList.remove('on'));
+  document.querySelectorAll('[data-t]').forEach(el=>{
+    timers.push(setTimeout(()=>{
+      el.classList.add('in');
+      if(el.classList.contains('hl')) timers.push(setTimeout(()=>el.classList.add('on'),200));
+    },+el.dataset.t));
+  });
+}
+function fit(){
+  const s=Math.min(innerWidth/1080,innerHeight/1920)*0.96;
+  document.getElementById('fit').style.transform='scale('+s+')';
+}
+addEventListener('resize',fit); fit(); play();
+document.getElementById('replay').onclick=play;
+</script>
+</body>
+</html>

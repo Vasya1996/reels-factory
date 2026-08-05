@@ -1,0 +1,126 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "total items",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source/kind counts",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "unique sorted item IDs",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "unique sorted technique IDs",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "unique technique names",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "mapping count",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "mapping keys unique",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "runtime regression URLs absent",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "downloads attempted",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "download entries count",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "curation entries",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "audit entries",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "audit text source list",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "not one-technique-only",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "other only <=10%",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "role regressions",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "shortlist excludes forbidden",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "gallery IDs",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "human review IDs",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "no video/audio",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "no files over 2MB",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "errors": [],
+  "warnings": [
+    "14 poster downloads failed with documented errors."
+  ],
+  "counts": {
+    "total": 161,
+    "upstream_blocks": 113,
+    "upstream_components": 25,
+    "local_blocks": 8,
+    "approved_layouts": 10,
+    "approved_transitions": 5,
+    "techniques": 157,
+    "runtime_dependency_items": 129,
+    "runtime_unique_urls": 18,
+    "scoring_verified": 161
+  }
+}

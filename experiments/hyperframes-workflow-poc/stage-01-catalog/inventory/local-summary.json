@@ -1,0 +1,14 @@
+{
+  "blocks": 8,
+  "ids": [
+    "before_after",
+    "complexity_cloud",
+    "concept_nodes",
+    "persona_card",
+    "sequence_flow",
+    "stat_number",
+    "task_list",
+    "value_layers"
+  ],
+  "parameterization_level": "generated_python"
+}

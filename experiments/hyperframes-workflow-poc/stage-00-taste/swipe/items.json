@@ -1,0 +1,345 @@
+[
+ {
+  "id": "approved:layout:avatar_broll_split",
+  "safe": "approved-layout-avatar_broll_split",
+  "title": "Avatar Broll Split",
+  "kind": "layout",
+  "desc": "Кадр разделён между аватаром и B-roll, обе области заполнены."
+ },
+ {
+  "id": "approved:layout:avatar_editorial_bubble",
+  "safe": "approved-layout-avatar_editorial_bubble",
+  "title": "Avatar Editorial Bubble",
+  "kind": "layout",
+  "desc": "Движущийся аватар находится в крупном editorial bubble рядом с текстом."
+ },
+ {
+  "id": "approved:layout:avatar_fullscreen",
+  "safe": "approved-layout-avatar_fullscreen",
+  "title": "Avatar Fullscreen",
+  "kind": "layout",
+  "desc": "Движущийся аватар занимает весь вертикальный кадр и держит eye contact."
+ },
+ {
+  "id": "approved:layout:avatar_object_overlay",
+  "safe": "approved-layout-avatar_object_overlay",
+  "title": "Avatar Object Overlay",
+  "kind": "layout",
+  "desc": "Движущийся аватар сочетается с предметным overlay, например телефоном."
+ },
+ {
+  "id": "approved:layout:broll_archival_collage",
+  "safe": "approved-layout-broll_archival_collage",
+  "title": "Broll Archival Collage",
+  "kind": "layout",
+  "desc": "Несколько B-roll слоёв раскладываются как editorial collage."
+ },
+ {
+  "id": "approved:layout:broll_fullscreen",
+  "safe": "approved-layout-broll_fullscreen",
+  "title": "Broll Fullscreen",
+  "kind": "layout",
+  "desc": "B-roll занимает весь экран и конкретизирует фразу без лица."
+ },
+ {
+  "id": "approved:layout:checklist_strike",
+  "safe": "approved-layout-checklist_strike",
+  "title": "Checklist Strike",
+  "kind": "layout",
+  "desc": "Пункты рутины появляются списком и по очереди зачёркиваются."
+ },
+ {
+  "id": "approved:layout:progressive_text_card",
+  "safe": "approved-layout-progressive_text_card",
+  "title": "Progressive Text Card",
+  "kind": "layout",
+  "desc": "Фраза собирается крупными типографическими строками."
+ },
+ {
+  "id": "approved:layout:social_outro",
+  "safe": "approved-layout-social_outro",
+  "title": "Social Outro",
+  "kind": "layout",
+  "desc": "Финальный social lockup фиксирует CTA и handle."
+ },
+ {
+  "id": "local:block:before_after",
+  "safe": "local-block-before_after",
+  "title": "Before After",
+  "kind": "block",
+  "desc": "Карточки сравнивают старое и новое состояние через движение «было → стало»."
+ },
+ {
+  "id": "local:block:complexity_cloud",
+  "safe": "local-block-complexity_cloud",
+  "title": "Complexity Cloud",
+  "kind": "block",
+  "desc": "Несколько шумных тезисов появляются каскадом и схлопываются в одно решение."
+ },
+ {
+  "id": "local:block:concept_nodes",
+  "safe": "local-block-concept_nodes",
+  "title": "Concept Nodes",
+  "kind": "block",
+  "desc": "Центральный тезис соединяется линиями с опорными понятиями."
+ },
+ {
+  "id": "local:block:persona_card",
+  "safe": "local-block-persona_card",
+  "title": "Persona Card",
+  "kind": "block",
+  "desc": "Карточка аудитории раскрывает человека, контекст и боль."
+ },
+ {
+  "id": "local:block:sequence_flow",
+  "safe": "local-block-sequence_flow",
+  "title": "Sequence Flow",
+  "kind": "block",
+  "desc": "Нумерованные шаги раскрываются сверху вниз как обязательный порядок."
+ },
+ {
+  "id": "local:block:stat_number",
+  "safe": "local-block-stat_number",
+  "title": "Stat Number",
+  "kind": "block",
+  "desc": "Крупная цифра досчитывается до значения и фиксирует измеримый тезис."
+ },
+ {
+  "id": "local:block:task_list",
+  "safe": "local-block-task_list",
+  "title": "Task List",
+  "kind": "block",
+  "desc": "Пункты списка появляются последовательно, последний может стать акцентом."
+ },
+ {
+  "id": "local:block:value_layers",
+  "safe": "local-block-value_layers",
+  "title": "Value Layers",
+  "kind": "block",
+  "desc": "Формальный offer сменяется реальной ценностью, которую покупает клиент."
+ },
+ {
+  "id": "upstream:block:instagram-follow",
+  "safe": "upstream-block-instagram-follow",
+  "title": "Instagram Follow",
+  "kind": "block",
+  "desc": "Animated Instagram follow overlay with profile card and follow button"
+ },
+ {
+  "id": "upstream:block:spotify-card",
+  "safe": "upstream-block-spotify-card",
+  "title": "Spotify Now Playing",
+  "kind": "block",
+  "desc": "Animated Spotify now-playing card with album art and progress bar"
+ },
+ {
+  "id": "upstream:block:tiktok-follow",
+  "safe": "upstream-block-tiktok-follow",
+  "title": "TikTok Follow",
+  "kind": "block",
+  "desc": "Animated TikTok follow overlay with profile card and follow button"
+ },
+ {
+  "id": "upstream:component:caption-blend-difference",
+  "safe": "upstream-component-caption-blend-difference",
+  "title": "Blend Difference",
+  "kind": "component",
+  "desc": "Auto-inverting text using mix-blend-mode: difference — flips between white and black per-pixel against the background"
+ },
+ {
+  "id": "upstream:component:caption-clip-wipe",
+  "safe": "upstream-component-caption-clip-wipe",
+  "title": "Clip Wipe",
+  "kind": "component",
+  "desc": "Left-to-right clip-path wipe reveal per word"
+ },
+ {
+  "id": "upstream:component:caption-editorial-emphasis",
+  "safe": "upstream-component-caption-editorial-emphasis",
+  "title": "Editorial Emphasis",
+  "kind": "component",
+  "desc": "Dual-font system with dramatic size contrast for emphasis words"
+ },
+ {
+  "id": "upstream:component:caption-emoji-pop",
+  "safe": "upstream-component-caption-emoji-pop",
+  "title": "Emoji Pop",
+  "kind": "component",
+  "desc": "Emoji integration with stroked text and horizontal squeeze entrance"
+ },
+ {
+  "id": "upstream:component:caption-glitch-rgb",
+  "safe": "upstream-component-caption-glitch-rgb",
+  "title": "Glitch RGB",
+  "kind": "component",
+  "desc": "RGB chromatic aberration with CRT scanline overlay"
+ },
+ {
+  "id": "upstream:component:caption-gradient-fill",
+  "safe": "upstream-component-caption-gradient-fill",
+  "title": "Gradient Fill",
+  "kind": "component",
+  "desc": "Gradient-clipped text with elastic bounce entrance"
+ },
+ {
+  "id": "upstream:component:caption-highlight",
+  "safe": "upstream-component-caption-highlight",
+  "title": "Highlight",
+  "kind": "component",
+  "desc": "Red background sweep behind each active word, TikTok-style"
+ },
+ {
+  "id": "upstream:component:caption-kinetic-slam",
+  "safe": "upstream-component-caption-kinetic-slam",
+  "title": "Kinetic Slam",
+  "kind": "component",
+  "desc": "Full-screen single-word display with alternating entrance directions"
+ },
+ {
+  "id": "upstream:component:caption-matrix-decode",
+  "safe": "upstream-component-caption-matrix-decode",
+  "title": "Matrix Decode",
+  "kind": "component",
+  "desc": "Character scramble animation before text reveal"
+ },
+ {
+  "id": "upstream:component:caption-neon-accent",
+  "safe": "upstream-component-caption-neon-accent",
+  "title": "Neon Accent",
+  "kind": "component",
+  "desc": "Multi-color neon glow accents with wiggle drift animation"
+ },
+ {
+  "id": "upstream:component:caption-neon-glow",
+  "safe": "upstream-component-caption-neon-glow",
+  "title": "Neon Glow",
+  "kind": "component",
+  "desc": "Cyan and magenta neon glow with keyword accent colors"
+ },
+ {
+  "id": "upstream:component:caption-parallax-layers",
+  "safe": "upstream-component-caption-parallax-layers",
+  "title": "Parallax Layers",
+  "kind": "component",
+  "desc": "Behind-subject 3D text layering with vertical stretch effect"
+ },
+ {
+  "id": "upstream:component:caption-particle-burst",
+  "safe": "upstream-component-caption-particle-burst",
+  "title": "Particle Burst",
+  "kind": "component",
+  "desc": "Keyword words trigger colored particle explosions"
+ },
+ {
+  "id": "upstream:component:caption-pill-karaoke",
+  "safe": "upstream-component-caption-pill-karaoke",
+  "title": "Pill Karaoke",
+  "kind": "component",
+  "desc": "Pill-shaped container with per-word karaoke color highlight"
+ },
+ {
+  "id": "upstream:component:caption-texture",
+  "safe": "upstream-component-caption-texture",
+  "title": "Texture",
+  "kind": "component",
+  "desc": "Flowing texture mask over large uppercase text — ships with 6 textures (lava, marble, metal, wood, concrete, rock), configurable via the texture variable"
+ },
+ {
+  "id": "upstream:component:caption-weight-shift",
+  "safe": "upstream-component-caption-weight-shift",
+  "title": "Weight Shift",
+  "kind": "component",
+  "desc": "Elegant font-weight transition between caption lines"
+ },
+ {
+  "id": "upstream:component:grain-overlay",
+  "safe": "upstream-component-grain-overlay",
+  "title": "Grain Overlay",
+  "kind": "component",
+  "desc": "Animated film grain texture overlay using CSS keyframes — adds warmth and analog character to any composition"
+ },
+ {
+  "id": "upstream:component:grid-pixelate-wipe",
+  "safe": "upstream-component-grid-pixelate-wipe",
+  "title": "Grid Pixelate Wipe",
+  "kind": "component",
+  "desc": "Transition effect where the screen dissolves into a grid of squares that fade out with staggered timing — use between scenes"
+ },
+ {
+  "id": "upstream:component:morph-text",
+  "safe": "upstream-component-morph-text",
+  "title": "Morph Text",
+  "kind": "component",
+  "desc": "Gooey text morph — cycles through an editable word list using SVG threshold + GSAP-driven blur for a fluid, satisfying transition effect"
+ },
+ {
+  "id": "upstream:component:parallax-unzoom",
+  "safe": "upstream-component-parallax-unzoom",
+  "title": "Parallax Unzoom",
+  "kind": "component",
+  "desc": "Reveal transition — focus card scales down from full frame as siblings parallax in to form a grid (reverse of parallax-zoom)"
+ },
+ {
+  "id": "upstream:component:parallax-zoom",
+  "safe": "upstream-component-parallax-zoom",
+  "title": "Parallax Zoom",
+  "kind": "component",
+  "desc": "Center card scales up to fill the frame while siblings parallax outward — inspired by the eBay Playbook hero transition"
+ },
+ {
+  "id": "upstream:component:shimmer-sweep",
+  "safe": "upstream-component-shimmer-sweep",
+  "title": "Shimmer Sweep",
+  "kind": "component",
+  "desc": "Animated light sweep across text or elements using a CSS gradient mask — ideal for AI accents and premium reveals"
+ },
+ {
+  "id": "upstream:component:texture-mask-text",
+  "safe": "upstream-component-texture-mask-text",
+  "title": "Texture Mask Text",
+  "kind": "component",
+  "desc": "CSS luminance masks that cut holes through letterforms - 66 pre-built texture masks from ambientCG PBR color maps"
+ },
+ {
+  "id": "upstream:component:vignette",
+  "safe": "upstream-component-vignette",
+  "title": "Vignette",
+  "kind": "component",
+  "desc": "Cinematic radial vignette overlay using a pure-CSS gradient — darkens the edges to pull focus toward the center"
+ },
+ {
+  "id": "approved:transition:hard_cut",
+  "safe": "approved-transition-hard_cut",
+  "title": "Hard Cut",
+  "kind": "transition",
+  "desc": "Мгновенная смена окна без графического перехода."
+ },
+ {
+  "id": "approved:transition:transition_blur",
+  "safe": "approved-transition-transition_blur",
+  "title": "Transition Blur",
+  "kind": "transition",
+  "desc": "Следующий кадр появляется из размытия и лёгкого scale."
+ },
+ {
+  "id": "approved:transition:transition_chromatic",
+  "safe": "approved-transition-transition_chromatic",
+  "title": "Transition Chromatic",
+  "kind": "transition",
+  "desc": "RGB-полосы создают короткий технологичный акцент."
+ },
+ {
+  "id": "approved:transition:transition_push_editorial",
+  "safe": "approved-transition-transition_push_editorial",
+  "title": "Transition Push Editorial",
+  "kind": "transition",
+  "desc": "Новый кадр въезжает сбоку и вытесняет предыдущий."
+ },
+ {
+  "id": "approved:transition:transition_white_flash",
+  "safe": "approved-transition-transition_white_flash",
+  "title": "Transition White Flash",
+  "kind": "transition",
+  "desc": "Белая вспышка резко вводит следующий смысловой пик."
+ }
+]

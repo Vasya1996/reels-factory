@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "id",
+    "source",
+    "kind",
+    "name",
+    "title",
+    "description",
+    "tags",
+    "source_ref",
+    "evidence_refs",
+    "dimensions",
+    "preview",
+    "parameterization",
+    "runtime",
+    "capabilities",
+    "assessment",
+    "human_review"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_:-]+$"
+    },
+    "source": {
+      "enum": [
+        "upstream",
+        "local",
+        "approved"
+      ]
+    },
+    "kind": {
+      "enum": [
+        "block",
+        "component",
+        "layout",
+        "transition"
+      ]
+    },
+    "evidence_refs": {
+      "type": "array",
+      "minItems": 1
+    },
+    "parameterization": {
+      "type": "object",
+      "required": [
+        "manifest_params",
+        "declared_variables",
+        "contract_fields",
+        "uses_variable_values",
+        "uses_data_var_bindings",
+        "hardcoded_content_detected",
+        "level"
+      ],
+      "properties": {
+        "level": {
+          "enum": [
+            "declarative",
+            "manifest_only",
+            "generated_python",
+            "approved_js_contract",
+            "none",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "assessment": {
+      "type": "object",
+      "required": [
+        "score",
+        "score_breakdown",
+        "review_status",
+        "runtime_allowed",
+        "adaptation_needed",
+        "risks",
+        "reason"
+      ]
+    }
+  }
+}

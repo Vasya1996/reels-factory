@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>G19 · text_selection_highlight</title>
+<link rel="stylesheet" href="../../tokens.css">
+<style>
+  #doc{margin-top:90px;background:var(--card);border:6px solid var(--ink);border-radius:30px;
+    padding:70px 64px;box-shadow:var(--shadow-card);transform:rotate(-.5deg) translateY(26px);opacity:0}
+  #doc.in{opacity:1;transform:rotate(-.5deg) translateY(0);transition:opacity .34s var(--ease),transform .42s var(--ease)}
+  #doc h2{font-family:JBMonoX,monospace;font-size:28px;letter-spacing:.16em;text-transform:uppercase;color:rgba(27,27,24,.5);margin-bottom:44px}
+  #doc p{font-size:44px;font-weight:600;line-height:1.65;color:var(--ink)}
+  .selectable{position:relative;white-space:pre-wrap}
+  .sel{background:var(--mint);box-decoration-break:clone;-webkit-box-decoration-break:clone;
+    background-size:0% 100%;background-repeat:no-repeat;background-image:linear-gradient(var(--mint),var(--mint));background-color:transparent}
+  .sel.on{background-size:100% 100%;transition:background-size .9s var(--ease)}
+  .cursor{position:absolute;font-family:CaveatX,cursive;font-size:70px;color:var(--ink);
+    right:-14px;bottom:-46px;opacity:0;transform:rotate(-8deg)}
+  .cursor.in{opacity:1;transition:opacity .2s}
+  .note{margin-top:60px;display:flex;align-items:center;gap:26px;opacity:0;transform:translateY(16px)}
+  .note.in{opacity:1;transform:none;transition:opacity .3s var(--ease),transform .3s var(--ease)}
+  .note .mark{font-family:CaveatX,cursive;font-size:84px;color:var(--red);line-height:.8}
+  .note .txt{font-family:CaveatX,cursive;font-size:56px;color:var(--red)}
+</style>
+</head>
+<body>
+<div id="fit"><div id="scene">
+  <div class="tech" data-t="0"><span class="dash"></span><span class="lbl">Документ · Главная строка</span></div>
+  <h1 style="font-size:88px"><span class="w" data-t="300">СМОТРИ</span> <span class="w hl" data-t="550"><i></i>СЮДА</span></h1>
+  <div id="doc" data-t="1100">
+    <h2>из условий тарифа</h2>
+    <p>Генерация видео входит в подписку.
+<span class="selectable"><span class="sel" data-t="2300">Лимит — 100 роликов в месяц, дальше без доплат</span><span class="cursor" data-t="3300">⌖</span></span>
+и без скрытых списаний за рендер.</p>
+    <div class="note" data-t="3900"><span class="mark">✓</span><span class="txt">вот это — главное</span></div>
+  </div>
+  <div class="spacer"></div>
+</div></div>
+<script src="../../shared.js"></script>
+<script>
+addEventListener('DOMContentLoaded',()=>{
+  /* .sel включается через .on по data-t: используем общий раннер */
+  const orig=SKB.play; let t=[];
+  function playS(){
+    t.forEach(clearTimeout); t=[];
+    document.querySelectorAll('.sel.on').forEach(e=>e.classList.remove('on'));
+    orig();
+    document.querySelectorAll('.sel[data-t]').forEach(el=>{
+      t.push(setTimeout(()=>el.classList.add('on'),+el.dataset.t));
+    });
+  }
+  document.getElementById('replay').onclick=playS;
+  playS();
+});
+</script>
+</body>
+</html>

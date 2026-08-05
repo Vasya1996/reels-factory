@@ -89,3 +89,98 @@ step (master-audio synthesis + user approval) is identical for both modes.
 Do not trigger paid ElevenLabs or HeyGen requests merely to inspect or diagnose
 the code. Never print, persist, or return API keys; read them from the existing
 server environment.
+
+## One-LLM HyperFrames workflow decision — 2026-08-02
+
+The intended production architecture is one constrained visual-director LLM
+call followed by deterministic scripts. Do not replace it with a free-running
+agent loop for every render.
+
+Starting from approved ElevenLabs master audio plus word timestamps:
+
+1. Build one compact prompt from transcript/timings, catalog shortlist, brand
+   constraints and montage rules.
+2. Make one LLM call that returns semantic `edit_plan.json`: scene timing,
+   coverage, layout/block/component/transition IDs, text payloads, caption mode,
+   SFX/media intents, adaptation requests and pre-approved fallbacks. The LLM
+   must not emit pixel coordinates or author composition HTML.
+3. Validate and present the plan for human review. Human JSON edits do not
+   require another LLM call. Freeze the approved plan before paid avatar work.
+4. Derive Avatar Islands deterministically from the final plan: adjacent
+   `coverage=avatar|mixed` phrase windows form an island;
+   `full_broll|hyperframes` terminates it. Partition islands into cached Photo
+   Avatar IV performance shots using the rules in `docs/AVATAR-ISLANDS.md`.
+5. Resolve catalog IDs to proven implementations via `source_ref`; instantiate
+   declared parameter contracts only. `adapt` items may not run directly unless
+   an adapter is separately implemented and approved; otherwise use the
+   plan-declared `ready` fallback.
+6. Compile layouts, blocks, captions, animation presets, transitions, SFX,
+   silent avatar media and the single master voice into HyperFrames HTML.
+7. Validate, snapshot, render and audit deterministically. Technical rerenders
+   and human parameter edits must not invoke an LLM.
+
+Catalog semantics that future sessions must preserve:
+
+- A technique is descriptive metadata, not necessarily executable code.
+- An upstream block is a standalone HTML sub-composition.
+- An upstream component is an HTML/CSS/JS snippet that needs a host target.
+- A local block is produced by an existing Python HTML generator.
+- Approved layouts/transitions are proven JS/CSS contracts from the local
+  approved catalog.
+- Template-owned markup, style and motion stay unchanged unless the catalog
+  exposes an explicit parameter/adapter contract.
+- The LLM chooses semantic IDs/content/timing. Compiler scripts resolve code,
+  bind values, choose slots, generate captions, synchronize animation triggers
+  and assemble the final page.
+
+### Safe-zone and placement architecture
+
+For one stable avatar/look/framing, analyze only the first generated island and
+cache a source-coordinate avatar profile. Recompute only when the avatar, look,
+camera/framing or crop source changes. Transform its face envelope with each
+layout's actual media transform.
+
+Forbidden-zone control has five deterministic layers:
+
+1. Before the LLM, filter out layout IDs incompatible with the cached avatar
+   profile; pass compatibility metadata, not raw coordinates, to the model.
+2. Caption placement uses transformed face, platform UI and frame zones, then
+   publishes the measured caption bounds as another hard forbidden zone.
+3. The layout placement compiler chooses only catalog-declared slots that do
+   not intersect face, caption or UI zones. It may not switch semantic layouts
+   except through an explicit `fallback_layout_id` in the approved plan.
+4. Animation validation checks the complete swept envelope, including entrance,
+   overshoot, scale, rotation and exit; animated content should remain inside a
+   safe clipped slot whenever possible.
+5. A final per-output-frame DOM collision validator gates render. Any
+   informational-element intersection with face/captions/UI is a hard failure.
+
+Hard priority is platform UI → face → captions → informational overlays →
+decoratives. Full-frame transitions or other intentional exceptions must be
+explicitly tagged and narrowly scoped. Human contact-sheet review remains an
+aesthetic check, not the collision guarantee.
+
+As of 2026-08-02 this automated safe-zone chain is an approved design, not an
+implemented feature. The POC currently relies on approved fixed CSS layouts,
+HyperFrames checks, snapshots/contact sheets and manual visual review. Do not
+claim that `avatar-profile.json`, `layout-slots.json`,
+`forbidden-zones.json` or per-frame `collision-report.json` already exist.
+
+### Stage 03 implementation audit correction — 2026-08-02
+
+Do not treat the current Stage 03 render as proof that the catalog resolver or
+the original local/approved implementations were reused. Inspection of
+`stage-03-render/scripts/compile-edit-plan.mjs` shows that it does not import or
+execute `hyperframes_blocks.py`, `catalog.js`, or `catalog.css`. It contains its
+own `blockMarkup`, `layoutChrome`, `sceneCss`, and `sceneScript` functions with
+hard-coded HTML/CSS/GSAP. The source paths recorded in `compiler-report.json`
+are attribution strings, not evidence of runtime reuse.
+
+Therefore the current video is a one-off visual approximation authored by the
+render model from the plan and prior patterns. Three requested upstream adapt
+items still fell back to local IDs, but even those local IDs were reimplemented
+inside the JavaScript compiler rather than instantiated through their proven
+Python generators. Before the workflow hypothesis is considered validated,
+replace this with a real ID-to-adapter resolver that imports/calls the approved
+implementation (or a reviewed faithful adapter), binds only its declared
+parameters, and emits provenance that can be mechanically verified.

@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "errors": [],
+  "warnings": [],
+  "scene_count": 13,
+  "covered_words": 100,
+  "total_words": 100,
+  "max_presenter_hidden_seconds": 6.187,
+  "primary_transition_share": 0.667
+}

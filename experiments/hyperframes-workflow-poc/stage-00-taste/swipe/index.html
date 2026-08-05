@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Свайп-сессия — калибровка вкуса</title>
+<style>
+  :root { --red:#e0322c; --yellow:#ffe500; --ink:#111; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:system-ui,-apple-system,sans-serif; background:#f4f1ea; color:var(--ink); min-height:100vh; display:flex; flex-direction:column; align-items:center; }
+  header { width:100%; padding:14px 20px; display:flex; justify-content:space-between; align-items:center; }
+  header h1 { font-size:15px; text-transform:uppercase; letter-spacing:.08em; }
+  #progress { font-variant-numeric:tabular-nums; font-size:14px; color:#666; }
+  #stage { display:flex; gap:24px; align-items:flex-start; padding:0 20px 20px; }
+  #phone { width:324px; height:576px; border-radius:14px; overflow:hidden; background:#000; box-shadow:0 12px 40px rgba(0,0,0,.25); position:relative; flex:none; }
+  #phone iframe { width:1080px; height:1920px; transform:scale(0.3); transform-origin:0 0; border:0; pointer-events:none; }
+  #panel { width:300px; display:flex; flex-direction:column; gap:14px; padding-top:8px; }
+  .kind { display:inline-block; font-size:11px; text-transform:uppercase; letter-spacing:.1em; background:var(--ink); color:#fff; padding:3px 8px; border-radius:3px; }
+  .kind.layout{background:var(--red)} .kind.component{background:#7a5cff} .kind.transition{background:#0a7d55}
+  #title { font-size:22px; font-weight:800; line-height:1.15; }
+  #desc { font-size:13px; color:#555; line-height:1.45; min-height:3em; }
+  .btns { display:flex; gap:8px; }
+  button { font:inherit; cursor:pointer; border:2px solid var(--ink); border-radius:8px; padding:12px 0; flex:1; font-weight:700; font-size:15px; background:#fff; }
+  #b-yes{background:var(--ink);color:#fff} #b-almost{background:var(--yellow)} #b-no{}
+  button:active{transform:translateY(1px)}
+  .aux { display:flex; gap:8px; }
+  .aux button { font-size:12px; padding:8px 0; font-weight:600; border-width:1px; color:#444; }
+  #note { width:100%; border:1px solid #ccc; border-radius:8px; padding:8px; font:inherit; font-size:13px; resize:vertical; min-height:52px; }
+  .hint { font-size:11px; color:#999; line-height:1.5; }
+  #done { display:none; width:min(680px,90vw); padding:20px; }
+  #done h2 { margin-bottom:10px; }
+  #out { width:100%; height:320px; font:12px/1.5 ui-monospace,monospace; padding:10px; border:2px solid var(--ink); border-radius:8px; }
+  #copy { margin-top:10px; padding:12px 24px; flex:0; background:var(--ink); color:#fff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Свайп: нравится ли приём?</h1>
+  <div id="progress"></div>
+</header>
+
+<div id="stage">
+  <div id="phone"><iframe id="frame" src="about:blank" scrolling="no"></iframe></div>
+  <div id="panel">
+    <span class="kind" id="kind"></span>
+    <div id="title"></div>
+    <div id="desc"></div>
+    <div class="btns">
+      <button id="b-yes">Да&nbsp;(1)</button>
+      <button id="b-almost">Почти&nbsp;(2)</button>
+      <button id="b-no">Нет&nbsp;(3)</button>
+    </div>
+    <textarea id="note" placeholder="Комментарий (необязательно): что цепляет / что бесит"></textarea>
+    <div class="aux">
+      <button id="b-replay">↻ Ещё раз (R)</button>
+      <button id="b-back">← Назад</button>
+      <button id="b-skip">Пропустить</button>
+    </div>
+    <div class="hint">Смотри на характер движения, а не на текст-заглушку и цвета: их заменим на твой бренд. «Почти» = идея нравится, исполнение нет. Ответы сохраняются в браузере, можно закрыть и продолжить позже.</div>
+  </div>
+</div>
+
+<div id="done">
+  <h2>Готово 🎉</h2>
+  <p style="margin-bottom:10px">Нажми «Скопировать» и пришли результат в чат Claude.</p>
+  <textarea id="out" readonly></textarea><br>
+  <button id="copy">Скопировать</button>
+</div>
+
+<script>
+const KEY='swipe-answers-v1';
+let items=[], idx=0, answers=JSON.parse(localStorage.getItem(KEY)||'{}');
+
+fetch('items.json').then(r=>r.json()).then(d=>{
+  items=d;
+  idx=items.findIndex(it=>!(it.id in answers));
+  if(idx<0) idx=items.length;
+  show();
+});
+
+function show(){
+  if(idx>=items.length){finish();return}
+  const it=items[idx];
+  document.getElementById('frame').src='../../stage-01-catalog/live-gallery/previews/'+it.safe+'/index.html';
+  document.getElementById('kind').textContent=it.kind;
+  document.getElementById('kind').className='kind '+it.kind;
+  document.getElementById('title').textContent=it.title;
+  document.getElementById('desc').textContent=it.desc;
+  document.getElementById('note').value=(answers[it.id]||{}).note||'';
+  document.getElementById('progress').textContent=(idx+1)+' / '+items.length;
+  document.getElementById('stage').style.display='flex';
+  document.getElementById('done').style.display='none';
+}
+function vote(v){
+  const it=items[idx];
+  answers[it.id]={v, note:document.getElementById('note').value.trim()};
+  localStorage.setItem(KEY,JSON.stringify(answers));
+  idx++; show();
+}
+function finish(){
+  document.getElementById('stage').style.display='none';
+  document.getElementById('done').style.display='block';
+  const lines=items.map(it=>{
+    const a=answers[it.id]||{v:'skip'};
+    return it.id+' = '+a.v+(a.note?('  # '+a.note):'');
+  });
+  document.getElementById('out').value=lines.join('\n');
+}
+document.getElementById('b-yes').onclick=()=>vote('да');
+document.getElementById('b-almost').onclick=()=>vote('почти');
+document.getElementById('b-no').onclick=()=>vote('нет');
+document.getElementById('b-skip').onclick=()=>vote('skip');
+document.getElementById('b-back').onclick=()=>{if(idx>0){idx--;show()}};
+document.getElementById('b-replay').onclick=()=>{const f=document.getElementById('frame');f.src=f.src};
+document.getElementById('copy').onclick=()=>{
+  navigator.clipboard.writeText(document.getElementById('out').value);
+  document.getElementById('copy').textContent='Скопировано ✓';
+};
+addEventListener('keydown',e=>{
+  if(e.target.tagName==='TEXTAREA')return;
+  if(e.key==='1')vote('да'); if(e.key==='2')vote('почти'); if(e.key==='3')vote('нет');
+  if(e.key==='r'||e.key==='R'){const f=document.getElementById('frame');f.src=f.src}
+});
+</script>
+</body>
+</html>

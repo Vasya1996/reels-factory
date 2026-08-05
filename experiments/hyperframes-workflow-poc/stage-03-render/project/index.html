@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1080, height=1920">
+    <title>sales-three-questions-draft</title>
+    <script src="assets/vendor/gsap.min.js"></script>
+    <style>
+      @font-face{font-family:Unbounded;font-style:normal;font-weight:600;src:url("assets/fonts/unbounded-600-cyrillic.woff2") format("woff2");}
+      @font-face{font-family:Unbounded;font-style:normal;font-weight:700;src:url("assets/fonts/unbounded-700-cyrillic.woff2") format("woff2");}
+      @font-face{font-family:Unbounded;font-style:normal;font-weight:800;src:url("assets/fonts/unbounded-800-cyrillic.woff2") format("woff2");}
+      html,body{margin:0;width:1080px;height:1920px;overflow:hidden;background:#171310;color:#fff;font-family:Unbounded,sans-serif;}
+      #root{position:relative;width:1080px;height:1920px;overflow:hidden;background:#171310;}
+      .base-video{position:absolute;inset:0;width:1080px;height:1920px;object-fit:cover;object-position:50% 48%;z-index:0;}
+      .scene-slot{position:absolute;inset:0;z-index:20;}
+      .caption{position:absolute;z-index:70;left:60px;right:60px;bottom:150px;min-height:78px;padding:22px 28px;border-radius:26px;background:rgba(23,19,16,.86);box-shadow:0 18px 50px rgba(0,0,0,.28);font-family:Unbounded;font-size:36px;font-weight:700;line-height:1.22;text-align:center;text-wrap:balance;}
+      .caption .past{color:#fff}.caption .current{color:#FFE500;}
+      .watermark{position:absolute;z-index:75;right:38px;top:44px;padding:12px 18px;border-radius:999px;background:rgba(23,19,16,.62);color:#FFE500;font-family:Unbounded;font-size:25px;font-weight:800;}
+      .transition{position:absolute;inset:0;z-index:90;pointer-events:none;}
+      .white-flash{background:#fffdf5;}
+      .push-accent{background:linear-gradient(90deg,rgba(216,58,50,.0),rgba(216,58,50,.86),rgba(240,185,76,.0));transform:skewX(-12deg);}
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="sales-three-questions-draft" data-start="0" data-width="1080" data-height="1920" data-duration="42.32" data-fps="30">
+      <video id="avatar-base-video" class="clip base-video" src="assets/media/avatar-base-silent.mp4" data-start="0" data-duration="42.32" data-track-index="0" muted playsinline></video>
+      <div id="slot-s01" class="clip scene-slot" data-composition-id="s01" data-composition-src="compositions/s01.html" data-start="0" data-duration="3" data-track-index="10" data-width="1080" data-height="1920"></div>
+      <div id="slot-s02" class="clip scene-slot" data-composition-id="s02" data-composition-src="compositions/s02.html" data-start="3" data-duration="2.333" data-track-index="10" data-width="1080" data-height="1920"></div>
+      <div id="slot-s03" class="clip scene-slot" data-composition-id="s03" data-composition-src="compositions/s03.html" data-start="5.333" data-duration="3.407" data-track-index="10" data-width="1080" data-height="1920"></div>
+      <div id="slot-s04" class="clip scene-slot" data-composition-id="s04" data-composition-src="compositions/s04.html" data-start="8.74" data-duration="2.78" data-track-index="10" data-width="1080" data-height="1920"></div>
+      <div id="slot-s05" class="clip scene-slot" data-composition-id="s05" data-composition-src="compositions/s05.html" data-start="11.52" data-duration="2.08" data-track-index="10" data-width="1080" data-height="1920"></div>
+      <div id="slot-s06" class="clip scene-slot" data-composition-id="s06" data-composition-src="compositions/s06.html" data-start="13.6" data-duration="4.98" data-track-index="10" data-width="1080" data-height="1920"></div>
+      <div id="slot-s07" class="clip scene-slot" data-composition-id="s07" data-composition-src="compositions/s07.html" data-start="18.58" data-duration="4.16" data-track-index="10" data-width="1080" data-height="1920"></div>
+      <div id="slot-s08" class="clip scene-slot" data-composition-id="s08" data-composition-src="compositions/s08.html" data-start="22.74" data-duration="3.22" data-track-index="10" data-width="1080" data-height="1920"></div>
+      <div id="slot-s09" class="clip scene-slot" data-composition-id="s09" data-composition-src="compositions/s09.html" data-start="25.96" data-duration="2.92" data-track-index="10" data-width="1080" data-height="1920"></div>
+      <div id="slot-s10" class="clip scene-slot" data-composition-id="s10" data-composition-src="compositions/s10.html" data-start="28.88" data-duration="2.68" data-track-index="10" data-width="1080" data-height="1920"></div>
+      <div id="slot-s11" class="clip scene-slot" data-composition-id="s11" data-composition-src="compositions/s11.html" data-start="31.56" data-duration="2.88" data-track-index="10" data-width="1080" data-height="1920"></div>
+      <div id="slot-s12" class="clip scene-slot" data-composition-id="s12" data-composition-src="compositions/s12.html" data-start="34.44" data-duration="3.52" data-track-index="10" data-width="1080" data-height="1920"></div>
+      <div id="slot-s13" class="clip scene-slot" data-composition-id="s13" data-composition-src="compositions/s13.html" data-start="37.96" data-duration="4.36" data-track-index="10" data-width="1080" data-height="1920"></div>
+      <div id="watermark" class="clip watermark" data-start="2" data-duration="40.32" data-track-index="55">@julia.agents</div>
+      <div id="s01-cap-01" class="clip caption" data-start="0" data-duration="1.92" data-track-index="50" data-layout-allow-caption-zone><span class="current">Все</span> <span class="past">продажи</span> <span class="past">на</span> <span class="past">свете</span> <span class="past">сводятся</span> <span class="current">к</span></div>
+      <div id="s01-cap-02" class="clip caption" data-start="1.947" data-duration="1.013" data-track-index="50" data-layout-allow-caption-zone><span class="current">трём</span> <span class="current">вопросам</span></div>
+      <div id="s02-cap-01" class="clip caption" data-start="3" data-duration="2.28" data-track-index="50" data-layout-allow-caption-zone><span class="past">И</span> <span class="current">порядок</span> <span class="past">этих</span> <span class="past">вопросов</span> <span class="current">решает</span> <span class="current">всё</span></div>
+      <div id="s03-cap-01" class="clip caption" data-start="5.333" data-duration="2.587" data-track-index="50" data-layout-allow-caption-zone><span class="past">Мы</span> <span class="past">обожаем</span> <span class="current">усложнять</span> <span class="past">продажи</span> <span class="past">Учим</span> <span class="current">хитрые</span></div>
+      <div id="s03-cap-02" class="clip caption" data-start="7.98" data-duration="0.7" data-track-index="50" data-layout-allow-caption-zone><span class="current">приёмы</span></div>
+      <div id="s04-cap-01" class="clip caption" data-start="8.74" data-duration="2.7" data-track-index="50" data-layout-allow-caption-zone><span class="past">Зубрим</span> <span class="current">скрипты</span> <span class="past">Ищем</span> <span class="current">волшебные</span> <span class="current">фразы</span></div>
+      <div id="s05-cap-01" class="clip caption" data-start="11.52" data-duration="2" data-track-index="50" data-layout-allow-caption-zone><span class="past">А</span> <span class="past">в</span> <span class="current">основе</span> <span class="current">три</span> <span class="past">больших</span> <span class="current">вопроса</span></div>
+      <div id="s06-cap-01" class="clip caption" data-start="13.6" data-duration="2.96" data-track-index="50" data-layout-allow-caption-zone><span class="past">Первый</span> <span class="current">кому</span> <span class="past">продаём</span> <span class="past">Кто</span> <span class="past">этот</span> <span class="current">человек</span></div>
+      <div id="s06-cap-02" class="clip caption" data-start="16.6" data-duration="1.92" data-track-index="50" data-layout-allow-caption-zone><span class="past">чем</span> <span class="past">живёт</span> <span class="past">какая</span> <span class="past">у</span> <span class="past">него</span> <span class="current">боль</span></div>
+      <div id="s07-cap-01" class="clip caption" data-start="18.58" data-duration="2.54" data-track-index="50" data-layout-allow-caption-zone><span class="past">Второй</span> <span class="current">что</span> <span class="past">продаём</span> <span class="current">Что</span> <span class="past">человек</span> <span class="current">на</span></div>
+      <div id="s07-cap-02" class="clip caption" data-start="21.16" data-duration="1.52" data-track-index="50" data-layout-allow-caption-zone><span class="past">самом</span> <span class="past">деле</span> <span class="past">у</span> <span class="past">нас</span> <span class="current">покупает</span></div>
+      <div id="s08-cap-01" class="clip caption" data-start="22.74" data-duration="2.78" data-track-index="50" data-layout-allow-caption-zone><span class="past">Третий</span> <span class="current">как</span> <span class="past">продаём</span> <span class="current">Где</span> <span class="current">встречаемся</span> <span class="current">с</span></div>
+      <div id="s08-cap-02" class="clip caption" data-start="25.58" data-duration="0.34" data-track-index="50" data-layout-allow-caption-zone><span class="current">ним</span></div>
+      <div id="s09-cap-01" class="clip caption" data-start="25.96" data-duration="2.12" data-track-index="50" data-layout-allow-caption-zone><span class="past">какими</span> <span class="current">словами</span> <span class="past">говорим</span> <span class="past">в</span> <span class="past">каком</span> <span class="current">виде</span></div>
+      <div id="s09-cap-02" class="clip caption" data-start="28.128" data-duration="0.672" data-track-index="50" data-layout-allow-caption-zone><span class="current">предлагаем</span></div>
+      <div id="s10-cap-01" class="clip caption" data-start="28.88" data-duration="2.56" data-track-index="50" data-layout-allow-caption-zone><span class="past">Всё</span> <span class="current">остальное</span> <span class="current">надстройка</span> <span class="past">над</span> <span class="past">этими</span> <span class="current">тремя</span></div>
+      <div id="s11-cap-01" class="clip caption" data-start="31.56" data-duration="2.76" data-track-index="50" data-layout-allow-caption-zone><span class="past">Звучит</span> <span class="current">просто</span> <span class="past">Но</span> <span class="past">самое</span> <span class="current">важное</span> <span class="current">порядок</span></div>
+      <div id="s13-cap-01" class="clip caption" data-start="37.96" data-duration="2.28" data-track-index="50" data-layout-allow-caption-zone><span class="current">Сохрани</span> <span class="past">это</span> <span class="past">видео</span> <span class="past">Прогони</span> <span class="past">свой</span> <span class="current">продукт</span></div>
+      <div id="s13-cap-02" class="clip caption" data-start="40.293" data-duration="2.027" data-track-index="50" data-layout-allow-caption-zone><span class="past">по</span> <span class="past">трём</span> <span class="past">вопросам</span> <span class="past">Прямо</span> <span class="current">сегодня</span></div>
+      <div id="transition-s05" class="clip transition push-accent" data-start="11.52" data-duration="0.28" data-track-index="60"></div>
+      <div id="transition-s10" class="clip transition push-accent" data-start="28.88" data-duration="0.28" data-track-index="60"></div>
+      <div id="transition-s12" class="clip transition white-flash" data-start="34.44" data-duration="0.12" data-track-index="60"></div>
+      <div id="transition-s13" class="clip transition push-accent" data-start="37.96" data-duration="0.28" data-track-index="60"></div>
+      <audio id="sfx-1" src="assets/media/sfx/pop.wav" data-start="34.980" data-duration="0.12" data-track-index="80" data-volume="0.15"></audio>
+      <audio id="sfx-2" src="assets/media/sfx/pop.wav" data-start="35.940" data-duration="0.12" data-track-index="81" data-volume="0.15"></audio>
+      <audio id="sfx-3" src="assets/media/sfx/pop.wav" data-start="37.460" data-duration="0.12" data-track-index="82" data-volume="0.15"></audio>
+      <audio id="sfx-4" src="assets/media/sfx/pop.wav" data-start="41.915" data-duration="0.12" data-track-index="83" data-volume="0.12"></audio>
+      <audio id="sfx-5" src="assets/media/sfx/whoosh.wav" data-start="11.520" data-duration="0.35" data-track-index="84" data-volume="0.11"></audio>
+      <audio id="sfx-6" src="assets/media/sfx/whoosh.wav" data-start="28.880" data-duration="0.35" data-track-index="85" data-volume="0.11"></audio>
+      <audio id="sfx-7" src="assets/media/sfx/whoosh.wav" data-start="37.960" data-duration="0.35" data-track-index="86" data-volume="0.11"></audio>
+      <audio id="master-voice" src="assets/media/voice_master.wav" data-start="0" data-duration="42.32" data-track-index="100" data-volume="1"></audio>
+    </div>
+    <script>
+      window.__timelines=window.__timelines||{};
+      const tl=gsap.timeline({paused:true});
+      tl.fromTo(".white-flash",{opacity:1},{opacity:0,duration:.12,ease:"power2.out"},34.44);
+      tl.fromTo(".push-accent",{x:-1080,opacity:.9},{x:1080,opacity:0,duration:.28,ease:"power3.inOut"},11.52);
+      tl.fromTo(".push-accent",{x:-1080,opacity:.9},{x:1080,opacity:0,duration:.28,ease:"power3.inOut"},28.88);
+      tl.fromTo(".push-accent",{x:-1080,opacity:.9},{x:1080,opacity:0,duration:.28,ease:"power3.inOut"},37.96);
+      window.__timelines["sales-three-questions-draft"]=tl;
+    </script>
+  </body>
+</html>

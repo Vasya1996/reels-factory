@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>G15 · big_ghost_number</title>
+<link rel="stylesheet" href="../../tokens.css">
+<style>
+  #ghost{position:absolute;right:-30px;top:46%;transform:translateY(-50%);
+    font-family:MontserratX,sans-serif;font-weight:900;font-size:900px;line-height:1;
+    color:transparent;-webkit-text-stroke:8px rgba(27,27,24,.22);z-index:0;
+    opacity:0}
+  #ghost.show{opacity:1;transition:opacity .3s var(--ease)}
+  #ghost.stamp{animation:stamp .38s var(--ease-pop)}
+  @keyframes stamp{0%{transform:translateY(-50%) scale(1.25)}100%{transform:translateY(-50%) scale(1)}}
+  #list{display:flex;flex-direction:column;gap:46px;margin-top:110px;position:relative;z-index:1}
+</style>
+</head>
+<body>
+<div id="fit"><div id="scene">
+  <div id="ghost">1</div>
+  <div class="tech" data-t="0"><span class="dash"></span><span class="lbl">Перечисление · Три шага</span></div>
+  <h1><span class="w" data-t="350">ТРИ</span> <span class="w hl" data-t="600"><i></i>ШАГА</span></h1>
+  <div id="list">
+    <div class="pill r1" style="--rot:-.7deg" data-t="1400" data-n="1"><span class="idx">01</span><span class="txt">выбираем тему из очереди</span></div>
+    <div class="pill r2" style="--rot:.6deg" data-t="3100" data-n="2"><span class="idx">02</span><span class="txt">агент пишет сценарий</span></div>
+    <div class="pill r3" style="--rot:-.4deg" data-t="4800" data-n="3"><span class="idx">03</span><span class="txt">рендер и публикация</span></div>
+  </div>
+  <div class="spacer"></div>
+</div></div>
+<script src="../../shared.js"></script>
+<script>
+addEventListener('DOMContentLoaded',()=>{
+  const ghost=document.getElementById('ghost');
+  const orig=SKB.play; let timers=[];
+  function playG(){
+    timers.forEach(clearTimeout); timers=[]; ghost.classList.remove('show');
+    orig();
+    document.querySelectorAll('[data-n]').forEach(el=>{
+      timers.push(setTimeout(()=>{
+        ghost.textContent=el.dataset.n;
+        ghost.classList.add('show');
+        ghost.classList.remove('stamp'); void ghost.offsetWidth; ghost.classList.add('stamp');
+      },+el.dataset.t));
+    });
+  }
+  document.getElementById('replay').onclick=playG;
+  playG();
+});
+</script>
+</body>
+</html>

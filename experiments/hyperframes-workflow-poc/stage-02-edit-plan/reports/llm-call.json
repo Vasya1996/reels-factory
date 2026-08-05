@@ -1,0 +1,10 @@
+{
+  "status": "completed_in_current_codex_session",
+  "requested_provider": "OpenAI",
+  "requested_model": "gpt-5.5",
+  "actual_model": "current Codex model; exact deployed model identifier is not exposed to this task",
+  "requested_effort": "high",
+  "actual_effort_control": "not exposed for the current in-app Codex task",
+  "external_api_call": false,
+  "note": "The edit plan was produced directly in the current Codex/OpenAI task using the same system prompt, compact shortlist, exact word timings, constraints, and JSON schema. It is not attributed to GPT-5.5 because that exact model selector is unavailable."
+}

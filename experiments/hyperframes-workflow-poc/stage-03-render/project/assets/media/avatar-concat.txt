@@ -1,0 +1,4 @@
+file 'C:/Users/Asus/Documents/personal_ai/projects/content_factory/reels-factory-hyperframes-workflow-poc/experiments/hyperframes-workflow-poc/stage-03-render/project/assets/media/avatar-island-01.mp4'
+file 'C:/Users/Asus/Documents/personal_ai/projects/content_factory/reels-factory-hyperframes-workflow-poc/experiments/hyperframes-workflow-poc/stage-03-render/project/assets/media/avatar-island-02.mp4'
+file 'C:/Users/Asus/Documents/personal_ai/projects/content_factory/reels-factory-hyperframes-workflow-poc/experiments/hyperframes-workflow-poc/stage-03-render/project/assets/media/avatar-island-03.mp4'
+file 'C:/Users/Asus/Documents/personal_ai/projects/content_factory/reels-factory-hyperframes-workflow-poc/experiments/hyperframes-workflow-poc/stage-03-render/project/assets/media/avatar-island-04.mp4'

@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "catalog_version",
+    "techniques",
+    "item_to_techniques"
+  ],
+  "properties": {
+    "catalog_version": {
+      "const": 1
+    },
+    "techniques": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name_ru",
+          "category",
+          "description_ru",
+          "viewer_sees_ru",
+          "use_when_ru",
+          "avoid_when_ru",
+          "implementation_ids",
+          "availability",
+          "evidence_refs"
+        ],
+        "properties": {
+          "id": {
+            "pattern": "^[a-z0-9_]+$"
+          },
+          "category": {
+            "enum": [
+              "speaker_layout",
+              "composition_layout",
+              "caption_and_typography",
+              "title_and_lower_third",
+              "data_and_statistics",
+              "comparison_and_process",
+              "social_and_editorial_overlay",
+              "transition",
+              "texture_and_finishing",
+              "media_treatment",
+              "vfx_and_shader",
+              "spatial_motion",
+              "code_and_terminal",
+              "map_and_diagram",
+              "brand_and_outro",
+              "other"
+            ]
+          },
+          "availability": {
+            "enum": [
+              "ready",
+              "adapt",
+              "reference_only",
+              "forbidden"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

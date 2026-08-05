@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>G14 · presenter_over_fullscreen_art</title>
+<link rel="stylesheet" href="../../tokens.css">
+<style>
+  #scene{padding:0}
+  /* fullscreen «арт»: в проде — иллюстрация/скрин/фото с медленным зумом */
+  #art{position:absolute;inset:0;overflow:hidden}
+  #art .img{position:absolute;inset:-6%;display:flex;align-items:center;justify-content:center;
+    background:
+      radial-gradient(circle at 30% 25%, rgba(255,216,77,.5), transparent 42%),
+      radial-gradient(circle at 72% 60%, rgba(168,220,203,.55), transparent 45%),
+      var(--paper);
+    background-color:var(--paper);
+    animation:zoom 9s linear infinite alternate}
+  @keyframes zoom{from{transform:scale(1)}to{transform:scale(1.07)}}
+  #art svg{width:70%;opacity:.9}
+  #art .grid{position:absolute;inset:0;background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:67px 67px}
+  .artlabel{position:absolute;top:120px;right:60px;font-family:JBMonoX,monospace;font-size:24px;letter-spacing:.14em;
+    text-transform:uppercase;color:rgba(27,27,24,.5);transform:rotate(1deg)}
+  /* ведущая маленькая внизу: в проде — cutout HeyGen-аватара */
+  #host{position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:430px;height:640px;
+    border:6px dashed rgba(27,27,24,.4);border-radius:215px 215px 0 0 / 300px 300px 0 0;
+    background:rgba(252,251,246,.35);display:flex;align-items:flex-end;justify-content:center;
+    opacity:0}
+  #host.in{opacity:1;transition:opacity .5s var(--ease)}
+  #host span{font-family:JBMonoX,monospace;font-size:22px;letter-spacing:.12em;color:rgba(27,27,24,.5);text-transform:uppercase;margin-bottom:36px;text-align:center}
+  /* подпись-стикер сверху */
+  .headwrap{position:absolute;top:120px;left:60px;display:flex;flex-direction:column;gap:0;max-width:640px}
+  .cap{position:absolute;bottom:700px;left:50%;transform:translateX(-50%);white-space:nowrap;
+    font-family:MontserratX,sans-serif;font-weight:900;font-size:54px;text-transform:uppercase;color:var(--ink)}
+</style>
+</head>
+<body>
+<div id="fit"><div id="scene">
+  <div id="art"><div class="img">
+    <svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#1B1B18" stroke-width="3">
+      <circle cx="200" cy="120" r="64"/>
+      <path d="M200 56v-26M200 210v-26M136 120h-26M290 120h-26M155 75l-18-18M263 75l18-18M155 165l-18 18M263 165l18 18"/>
+      <path d="M176 150c0-30 48-30 48 0 0 16-10 18-10 34h-28c0-16-10-18-10-34z"/>
+      <path d="M186 196h28M190 208h20"/>
+    </svg>
+  </div><div class="grid"></div></div>
+  <div class="artlabel">art / screen · slow zoom</div>
+  <div class="headwrap">
+    <div class="tech" data-t="0" style="margin-bottom:24px"><span class="dash"></span><span class="lbl">Идея · Разбор</span></div>
+    <div class="sticker" data-t="300" style="font-size:64px;padding:10px 26px">ГЛАВНАЯ МЫСЛЬ</div>
+  </div>
+  <div class="cap"><span class="w" data-t="1300">ИДЕЯ</span> <span class="w" data-t="1550">ПРОЩЕ,</span> <span class="w" data-t="1800">ЧЕМ</span> <span class="w hl" data-t="2050"><i></i>КАЖЕТСЯ</span></div>
+  <div id="host" data-t="800"><span>cutout аватара<br>(placeholder)</span></div>
+</div></div>
+<script src="../../shared.js"></script>
+</body>
+</html>

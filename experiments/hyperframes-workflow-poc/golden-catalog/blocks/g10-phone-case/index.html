@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>G10 · phone_case_overlay</title>
+<link rel="stylesheet" href="../../tokens.css">
+<style>
+  #phone{width:660px;margin:70px auto 0;background:var(--card);border:8px solid var(--ink);border-radius:64px;
+    padding:36px 30px 46px;box-shadow:12px 14px 0 rgba(27,27,24,.16);transform:rotate(-.8deg) translateY(40px);opacity:0;
+    display:flex;flex-direction:column;gap:26px;min-height:1080px}
+  #phone.in{opacity:1;transform:rotate(-.8deg) translateY(0);transition:opacity .34s var(--ease),transform .46s var(--ease)}
+  .bar{width:200px;height:12px;border-radius:8px;background:var(--ink);opacity:.85;margin:0 auto 18px}
+  .msg{max-width:82%;padding:26px 32px;font-size:34px;font-weight:600;line-height:1.35;color:var(--ink);
+    border:5px solid var(--ink);opacity:0;transform:translateY(20px) scale(.94)}
+  .msg.in{opacity:1;transform:none;transition:opacity .26s var(--ease-pop),transform .34s var(--ease-pop)}
+  .in-l{align-self:flex-start;background:var(--card);border-radius:8px 36px 36px 42px;box-shadow:5px 6px 0 rgba(27,27,24,.14)}
+  .in-r{align-self:flex-end;background:var(--mint);border-radius:36px 8px 42px 36px;box-shadow:5px 6px 0 rgba(27,27,24,.14)}
+  .who{font-family:JBMonoX,monospace;font-size:22px;letter-spacing:.14em;text-transform:uppercase;color:rgba(27,27,24,.55);margin-bottom:8px}
+  .typing{display:inline-flex;gap:10px;align-items:center}
+  .typing b{width:14px;height:14px;border-radius:50%;background:var(--ink);opacity:.35;animation:tp 1s infinite}
+  .typing b:nth-child(2){animation-delay:.15s}.typing b:nth-child(3){animation-delay:.3s}
+  @keyframes tp{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:.8;transform:translateY(-4px)}}
+</style>
+</head>
+<body>
+<div id="fit"><div id="scene">
+  <div class="tech" data-t="0"><span class="dash"></span><span class="lbl">Кейс · Переписка</span></div>
+  <h1 style="font-size:92px"><span class="w" data-t="350">ВОПРОС</span> <span class="w hl" data-t="600"><i></i>В ЧАТЕ</span></h1>
+  <div id="phone" data-t="950">
+    <div class="bar"></div>
+    <div class="msg in-l" data-t="1500"><div class="who">клиент</div>А можно автоматизировать ответы клиентам?</div>
+    <div class="msg in-r" data-t="2600">Можно. Агент отвечает сам, по вашей базе знаний</div>
+    <div class="msg in-l" data-t="3700"><div class="who">клиент</div>Сколько времени займёт запуск?</div>
+    <div class="msg in-r" data-t="4800">Первый сценарий — уже <b style="background:var(--yellow);padding:0 8px">за неделю</b></div>
+  </div>
+  <div class="spacer"></div>
+</div></div>
+<script src="../../shared.js"></script>
+</body>
+</html>

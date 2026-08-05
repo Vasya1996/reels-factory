@@ -1,0 +1,409 @@
+﻿{
+  "ok": true,
+  "strict": false,
+  "lint": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 1,
+    "infoCount": 14,
+    "findings": [
+      {
+        "code": "pointer_events_none",
+        "severity": "info",
+        "message": "`.transition` sets `pointer-events: none`. Elements matching this selector are harder to select in the Studio preview.",
+        "selector": ".transition",
+        "dataAttributes": {},
+        "sourceFile": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "If these elements should be selectable in the Studio, remove `pointer-events: none` or move it to a wrapper that doesn't contain editable content."
+      },
+      {
+        "code": "timeline_track_too_dense",
+        "severity": "warning",
+        "message": "Track 60 has 4 timed elements in this HTML file. Smaller sub-compositions keep timelines easier to read, iterate on, and diff.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move coherent scene groups into separate .html files under compositions/ and mount them from the parent with data-composition-src so the timeline stays easier to inspect, revise, and validate."
+      },
+      {
+        "code": "system_font_will_alias",
+        "severity": "info",
+        "message": "Font family will be substituted at render time: 'arial' → Inter. The renderer maps these to bundled fonts for cross-platform consistency. Use the target font name directly for consistent preview and render results.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s01.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0
+      },
+      {
+        "code": "system_font_will_alias",
+        "severity": "info",
+        "message": "Font family will be substituted at render time: 'arial' → Inter. The renderer maps these to bundled fonts for cross-platform consistency. Use the target font name directly for consistent preview and render results.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s02.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0
+      },
+      {
+        "code": "system_font_will_alias",
+        "severity": "info",
+        "message": "Font family will be substituted at render time: 'arial' → Inter. The renderer maps these to bundled fonts for cross-platform consistency. Use the target font name directly for consistent preview and render results.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s03.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0
+      },
+      {
+        "code": "system_font_will_alias",
+        "severity": "info",
+        "message": "Font family will be substituted at render time: 'arial' → Inter. The renderer maps these to bundled fonts for cross-platform consistency. Use the target font name directly for consistent preview and render results.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s04.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0
+      },
+      {
+        "code": "system_font_will_alias",
+        "severity": "info",
+        "message": "Font family will be substituted at render time: 'arial' → Inter. The renderer maps these to bundled fonts for cross-platform consistency. Use the target font name directly for consistent preview and render results.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s05.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0
+      },
+      {
+        "code": "system_font_will_alias",
+        "severity": "info",
+        "message": "Font family will be substituted at render time: 'arial' → Inter. The renderer maps these to bundled fonts for cross-platform consistency. Use the target font name directly for consistent preview and render results.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s06.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0
+      },
+      {
+        "code": "system_font_will_alias",
+        "severity": "info",
+        "message": "Font family will be substituted at render time: 'arial' → Inter. The renderer maps these to bundled fonts for cross-platform consistency. Use the target font name directly for consistent preview and render results.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s07.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0
+      },
+      {
+        "code": "system_font_will_alias",
+        "severity": "info",
+        "message": "Font family will be substituted at render time: 'arial' → Inter. The renderer maps these to bundled fonts for cross-platform consistency. Use the target font name directly for consistent preview and render results.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s08.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0
+      },
+      {
+        "code": "system_font_will_alias",
+        "severity": "info",
+        "message": "Font family will be substituted at render time: 'arial' → Inter. The renderer maps these to bundled fonts for cross-platform consistency. Use the target font name directly for consistent preview and render results.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s09.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0
+      },
+      {
+        "code": "system_font_will_alias",
+        "severity": "info",
+        "message": "Font family will be substituted at render time: 'arial' → Inter. The renderer maps these to bundled fonts for cross-platform consistency. Use the target font name directly for consistent preview and render results.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s10.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0
+      },
+      {
+        "code": "system_font_will_alias",
+        "severity": "info",
+        "message": "Font family will be substituted at render time: 'arial' → Inter. The renderer maps these to bundled fonts for cross-platform consistency. Use the target font name directly for consistent preview and render results.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s11.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0
+      },
+      {
+        "code": "system_font_will_alias",
+        "severity": "info",
+        "message": "Font family will be substituted at render time: 'arial' → Inter. The renderer maps these to bundled fonts for cross-platform consistency. Use the target font name directly for consistent preview and render results.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s12.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0
+      },
+      {
+        "code": "system_font_will_alias",
+        "severity": "info",
+        "message": "Font family will be substituted at render time: 'arial' → Inter. The renderer maps these to bundled fonts for cross-platform consistency. Use the target font name directly for consistent preview and render results.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s13.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0
+      }
+    ],
+    "filesScanned": 14
+  },
+  "runtime": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": []
+  },
+  "layout": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 2,
+    "findings": [
+      {
+        "code": "container_overflow",
+        "severity": "info",
+        "time": 27.671,
+        "selector": "section.block.nodes-block",
+        "message": "Element extends outside a clipping layout container.",
+        "rect": {
+          "left": -4.1,
+          "top": -7.3,
+          "right": 1084.1,
+          "bottom": 1927.3,
+          "width": 1088.21,
+          "height": 1934.59
+        },
+        "containerSelector": "#s09-canvas",
+        "fixHint": "Resize/reposition the child or container, or mark intentional overflow with data-layout-allow-overflow.",
+        "containerRect": {
+          "left": 0,
+          "top": 0,
+          "right": 1080,
+          "bottom": 1920,
+          "width": 1080,
+          "height": 1920
+        },
+        "overflow": {
+          "left": 4.1,
+          "right": 4.1,
+          "top": 7.3,
+          "bottom": 7.3
+        },
+        "dataAttributes": {},
+        "sourceFile": "compositions/s05.html",
+        "bbox": {
+          "x": -4.1,
+          "y": -7.3,
+          "width": 1088.21,
+          "height": 1934.59
+        },
+        "firstSeen": 27.671,
+        "lastSeen": 27.671,
+        "occurrences": 1
+      },
+      {
+        "code": "container_overflow",
+        "severity": "info",
+        "time": 30.926,
+        "selector": "section.block.nodes-block",
+        "message": "Element extends outside a clipping layout container.",
+        "rect": {
+          "left": -7.56,
+          "top": -13.44,
+          "right": 1087.56,
+          "bottom": 1933.44,
+          "width": 1095.12,
+          "height": 1946.88
+        },
+        "containerSelector": "#s10-canvas",
+        "fixHint": "Resize/reposition the child or container, or mark intentional overflow with data-layout-allow-overflow.",
+        "containerRect": {
+          "left": 0,
+          "top": 0,
+          "right": 1080,
+          "bottom": 1920,
+          "width": 1080,
+          "height": 1920
+        },
+        "overflow": {
+          "left": 7.56,
+          "right": 7.56,
+          "top": 13.44,
+          "bottom": 13.44
+        },
+        "dataAttributes": {},
+        "sourceFile": "compositions/s05.html",
+        "bbox": {
+          "x": -7.56,
+          "y": -13.44,
+          "width": 1095.12,
+          "height": 1946.88
+        },
+        "firstSeen": 30.926,
+        "lastSeen": 30.926,
+        "occurrences": 1
+      }
+    ],
+    "duration": 42.32,
+    "samples": [
+      1.628,
+      4.883,
+      8.138,
+      11.394,
+      14.649,
+      17.905,
+      21.16,
+      24.415,
+      27.671,
+      30.926,
+      34.182,
+      37.437,
+      40.692
+    ],
+    "transitionSamples": [],
+    "transitionSamplesDropped": 0,
+    "tolerance": 2,
+    "totalIssueCount": 2,
+    "truncated": false
+  },
+  "motion": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": [],
+    "enabled": false,
+    "samples": 0
+  },
+  "contrast": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": [],
+    "enabled": true,
+    "samples": [
+      1.628,
+      11.394,
+      21.16,
+      30.926,
+      40.692
+    ],
+    "checked": 50,
+    "passed": 50
+  },
+  "snapshots": {
+    "enabled": true,
+    "files": [
+      "snapshots\\frame-00-at-1.6s.png",
+      "snapshots\\frame-01-at-11.4s.png",
+      "snapshots\\frame-02-at-21.2s.png",
+      "snapshots\\frame-03-at-30.9s.png",
+      "snapshots\\frame-04-at-40.7s.png"
+    ],
+    "times": [
+      1.628,
+      11.394,
+      21.16,
+      30.926,
+      40.692
+    ],
+    "findingFiles": []
+  },
+  "_meta": {
+    "version": "0.7.88",
+    "latestVersion": "0.7.88",
+    "updateAvailable": false
+  }
+}

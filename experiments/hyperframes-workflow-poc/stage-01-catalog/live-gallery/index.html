@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HyperFrames Live Gallery</title>
+    <link rel="stylesheet" href="assets/gallery.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>HyperFrames Live Gallery</h1>
+        <p>161 существующий catalog item, каждый preview собирается из реального source_ref.</p>
+      </div>
+      <div class="summary" id="summary"></div>
+    </header>
+    <section class="filters" aria-label="Фильтры">
+      <input id="search" type="search" placeholder="Поиск по title, ID, description" />
+      <select id="sourceFilter"><option value="">source</option></select>
+      <select id="kindFilter"><option value="">kind</option></select>
+      <select id="statusFilter"><option value="">review status</option></select>
+      <select id="orientationFilter"><option value="">orientation</option></select>
+      <select id="liveFilter"><option value="">live status</option><option>PASS</option><option>FAIL</option></select>
+    </section>
+    <main id="grid" class="grid" aria-live="polite"></main>
+    <dialog id="modal">
+      <div class="modal-shell">
+        <div class="modal-head">
+          <div><strong id="modalTitle"></strong><span id="modalMeta"></span></div>
+          <button id="closeModal" type="button" aria-label="Закрыть">×</button>
+        </div>
+        <div id="iframeBox" class="iframe-box"></div>
+        <div class="modal-controls">
+          <button id="playBtn" type="button">Play</button>
+          <button id="pauseBtn" type="button">Pause</button>
+          <button id="restartBtn" type="button">Restart</button>
+          <button data-jump="0" type="button">Start</button>
+          <button data-jump="0.5" type="button">Middle</button>
+          <button data-jump="0.95" type="button">End</button>
+          <input id="scrubber" type="range" min="0" max="1" step="0.001" value="0" />
+          <a id="manifestLink" target="_blank" rel="noreferrer">item manifest</a>
+        </div>
+        <pre id="modalError"></pre>
+      </div>
+    </dialog>
+    <script src="assets/gallery.js"></script>
+  </body>
+</html>

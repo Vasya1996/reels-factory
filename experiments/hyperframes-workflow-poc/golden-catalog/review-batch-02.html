@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Приёмка · Партия 2 golden-блоков</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,sans-serif;background:#efece4;color:#111;padding:24px}
+  h1{font-size:20px;margin-bottom:4px}
+  .sub{color:#666;font-size:13px;margin-bottom:24px}
+  .grid{display:flex;gap:20px;flex-wrap:wrap}
+  .cell{width:330px}
+  .cell .name{font-weight:700;font-size:14px;margin:10px 0 2px}
+  .cell .what{font-size:12px;color:#666;line-height:1.4;min-height:3em}
+  .ph{width:324px;height:576px;border-radius:12px;overflow:hidden;background:#000;box-shadow:0 10px 30px rgba(0,0,0,.2)}
+  .ph iframe{width:1080px;height:1920px;transform:scale(.3);transform-origin:0 0;border:0}
+  .btns{display:flex;gap:8px;margin-top:8px}
+  .btns a{flex:1;text-align:center;font-size:12px;font-weight:700;padding:8px 0;border:1.5px solid #111;border-radius:6px;color:#111;text-decoration:none}
+</style>
+</head>
+<body>
+<h1>Партия 2 — приёмка (новые приёмы из референсов)</h1>
+<div class="sub">Ответ в чат по каждому: «G14 да / правка …». Пунктирные зоны — плейсхолдеры аватара/скринкаста, в проде там реальный контент.</div>
+<div class="grid" id="g"></div>
+<script>
+const B=[
+ {id:'g14-presenter-over-art', name:'G14 · presenter_over_fullscreen_art', what:'Fullscreen-арт с медленным зумом, аватар маленький внизу, стикер-заголовок + подпись'},
+ {id:'g15-big-ghost-number', name:'G15 · big_ghost_number', what:'Гигантская контурная цифра штампуется за пунктами перечисления: 1 → 2 → 3'},
+ {id:'g16-app-price-cards', name:'G16 · app_price_cards', what:'Карточки сервисов с ценниками копятся, финал — красный стикер с суммой'},
+ {id:'g17-pip-screencast', name:'G17 · pip_screencast', what:'Скринкаст в «браузере» с дрейф-зумом, красная рукописная обводка, аватар в PiP'},
+ {id:'g18-feature-typo-wall', name:'G18 · feature_typo_wall', what:'Стена крупных слов в ритме перечисления, ключевые с цветной подложкой'},
+ {id:'g19-text-selection', name:'G19 · text_selection_highlight', what:'Строка в документе выделяется как selection мышью + рукописная пометка'},
+ {id:'g20-cta-pill-word', name:'G20 · cta_pill_word', what:'Финал: жёлтая пилюля со словом для комментария, пульс-напоминание, handle'},
+];
+document.getElementById('g').innerHTML=B.map(b=>`
+ <div class="cell">
+  <div class="ph"><iframe src="blocks/${b.id}/index.html" scrolling="no"></iframe></div>
+  <div class="name">${b.name}</div>
+  <div class="what">${b.what}</div>
+  <div class="btns"><a href="blocks/${b.id}/index.html" target="_blank">Открыть</a>
+  <a href="#" onclick="const f=this.closest('.cell').querySelector('iframe');f.src=f.src;return false">↻ Повтор</a></div>
+ </div>`).join('');
+</script>
+</body>
+</html>

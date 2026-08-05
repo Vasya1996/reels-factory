@@ -1,0 +1,465 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HyperFrames one-call edit plan draft",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "plan_version",
+    "status",
+    "project_id",
+    "duration_seconds",
+    "creative_direction",
+    "scenes",
+    "global_notes"
+  ],
+  "properties": {
+    "plan_version": {
+      "const": "hf-edit-plan-poc-1"
+    },
+    "status": {
+      "const": "draft"
+    },
+    "project_id": {
+      "const": "sales-three-questions-poc"
+    },
+    "duration_seconds": {
+      "const": 42.32
+    },
+    "creative_direction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "concept",
+        "mood",
+        "rhythm",
+        "primary_transition_id",
+        "accent_transition_ids"
+      ],
+      "properties": {
+        "concept": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 400
+        },
+        "mood": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 160
+        },
+        "rhythm": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 220
+        },
+        "primary_transition_id": {
+          "type": "string",
+          "enum": [
+            "approved:transition:hard_cut",
+            "approved:transition:transition_blur",
+            "approved:transition:transition_chromatic",
+            "approved:transition:transition_push_editorial",
+            "approved:transition:transition_white_flash"
+          ]
+        },
+        "accent_transition_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 2,
+          "items": {
+            "type": "string",
+            "enum": [
+              "approved:transition:hard_cut",
+              "approved:transition:transition_blur",
+              "approved:transition:transition_chromatic",
+              "approved:transition:transition_push_editorial",
+              "approved:transition:transition_white_flash"
+            ]
+          }
+        }
+      }
+    },
+    "scenes": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 18,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scene_id",
+          "word_start",
+          "word_end",
+          "purpose",
+          "coverage",
+          "layout_id",
+          "primary_block_id",
+          "component_ids",
+          "technique_ids",
+          "transition_in_id",
+          "content",
+          "captions",
+          "avatar_direction",
+          "media_intents",
+          "adaptation_requests",
+          "rationale"
+        ],
+        "properties": {
+          "scene_id": {
+            "type": "string",
+            "pattern": "^s[0-9]{2}$"
+          },
+          "word_start": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 99
+          },
+          "word_end": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 99
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "hook",
+              "build",
+              "explain",
+              "contrast",
+              "payoff",
+              "cta"
+            ]
+          },
+          "coverage": {
+            "type": "string",
+            "enum": [
+              "avatar",
+              "mixed",
+              "hyperframes",
+              "broll"
+            ]
+          },
+          "layout_id": {
+            "type": "string",
+            "enum": [
+              "approved:layout:avatar_broll_split",
+              "approved:layout:avatar_editorial_bubble",
+              "approved:layout:avatar_fullscreen",
+              "approved:layout:avatar_object_overlay",
+              "approved:layout:broll_archival_collage",
+              "approved:layout:broll_fullscreen",
+              "approved:layout:checklist_strike",
+              "approved:layout:progressive_text_card",
+              "approved:layout:social_outro"
+            ]
+          },
+          "primary_block_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "local:block:before_after",
+                  "local:block:complexity_cloud",
+                  "local:block:concept_nodes",
+                  "local:block:persona_card",
+                  "local:block:sequence_flow",
+                  "local:block:stat_number",
+                  "local:block:task_list",
+                  "local:block:value_layers"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "component_ids": {
+            "type": "array",
+            "maxItems": 0,
+            "items": {
+              "type": "string"
+            }
+          },
+          "technique_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "maxItems": 4,
+            "items": {
+              "type": "string",
+              "enum": [
+                "animated_stat_countup",
+                "archival_broll_collage",
+                "avatar_broll_split",
+                "avatar_editorial_bubble",
+                "avatar_fullscreen_anchor",
+                "avatar_object_overlay",
+                "before_after_comparison",
+                "blur_soft_transition",
+                "broll_fullscreen",
+                "caption_blend_difference",
+                "caption_clip_wipe",
+                "caption_editorial_emphasis",
+                "caption_emoji_pop",
+                "caption_glitch_rgb",
+                "caption_gradient_fill",
+                "caption_highlight",
+                "caption_kinetic_slam",
+                "caption_matrix_decode",
+                "caption_neon_accent",
+                "caption_neon_glow",
+                "caption_parallax_layers",
+                "caption_particle_burst",
+                "caption_pill_karaoke",
+                "caption_texture",
+                "caption_weight_shift",
+                "catalog_reference_grid_pixelate_wipe",
+                "catalog_reference_morph_text",
+                "checklist_strike_routine",
+                "chromatic_accent_transition",
+                "complexity_to_resolution",
+                "concept_node_map",
+                "editorial_push_transition",
+                "hard_cut_transition",
+                "media_treatment_grain_overlay",
+                "media_treatment_shimmer_sweep",
+                "media_treatment_texture_mask_text",
+                "media_treatment_vignette",
+                "persona_context_card",
+                "progressive_text_card",
+                "sequence_step_flow",
+                "social_outro_lockup",
+                "social_overlay_instagram_follow",
+                "social_overlay_spotify_card",
+                "social_overlay_tiktok_follow",
+                "task_checklist_reveal",
+                "transition_parallax_unzoom",
+                "transition_parallax_zoom",
+                "value_layer_swap",
+                "white_flash_transition"
+              ]
+            }
+          },
+          "transition_in_id": {
+            "type": "string",
+            "enum": [
+              "approved:transition:hard_cut",
+              "approved:transition:transition_blur",
+              "approved:transition:transition_chromatic",
+              "approved:transition:transition_push_editorial",
+              "approved:transition:transition_white_flash"
+            ]
+          },
+          "content": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "headline",
+              "labels",
+              "emphasis_words"
+            ],
+            "properties": {
+              "headline": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 80
+              },
+              "labels": {
+                "type": "array",
+                "maxItems": 5,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                }
+              },
+              "emphasis_words": {
+                "type": "array",
+                "uniqueItems": true,
+                "maxItems": 3,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30
+                }
+              }
+            }
+          },
+          "captions": {
+            "type": "string",
+            "enum": [
+              "bottom",
+              "top",
+              "hidden"
+            ]
+          },
+          "avatar_direction": {
+            "type": "string",
+            "enum": [
+              "fullscreen",
+              "split",
+              "editorial_bubble",
+              "object_overlay",
+              "hidden"
+            ]
+          },
+          "media_intents": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "query",
+                "purpose",
+                "required"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "broll",
+                    "image",
+                    "icon",
+                    "sfx"
+                  ]
+                },
+                "query": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 120
+                },
+                "purpose": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 160
+                },
+                "required": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "adaptation_requests": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "catalog_id",
+                "fallback_catalog_id",
+                "reason",
+                "desired_parameters"
+              ],
+              "properties": {
+                "catalog_id": {
+                  "type": "string",
+                  "enum": [
+                    "upstream:block:instagram-follow",
+                    "upstream:block:spotify-card",
+                    "upstream:block:tiktok-follow",
+                    "upstream:component:caption-blend-difference",
+                    "upstream:component:caption-clip-wipe",
+                    "upstream:component:caption-editorial-emphasis",
+                    "upstream:component:caption-emoji-pop",
+                    "upstream:component:caption-glitch-rgb",
+                    "upstream:component:caption-gradient-fill",
+                    "upstream:component:caption-highlight",
+                    "upstream:component:caption-kinetic-slam",
+                    "upstream:component:caption-matrix-decode",
+                    "upstream:component:caption-neon-accent",
+                    "upstream:component:caption-neon-glow",
+                    "upstream:component:caption-parallax-layers",
+                    "upstream:component:caption-particle-burst",
+                    "upstream:component:caption-pill-karaoke",
+                    "upstream:component:caption-texture",
+                    "upstream:component:caption-weight-shift",
+                    "upstream:component:grain-overlay",
+                    "upstream:component:grid-pixelate-wipe",
+                    "upstream:component:morph-text",
+                    "upstream:component:parallax-unzoom",
+                    "upstream:component:parallax-zoom",
+                    "upstream:component:shimmer-sweep",
+                    "upstream:component:texture-mask-text",
+                    "upstream:component:vignette"
+                  ]
+                },
+                "fallback_catalog_id": {
+                  "type": "string",
+                  "enum": [
+                    "approved:layout:avatar_broll_split",
+                    "approved:layout:avatar_editorial_bubble",
+                    "approved:layout:avatar_fullscreen",
+                    "approved:layout:avatar_object_overlay",
+                    "approved:layout:broll_archival_collage",
+                    "approved:layout:broll_fullscreen",
+                    "approved:layout:checklist_strike",
+                    "approved:layout:progressive_text_card",
+                    "approved:layout:social_outro",
+                    "approved:transition:hard_cut",
+                    "approved:transition:transition_blur",
+                    "approved:transition:transition_chromatic",
+                    "approved:transition:transition_push_editorial",
+                    "approved:transition:transition_white_flash",
+                    "local:block:before_after",
+                    "local:block:complexity_cloud",
+                    "local:block:concept_nodes",
+                    "local:block:persona_card",
+                    "local:block:sequence_flow",
+                    "local:block:stat_number",
+                    "local:block:task_list",
+                    "local:block:value_layers"
+                  ]
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 5,
+                  "maxLength": 220
+                },
+                "desired_parameters": {
+                  "type": "array",
+                  "maxItems": 10,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "name",
+                      "value"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 60
+                      },
+                      "value": {
+                        "type": "string",
+                        "maxLength": 160
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 260
+          }
+        }
+      }
+    },
+    "global_notes": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 220
+      }
+    }
+  }
+}

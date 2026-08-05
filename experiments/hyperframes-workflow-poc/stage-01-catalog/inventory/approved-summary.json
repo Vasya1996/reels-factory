@@ -1,0 +1,8 @@
+{
+  "layouts": 10,
+  "transitions": 5,
+  "parameterization_level": "approved_js_contract",
+  "forbidden": [
+    "approved:layout:avatar_cutout_overlay"
+  ]
+}

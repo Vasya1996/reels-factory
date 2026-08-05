@@ -1,0 +1,223 @@
+{
+  "plan_version": "hf-edit-plan-golden-2",
+  "status": "draft",
+  "project_id": "avatar-bot-poc",
+  "duration_seconds": 29.54,
+  "creative_direction": {
+    "concept": "Мета-хук: этот самый ролик снят аватаром, и это признание становится доказательством продукта. Дальше — боль (нет времени снимать каждый день), контраст (регулярность решает), решение (бот из фото+голоса) и результат (готовое видео с монтажом), CTA на личку.",
+    "mood": "Уверенный, слегка дерзкий reveal в хуке; деловой и быстрый в объяснении; тёплый дружелюбный CTA.",
+    "rhythm": "Hard cut почти everywhere, два white_flash-акцента: на explain-повороте (появление бота) и на CTA.",
+    "primary_transition_id": "hard_cut"
+  },
+  "scenes": [
+    {
+      "scene_id": "s01",
+      "word_start": 0,
+      "word_end": 9,
+      "start": 0,
+      "end": 3.38,
+      "purpose": "hook",
+      "block": "avatarFullscreen",
+      "avatar_direction": "fullscreen",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": null,
+        "labels": [],
+        "emphasis_words": [
+          "аватар"
+        ]
+      },
+      "rationale": "Правило v3 №1: признание «записала не я» — уже сильная фраза, отдельный заголовок был бы либо дублем субтитров, либо абстракцией. Правило v3 №2 и v4 №7: хук строго TRUE fullscreen (видео на весь кадр, без бумаги/рамки)."
+    },
+    {
+      "scene_id": "s02",
+      "word_start": 10,
+      "word_end": 16,
+      "start": 3.38,
+      "end": 5.49,
+      "purpose": "contrast",
+      "block": "avatarBubble",
+      "avatar_direction": "editorial_bubble",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": "КАК ЖИВОЙ",
+        "labels": [],
+        "emphasis_words": [
+          "видео"
+        ]
+      },
+      "rationale": "Заголовок — перефраз идеи «не отличить от реального» другими словами (0% пересечения со словами сцены), не цитата. Смена раскладки с fullscreen на editorial bubble — визуальная смена ритма после хука."
+    },
+    {
+      "scene_id": "s03",
+      "word_start": 17,
+      "word_end": 26,
+      "start": 5.49,
+      "end": 9.74,
+      "purpose": "build",
+      "block": "complexityCloud",
+      "avatar_direction": "fullscreen",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": "НЕТ ВРЕМЕНИ",
+        "labels": [
+          {
+            "text": "продукт",
+            "trigger_word_index": 19
+          },
+          {
+            "text": "контент",
+            "trigger_word_index": 24
+          },
+          {
+            "text": "каждый день",
+            "trigger_word_index": 25
+          }
+        ],
+        "emphasis_words": [
+          "успеваешь"
+        ]
+      },
+      "rationale": "Облако — конкретные слова из речи сцены (продукт/контент/каждый день), не выдуманные категории (правило v3 №5). Первый триггер на слове 19 (0.73с от начала сцены) — правило v4 №6 соблюдено."
+    },
+    {
+      "scene_id": "s04",
+      "word_start": 27,
+      "word_end": 34,
+      "start": 9.74,
+      "end": 13.46,
+      "purpose": "contrast",
+      "block": "avatarBubble",
+      "avatar_direction": "editorial_bubble",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": "КТО НА ВИДУ",
+        "labels": [
+          {
+            "text": "в соцсетях",
+            "trigger_word_index": 29
+          },
+          {
+            "text": "видят регулярно",
+            "trigger_word_index": 33
+          }
+        ],
+        "emphasis_words": [
+          "регулярно"
+        ]
+      },
+      "rationale": "Заголовок — контрастная формулировка идеи алгоритма, не цитата (0% пересечения). Первая пилюля триггерится словом 29 (0.2с от начала сцены) — правило v4 №6."
+    },
+    {
+      "scene_id": "s05",
+      "word_start": 35,
+      "word_end": 46,
+      "start": 13.46,
+      "end": 18.12,
+      "purpose": "explain",
+      "block": "avatarFullscreen",
+      "avatar_direction": "fullscreen",
+      "captions": "bottom",
+      "transition_in": "white_flash",
+      "content": {
+        "headline": null,
+        "labels": [],
+        "emphasis_words": [
+          "фото"
+        ]
+      },
+      "rationale": "Поворот сюжета (появление решения) — второй TRUE-fullscreen на ролике (правило v4 №7, ≥2 сцены) + акцентный переход. Headline — одиночное имя решения (пул 0-1 слово всегда PASS)."
+    },
+    {
+      "scene_id": "s06",
+      "word_start": 47,
+      "word_end": 54,
+      "start": 18.12,
+      "end": 21.3,
+      "purpose": "payoff",
+      "block": "phoneCase",
+      "avatar_direction": "object_overlay",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": null,
+        "labels": [
+          "Видео готово 🎬",
+          "Уже в сторис 🔥"
+        ],
+        "emphasis_words": [
+          "соцсетей"
+        ]
+      },
+      "rationale": "Придуманный кейс-чат (EXEMPT_BLOCKS) визуализирует результат «готовое видео для соцсетей» как реальную переписку — жанр не пересказывает речь дословно, это разрешено паспортом phoneCase."
+    },
+    {
+      "scene_id": "s07",
+      "word_start": 55,
+      "word_end": 61,
+      "start": 21.3,
+      "end": 25.72,
+      "purpose": "payoff",
+      "block": "taskList",
+      "avatar_direction": "object_overlay",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": "ГОТОВО",
+        "labels": [
+          {
+            "text": "смонтированное",
+            "trigger_word_index": 56
+          },
+          {
+            "text": "субтитрами",
+            "trigger_word_index": 58
+          },
+          {
+            "text": "анимациями",
+            "trigger_word_index": 59
+          },
+          {
+            "text": "эффектами",
+            "trigger_word_index": 61
+          }
+        ],
+        "emphasis_words": [
+          "анимациями"
+        ]
+      },
+      "rationale": "Список фич из речи сцены дословно (правило v3 №5). Первый триггер — слово 56 (0.21с от начала сцены, правило v4 №6). Headline «ГОТОВО» — одиночное слово-вывод, не цитата, не мета-категория. Блок taskList (не complexityCloud) — правило v5 №12: галочка-подтверждение для позитивного перечисления «уже сделано», а не метафора перегруза (замечание критика по итогам круга 2)."
+    },
+    {
+      "scene_id": "s08",
+      "word_start": 62,
+      "word_end": 70,
+      "start": 25.72,
+      "end": 29.54,
+      "purpose": "cta",
+      "block": "avatarFullscreenCta",
+      "avatar_direction": "fullscreen",
+      "captions": "bottom",
+      "transition_in": "white_flash",
+      "content": {
+        "headline": null,
+        "labels": [
+          "@julia.agents"
+        ],
+        "emphasis_words": [
+          "хочу"
+        ]
+      },
+      "rationale": "Сама реплика («пиши хочу») уже несёт CTA — отдельный заголовок дублировал бы её (>60% пересечения), поэтому headline: null (правило дублирования). @handle — данные личности канала, не речь, EXEMPT_BLOCKS. Финальный TRUE-fullscreen + акцентный переход на CTA."
+    }
+  ],
+  "global_notes": [
+    "TRUE-fullscreen сцены: s01 (хук), s05 (explain-поворот), s08 (CTA) — суммарно ~40% хронометража, выше ориентира v3 №2 (~20%), но осознанно: сам сюжет ролика про фотореалистичность аватара, больше времени на лице оправдано.",
+    "Аватар видим 100% хронометража (avatar_direction ни разу hidden) — с запасом перекрывает правило avatar-first (≥50%).",
+    "Компиляция использует общий плейсхолдер assets/avatar.mp4 (dashed-болванка) — реальные HeyGen-острова генерятся только после приёмки превью."
+  ]
+}

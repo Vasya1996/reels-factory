@@ -1,0 +1,1432 @@
+{
+  "catalog_version": 1,
+  "dependencies": [
+    {
+      "item_id": "upstream:block:app-showcase",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/app-showcase/app-showcase.html",
+      "line": 770
+    },
+    {
+      "item_id": "upstream:block:app-showcase",
+      "url": "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap",
+      "usage": "css_url",
+      "path": "registry/blocks/app-showcase/app-showcase.html",
+      "line": 365
+    },
+    {
+      "item_id": "upstream:block:app-showcase",
+      "url": "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap",
+      "usage": "css_import",
+      "path": "registry/blocks/app-showcase/app-showcase.html",
+      "line": 365
+    },
+    {
+      "item_id": "upstream:block:apple-money-count",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/apple-money-count/apple-money-count.html",
+      "line": 6
+    },
+    {
+      "item_id": "upstream:block:blue-sweater-intro-video",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/blue-sweater-intro-video/blue-sweater-intro-video.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:camcorder-hud",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/camcorder-hud/camcorder-hud.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:chromatic-radial-split",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/chromatic-radial-split/chromatic-radial-split.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:chromatic-radial-split",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_url",
+      "path": "registry/blocks/chromatic-radial-split/chromatic-radial-split.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:chromatic-radial-split",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_import",
+      "path": "registry/blocks/chromatic-radial-split/chromatic-radial-split.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:cinematic-zoom",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/cinematic-zoom/cinematic-zoom.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:cinematic-zoom",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_url",
+      "path": "registry/blocks/cinematic-zoom/cinematic-zoom.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:cinematic-zoom",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_import",
+      "path": "registry/blocks/cinematic-zoom/cinematic-zoom.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:code-3d-extrude",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-3d-extrude/code-3d-extrude.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:code-3d-extrude",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-3d-extrude/code-3d-extrude.html",
+      "line": 8
+    },
+    {
+      "item_id": "upstream:block:code-diff",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-diff/code-diff.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:code-highlight",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-highlight/code-highlight.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:code-morph",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-morph/code-morph.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:code-particle-assemble",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-particle-assemble/code-particle-assemble.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:code-particle-assemble",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-particle-assemble/code-particle-assemble.html",
+      "line": 8
+    },
+    {
+      "item_id": "upstream:block:code-scroll",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-scroll/code-scroll.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:code-shader-dissolve",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-shader-dissolve/code-shader-dissolve.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:code-shader-dissolve",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-shader-dissolve/code-shader-dissolve.html",
+      "line": 8
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-basic",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-apple-terminal-basic/code-snippet-apple-terminal-basic.html",
+      "line": 183
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-clear-dark",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-apple-terminal-clear-dark/code-snippet-apple-terminal-clear-dark.html",
+      "line": 184
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-clear-light",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-apple-terminal-clear-light/code-snippet-apple-terminal-clear-light.html",
+      "line": 184
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-grass",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-apple-terminal-grass/code-snippet-apple-terminal-grass.html",
+      "line": 183
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-homebrew",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-apple-terminal-homebrew/code-snippet-apple-terminal-homebrew.html",
+      "line": 188
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-man-page",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-apple-terminal-man-page/code-snippet-apple-terminal-man-page.html",
+      "line": 190
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-novel",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-apple-terminal-novel/code-snippet-apple-terminal-novel.html",
+      "line": 184
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-ocean",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-apple-terminal-ocean/code-snippet-apple-terminal-ocean.html",
+      "line": 193
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-pro",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-apple-terminal-pro/code-snippet-apple-terminal-pro.html",
+      "line": 187
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-red-sands",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-apple-terminal-red-sands/code-snippet-apple-terminal-red-sands.html",
+      "line": 184
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-silver-aerogel",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-apple-terminal-silver-aerogel/code-snippet-apple-terminal-silver-aerogel.html",
+      "line": 190
+    },
+    {
+      "item_id": "upstream:block:code-snippet-apple-terminal-solid-colors",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-apple-terminal-solid-colors/code-snippet-apple-terminal-solid-colors.html",
+      "line": 187
+    },
+    {
+      "item_id": "upstream:block:code-snippet-dark-2026",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-dark-2026/code-snippet-dark-2026.html",
+      "line": 602
+    },
+    {
+      "item_id": "upstream:block:code-snippet-dark-modern",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-dark-modern/code-snippet-dark-modern.html",
+      "line": 602
+    },
+    {
+      "item_id": "upstream:block:code-snippet-dark-plus",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-dark-plus/code-snippet-dark-plus.html",
+      "line": 602
+    },
+    {
+      "item_id": "upstream:block:code-snippet-flight",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-flight/code-snippet-flight.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:code-snippet-high-contrast",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-high-contrast/code-snippet-high-contrast.html",
+      "line": 602
+    },
+    {
+      "item_id": "upstream:block:code-snippet-high-contrast-light",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-high-contrast-light/code-snippet-high-contrast-light.html",
+      "line": 602
+    },
+    {
+      "item_id": "upstream:block:code-snippet-light-2026",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-light-2026/code-snippet-light-2026.html",
+      "line": 602
+    },
+    {
+      "item_id": "upstream:block:code-snippet-light-modern",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-light-modern/code-snippet-light-modern.html",
+      "line": 602
+    },
+    {
+      "item_id": "upstream:block:code-snippet-light-plus",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-light-plus/code-snippet-light-plus.html",
+      "line": 602
+    },
+    {
+      "item_id": "upstream:block:code-snippet-monokai",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-monokai/code-snippet-monokai.html",
+      "line": 602
+    },
+    {
+      "item_id": "upstream:block:code-snippet-solarized-light",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-solarized-light/code-snippet-solarized-light.html",
+      "line": 602
+    },
+    {
+      "item_id": "upstream:block:code-snippet-visual-studio-dark",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-visual-studio-dark/code-snippet-visual-studio-dark.html",
+      "line": 602
+    },
+    {
+      "item_id": "upstream:block:code-snippet-visual-studio-light",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-snippet-visual-studio-light/code-snippet-visual-studio-light.html",
+      "line": 602
+    },
+    {
+      "item_id": "upstream:block:code-typing",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/code-typing/code-typing.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:cross-warp-morph",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/cross-warp-morph/cross-warp-morph.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:cross-warp-morph",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_url",
+      "path": "registry/blocks/cross-warp-morph/cross-warp-morph.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:cross-warp-morph",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_import",
+      "path": "registry/blocks/cross-warp-morph/cross-warp-morph.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:data-chart",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/data-chart/data-chart.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:block:domain-warp-dissolve",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/domain-warp-dissolve/domain-warp-dissolve.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:domain-warp-dissolve",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_url",
+      "path": "registry/blocks/domain-warp-dissolve/domain-warp-dissolve.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:domain-warp-dissolve",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_import",
+      "path": "registry/blocks/domain-warp-dissolve/domain-warp-dissolve.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:editorial-flash-overlay",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/editorial-flash-overlay/editorial-flash-overlay.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:flash-through-white",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/flash-through-white/flash-through-white.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:flash-through-white",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_url",
+      "path": "registry/blocks/flash-through-white/flash-through-white.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:flash-through-white",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_import",
+      "path": "registry/blocks/flash-through-white/flash-through-white.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:flowchart",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/flowchart/flowchart.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:block:flowchart-vertical",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/flowchart-vertical/flowchart-vertical.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:block:freeze-frame-dressing",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/freeze-frame-dressing/freeze-frame-dressing.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:glitch",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/glitch/glitch.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:glitch",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_url",
+      "path": "registry/blocks/glitch/glitch.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:glitch",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_import",
+      "path": "registry/blocks/glitch/glitch.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:gravitational-lens",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/gravitational-lens/gravitational-lens.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:gravitational-lens",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_url",
+      "path": "registry/blocks/gravitational-lens/gravitational-lens.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:gravitational-lens",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_import",
+      "path": "registry/blocks/gravitational-lens/gravitational-lens.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:instagram-follow",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/instagram-follow/instagram-follow.html",
+      "line": 11
+    },
+    {
+      "item_id": "upstream:block:ios26-liquid-glass",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/ios26-liquid-glass/ios26-liquid-glass.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:ios26-liquid-glass",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/ios26-liquid-glass/ios26-liquid-glass.html",
+      "line": 8
+    },
+    {
+      "item_id": "upstream:block:ios26-liquid-glass",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/DRACOLoader.js",
+      "usage": "script_src",
+      "path": "registry/blocks/ios26-liquid-glass/ios26-liquid-glass.html",
+      "line": 9
+    },
+    {
+      "item_id": "upstream:block:ios26-liquid-glass",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js",
+      "usage": "script_src",
+      "path": "registry/blocks/ios26-liquid-glass/ios26-liquid-glass.html",
+      "line": 10
+    },
+    {
+      "item_id": "upstream:block:light-leak",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/light-leak/light-leak.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:light-leak",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_url",
+      "path": "registry/blocks/light-leak/light-leak.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:light-leak",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_import",
+      "path": "registry/blocks/light-leak/light-leak.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:liquid-glass-context-menu",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/liquid-glass-context-menu/liquid-glass-context-menu.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:liquid-glass-context-menu",
+      "url": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/liquid-glass-context-menu/liquid-glass-context-menu.html",
+      "line": 8
+    },
+    {
+      "item_id": "upstream:block:liquid-glass-media-controls",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/liquid-glass-media-controls/liquid-glass-media-controls.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:liquid-glass-media-controls",
+      "url": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/liquid-glass-media-controls/liquid-glass-media-controls.html",
+      "line": 8
+    },
+    {
+      "item_id": "upstream:block:liquid-glass-notification",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/liquid-glass-notification/liquid-glass-notification.html",
+      "line": 6
+    },
+    {
+      "item_id": "upstream:block:liquid-glass-notification",
+      "url": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/liquid-glass-notification/liquid-glass-notification.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:liquid-glass-widgets",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/liquid-glass-widgets/liquid-glass-widgets.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:liquid-glass-widgets",
+      "url": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/liquid-glass-widgets/liquid-glass-widgets.html",
+      "line": 8
+    },
+    {
+      "item_id": "upstream:block:logo-outro",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/logo-outro/logo-outro.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:block:lower-third-bild",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/lower-third-bild/lower-third-bild.html",
+      "line": 21
+    },
+    {
+      "item_id": "upstream:block:lt-accent-underline",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/lt-accent-underline/lt-accent-underline.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:lt-bold-block",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/lt-bold-block/lt-bold-block.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:lt-clean-bar",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/lt-clean-bar/lt-clean-bar.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:lt-color-block",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/lt-color-block/lt-color-block.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:lt-dark-card",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/lt-dark-card/lt-dark-card.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:lt-kicker-name",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/lt-kicker-name/lt-kicker-name.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:lt-mask-reveal",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/lt-mask-reveal/lt-mask-reveal.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:lt-side-rule",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/lt-side-rule/lt-side-rule.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:lt-soft-pill",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/lt-soft-pill/lt-soft-pill.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:lt-stack-bars",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/lt-stack-bars/lt-stack-bars.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:macos-notification",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/macos-notification/macos-notification.html",
+      "line": 11
+    },
+    {
+      "item_id": "upstream:block:macos-tahoe-liquid-glass",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/macos-tahoe-liquid-glass/macos-tahoe-liquid-glass.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:macos-tahoe-liquid-glass",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/macos-tahoe-liquid-glass/macos-tahoe-liquid-glass.html",
+      "line": 8
+    },
+    {
+      "item_id": "upstream:block:macos-tahoe-liquid-glass",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/DRACOLoader.js",
+      "usage": "script_src",
+      "path": "registry/blocks/macos-tahoe-liquid-glass/macos-tahoe-liquid-glass.html",
+      "line": 9
+    },
+    {
+      "item_id": "upstream:block:macos-tahoe-liquid-glass",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js",
+      "usage": "script_src",
+      "path": "registry/blocks/macos-tahoe-liquid-glass/macos-tahoe-liquid-glass.html",
+      "line": 10
+    },
+    {
+      "item_id": "upstream:block:news-ticker",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/news-ticker/news-ticker.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:north-korea-locked-down",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/north-korea-locked-down/north-korea-locked-down.html",
+      "line": 6
+    },
+    {
+      "item_id": "upstream:block:nyc-paris-flight",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/nyc-paris-flight/nyc-paris-flight.html",
+      "line": 6
+    },
+    {
+      "item_id": "upstream:block:organic-light-leak-overlay",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/organic-light-leak-overlay/organic-light-leak-overlay.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:reddit-post",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/reddit-post/reddit-post.html",
+      "line": 11
+    },
+    {
+      "item_id": "upstream:block:ridged-burn",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/ridged-burn/ridged-burn.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:ridged-burn",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_url",
+      "path": "registry/blocks/ridged-burn/ridged-burn.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:ridged-burn",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_import",
+      "path": "registry/blocks/ridged-burn/ridged-burn.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:ripple-waves",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/ripple-waves/ripple-waves.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:ripple-waves",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_url",
+      "path": "registry/blocks/ripple-waves/ripple-waves.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:ripple-waves",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_import",
+      "path": "registry/blocks/ripple-waves/ripple-waves.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:sdf-iris",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/sdf-iris/sdf-iris.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:sdf-iris",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_url",
+      "path": "registry/blocks/sdf-iris/sdf-iris.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:sdf-iris",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_import",
+      "path": "registry/blocks/sdf-iris/sdf-iris.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:spain-map",
+      "url": "https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/spain-map/spain-map.html",
+      "line": 14
+    },
+    {
+      "item_id": "upstream:block:spain-map",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/spain-map/spain-map.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:block:spain-map",
+      "url": "https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/spain-map/spain-map.html",
+      "line": 15
+    },
+    {
+      "item_id": "upstream:block:spotify-card",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/spotify-card/spotify-card.html",
+      "line": 11
+    },
+    {
+      "item_id": "upstream:block:swirl-vortex",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/swirl-vortex/swirl-vortex.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:swirl-vortex",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_url",
+      "path": "registry/blocks/swirl-vortex/swirl-vortex.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:swirl-vortex",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_import",
+      "path": "registry/blocks/swirl-vortex/swirl-vortex.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:thermal-distortion",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/thermal-distortion/thermal-distortion.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:thermal-distortion",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_url",
+      "path": "registry/blocks/thermal-distortion/thermal-distortion.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:thermal-distortion",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_import",
+      "path": "registry/blocks/thermal-distortion/thermal-distortion.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:tiktok-follow",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/tiktok-follow/tiktok-follow.html",
+      "line": 11
+    },
+    {
+      "item_id": "upstream:block:transitions-3d",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/transitions-3d/transitions-3d.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:transitions-blur",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/transitions-blur/transitions-blur.html",
+      "line": 6
+    },
+    {
+      "item_id": "upstream:block:transitions-cover",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/transitions-cover/transitions-cover.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:transitions-destruction",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/transitions-destruction/transitions-destruction.html",
+      "line": 6
+    },
+    {
+      "item_id": "upstream:block:transitions-dissolve",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/transitions-dissolve/transitions-dissolve.html",
+      "line": 6
+    },
+    {
+      "item_id": "upstream:block:transitions-distortion",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/transitions-distortion/transitions-distortion.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:transitions-grid",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/transitions-grid/transitions-grid.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:transitions-light",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/transitions-light/transitions-light.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:transitions-mechanical",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/transitions-mechanical/transitions-mechanical.html",
+      "line": 6
+    },
+    {
+      "item_id": "upstream:block:transitions-other",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/transitions-other/transitions-other.html",
+      "line": 6
+    },
+    {
+      "item_id": "upstream:block:transitions-push",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/transitions-push/transitions-push.html",
+      "line": 6
+    },
+    {
+      "item_id": "upstream:block:transitions-radial",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/transitions-radial/transitions-radial.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:transitions-scale",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/transitions-scale/transitions-scale.html",
+      "line": 6
+    },
+    {
+      "item_id": "upstream:block:ui-3d-reveal",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/ui-3d-reveal/ui-3d-reveal.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:block:ui-3d-reveal",
+      "url": "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap",
+      "usage": "css_url",
+      "path": "registry/blocks/ui-3d-reveal/ui-3d-reveal.html",
+      "line": 1191
+    },
+    {
+      "item_id": "upstream:block:ui-3d-reveal",
+      "url": "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap",
+      "usage": "css_import",
+      "path": "registry/blocks/ui-3d-reveal/ui-3d-reveal.html",
+      "line": 1191
+    },
+    {
+      "item_id": "upstream:block:us-map",
+      "url": "https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/us-map/us-map.html",
+      "line": 14
+    },
+    {
+      "item_id": "upstream:block:us-map",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/us-map/us-map.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:block:us-map",
+      "url": "https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/us-map/us-map.html",
+      "line": 15
+    },
+    {
+      "item_id": "upstream:block:us-map-bubble",
+      "url": "https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/us-map-bubble/us-map-bubble.html",
+      "line": 14
+    },
+    {
+      "item_id": "upstream:block:us-map-bubble",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/us-map-bubble/us-map-bubble.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:block:us-map-bubble",
+      "url": "https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/us-map-bubble/us-map-bubble.html",
+      "line": 15
+    },
+    {
+      "item_id": "upstream:block:us-map-flow",
+      "url": "https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/us-map-flow/us-map-flow.html",
+      "line": 14
+    },
+    {
+      "item_id": "upstream:block:us-map-flow",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/us-map-flow/us-map-flow.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:block:us-map-flow",
+      "url": "https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/us-map-flow/us-map-flow.html",
+      "line": 15
+    },
+    {
+      "item_id": "upstream:block:us-map-hex",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/us-map-hex/us-map-hex.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:block:vfx-iphone-device",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-iphone-device/vfx-iphone-device.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:vfx-iphone-device",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-iphone-device/vfx-iphone-device.html",
+      "line": 8
+    },
+    {
+      "item_id": "upstream:block:vfx-iphone-device",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/DRACOLoader.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-iphone-device/vfx-iphone-device.html",
+      "line": 9
+    },
+    {
+      "item_id": "upstream:block:vfx-iphone-device",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-iphone-device/vfx-iphone-device.html",
+      "line": 10
+    },
+    {
+      "item_id": "upstream:block:vfx-liquid-background",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-liquid-background/vfx-liquid-background.html",
+      "line": 521
+    },
+    {
+      "item_id": "upstream:block:vfx-liquid-background",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-liquid-background/vfx-liquid-background.html",
+      "line": 522
+    },
+    {
+      "item_id": "upstream:block:vfx-liquid-background",
+      "url": "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=block",
+      "usage": "css_url",
+      "path": "registry/blocks/vfx-liquid-background/vfx-liquid-background.html",
+      "line": 511
+    },
+    {
+      "item_id": "upstream:block:vfx-liquid-background",
+      "url": "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=block",
+      "usage": "css_import",
+      "path": "registry/blocks/vfx-liquid-background/vfx-liquid-background.html",
+      "line": 511
+    },
+    {
+      "item_id": "upstream:block:vfx-liquid-glass",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-liquid-glass/vfx-liquid-glass.html",
+      "line": 11
+    },
+    {
+      "item_id": "upstream:block:vfx-liquid-glass",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-liquid-glass/vfx-liquid-glass.html",
+      "line": 12
+    },
+    {
+      "item_id": "upstream:block:vfx-liquid-glass",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/EffectComposer.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-liquid-glass/vfx-liquid-glass.html",
+      "line": 15
+    },
+    {
+      "item_id": "upstream:block:vfx-liquid-glass",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/RenderPass.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-liquid-glass/vfx-liquid-glass.html",
+      "line": 16
+    },
+    {
+      "item_id": "upstream:block:vfx-liquid-glass",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/ShaderPass.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-liquid-glass/vfx-liquid-glass.html",
+      "line": 17
+    },
+    {
+      "item_id": "upstream:block:vfx-liquid-glass",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/UnrealBloomPass.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-liquid-glass/vfx-liquid-glass.html",
+      "line": 18
+    },
+    {
+      "item_id": "upstream:block:vfx-liquid-glass",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/CopyShader.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-liquid-glass/vfx-liquid-glass.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:block:vfx-liquid-glass",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/LuminosityHighPassShader.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-liquid-glass/vfx-liquid-glass.html",
+      "line": 14
+    },
+    {
+      "item_id": "upstream:block:vfx-magnetic",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-magnetic/vfx-magnetic.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:vfx-portal",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-portal/vfx-portal.html",
+      "line": 11
+    },
+    {
+      "item_id": "upstream:block:vfx-portal",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-portal/vfx-portal.html",
+      "line": 12
+    },
+    {
+      "item_id": "upstream:block:vfx-shatter",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-shatter/vfx-shatter.html",
+      "line": 11
+    },
+    {
+      "item_id": "upstream:block:vfx-shatter",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-shatter/vfx-shatter.html",
+      "line": 12
+    },
+    {
+      "item_id": "upstream:block:vfx-text-cursor",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vfx-text-cursor/vfx-text-cursor.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:vfx-text-cursor",
+      "url": "https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&display=block",
+      "usage": "css_url",
+      "path": "registry/blocks/vfx-text-cursor/vfx-text-cursor.html",
+      "line": 159
+    },
+    {
+      "item_id": "upstream:block:vfx-text-cursor",
+      "url": "https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&display=block",
+      "usage": "css_import",
+      "path": "registry/blocks/vfx-text-cursor/vfx-text-cursor.html",
+      "line": 159
+    },
+    {
+      "item_id": "upstream:block:vpn-youtube-spot",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/vpn-youtube-spot/vpn-youtube-spot.html",
+      "line": 6
+    },
+    {
+      "item_id": "upstream:block:whip-pan",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/whip-pan/whip-pan.html",
+      "line": 5
+    },
+    {
+      "item_id": "upstream:block:whip-pan",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_url",
+      "path": "registry/blocks/whip-pan/whip-pan.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:whip-pan",
+      "url": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block",
+      "usage": "css_import",
+      "path": "registry/blocks/whip-pan/whip-pan.html",
+      "line": 7
+    },
+    {
+      "item_id": "upstream:block:world-map",
+      "url": "https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/world-map/world-map.html",
+      "line": 14
+    },
+    {
+      "item_id": "upstream:block:world-map",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/world-map/world-map.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:block:world-map",
+      "url": "https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/world-map/world-map.html",
+      "line": 15
+    },
+    {
+      "item_id": "upstream:block:x-post",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/x-post/x-post.html",
+      "line": 11
+    },
+    {
+      "item_id": "upstream:block:yt-lower-third",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/blocks/yt-lower-third/yt-lower-third.html",
+      "line": 11
+    },
+    {
+      "item_id": "upstream:component:caption-clip-wipe",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/components/caption-clip-wipe/caption-clip-wipe.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:component:caption-editorial-emphasis",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/components/caption-editorial-emphasis/caption-editorial-emphasis.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:component:caption-emoji-pop",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/components/caption-emoji-pop/caption-emoji-pop.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:component:caption-glitch-rgb",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/components/caption-glitch-rgb/caption-glitch-rgb.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:component:caption-gradient-fill",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/components/caption-gradient-fill/caption-gradient-fill.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:component:caption-highlight",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/components/caption-highlight/caption-highlight.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:component:caption-kinetic-slam",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/components/caption-kinetic-slam/caption-kinetic-slam.html",
+      "line": 10
+    },
+    {
+      "item_id": "upstream:component:caption-matrix-decode",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/components/caption-matrix-decode/caption-matrix-decode.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:component:caption-neon-accent",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/components/caption-neon-accent/caption-neon-accent.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:component:caption-neon-glow",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/components/caption-neon-glow/caption-neon-glow.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:component:caption-parallax-layers",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/components/caption-parallax-layers/caption-parallax-layers.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:component:caption-particle-burst",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/components/caption-particle-burst/caption-particle-burst.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:component:caption-pill-karaoke",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/components/caption-pill-karaoke/caption-pill-karaoke.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:component:caption-texture",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/components/caption-texture/caption-texture.html",
+      "line": 10
+    },
+    {
+      "item_id": "upstream:component:caption-weight-shift",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/components/caption-weight-shift/caption-weight-shift.html",
+      "line": 13
+    },
+    {
+      "item_id": "upstream:component:morph-text",
+      "url": "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+      "usage": "script_src",
+      "path": "registry/components/morph-text/morph-text.html",
+      "line": 13
+    }
+  ],
+  "unique_urls": [
+    "https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js",
+    "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+    "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js",
+    "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/DRACOLoader.js",
+    "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js",
+    "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/EffectComposer.js",
+    "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/RenderPass.js",
+    "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/ShaderPass.js",
+    "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/UnrealBloomPass.js",
+    "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/CopyShader.js",
+    "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/LuminosityHighPassShader.js",
+    "https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js",
+    "https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&display=block",
+    "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap",
+    "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap",
+    "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=block",
+    "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block"
+  ]
+}

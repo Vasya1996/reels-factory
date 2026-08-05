@@ -1,0 +1,2477 @@
+{
+  "catalog_version": 1,
+  "shortlist_source": "stage-01-catalog/shortlist/auto-shortlist.json",
+  "item_count": 49,
+  "render_ready_count": 22,
+  "adapt_required_count": 27,
+  "items": [
+    {
+      "id": "approved:layout:avatar_broll_split",
+      "title": "Avatar Broll Split",
+      "kind": "layout",
+      "source": "approved",
+      "description": "Кадр разделён между аватаром и B-roll, обе области заполнены.",
+      "tags": [
+        "approved-montage",
+        "avatar",
+        "broll",
+        "layout",
+        "split"
+      ],
+      "techniques": [
+        {
+          "id": "avatar_broll_split",
+          "name_ru": "Split screen: аватар и B-roll",
+          "description_ru": "Лицо и доказательный материал показываются одновременно.",
+          "category": "composition_layout",
+          "use_when_ru": [
+            "Когда два или несколько смысловых слоёв нужно показать одновременно."
+          ],
+          "avoid_when_ru": [
+            "Когда split или collage делает главный объект слишком мелким."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "layout"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "approved_js_contract",
+        "fields": [
+          "baseVideo",
+          "brollVideo",
+          "start"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 10,
+      "selection_reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:avatar_editorial_bubble",
+      "title": "Avatar Editorial Bubble",
+      "kind": "layout",
+      "source": "approved",
+      "description": "Движущийся аватар находится в крупном editorial bubble рядом с текстом.",
+      "tags": [
+        "approved-montage",
+        "avatar",
+        "bubble",
+        "editorial",
+        "layout"
+      ],
+      "techniques": [
+        {
+          "id": "avatar_editorial_bubble",
+          "name_ru": "Аватар в editorial bubble",
+          "description_ru": "Ведущий остаётся видимым внутри крупного bubble рядом с пояснением.",
+          "category": "speaker_layout",
+          "use_when_ru": [
+            "Когда важно сохранить лицо и прямой контакт ведущего со зрителем."
+          ],
+          "avoid_when_ru": [
+            "Когда доказательный материал должен занять весь экран."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "layout"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "approved_js_contract",
+        "fields": [
+          "baseVideo",
+          "purpose",
+          "text"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 10,
+      "selection_reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:avatar_fullscreen",
+      "title": "Avatar Fullscreen",
+      "kind": "layout",
+      "source": "approved",
+      "description": "Движущийся аватар занимает весь вертикальный кадр и держит eye contact.",
+      "tags": [
+        "approved-montage",
+        "avatar",
+        "fullscreen",
+        "layout"
+      ],
+      "techniques": [
+        {
+          "id": "avatar_fullscreen_anchor",
+          "name_ru": "Полноэкранный аватар-якорь",
+          "description_ru": "Движущийся ведущий удерживает личный контакт.",
+          "category": "speaker_layout",
+          "use_when_ru": [
+            "Когда важно сохранить лицо и прямой контакт ведущего со зрителем."
+          ],
+          "avoid_when_ru": [
+            "Когда доказательный материал должен занять весь экран."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "layout"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "approved_js_contract",
+        "fields": [
+          "emphasis",
+          "id",
+          "role",
+          "start"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 10,
+      "selection_reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:avatar_object_overlay",
+      "title": "Avatar Object Overlay",
+      "kind": "layout",
+      "source": "approved",
+      "description": "Движущийся аватар сочетается с предметным overlay, например телефоном.",
+      "tags": [
+        "approved-montage",
+        "avatar",
+        "layout",
+        "object",
+        "overlay"
+      ],
+      "techniques": [
+        {
+          "id": "avatar_object_overlay",
+          "name_ru": "Аватар с предметным overlay",
+          "description_ru": "Предмет или интерфейс рядом с ведущим объясняет действие продукта.",
+          "category": "social_and_editorial_overlay",
+          "use_when_ru": [
+            "Когда сценарий ссылается на профиль, публикацию, уведомление или медиакарточку."
+          ],
+          "avoid_when_ru": [
+            "Когда показанный сервис или контент не упоминается в речи."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "layout",
+          "media_treatment"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "approved_js_contract",
+        "fields": [
+          "baseVideo",
+          "hits"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 10,
+      "selection_reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:broll_archival_collage",
+      "title": "Broll Archival Collage",
+      "kind": "layout",
+      "source": "approved",
+      "description": "Несколько B-roll слоёв раскладываются как editorial collage.",
+      "tags": [
+        "approved-montage",
+        "archival",
+        "broll",
+        "collage",
+        "layout"
+      ],
+      "techniques": [
+        {
+          "id": "archival_broll_collage",
+          "name_ru": "Editorial collage из B-roll",
+          "description_ru": "Несколько медиа-слоёв показывают широту примеров.",
+          "category": "composition_layout",
+          "use_when_ru": [
+            "Когда два или несколько смысловых слоёв нужно показать одновременно."
+          ],
+          "avoid_when_ru": [
+            "Когда split или collage делает главный объект слишком мелким."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "layout"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "approved_js_contract",
+        "fields": [
+          "brollVideo",
+          "purpose",
+          "text"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 10,
+      "selection_reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:broll_fullscreen",
+      "title": "Broll Fullscreen",
+      "kind": "layout",
+      "source": "approved",
+      "description": "B-roll занимает весь экран и конкретизирует фразу без лица.",
+      "tags": [
+        "approved-montage",
+        "broll",
+        "fullscreen",
+        "layout"
+      ],
+      "techniques": [
+        {
+          "id": "broll_fullscreen",
+          "name_ru": "Полноэкранный B-roll",
+          "description_ru": "Материал занимает весь кадр и конкретизирует тезис.",
+          "category": "composition_layout",
+          "use_when_ru": [
+            "Когда два или несколько смысловых слоёв нужно показать одновременно."
+          ],
+          "avoid_when_ru": [
+            "Когда split или collage делает главный объект слишком мелким."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "layout"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "approved_js_contract",
+        "fields": [
+          "brollVideo",
+          "start"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 10,
+      "selection_reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:checklist_strike",
+      "title": "Checklist Strike",
+      "kind": "layout",
+      "source": "approved",
+      "description": "Пункты рутины появляются списком и по очереди зачёркиваются.",
+      "tags": [
+        "approved-montage",
+        "checklist",
+        "layout",
+        "strike"
+      ],
+      "techniques": [
+        {
+          "id": "checklist_strike_routine",
+          "name_ru": "Зачёркивание рутины",
+          "description_ru": "Повторяющиеся задачи зачёркиваются, чтобы показать избавление от ручной работы.",
+          "category": "comparison_and_process",
+          "use_when_ru": [
+            "Когда нужно показать изменение, порядок шагов или причинно-следственную связь."
+          ],
+          "avoid_when_ru": [
+            "Когда элементы не образуют понятную последовательность или сравнение."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "layout",
+          "list"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": true,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "approved_js_contract",
+        "fields": []
+      },
+      "execution_mode": "render_ready",
+      "score": 10,
+      "selection_reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:progressive_text_card",
+      "title": "Progressive Text Card",
+      "kind": "layout",
+      "source": "approved",
+      "description": "Фраза собирается крупными типографическими строками.",
+      "tags": [
+        "approved-montage",
+        "card",
+        "layout",
+        "progressive",
+        "text"
+      ],
+      "techniques": [
+        {
+          "id": "progressive_text_card",
+          "name_ru": "Прогрессивная типографическая карточка",
+          "description_ru": "Фраза собирается крупными смысловыми строками.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "layout"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "approved_js_contract",
+        "fields": [
+          "emphasis",
+          "hits",
+          "purpose"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 10,
+      "selection_reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:social_outro",
+      "title": "Social Outro",
+      "kind": "layout",
+      "source": "approved",
+      "description": "Финальный social lockup фиксирует CTA и handle.",
+      "tags": [
+        "approved-montage",
+        "layout",
+        "outro",
+        "social"
+      ],
+      "techniques": [
+        {
+          "id": "social_outro_lockup",
+          "name_ru": "Финальный social outro lockup",
+          "description_ru": "Финальный кадр фиксирует CTA и handle.",
+          "category": "brand_and_outro",
+          "use_when_ru": [
+            "Когда нужно представить продукт, автора, логотип или завершить ролик CTA."
+          ],
+          "avoid_when_ru": [
+            "Когда брендовый экран прерывает объяснение до завершения мысли."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "brand",
+          "layout",
+          "social_overlay"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "approved_js_contract",
+        "fields": [
+          "id"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 10,
+      "selection_reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:transition:hard_cut",
+      "title": "Hard Cut",
+      "kind": "transition",
+      "source": "approved",
+      "description": "Мгновенная смена окна без графического перехода.",
+      "tags": [
+        "approved-montage",
+        "cut",
+        "hard",
+        "transition"
+      ],
+      "techniques": [
+        {
+          "id": "hard_cut_transition",
+          "name_ru": "Жёсткий монтажный стык",
+          "description_ru": "Сцена меняется мгновенно без промежуточного графического слоя или анимации.",
+          "category": "transition",
+          "use_when_ru": [
+            "Когда смена смыслового блока требует заметного визуального стыка."
+          ],
+          "avoid_when_ru": [
+            "Когда эффект повторялся недавно или обычный hard cut читается лучше."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "transition"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "approved_js_contract",
+        "fields": [
+          "id",
+          "start",
+          "transition"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 10,
+      "selection_reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:transition:transition_blur",
+      "title": "Transition Blur",
+      "kind": "transition",
+      "source": "approved",
+      "description": "Следующий кадр появляется из размытия и лёгкого scale.",
+      "tags": [
+        "approved-montage",
+        "blur",
+        "transition",
+        "transition"
+      ],
+      "techniques": [
+        {
+          "id": "blur_soft_transition",
+          "name_ru": "Мягкий blur-переход",
+          "description_ru": "Кадр появляется из размытия и лёгкого scale.",
+          "category": "transition",
+          "use_when_ru": [
+            "Когда смена смыслового блока требует заметного визуального стыка."
+          ],
+          "avoid_when_ru": [
+            "Когда эффект повторялся недавно или обычный hard cut читается лучше."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "transition"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "approved_js_contract",
+        "fields": [
+          "id",
+          "start",
+          "transition"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 10,
+      "selection_reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:transition:transition_chromatic",
+      "title": "Transition Chromatic",
+      "kind": "transition",
+      "source": "approved",
+      "description": "RGB-полосы создают короткий технологичный акцент.",
+      "tags": [
+        "approved-montage",
+        "chromatic",
+        "transition",
+        "transition"
+      ],
+      "techniques": [
+        {
+          "id": "chromatic_accent_transition",
+          "name_ru": "Chromatic accent-переход",
+          "description_ru": "RGB-полосы подчёркивают технологичный смысловой удар.",
+          "category": "transition",
+          "use_when_ru": [
+            "Когда смена смыслового блока требует заметного визуального стыка."
+          ],
+          "avoid_when_ru": [
+            "Когда эффект повторялся недавно или обычный hard cut читается лучше."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "transition"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "approved_js_contract",
+        "fields": [
+          "id",
+          "start",
+          "transition"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 8,
+      "selection_reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:transition:transition_push_editorial",
+      "title": "Transition Push Editorial",
+      "kind": "transition",
+      "source": "approved",
+      "description": "Новый кадр въезжает сбоку и вытесняет предыдущий.",
+      "tags": [
+        "approved-montage",
+        "editorial",
+        "push",
+        "transition",
+        "transition"
+      ],
+      "techniques": [
+        {
+          "id": "editorial_push_transition",
+          "name_ru": "Editorial push-переход",
+          "description_ru": "Следующий кадр въезжает сбоку и вытесняет предыдущий.",
+          "category": "transition",
+          "use_when_ru": [
+            "Когда смена смыслового блока требует заметного визуального стыка."
+          ],
+          "avoid_when_ru": [
+            "Когда эффект повторялся недавно или обычный hard cut читается лучше."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "transition"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "approved_js_contract",
+        "fields": [
+          "id",
+          "start",
+          "transition"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 10,
+      "selection_reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:transition:transition_white_flash",
+      "title": "Transition White Flash",
+      "kind": "transition",
+      "source": "approved",
+      "description": "Белая вспышка резко вводит следующий смысловой пик.",
+      "tags": [
+        "approved-montage",
+        "flash",
+        "transition",
+        "transition",
+        "white"
+      ],
+      "techniques": [
+        {
+          "id": "white_flash_transition",
+          "name_ru": "Белая flash-смена",
+          "description_ru": "Белая вспышка резко вводит новый смысловой пик.",
+          "category": "transition",
+          "use_when_ru": [
+            "Когда смена смыслового блока требует заметного визуального стыка."
+          ],
+          "avoid_when_ru": [
+            "Когда эффект повторялся недавно или обычный hard cut читается лучше."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "transition"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "approved_js_contract",
+        "fields": [
+          "id",
+          "start",
+          "transition"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 10,
+      "selection_reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "local:block:before_after",
+      "title": "Before After",
+      "kind": "block",
+      "source": "local",
+      "description": "Карточки сравнивают старое и новое состояние через движение «было → стало».",
+      "tags": [
+        "before-after",
+        "generated-python",
+        "reels-factory"
+      ],
+      "techniques": [
+        {
+          "id": "before_after_comparison",
+          "name_ru": "Сравнение «было → стало»",
+          "description_ru": "Старое состояние уступает место новому, показывая контраст.",
+          "category": "comparison_and_process",
+          "use_when_ru": [
+            "Когда нужно показать изменение, порядок шагов или причинно-следственную связь."
+          ],
+          "avoid_when_ru": [
+            "Когда элементы не образуют понятную последовательность или сравнение."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "comparison"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": true,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "generated_python",
+        "fields": [
+          "after_label",
+          "after_value",
+          "before_label",
+          "before_value"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 11,
+      "selection_reason": "Локальный generated_python block с проверенным builder-контрактом.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "local:block:complexity_cloud",
+      "title": "Complexity Cloud",
+      "kind": "block",
+      "source": "local",
+      "description": "Несколько шумных тезисов появляются каскадом и схлопываются в одно решение.",
+      "tags": [
+        "complexity-cloud",
+        "generated-python",
+        "reels-factory"
+      ],
+      "techniques": [
+        {
+          "id": "complexity_to_resolution",
+          "name_ru": "Схлопывание сложности в решение",
+          "description_ru": "Несколько шумных тезисов собираются в один ясный вывод.",
+          "category": "comparison_and_process",
+          "use_when_ru": [
+            "Когда нужно показать изменение, порядок шагов или причинно-следственную связь."
+          ],
+          "avoid_when_ru": [
+            "Когда элементы не образуют понятную последовательность или сравнение."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "other"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": false,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "generated_python",
+        "fields": [
+          "items",
+          "resolution",
+          "title"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 8,
+      "selection_reason": "Локальный generated_python block с проверенным builder-контрактом.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "local:block:concept_nodes",
+      "title": "Concept Nodes",
+      "kind": "block",
+      "source": "local",
+      "description": "Центральный тезис соединяется линиями с опорными понятиями.",
+      "tags": [
+        "concept-nodes",
+        "generated-python",
+        "reels-factory"
+      ],
+      "techniques": [
+        {
+          "id": "concept_node_map",
+          "name_ru": "Карта связанных понятий",
+          "description_ru": "Центральный тезис соединяется с несколькими опорными понятиями.",
+          "category": "map_and_diagram",
+          "use_when_ru": [
+            "Когда география, маршрут или структура связей являются частью аргумента."
+          ],
+          "avoid_when_ru": [
+            "Когда карта или схема служит только декоративным фоном."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "other"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": false,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "generated_python",
+        "fields": [
+          "items",
+          "title"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 8,
+      "selection_reason": "Локальный generated_python block с проверенным builder-контрактом.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "local:block:persona_card",
+      "title": "Persona Card",
+      "kind": "block",
+      "source": "local",
+      "description": "Карточка аудитории раскрывает человека, контекст и боль.",
+      "tags": [
+        "generated-python",
+        "persona-card",
+        "reels-factory"
+      ],
+      "techniques": [
+        {
+          "id": "persona_context_card",
+          "name_ru": "Карточка аудитории",
+          "description_ru": "Аудитория показана как человек с контекстом и болью.",
+          "category": "speaker_layout",
+          "use_when_ru": [
+            "Когда важно сохранить лицо и прямой контакт ведущего со зрителем."
+          ],
+          "avoid_when_ru": [
+            "Когда доказательный материал должен занять весь экран."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "other"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": false,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "generated_python",
+        "fields": [
+          "items",
+          "title"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 8,
+      "selection_reason": "Локальный generated_python block с проверенным builder-контрактом.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "local:block:sequence_flow",
+      "title": "Sequence Flow",
+      "kind": "block",
+      "source": "local",
+      "description": "Нумерованные шаги раскрываются сверху вниз как обязательный порядок.",
+      "tags": [
+        "generated-python",
+        "reels-factory",
+        "sequence-flow"
+      ],
+      "techniques": [
+        {
+          "id": "sequence_step_flow",
+          "name_ru": "Вертикальный flow шагов",
+          "description_ru": "Шаги раскрываются сверху вниз и подчёркивают порядок.",
+          "category": "comparison_and_process",
+          "use_when_ru": [
+            "Когда нужно показать изменение, порядок шагов или причинно-следственную связь."
+          ],
+          "avoid_when_ru": [
+            "Когда элементы не образуют понятную последовательность или сравнение."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "process"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": true,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "generated_python",
+        "fields": [
+          "items",
+          "title"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 11,
+      "selection_reason": "Локальный generated_python block с проверенным builder-контрактом.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "local:block:stat_number",
+      "title": "Stat Number",
+      "kind": "block",
+      "source": "local",
+      "description": "Крупная цифра досчитывается до значения и фиксирует измеримый тезис.",
+      "tags": [
+        "generated-python",
+        "reels-factory",
+        "stat-number"
+      ],
+      "techniques": [
+        {
+          "id": "animated_stat_countup",
+          "name_ru": "Анимированный счётчик числа",
+          "description_ru": "Число досчитывается до ключевого значения и фиксирует измеримый тезис.",
+          "category": "data_and_statistics",
+          "use_when_ru": [
+            "Когда в сценарии есть проверяемые числа, сравнения или динамика показателей."
+          ],
+          "avoid_when_ru": [
+            "Когда данные отсутствуют или не подтверждают произносимый тезис."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "stat"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": true,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "generated_python",
+        "fields": [
+          "label_bottom",
+          "label_top",
+          "prefix",
+          "suffix",
+          "value"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 11,
+      "selection_reason": "Локальный generated_python block с проверенным builder-контрактом.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "local:block:task_list",
+      "title": "Task List",
+      "kind": "block",
+      "source": "local",
+      "description": "Пункты списка появляются последовательно, последний может стать акцентом.",
+      "tags": [
+        "generated-python",
+        "reels-factory",
+        "task-list"
+      ],
+      "techniques": [
+        {
+          "id": "task_checklist_reveal",
+          "name_ru": "Пошаговый список с акцентом",
+          "description_ru": "Пункты появляются по очереди и превращают перечисление в порядок действий.",
+          "category": "comparison_and_process",
+          "use_when_ru": [
+            "Когда нужно показать изменение, порядок шагов или причинно-следственную связь."
+          ],
+          "avoid_when_ru": [
+            "Когда элементы не образуют понятную последовательность или сравнение."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "list"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": true,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "generated_python",
+        "fields": [
+          "items",
+          "title"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 11,
+      "selection_reason": "Локальный generated_python block с проверенным builder-контрактом.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "local:block:value_layers",
+      "title": "Value Layers",
+      "kind": "block",
+      "source": "local",
+      "description": "Формальный offer сменяется реальной ценностью, которую покупает клиент.",
+      "tags": [
+        "generated-python",
+        "reels-factory",
+        "value-layers"
+      ],
+      "techniques": [
+        {
+          "id": "value_layer_swap",
+          "name_ru": "Замена продукта ценностью",
+          "description_ru": "Формальный продукт визуально сменяется настоящей покупаемой ценностью.",
+          "category": "comparison_and_process",
+          "use_when_ru": [
+            "Когда нужно показать изменение, порядок шагов или причинно-следственную связь."
+          ],
+          "avoid_when_ru": [
+            "Когда элементы не образуют понятную последовательность или сравнение."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "other"
+        ],
+        "placement": [
+          "fullscreen"
+        ],
+        "supports_overlay": false,
+        "supports_text_content": false,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "generated_python",
+        "fields": [
+          "actual",
+          "offer",
+          "title"
+        ]
+      },
+      "execution_mode": "render_ready",
+      "score": 8,
+      "selection_reason": "Локальный generated_python block с проверенным builder-контрактом.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "upstream:block:instagram-follow",
+      "title": "Instagram Follow",
+      "kind": "block",
+      "source": "upstream",
+      "description": "Animated Instagram follow overlay with profile card and follow button",
+      "tags": [
+        "instagram",
+        "overlay",
+        "social"
+      ],
+      "techniques": [
+        {
+          "id": "social_overlay_instagram_follow",
+          "name_ru": "Социальный overlay: Instagram Follow",
+          "description_ru": "Поверх видео появляется Instagram-профиль с аватаром и анимированной кнопкой Follow.",
+          "category": "social_and_editorial_overlay",
+          "use_when_ru": [
+            "Когда сценарий ссылается на профиль, публикацию, уведомление или медиакарточку."
+          ],
+          "avoid_when_ru": [
+            "Когда показанный сервис или контент не упоминается в речи."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "media_treatment",
+          "social_overlay"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:block:spotify-card",
+      "title": "Spotify Now Playing",
+      "kind": "block",
+      "source": "upstream",
+      "description": "Animated Spotify now-playing card with album art and progress bar",
+      "tags": [
+        "overlay",
+        "social",
+        "spotify"
+      ],
+      "techniques": [
+        {
+          "id": "social_overlay_spotify_card",
+          "name_ru": "Социальный overlay: Spotify Now Playing",
+          "description_ru": "Карточка Spotify показывает обложку, текущий трек и движущийся progress bar.",
+          "category": "social_and_editorial_overlay",
+          "use_when_ru": [
+            "Когда сценарий ссылается на профиль, публикацию, уведомление или медиакарточку."
+          ],
+          "avoid_when_ru": [
+            "Когда показанный сервис или контент не упоминается в речи."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "media_treatment",
+          "social_overlay"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:block:tiktok-follow",
+      "title": "TikTok Follow",
+      "kind": "block",
+      "source": "upstream",
+      "description": "Animated TikTok follow overlay with profile card and follow button",
+      "tags": [
+        "overlay",
+        "social",
+        "tiktok"
+      ],
+      "techniques": [
+        {
+          "id": "social_overlay_tiktok_follow",
+          "name_ru": "Социальный overlay: TikTok Follow",
+          "description_ru": "Поверх видео появляется TikTok-профиль с аватаром и анимированной кнопкой подписки.",
+          "category": "social_and_editorial_overlay",
+          "use_when_ru": [
+            "Когда сценарий ссылается на профиль, публикацию, уведомление или медиакарточку."
+          ],
+          "avoid_when_ru": [
+            "Когда показанный сервис или контент не упоминается в речи."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "media_treatment",
+          "social_overlay"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-blend-difference",
+      "title": "Blend Difference",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Auto-inverting text using mix-blend-mode: difference — flips between white and black per-pixel against the background",
+      "tags": [
+        "blend-mode",
+        "contrast",
+        "effect",
+        "inversion",
+        "text",
+        "text-effect"
+      ],
+      "techniques": [
+        {
+          "id": "caption_blend_difference",
+          "name_ru": "Caption-приём: Blend Difference",
+          "description_ru": "Текст автоматически переключается между белым и чёрным по яркости фона благодаря mix-blend-mode: difference.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "caption"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 5,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-clip-wipe",
+      "title": "Clip Wipe",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Left-to-right clip-path wipe reveal per word",
+      "tags": [
+        "caption-style",
+        "captions",
+        "clip-path",
+        "reveal",
+        "wipe"
+      ],
+      "techniques": [
+        {
+          "id": "caption_clip_wipe",
+          "name_ru": "Caption-приём: Clip Wipe",
+          "description_ru": "Каждое слово субтитра открывается слева направо отдельной clip-path шторкой.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "caption"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-editorial-emphasis",
+      "title": "Editorial Emphasis",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Dual-font system with dramatic size contrast for emphasis words",
+      "tags": [
+        "caption-style",
+        "captions",
+        "editorial",
+        "emphasis",
+        "typography"
+      ],
+      "techniques": [
+        {
+          "id": "caption_editorial_emphasis",
+          "name_ru": "Caption-приём: Editorial Emphasis",
+          "description_ru": "Две гарнитуры и резкий контраст кегля отделяют ключевые слова от остальной фразы.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "caption"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-emoji-pop",
+      "title": "Emoji Pop",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Emoji integration with stroked text and horizontal squeeze entrance",
+      "tags": [
+        "caption-style",
+        "captions",
+        "emoji",
+        "social"
+      ],
+      "techniques": [
+        {
+          "id": "caption_emoji_pop",
+          "name_ru": "Caption-приём: Emoji Pop",
+          "description_ru": "Emoji появляется рядом с обведённым текстом, а строка входит через короткое горизонтальное сжатие.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "caption",
+          "social_overlay"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-glitch-rgb",
+      "title": "Glitch RGB",
+      "kind": "component",
+      "source": "upstream",
+      "description": "RGB chromatic aberration with CRT scanline overlay",
+      "tags": [
+        "caption-style",
+        "captions",
+        "cyber",
+        "glitch",
+        "tech"
+      ],
+      "techniques": [
+        {
+          "id": "caption_glitch_rgb",
+          "name_ru": "Caption-приём: Glitch RGB",
+          "description_ru": "У букв расходятся RGB-копии, а поверх текста появляются CRT-линии цифрового экрана.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "caption",
+          "media_treatment"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-gradient-fill",
+      "title": "Gradient Fill",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Gradient-clipped text with elastic bounce entrance",
+      "tags": [
+        "caption-style",
+        "captions",
+        "colorful",
+        "gradient"
+      ],
+      "techniques": [
+        {
+          "id": "caption_gradient_fill",
+          "name_ru": "Caption-приём: Gradient Fill",
+          "description_ru": "Буквы заполняются цветным градиентом и входят с упругим bounce-движением.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "caption"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-highlight",
+      "title": "Highlight",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Red background sweep behind each active word, TikTok-style",
+      "tags": [
+        "caption-style",
+        "captions",
+        "highlight",
+        "social",
+        "tiktok"
+      ],
+      "techniques": [
+        {
+          "id": "caption_highlight",
+          "name_ru": "Caption-приём: Highlight",
+          "description_ru": "Красная плашка проходит за активным словом и последовательно подсвечивает субтитр в TikTok-стиле.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "caption",
+          "social_overlay"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-kinetic-slam",
+      "title": "Kinetic Slam",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Full-screen single-word display with alternating entrance directions",
+      "tags": [
+        "caption-style",
+        "captions",
+        "kinetic",
+        "slam",
+        "typography"
+      ],
+      "techniques": [
+        {
+          "id": "caption_kinetic_slam",
+          "name_ru": "Caption-приём: Kinetic Slam",
+          "description_ru": "Слова показываются по одному на весь экран и поочерёдно влетают с разных направлений.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "caption"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-matrix-decode",
+      "title": "Matrix Decode",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Character scramble animation before text reveal",
+      "tags": [
+        "caption-style",
+        "captions",
+        "decode",
+        "matrix",
+        "scramble"
+      ],
+      "techniques": [
+        {
+          "id": "caption_matrix_decode",
+          "name_ru": "Caption-приём: Matrix Decode",
+          "description_ru": "Перед появлением правильной фразы символы быстро перебираются как при цифровой расшифровке.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "caption",
+          "comparison"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-neon-accent",
+      "title": "Neon Accent",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Multi-color neon glow accents with wiggle drift animation",
+      "tags": [
+        "accent",
+        "caption-style",
+        "captions",
+        "glow",
+        "neon"
+      ],
+      "techniques": [
+        {
+          "id": "caption_neon_accent",
+          "name_ru": "Caption-приём: Neon Accent",
+          "description_ru": "Ключевые слова получают разноцветное неоновое свечение и лёгкий плавающий wiggle.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "caption"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-neon-glow",
+      "title": "Neon Glow",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Cyan and magenta neon glow with keyword accent colors",
+      "tags": [
+        "caption-style",
+        "captions",
+        "gaming",
+        "glow",
+        "neon"
+      ],
+      "techniques": [
+        {
+          "id": "caption_neon_glow",
+          "name_ru": "Caption-приём: Neon Glow",
+          "description_ru": "Субтитр светится голубым и пурпурным неоном, отдельные слова выделяются дополнительными цветами.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "caption"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-parallax-layers",
+      "title": "Parallax Layers",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Behind-subject 3D text layering with vertical stretch effect",
+      "tags": [
+        "3d",
+        "caption-style",
+        "captions",
+        "depth",
+        "parallax"
+      ],
+      "techniques": [
+        {
+          "id": "caption_parallax_layers",
+          "name_ru": "Caption-приём: Parallax Layers",
+          "description_ru": "Крупный текст раскладывается слоями по глубине, проходит за объектом и растягивается по вертикали.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "caption"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-particle-burst",
+      "title": "Particle Burst",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Keyword words trigger colored particle explosions",
+      "tags": [
+        "burst",
+        "caption-style",
+        "captions",
+        "effects",
+        "particles"
+      ],
+      "techniques": [
+        {
+          "id": "caption_particle_burst",
+          "name_ru": "Caption-приём: Particle Burst",
+          "description_ru": "При появлении ключевого слова из него разлетаются цветные частицы.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "caption",
+          "vfx"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-pill-karaoke",
+      "title": "Pill Karaoke",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Pill-shaped container with per-word karaoke color highlight",
+      "tags": [
+        "caption-style",
+        "captions",
+        "karaoke",
+        "pill"
+      ],
+      "techniques": [
+        {
+          "id": "caption_pill_karaoke",
+          "name_ru": "Caption-приём: Pill Karaoke",
+          "description_ru": "Фраза находится внутри округлой плашки, а произносимое слово последовательно меняет цвет.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "caption"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-texture",
+      "title": "Texture",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Flowing texture mask over large uppercase text — ships with 6 textures (lava, marble, metal, wood, concrete, rock), configurable via the texture variable",
+      "tags": [
+        "caption-style",
+        "captions",
+        "mask",
+        "texture"
+      ],
+      "techniques": [
+        {
+          "id": "caption_texture",
+          "name_ru": "Caption-приём: Texture",
+          "description_ru": "Крупные прописные буквы заполняются движущейся текстурой; variable texture переключает шесть встроенных материалов.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "caption",
+          "texture"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "declarative",
+        "fields": [
+          "texture"
+        ]
+      },
+      "execution_mode": "adapt_required",
+      "score": 6,
+      "selection_reason": "Upstream item имеет подходящую роль, совместимую orientation и доказанные declarative variables; runtime ждёт human approval.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-weight-shift",
+      "title": "Weight Shift",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Elegant font-weight transition between caption lines",
+      "tags": [
+        "caption-style",
+        "captions",
+        "minimal",
+        "typography"
+      ],
+      "techniques": [
+        {
+          "id": "caption_weight_shift",
+          "name_ru": "Caption-приём: Weight Shift",
+          "description_ru": "При смене строки толщина шрифта плавно переходит от лёгкого начертания к жирному или обратно.",
+          "category": "caption_and_typography",
+          "use_when_ru": [
+            "Когда нужно выделить конкретные слова синхронно с речью."
+          ],
+          "avoid_when_ru": [
+            "Когда на экране одновременно должен читаться длинный абзац."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "caption"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": false
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 4,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:grain-overlay",
+      "title": "Grain Overlay",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Animated film grain texture overlay using CSS keyframes — adds warmth and analog character to any composition",
+      "tags": [
+        "film",
+        "grain",
+        "overlay",
+        "texture"
+      ],
+      "techniques": [
+        {
+          "id": "media_treatment_grain_overlay",
+          "name_ru": "Финишная текстура: Grain Overlay",
+          "description_ru": "Поверх всей композиции движется мелкое плёночное зерно, добавляющее аналоговую фактуру.",
+          "category": "texture_and_finishing",
+          "use_when_ru": [
+            "Когда всему кадру нужна единая фактура или дополнительный фокус."
+          ],
+          "avoid_when_ru": [
+            "Когда обработка ухудшает читаемость текста и деталей лица."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "media_treatment",
+          "texture"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 3,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:grid-pixelate-wipe",
+      "title": "Grid Pixelate Wipe",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Transition effect where the screen dissolves into a grid of squares that fade out with staggered timing — use between scenes",
+      "tags": [
+        "grid",
+        "pixelate",
+        "transition",
+        "wipe"
+      ],
+      "techniques": [
+        {
+          "id": "catalog_reference_grid_pixelate_wipe",
+          "name_ru": "Переход: Grid Pixelate Wipe",
+          "description_ru": "Экран распадается на сетку квадратов, которые исчезают с задержкой и открывают следующую сцену.",
+          "category": "transition",
+          "use_when_ru": [
+            "Когда смена смыслового блока требует заметного визуального стыка."
+          ],
+          "avoid_when_ru": [
+            "Когда эффект повторялся недавно или обычный hard cut читается лучше."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "transition"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 6,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:morph-text",
+      "title": "Morph Text",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Gooey text morph — cycles through an editable word list using SVG threshold + GSAP-driven blur for a fluid, satisfying transition effect",
+      "tags": [
+        "animation",
+        "gooey",
+        "kinetic",
+        "morph",
+        "text",
+        "text-effect",
+        "typography"
+      ],
+      "techniques": [
+        {
+          "id": "catalog_reference_morph_text",
+          "name_ru": "Приём процесса: Morph Text",
+          "description_ru": "Слова из редактируемого списка текуче превращаются друг в друга через SVG threshold и управляемое размытие.",
+          "category": "comparison_and_process",
+          "use_when_ru": [
+            "Когда нужно показать изменение, порядок шагов или причинно-следственную связь."
+          ],
+          "avoid_when_ru": [
+            "Когда элементы не образуют понятную последовательность или сравнение."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "list"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": true,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 3,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:parallax-unzoom",
+      "title": "Parallax Unzoom",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Reveal transition — focus card scales down from full frame as siblings parallax in to form a grid (reverse of parallax-zoom)",
+      "tags": [
+        "grid",
+        "hero",
+        "parallax",
+        "reveal",
+        "transition",
+        "unzoom"
+      ],
+      "techniques": [
+        {
+          "id": "transition_parallax_unzoom",
+          "name_ru": "Переход: Parallax Unzoom",
+          "description_ru": "Центральная карточка уменьшается от полного экрана, а соседние элементы входят параллаксом и образуют сетку.",
+          "category": "transition",
+          "use_when_ru": [
+            "Когда смена смыслового блока требует заметного визуального стыка."
+          ],
+          "avoid_when_ru": [
+            "Когда эффект повторялся недавно или обычный hard cut читается лучше."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "transition"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 6,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:parallax-zoom",
+      "title": "Parallax Zoom",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Center card scales up to fill the frame while siblings parallax outward — inspired by the eBay Playbook hero transition",
+      "tags": [
+        "grid",
+        "hero",
+        "parallax",
+        "transition",
+        "zoom"
+      ],
+      "techniques": [
+        {
+          "id": "transition_parallax_zoom",
+          "name_ru": "Переход: Parallax Zoom",
+          "description_ru": "Центральная карточка увеличивается до полного экрана, а соседние элементы расходятся наружу параллаксом.",
+          "category": "transition",
+          "use_when_ru": [
+            "Когда смена смыслового блока требует заметного визуального стыка."
+          ],
+          "avoid_when_ru": [
+            "Когда эффект повторялся недавно или обычный hard cut читается лучше."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "transition"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 6,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:shimmer-sweep",
+      "title": "Shimmer Sweep",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Animated light sweep across text or elements using a CSS gradient mask — ideal for AI accents and premium reveals",
+      "tags": [
+        "effect",
+        "highlight",
+        "shimmer",
+        "text"
+      ],
+      "techniques": [
+        {
+          "id": "media_treatment_shimmer_sweep",
+          "name_ru": "Финишная текстура: Shimmer Sweep",
+          "description_ru": "Узкая световая полоса проходит по тексту или объекту через градиентную маску.",
+          "category": "texture_and_finishing",
+          "use_when_ru": [
+            "Когда всему кадру нужна единая фактура или дополнительный фокус."
+          ],
+          "avoid_when_ru": [
+            "Когда обработка ухудшает читаемость текста и деталей лица."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "media_treatment",
+          "texture"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 3,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:texture-mask-text",
+      "title": "Texture Mask Text",
+      "kind": "component",
+      "source": "upstream",
+      "description": "CSS luminance masks that cut holes through letterforms - 66 pre-built texture masks from ambientCG PBR color maps",
+      "tags": [
+        "effect",
+        "mask",
+        "text",
+        "text-effect",
+        "texture"
+      ],
+      "techniques": [
+        {
+          "id": "media_treatment_texture_mask_text",
+          "name_ru": "Финишная текстура: Texture Mask Text",
+          "description_ru": "Шестьдесят шесть luminance-масок вырезают фактурные отверстия внутри букв.",
+          "category": "texture_and_finishing",
+          "use_when_ru": [
+            "Когда всему кадру нужна единая фактура или дополнительный фокус."
+          ],
+          "avoid_when_ru": [
+            "Когда обработка ухудшает читаемость текста и деталей лица."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "texture"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 3,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:vignette",
+      "title": "Vignette",
+      "kind": "component",
+      "source": "upstream",
+      "description": "Cinematic radial vignette overlay using a pure-CSS gradient — darkens the edges to pull focus toward the center",
+      "tags": [
+        "cinematic",
+        "effect",
+        "overlay",
+        "vignette"
+      ],
+      "techniques": [
+        {
+          "id": "media_treatment_vignette",
+          "name_ru": "Финишная текстура: Vignette",
+          "description_ru": "Радиальный CSS-градиент затемняет края изображения и удерживает внимание в центре.",
+          "category": "texture_and_finishing",
+          "use_when_ru": [
+            "Когда всему кадру нужна единая фактура или дополнительный фокус."
+          ],
+          "avoid_when_ru": [
+            "Когда обработка ухудшает читаемость текста и деталей лица."
+          ]
+        }
+      ],
+      "capabilities": {
+        "roles": [
+          "media_treatment",
+          "texture"
+        ],
+        "placement": [
+          "overlay"
+        ],
+        "supports_overlay": true,
+        "supports_text_content": false,
+        "supports_media_content": true
+      },
+      "parameter_contract": {
+        "level": "none",
+        "fields": []
+      },
+      "execution_mode": "adapt_required",
+      "score": 3,
+      "selection_reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    }
+  ]
+}

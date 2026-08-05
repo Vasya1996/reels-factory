@@ -1,0 +1,60 @@
+{
+  "project_id": "sales-three-questions-poc",
+  "deliverable": "vertical talking-head reel with HyperFrames semantic visuals",
+  "canvas": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "orientation": "portrait"
+  },
+  "brand": {
+    "language": "ru",
+    "font_family": "Unbounded",
+    "keyword_color": "#FFE500",
+    "watermark": "@julia.agents",
+    "watermark_from_seconds": 2.0,
+    "caption_style": "accumulate"
+  },
+  "pacing": {
+    "target_scene_count_min": 10,
+    "target_scene_count_max": 14,
+    "target_visual_change_seconds_min": 2.0,
+    "target_visual_change_seconds_max": 4.0,
+    "max_fullscreen_without_avatar_seconds": 8.0,
+    "max_components_per_scene": 2,
+    "max_shader_or_accent_transitions": 2
+  },
+  "transition_direction": {
+    "energy": "medium",
+    "mood": "editorial",
+    "primary_share_min": 0.6,
+    "primary_share_max": 0.7,
+    "opening": "distinctive but readable",
+    "topic_change": "one accent transition",
+    "outro": "simple closure"
+  },
+  "avatar": {
+    "video_available_during_planning": false,
+    "safe_zone_source": "pending_video_analysis",
+    "placement_policy": "use approved layout IDs; never invent coordinates",
+    "hook_requires_face": true,
+    "cta_requires_face": true
+  },
+  "captions": {
+    "default_mode": "bottom",
+    "hide_when_visual_repeats_spoken_text": true,
+    "max_emphasis_words_per_scene": 3
+  },
+  "media": {
+    "inventory_available_during_planning": false,
+    "policy": "emit semantic media_intents only; deterministic resolver runs after human approval"
+  },
+  "catalog_policy": {
+    "shortlist": "auto-shortlist",
+    "render_ready_items_may_be_selected": true,
+    "adapt_items_must_not_be_selected_directly": true,
+    "adapt_items_may_appear_only_in_adaptation_requests": true,
+    "every_adaptation_request_requires_render_ready_fallback": true
+  }
+}
+

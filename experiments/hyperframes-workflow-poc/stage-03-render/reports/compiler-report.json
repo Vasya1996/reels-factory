@@ -1,0 +1,1114 @@
+{
+  "generated_at": "2026-08-02T07:47:53.108Z",
+  "project": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "duration": 42.32,
+    "root": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project",
+    "hyperframes_pin": "0.7.88",
+    "hyperframes_upgrade": "0.7.87 -> 0.7.88"
+  },
+  "source_implementations": {
+    "approved_layout_adapter": "plan-previews/two-reel-catalog-proxy-20260729/assets/catalog.js + catalog.css",
+    "local_blocks": {
+      "local:block:stat_number": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_stat_number_html",
+      "local:block:complexity_cloud": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_complexity_cloud_html",
+      "local:block:task_list": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_task_list_html",
+      "local:block:concept_nodes": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_concept_nodes_html",
+      "local:block:persona_card": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_persona_card_html",
+      "local:block:value_layers": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_value_layers_html",
+      "local:block:sequence_flow": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_sequence_flow_html"
+    }
+  },
+  "scenes": [
+    {
+      "scene_id": "s01",
+      "start": 0,
+      "end": 3,
+      "duration": 3,
+      "requested": {
+        "layout_id": "approved:layout:avatar_object_overlay",
+        "primary_block_id": "local:block:stat_number",
+        "technique_ids": [
+          "avatar_object_overlay",
+          "animated_stat_countup",
+          "caption_kinetic_slam",
+          "hard_cut_transition"
+        ],
+        "adaptation_requests": [
+          {
+            "catalog_id": "upstream:component:caption-kinetic-slam",
+            "fallback_catalog_id": "local:block:stat_number",
+            "reason": "Кинетический slam слова «ТРЁМ» усилит hook, но компонент нужно параметризовать и сделать seek-safe для точной синхронизации.",
+            "desired_parameters": [
+              {
+                "name": "text",
+                "value": "ТРЁМ"
+              },
+              {
+                "name": "trigger_word_index",
+                "value": "6"
+              },
+              {
+                "name": "accent_color",
+                "value": "#FFE500"
+              }
+            ]
+          }
+        ]
+      },
+      "resolved": {
+        "layout_source_ref": {
+          "manifest": "catalog/catalog.json",
+          "implementation": [
+            "assets/catalog.js",
+            "assets/catalog.css"
+          ]
+        },
+        "layout_evidence_refs": [
+          {
+            "path": "assets/catalog.js",
+            "symbol": "renderObject",
+            "line_start": 392,
+            "line_end": 429,
+            "reason_ru": "Функция renderObject содержит доказанный JS-контракт и хореографию approved pattern."
+          },
+          {
+            "path": "assets/catalog.js",
+            "symbol": "animateObject",
+            "line_start": 557,
+            "line_end": 571,
+            "reason_ru": "Функция animateObject содержит доказанный JS-контракт и хореографию approved pattern."
+          }
+        ],
+        "block_source_ref": {
+          "manifest": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "implementation": [
+            "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "plugins/reels-factory/engine/hyperframes/stat_number"
+          ]
+        },
+        "block_evidence_refs": [
+          {
+            "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "symbol": "build_stat_number_html",
+            "line_start": 214,
+            "line_end": 215,
+            "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+          }
+        ],
+        "actual_source_implementation": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_stat_number_html",
+        "fallback": [
+          {
+            "catalog_id": "upstream:component:caption-kinetic-slam",
+            "fallback_catalog_id": "local:block:stat_number",
+            "used": true
+          }
+        ]
+      },
+      "variables": {
+        "headline": "ВСЕ ПРОДАЖИ = 3 ВОПРОСА",
+        "labels": [
+          "3"
+        ],
+        "emphasis_words": [
+          "ВСЕ",
+          "ТРЁМ",
+          "ВОПРОСАМ"
+        ],
+        "avatar_direction": "object_overlay",
+        "captions": "bottom"
+      },
+      "composition_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s01.html"
+    },
+    {
+      "scene_id": "s02",
+      "start": 3,
+      "end": 5.333,
+      "duration": 2.333,
+      "requested": {
+        "layout_id": "approved:layout:avatar_editorial_bubble",
+        "primary_block_id": "local:block:sequence_flow",
+        "technique_ids": [
+          "avatar_editorial_bubble",
+          "sequence_step_flow",
+          "caption_editorial_emphasis",
+          "hard_cut_transition"
+        ],
+        "adaptation_requests": []
+      },
+      "resolved": {
+        "layout_source_ref": {
+          "manifest": "catalog/catalog.json",
+          "implementation": [
+            "assets/catalog.js",
+            "assets/catalog.css"
+          ]
+        },
+        "layout_evidence_refs": [
+          {
+            "path": "assets/catalog.js",
+            "symbol": "renderEditorial",
+            "line_start": 234,
+            "line_end": 254,
+            "reason_ru": "Функция renderEditorial содержит доказанный JS-контракт и хореографию approved pattern."
+          },
+          {
+            "path": "assets/catalog.js",
+            "symbol": "animateEditorial",
+            "line_start": 467,
+            "line_end": 477,
+            "reason_ru": "Функция animateEditorial содержит доказанный JS-контракт и хореографию approved pattern."
+          }
+        ],
+        "block_source_ref": {
+          "manifest": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "implementation": [
+            "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "plugins/reels-factory/engine/hyperframes/sequence_flow"
+          ]
+        },
+        "block_evidence_refs": [
+          {
+            "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "symbol": "build_sequence_flow_html",
+            "line_start": 540,
+            "line_end": 541,
+            "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+          }
+        ],
+        "actual_source_implementation": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_sequence_flow_html",
+        "fallback": []
+      },
+      "variables": {
+        "headline": "ПОРЯДОК РЕШАЕТ ВСЁ",
+        "labels": [
+          "КТО",
+          "ЧТО",
+          "КАК"
+        ],
+        "emphasis_words": [
+          "ПОРЯДОК",
+          "РЕШАЕТ",
+          "ВСЁ"
+        ],
+        "avatar_direction": "editorial_bubble",
+        "captions": "bottom"
+      },
+      "composition_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s02.html"
+    },
+    {
+      "scene_id": "s03",
+      "start": 5.333,
+      "end": 8.74,
+      "duration": 3.407,
+      "requested": {
+        "layout_id": "approved:layout:progressive_text_card",
+        "primary_block_id": "local:block:complexity_cloud",
+        "technique_ids": [
+          "complexity_to_resolution",
+          "progressive_text_card",
+          "caption_highlight",
+          "hard_cut_transition"
+        ],
+        "adaptation_requests": [
+          {
+            "catalog_id": "upstream:component:caption-highlight",
+            "fallback_catalog_id": "local:block:complexity_cloud",
+            "reason": "Последовательная подсветка слов поддержит накопление сложности, но требует русских content variables и word-index синхронизации.",
+            "desired_parameters": [
+              {
+                "name": "words",
+                "value": "УСЛОЖНЯТЬ|ХИТРЫЕ|ПРИЁМЫ"
+              },
+              {
+                "name": "accent_color",
+                "value": "#FFE500"
+              },
+              {
+                "name": "canvas",
+                "value": "1080x1920"
+              }
+            ]
+          }
+        ]
+      },
+      "resolved": {
+        "layout_source_ref": {
+          "manifest": "catalog/catalog.json",
+          "implementation": [
+            "assets/catalog.js",
+            "assets/catalog.css"
+          ]
+        },
+        "layout_evidence_refs": [
+          {
+            "path": "assets/catalog.js",
+            "symbol": "renderProgressive",
+            "line_start": 299,
+            "line_end": 323,
+            "reason_ru": "Функция renderProgressive содержит доказанный JS-контракт и хореографию approved pattern."
+          },
+          {
+            "path": "assets/catalog.js",
+            "symbol": "animateProgressive",
+            "line_start": 494,
+            "line_end": 504,
+            "reason_ru": "Функция animateProgressive содержит доказанный JS-контракт и хореографию approved pattern."
+          }
+        ],
+        "block_source_ref": {
+          "manifest": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "implementation": [
+            "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "plugins/reels-factory/engine/hyperframes/complexity_cloud"
+          ]
+        },
+        "block_evidence_refs": [
+          {
+            "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "symbol": "build_complexity_cloud_html",
+            "line_start": 374,
+            "line_end": 375,
+            "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+          }
+        ],
+        "actual_source_implementation": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_complexity_cloud_html",
+        "fallback": [
+          {
+            "catalog_id": "upstream:component:caption-highlight",
+            "fallback_catalog_id": "local:block:complexity_cloud",
+            "used": true
+          }
+        ]
+      },
+      "variables": {
+        "headline": "МЫ УСЛОЖНЯЕМ ПРОДАЖИ",
+        "labels": [
+          "ХИТРЫЕ ПРИЁМЫ"
+        ],
+        "emphasis_words": [
+          "УСЛОЖНЯТЬ",
+          "ХИТРЫЕ",
+          "ПРИЁМЫ"
+        ],
+        "avatar_direction": "hidden",
+        "captions": "bottom"
+      },
+      "composition_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s03.html"
+    },
+    {
+      "scene_id": "s04",
+      "start": 8.74,
+      "end": 11.52,
+      "duration": 2.78,
+      "requested": {
+        "layout_id": "approved:layout:checklist_strike",
+        "primary_block_id": "local:block:task_list",
+        "technique_ids": [
+          "checklist_strike_routine",
+          "task_checklist_reveal",
+          "caption_clip_wipe",
+          "hard_cut_transition"
+        ],
+        "adaptation_requests": []
+      },
+      "resolved": {
+        "layout_source_ref": {
+          "manifest": "catalog/catalog.json",
+          "implementation": [
+            "assets/catalog.js",
+            "assets/catalog.css"
+          ]
+        },
+        "layout_evidence_refs": [
+          {
+            "path": "assets/catalog.js",
+            "symbol": "renderChecklist",
+            "line_start": 264,
+            "line_end": 297,
+            "reason_ru": "Функция renderChecklist содержит доказанный JS-контракт и хореографию approved pattern."
+          },
+          {
+            "path": "assets/catalog.js",
+            "symbol": "animateChecklist",
+            "line_start": 479,
+            "line_end": 492,
+            "reason_ru": "Функция animateChecklist содержит доказанный JS-контракт и хореографию approved pattern."
+          }
+        ],
+        "block_source_ref": {
+          "manifest": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "implementation": [
+            "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "plugins/reels-factory/engine/hyperframes/task_list"
+          ]
+        },
+        "block_evidence_refs": [
+          {
+            "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "symbol": "build_task_list_html",
+            "line_start": 132,
+            "line_end": 133,
+            "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+          }
+        ],
+        "actual_source_implementation": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_task_list_html",
+        "fallback": []
+      },
+      "variables": {
+        "headline": "НЕ В ЭТОМ ОСНОВА",
+        "labels": [
+          "СКРИПТЫ",
+          "ВОЛШЕБНЫЕ ФРАЗЫ"
+        ],
+        "emphasis_words": [
+          "СКРИПТЫ",
+          "ВОЛШЕБНЫЕ",
+          "ФРАЗЫ"
+        ],
+        "avatar_direction": "hidden",
+        "captions": "bottom"
+      },
+      "composition_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s04.html"
+    },
+    {
+      "scene_id": "s05",
+      "start": 11.52,
+      "end": 13.6,
+      "duration": 2.08,
+      "requested": {
+        "layout_id": "approved:layout:avatar_editorial_bubble",
+        "primary_block_id": "local:block:concept_nodes",
+        "technique_ids": [
+          "avatar_editorial_bubble",
+          "concept_node_map",
+          "caption_weight_shift",
+          "editorial_push_transition"
+        ],
+        "adaptation_requests": []
+      },
+      "resolved": {
+        "layout_source_ref": {
+          "manifest": "catalog/catalog.json",
+          "implementation": [
+            "assets/catalog.js",
+            "assets/catalog.css"
+          ]
+        },
+        "layout_evidence_refs": [
+          {
+            "path": "assets/catalog.js",
+            "symbol": "renderEditorial",
+            "line_start": 234,
+            "line_end": 254,
+            "reason_ru": "Функция renderEditorial содержит доказанный JS-контракт и хореографию approved pattern."
+          },
+          {
+            "path": "assets/catalog.js",
+            "symbol": "animateEditorial",
+            "line_start": 467,
+            "line_end": 477,
+            "reason_ru": "Функция animateEditorial содержит доказанный JS-контракт и хореографию approved pattern."
+          }
+        ],
+        "block_source_ref": {
+          "manifest": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "implementation": [
+            "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "plugins/reels-factory/engine/hyperframes/concept_nodes"
+          ]
+        },
+        "block_evidence_refs": [
+          {
+            "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "symbol": "build_concept_nodes_html",
+            "line_start": 496,
+            "line_end": 497,
+            "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+          }
+        ],
+        "actual_source_implementation": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_concept_nodes_html",
+        "fallback": []
+      },
+      "variables": {
+        "headline": "В ОСНОВЕ — 3 ВОПРОСА",
+        "labels": [
+          "КТО",
+          "ЧТО",
+          "КАК"
+        ],
+        "emphasis_words": [
+          "ОСНОВЕ",
+          "ТРИ",
+          "ВОПРОСА"
+        ],
+        "avatar_direction": "editorial_bubble",
+        "captions": "bottom"
+      },
+      "composition_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s05.html"
+    },
+    {
+      "scene_id": "s06",
+      "start": 13.6,
+      "end": 18.58,
+      "duration": 4.98,
+      "requested": {
+        "layout_id": "approved:layout:avatar_broll_split",
+        "primary_block_id": "local:block:persona_card",
+        "technique_ids": [
+          "avatar_broll_split",
+          "persona_context_card",
+          "caption_editorial_emphasis",
+          "hard_cut_transition"
+        ],
+        "adaptation_requests": []
+      },
+      "resolved": {
+        "layout_source_ref": {
+          "manifest": "catalog/catalog.json",
+          "implementation": [
+            "assets/catalog.js",
+            "assets/catalog.css"
+          ]
+        },
+        "layout_evidence_refs": [
+          {
+            "path": "assets/catalog.js",
+            "symbol": "renderSplit",
+            "line_start": 332,
+            "line_end": 339,
+            "reason_ru": "Функция renderSplit содержит доказанный JS-контракт и хореографию approved pattern."
+          },
+          {
+            "path": "assets/catalog.js",
+            "symbol": "animateSplit",
+            "line_start": 513,
+            "line_end": 523,
+            "reason_ru": "Функция animateSplit содержит доказанный JS-контракт и хореографию approved pattern."
+          }
+        ],
+        "block_source_ref": {
+          "manifest": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "implementation": [
+            "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "plugins/reels-factory/engine/hyperframes/persona_card"
+          ]
+        },
+        "block_evidence_refs": [
+          {
+            "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "symbol": "build_persona_card_html",
+            "line_start": 423,
+            "line_end": 424,
+            "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+          }
+        ],
+        "actual_source_implementation": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_persona_card_html",
+        "fallback": []
+      },
+      "variables": {
+        "headline": "1. КОМУ ПРОДАЁМ?",
+        "labels": [
+          "КТО ЭТОТ ЧЕЛОВЕК",
+          "ЧЕМ ЖИВЁТ",
+          "КАКАЯ БОЛЬ"
+        ],
+        "emphasis_words": [
+          "КОМУ",
+          "ЧЕЛОВЕК",
+          "БОЛЬ"
+        ],
+        "avatar_direction": "split",
+        "captions": "bottom"
+      },
+      "composition_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s06.html"
+    },
+    {
+      "scene_id": "s07",
+      "start": 18.58,
+      "end": 22.74,
+      "duration": 4.16,
+      "requested": {
+        "layout_id": "approved:layout:progressive_text_card",
+        "primary_block_id": "local:block:value_layers",
+        "technique_ids": [
+          "value_layer_swap",
+          "progressive_text_card",
+          "caption_gradient_fill",
+          "hard_cut_transition"
+        ],
+        "adaptation_requests": []
+      },
+      "resolved": {
+        "layout_source_ref": {
+          "manifest": "catalog/catalog.json",
+          "implementation": [
+            "assets/catalog.js",
+            "assets/catalog.css"
+          ]
+        },
+        "layout_evidence_refs": [
+          {
+            "path": "assets/catalog.js",
+            "symbol": "renderProgressive",
+            "line_start": 299,
+            "line_end": 323,
+            "reason_ru": "Функция renderProgressive содержит доказанный JS-контракт и хореографию approved pattern."
+          },
+          {
+            "path": "assets/catalog.js",
+            "symbol": "animateProgressive",
+            "line_start": 494,
+            "line_end": 504,
+            "reason_ru": "Функция animateProgressive содержит доказанный JS-контракт и хореографию approved pattern."
+          }
+        ],
+        "block_source_ref": {
+          "manifest": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "implementation": [
+            "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "plugins/reels-factory/engine/hyperframes/value_layers"
+          ]
+        },
+        "block_evidence_refs": [
+          {
+            "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "symbol": "build_value_layers_html",
+            "line_start": 460,
+            "line_end": 461,
+            "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+          }
+        ],
+        "actual_source_implementation": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_value_layers_html",
+        "fallback": []
+      },
+      "variables": {
+        "headline": "2. ЧТО ПРОДАЁМ?",
+        "labels": [
+          "ПРОДУКТ",
+          "РЕАЛЬНАЯ ЦЕННОСТЬ"
+        ],
+        "emphasis_words": [
+          "ЧТО",
+          "НА САМОМ ДЕЛЕ",
+          "ПОКУПАЕТ"
+        ],
+        "avatar_direction": "hidden",
+        "captions": "bottom"
+      },
+      "composition_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s07.html"
+    },
+    {
+      "scene_id": "s08",
+      "start": 22.74,
+      "end": 25.96,
+      "duration": 3.22,
+      "requested": {
+        "layout_id": "approved:layout:avatar_object_overlay",
+        "primary_block_id": "local:block:sequence_flow",
+        "technique_ids": [
+          "avatar_object_overlay",
+          "sequence_step_flow",
+          "caption_highlight",
+          "hard_cut_transition"
+        ],
+        "adaptation_requests": []
+      },
+      "resolved": {
+        "layout_source_ref": {
+          "manifest": "catalog/catalog.json",
+          "implementation": [
+            "assets/catalog.js",
+            "assets/catalog.css"
+          ]
+        },
+        "layout_evidence_refs": [
+          {
+            "path": "assets/catalog.js",
+            "symbol": "renderObject",
+            "line_start": 392,
+            "line_end": 429,
+            "reason_ru": "Функция renderObject содержит доказанный JS-контракт и хореографию approved pattern."
+          },
+          {
+            "path": "assets/catalog.js",
+            "symbol": "animateObject",
+            "line_start": 557,
+            "line_end": 571,
+            "reason_ru": "Функция animateObject содержит доказанный JS-контракт и хореографию approved pattern."
+          }
+        ],
+        "block_source_ref": {
+          "manifest": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "implementation": [
+            "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "plugins/reels-factory/engine/hyperframes/sequence_flow"
+          ]
+        },
+        "block_evidence_refs": [
+          {
+            "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "symbol": "build_sequence_flow_html",
+            "line_start": 540,
+            "line_end": 541,
+            "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+          }
+        ],
+        "actual_source_implementation": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_sequence_flow_html",
+        "fallback": []
+      },
+      "variables": {
+        "headline": "3. КАК ПРОДАЁМ?",
+        "labels": [
+          "ГДЕ ВСТРЕЧАЕМСЯ"
+        ],
+        "emphasis_words": [
+          "КАК",
+          "ГДЕ",
+          "ВСТРЕЧАЕМСЯ"
+        ],
+        "avatar_direction": "object_overlay",
+        "captions": "bottom"
+      },
+      "composition_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s08.html"
+    },
+    {
+      "scene_id": "s09",
+      "start": 25.96,
+      "end": 28.88,
+      "duration": 2.92,
+      "requested": {
+        "layout_id": "approved:layout:avatar_broll_split",
+        "primary_block_id": "local:block:concept_nodes",
+        "technique_ids": [
+          "avatar_broll_split",
+          "concept_node_map",
+          "caption_pill_karaoke",
+          "hard_cut_transition"
+        ],
+        "adaptation_requests": []
+      },
+      "resolved": {
+        "layout_source_ref": {
+          "manifest": "catalog/catalog.json",
+          "implementation": [
+            "assets/catalog.js",
+            "assets/catalog.css"
+          ]
+        },
+        "layout_evidence_refs": [
+          {
+            "path": "assets/catalog.js",
+            "symbol": "renderSplit",
+            "line_start": 332,
+            "line_end": 339,
+            "reason_ru": "Функция renderSplit содержит доказанный JS-контракт и хореографию approved pattern."
+          },
+          {
+            "path": "assets/catalog.js",
+            "symbol": "animateSplit",
+            "line_start": 513,
+            "line_end": 523,
+            "reason_ru": "Функция animateSplit содержит доказанный JS-контракт и хореографию approved pattern."
+          }
+        ],
+        "block_source_ref": {
+          "manifest": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "implementation": [
+            "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "plugins/reels-factory/engine/hyperframes/concept_nodes"
+          ]
+        },
+        "block_evidence_refs": [
+          {
+            "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "symbol": "build_concept_nodes_html",
+            "line_start": 496,
+            "line_end": 497,
+            "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+          }
+        ],
+        "actual_source_implementation": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_concept_nodes_html",
+        "fallback": []
+      },
+      "variables": {
+        "headline": "СЛОВА + ФОРМАТ",
+        "labels": [
+          "КАКИМИ СЛОВАМИ",
+          "В КАКОМ ВИДЕ"
+        ],
+        "emphasis_words": [
+          "СЛОВАМИ",
+          "ВИДЕ",
+          "ПРЕДЛАГАЕМ"
+        ],
+        "avatar_direction": "split",
+        "captions": "bottom"
+      },
+      "composition_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s09.html"
+    },
+    {
+      "scene_id": "s10",
+      "start": 28.88,
+      "end": 31.56,
+      "duration": 2.68,
+      "requested": {
+        "layout_id": "approved:layout:progressive_text_card",
+        "primary_block_id": "local:block:concept_nodes",
+        "technique_ids": [
+          "concept_node_map",
+          "complexity_to_resolution",
+          "progressive_text_card",
+          "editorial_push_transition"
+        ],
+        "adaptation_requests": []
+      },
+      "resolved": {
+        "layout_source_ref": {
+          "manifest": "catalog/catalog.json",
+          "implementation": [
+            "assets/catalog.js",
+            "assets/catalog.css"
+          ]
+        },
+        "layout_evidence_refs": [
+          {
+            "path": "assets/catalog.js",
+            "symbol": "renderProgressive",
+            "line_start": 299,
+            "line_end": 323,
+            "reason_ru": "Функция renderProgressive содержит доказанный JS-контракт и хореографию approved pattern."
+          },
+          {
+            "path": "assets/catalog.js",
+            "symbol": "animateProgressive",
+            "line_start": 494,
+            "line_end": 504,
+            "reason_ru": "Функция animateProgressive содержит доказанный JS-контракт и хореографию approved pattern."
+          }
+        ],
+        "block_source_ref": {
+          "manifest": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "implementation": [
+            "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "plugins/reels-factory/engine/hyperframes/concept_nodes"
+          ]
+        },
+        "block_evidence_refs": [
+          {
+            "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "symbol": "build_concept_nodes_html",
+            "line_start": 496,
+            "line_end": 497,
+            "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+          }
+        ],
+        "actual_source_implementation": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_concept_nodes_html",
+        "fallback": []
+      },
+      "variables": {
+        "headline": "ОСТАЛЬНОЕ — НАДСТРОЙКА",
+        "labels": [
+          "КТО",
+          "ЧТО",
+          "КАК"
+        ],
+        "emphasis_words": [
+          "ОСТАЛЬНОЕ",
+          "НАДСТРОЙКА",
+          "ТРЕМЯ"
+        ],
+        "avatar_direction": "hidden",
+        "captions": "bottom"
+      },
+      "composition_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s10.html"
+    },
+    {
+      "scene_id": "s11",
+      "start": 31.56,
+      "end": 34.44,
+      "duration": 2.88,
+      "requested": {
+        "layout_id": "approved:layout:avatar_fullscreen",
+        "primary_block_id": null,
+        "technique_ids": [
+          "avatar_fullscreen_anchor",
+          "caption_weight_shift",
+          "caption_editorial_emphasis",
+          "hard_cut_transition"
+        ],
+        "adaptation_requests": []
+      },
+      "resolved": {
+        "layout_source_ref": {
+          "manifest": "catalog/catalog.json",
+          "implementation": [
+            "assets/catalog.js",
+            "assets/catalog.css"
+          ]
+        },
+        "layout_evidence_refs": [
+          {
+            "path": "assets/catalog.js",
+            "symbol": "renderAvatarFullscreen",
+            "line_start": 218,
+            "line_end": 232,
+            "reason_ru": "Функция renderAvatarFullscreen содержит доказанный JS-контракт и хореографию approved pattern."
+          },
+          {
+            "path": "assets/catalog.js",
+            "symbol": "animateAvatar",
+            "line_start": 453,
+            "line_end": 465,
+            "reason_ru": "Функция animateAvatar содержит доказанный JS-контракт и хореографию approved pattern."
+          }
+        ],
+        "block_source_ref": null,
+        "block_evidence_refs": null,
+        "actual_source_implementation": "plan-previews/two-reel-catalog-proxy-20260729/assets/catalog.js + catalog.css",
+        "fallback": []
+      },
+      "variables": {
+        "headline": "САМОЕ ВАЖНОЕ — ПОРЯДОК",
+        "labels": [],
+        "emphasis_words": [
+          "ПРОСТО",
+          "ВАЖНОЕ",
+          "ПОРЯДОК"
+        ],
+        "avatar_direction": "fullscreen",
+        "captions": "bottom"
+      },
+      "composition_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s11.html"
+    },
+    {
+      "scene_id": "s12",
+      "start": 34.44,
+      "end": 37.96,
+      "duration": 3.52,
+      "requested": {
+        "layout_id": "approved:layout:progressive_text_card",
+        "primary_block_id": "local:block:sequence_flow",
+        "technique_ids": [
+          "sequence_step_flow",
+          "catalog_reference_morph_text",
+          "progressive_text_card",
+          "white_flash_transition"
+        ],
+        "adaptation_requests": [
+          {
+            "catalog_id": "upstream:component:morph-text",
+            "fallback_catalog_id": "local:block:sequence_flow",
+            "reason": "Морфинг КТО→ЧТО→КАК может усилить кульминацию, но требует русских переменных, word-index триггеров и seek-safe GSAP timeline.",
+            "desired_parameters": [
+              {
+                "name": "words",
+                "value": "КТО|ЧТО|КАК"
+              },
+              {
+                "name": "word_indices",
+                "value": "82|84|88"
+              },
+              {
+                "name": "accent_color",
+                "value": "#FFE500"
+              },
+              {
+                "name": "fallback_mode",
+                "value": "sequence_flow"
+              }
+            ]
+          }
+        ]
+      },
+      "resolved": {
+        "layout_source_ref": {
+          "manifest": "catalog/catalog.json",
+          "implementation": [
+            "assets/catalog.js",
+            "assets/catalog.css"
+          ]
+        },
+        "layout_evidence_refs": [
+          {
+            "path": "assets/catalog.js",
+            "symbol": "renderProgressive",
+            "line_start": 299,
+            "line_end": 323,
+            "reason_ru": "Функция renderProgressive содержит доказанный JS-контракт и хореографию approved pattern."
+          },
+          {
+            "path": "assets/catalog.js",
+            "symbol": "animateProgressive",
+            "line_start": 494,
+            "line_end": 504,
+            "reason_ru": "Функция animateProgressive содержит доказанный JS-контракт и хореографию approved pattern."
+          }
+        ],
+        "block_source_ref": {
+          "manifest": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "implementation": [
+            "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "plugins/reels-factory/engine/hyperframes/sequence_flow"
+          ]
+        },
+        "block_evidence_refs": [
+          {
+            "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "symbol": "build_sequence_flow_html",
+            "line_start": 540,
+            "line_end": 541,
+            "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+          }
+        ],
+        "actual_source_implementation": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_sequence_flow_html",
+        "fallback": [
+          {
+            "catalog_id": "upstream:component:morph-text",
+            "fallback_catalog_id": "local:block:sequence_flow",
+            "used": true
+          }
+        ]
+      },
+      "variables": {
+        "headline": "КТО → ЧТО → КАК",
+        "labels": [
+          "1. КТО",
+          "2. ЧТО",
+          "3. КАК"
+        ],
+        "emphasis_words": [
+          "КТО",
+          "ЧТО",
+          "КАК"
+        ],
+        "avatar_direction": "hidden",
+        "captions": "hidden"
+      },
+      "composition_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s12.html"
+    },
+    {
+      "scene_id": "s13",
+      "start": 37.96,
+      "end": 42.32,
+      "duration": 4.36,
+      "requested": {
+        "layout_id": "approved:layout:social_outro",
+        "primary_block_id": "local:block:task_list",
+        "technique_ids": [
+          "social_outro_lockup",
+          "task_checklist_reveal",
+          "avatar_fullscreen_anchor",
+          "editorial_push_transition"
+        ],
+        "adaptation_requests": []
+      },
+      "resolved": {
+        "layout_source_ref": {
+          "manifest": "catalog/catalog.json",
+          "implementation": [
+            "assets/catalog.js",
+            "assets/catalog.css"
+          ]
+        },
+        "layout_evidence_refs": [
+          {
+            "path": "assets/catalog.js",
+            "symbol": "renderOutro",
+            "line_start": 431,
+            "line_end": 451,
+            "reason_ru": "Функция renderOutro содержит доказанный JS-контракт и хореографию approved pattern."
+          },
+          {
+            "path": "assets/catalog.js",
+            "symbol": "animateOutro",
+            "line_start": 573,
+            "line_end": 585,
+            "reason_ru": "Функция animateOutro содержит доказанный JS-контракт и хореографию approved pattern."
+          }
+        ],
+        "block_source_ref": {
+          "manifest": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+          "implementation": [
+            "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "plugins/reels-factory/engine/hyperframes/task_list"
+          ]
+        },
+        "block_evidence_refs": [
+          {
+            "path": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py",
+            "symbol": "build_task_list_html",
+            "line_start": 132,
+            "line_end": 133,
+            "reason_ru": "Сигнатура builder-функции задаёт доказанный контракт переменных локального блока."
+          }
+        ],
+        "actual_source_implementation": "plugins/reels-factory/engine/src/reels_factory/hyperframes_blocks.py#build_task_list_html",
+        "fallback": []
+      },
+      "variables": {
+        "headline": "СОХРАНИ И ПРОВЕРЬ ПРОДУКТ",
+        "labels": [
+          "КТО?",
+          "ЧТО?",
+          "КАК?",
+          "@julia.agents"
+        ],
+        "emphasis_words": [
+          "СОХРАНИ",
+          "ПРОДУКТ",
+          "СЕГОДНЯ"
+        ],
+        "avatar_direction": "fullscreen",
+        "captions": "bottom"
+      },
+      "composition_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\compositions\\s13.html"
+    }
+  ],
+  "sfx": [
+    {
+      "at": 34.98,
+      "name": "pop.wav",
+      "volume": 0.15,
+      "purpose": "payoff click"
+    },
+    {
+      "at": 35.94,
+      "name": "pop.wav",
+      "volume": 0.15,
+      "purpose": "payoff click"
+    },
+    {
+      "at": 37.46,
+      "name": "pop.wav",
+      "volume": 0.15,
+      "purpose": "payoff click"
+    },
+    {
+      "at": 41.915,
+      "name": "pop.wav",
+      "volume": 0.12,
+      "purpose": "CTA confirmation"
+    },
+    {
+      "at": 11.52,
+      "name": "whoosh.wav",
+      "volume": 0.11,
+      "purpose": "editorial push accent"
+    },
+    {
+      "at": 28.88,
+      "name": "whoosh.wav",
+      "volume": 0.11,
+      "purpose": "editorial push accent"
+    },
+    {
+      "at": 37.96,
+      "name": "whoosh.wav",
+      "volume": 0.11,
+      "purpose": "editorial push accent"
+    }
+  ]
+}

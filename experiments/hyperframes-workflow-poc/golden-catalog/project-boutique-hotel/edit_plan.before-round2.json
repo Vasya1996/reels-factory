@@ -1,0 +1,240 @@
+{
+  "plan_version": "hf-edit-plan-golden-2",
+  "status": "draft",
+  "project_id": "boutique-hotel-roi",
+  "duration_seconds": 33.065,
+  "creative_direction": {
+    "concept": "Финансовый хук: обычная гостиница окупается 15 лет, бутик-отель — вдвое быстрее. Дальше боль (инвестируют и ждут десятилетиями), поворот (дело в формате, не в типе актива), доказательство (бутик-отели/санатории/медикал спа — 9 лет), сравнительный повтор, контраст рентабельности 25% против 35%, вывод про разницу на вложенный рубль и CTA сохранить пост.",
+    "mood": "Уверенный, аналитический тон; сухие цифры поданы как открытие, без нотации.",
+    "rhythm": "Hard cut почти везде, два white_flash-акцента: на смысловом повороте (s03) и на CTA (s08).",
+    "primary_transition_id": "hard_cut",
+    "accent_transition_ids": [
+      "white_flash"
+    ]
+  },
+  "scenes": [
+    {
+      "scene_id": "s01",
+      "word_start": 0,
+      "word_end": 8,
+      "start": 0,
+      "end": 4.969,
+      "purpose": "hook",
+      "block": "avatarFullscreen",
+      "avatar_direction": "fullscreen",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": null,
+        "labels": [],
+        "emphasis_words": [
+          "вдвое"
+        ]
+      },
+      "rationale": "Хук — уже готовый контраст (15 лет vs вдвое быстрее), отдельный заголовок был бы либо дублем, либо абстракцией. Правило v3 №2/v4 №7: хук строго TRUE fullscreen."
+    },
+    {
+      "scene_id": "s02",
+      "word_start": 9,
+      "word_end": 16,
+      "start": 4.969,
+      "end": 8.882,
+      "purpose": "build",
+      "block": "avatarBubble",
+      "avatar_direction": "editorial_bubble",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": "ДОЛГО ЖДУТ",
+        "labels": [
+          {
+            "text": "вкладывают",
+            "trigger_word_index": 10
+          },
+          {
+            "text": "десятилетиями",
+            "trigger_word_index": 16
+          },
+          {
+            "text": "прибыль",
+            "trigger_word_index": 15
+          }
+        ],
+        "emphasis_words": [
+          "десятилетиями"
+        ]
+      },
+      "rationale": "Заголовок — паразфраз идеи «ждут годами» (0/2 слов дублируют речь сцены), не цитата. Пилюли — слова речи именно этой сцены (правило v3 №5). Первый триггер на слове 10 (0.51с от начала сцены) — правило v4 №6."
+    },
+    {
+      "scene_id": "s03",
+      "word_start": 17,
+      "word_end": 24,
+      "start": 8.882,
+      "end": 11.227,
+      "purpose": "contrast",
+      "block": "avatarFullscreen",
+      "avatar_direction": "fullscreen",
+      "captions": "bottom",
+      "transition_in": "white_flash",
+      "content": {
+        "headline": "ФОРМАТ РЕШАЕТ",
+        "labels": [],
+        "emphasis_words": [
+          "формате"
+        ]
+      },
+      "rationale": "Смысловой поворот сюжета («дело не в отелях, а в формате») — второй TRUE-fullscreen (правило v4 №7) + акцентный переход. Заголовок — вывод, не цитата (0/2 слов пересекаются с речью сцены)."
+    },
+    {
+      "scene_id": "s04",
+      "word_start": 25,
+      "word_end": 34,
+      "start": 11.227,
+      "end": 16.149,
+      "purpose": "explain",
+      "block": "taskList",
+      "avatar_direction": "object_overlay",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": null,
+        "labels": [
+          {
+            "text": "бутик-отели",
+            "trigger_word_index": 25
+          },
+          {
+            "text": "санатории",
+            "trigger_word_index": 26
+          },
+          {
+            "text": "медикал спа",
+            "trigger_word_index": 28
+          },
+          {
+            "text": "девять лет",
+            "trigger_word_index": 33
+          }
+        ],
+        "emphasis_words": [
+          "девять"
+        ]
+      },
+      "rationale": "Облако — конкретные слова из речи сцены (три формата + цифра «девять лет»), не выдуманные категории (правило v3 №5). Первый триггер на слове 25 (0с от начала сцены) — правило v4 №6 с запасом."
+    },
+    {
+      "scene_id": "s05",
+      "word_start": 35,
+      "word_end": 47,
+      "start": 16.149,
+      "end": 22.999,
+      "purpose": "contrast",
+      "block": "avatarBubble",
+      "avatar_direction": "editorial_bubble",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": null,
+        "labels": [
+          {
+            "text": "почти вдвое",
+            "trigger_word_index": 36
+          },
+          {
+            "text": "пятнадцать лет",
+            "trigger_word_index": 43
+          },
+          {
+            "text": "рентабельность",
+            "trigger_word_index": 45
+          }
+        ],
+        "emphasis_words": [
+          "пятнадцать"
+        ]
+      },
+      "rationale": "Сравнительный повтор (контраст с 15 годами) — пилюли дословно из речи сцены. Первый триггер на слове 36 (0.22с от начала сцены) — правило v4 №6. Headline: null, смысл несут пилюли + аватар."
+    },
+    {
+      "scene_id": "s06",
+      "word_start": 48,
+      "word_end": 56,
+      "start": 22.999,
+      "end": 27.016,
+      "purpose": "payoff",
+      "block": "beforeAfter",
+      "avatar_direction": "object_overlay",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": null,
+        "labels": [
+          {
+            "text": "двадцать пять",
+            "trigger_word_index": 48
+          },
+          {
+            "text": "тридцать пять",
+            "trigger_word_index": 55
+          }
+        ],
+        "emphasis_words": [
+          "процентов"
+        ]
+      },
+      "rationale": "beforeAfter [было, стало] — ровно 2 label по паспорту: рентабельность обычной гостиницы (25%) → бутик-отеля и спа (35%), оба значения дословно из речи сцены. Первый триггер — слово 48, ровно старт сцены (0с), правило v4 №6 с запасом (граница сцены сдвинута с 45 на 48, чтобы не создавать простой)."
+    },
+    {
+      "scene_id": "s07",
+      "word_start": 57,
+      "word_end": 65,
+      "start": 27.016,
+      "end": 29.977,
+      "purpose": "payoff",
+      "block": "statNumber",
+      "avatar_direction": "hidden",
+      "captions": "bottom",
+      "transition_in": "hard_cut",
+      "content": {
+        "headline": null,
+        "labels": [
+          {
+            "text": "разница",
+            "trigger_word_index": 57
+          }
+        ],
+        "emphasis_words": [
+          "рубль"
+        ]
+      },
+      "rationale": "Единственный statNumber-стикер за ролик (лимит 2), текст — слово речи сцены (не цифра, правило «не выдумывать»: в речи нет числа, есть слово «разница»). Триггер на слове 60 (0.59с от начала сцены) — правило v4 №6. avatar_direction hidden 2.96с — в пределах лимита ≤4с (правило 0)."
+    },
+    {
+      "scene_id": "s08",
+      "word_start": 66,
+      "word_end": 72,
+      "start": 29.977,
+      "end": 33.065,
+      "purpose": "cta",
+      "block": "avatarFullscreen",
+      "avatar_direction": "fullscreen",
+      "captions": "bottom",
+      "transition_in": "white_flash",
+      "content": {
+        "headline": null,
+        "labels": [],
+        "emphasis_words": [
+          "Сохрани"
+        ]
+      },
+      "rationale": "CTA-реплика («сохрани, если...») уже несёт призыв, отдельный заголовок был бы дублем. Третий TRUE-fullscreen + финальный акцентный переход (второй и последний за ролик, правило 4)."
+    }
+  ],
+  "global_notes": [
+    "TRUE-fullscreen сцены: s01 (хук), s03 (поворот), s08 (CTA) — ~31.5% хронометража, в допустимом диапазоне ориентира v3 №2 (10–35%).",
+    "Аватар скрыт только в s07 (statNumber, 2.96с) — в пределах лимита ≤4с (правило 0); видимость лица ~91% хронометража.",
+    "Граница между s05 и s06 сдвинута со слова 45 на слово 48: слова 45-47 «Рентабельность обычной гостиницы —» логически остались завершением сравнительного повтора в s05, чтобы первый label-триггер beforeAfter (s06) не создавал простой >1.2с от начала сцены (правило v4 №6).",
+    "Компиляция использует общий плейсхолдер assets/avatar.mp4 (немой дубль) и мастер-аудио assets/voice.mp3 — HeyGen не запускался (по протоколу zero-touch)."
+  ]
+}

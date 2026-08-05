@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "checks": [
+    "counts and IDs",
+    "preview directories, manifests, thumbnails, provenance",
+    "remote dependency scan",
+    "runtime result accounting",
+    "thumbnail hash coverage",
+    "contact sheets and audit",
+    "browser modal/filter validation"
+  ],
+  "errors": [],
+  "warnings": [
+    "duplicate thumbnail hashes documented: upstream:block:code-3d-extrude + upstream:block:code-particle-assemble + upstream:block:code-shader-dissolve; upstream:block:code-snippet-dark-2026 + upstream:block:code-snippet-dark-modern + upstream:block:code-snippet-dark-plus + upstream:block:code-snippet-high-contrast + upstream:block:code-snippet-high-contrast-light + upstream:block:code-snippet-light-2026 + upstream:block:code-snippet-light-modern + upstream:block:code-snippet-light-plus + upstream:block:code-snippet-monokai + upstream:block:code-snippet-solarized-light + upstream:block:code-snippet-visual-studio-dark + upstream:block:code-snippet-visual-studio-light + upstream:block:editorial-flash-overlay + upstream:block:macos-notification + upstream:block:vfx-liquid-background; upstream:block:instagram-follow + upstream:block:tiktok-follow; upstream:block:ios26-liquid-glass + upstream:block:macos-tahoe-liquid-glass + upstream:block:vfx-iphone-device; upstream:block:spain-map + upstream:block:us-map + upstream:block:us-map-bubble + upstream:block:us-map-flow + upstream:block:world-map"
+  ],
+  "counts": {
+    "approved:layout": 10,
+    "approved:transition": 5,
+    "local:block": 8,
+    "upstream:block": 113,
+    "upstream:component": 25,
+    "total": 161,
+    "pass": 142,
+    "fail": 19,
+    "localized_remote_dependencies": 146,
+    "harness_fixtures": 30
+  }
+}

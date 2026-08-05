@@ -1,0 +1,315 @@
+{
+  "generated_at": "2026-08-02T07:35:27.070Z",
+  "ffmpeg": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\revideo_test\\node_modules\\@ffmpeg-installer\\win32-x64\\ffmpeg.exe",
+  "ffprobe": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\revideo_test\\node_modules\\@ffprobe-installer\\win32-x64\\ffprobe.exe",
+  "avatar_sync": {
+    "source_total_duration": 41.008,
+    "target_duration": 42.32,
+    "setpts": 1.03199375731565,
+    "playback_rate": 0.968998109640832,
+    "target_island_boundaries": [
+      {
+        "island": 1,
+        "start": 0,
+        "end": 12.094967
+      },
+      {
+        "island": 2,
+        "start": 12.094967,
+        "end": 23.364339
+      },
+      {
+        "island": 3,
+        "start": 23.364339,
+        "end": 35.211627
+      },
+      {
+        "island": 4,
+        "start": 35.211627,
+        "end": 42.32
+      }
+    ],
+    "visual_lip_sync_check_points": [
+      2,
+      13,
+      24,
+      36,
+      41
+    ]
+  },
+  "avatar_islands": [
+    {
+      "order": 1,
+      "source_path": "C:\\Users\\Asus\\Downloads\\Продажи\\1.mp4",
+      "adopted_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\assets\\media\\avatar-island-01.mp4",
+      "sha256": "7BCEEE4F0DA73792FF7AFD70AF9BF4A8D5E4C5D24FD81476615E8A40A86D57E9",
+      "duration": 11.72,
+      "streams": [
+        {
+          "index": 0,
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1080,
+          "height": 1920,
+          "pix_fmt": "yuv420p",
+          "sample_rate": null,
+          "channels": null,
+          "r_frame_rate": "25/1",
+          "avg_frame_rate": "25/1",
+          "duration": 11.72
+        },
+        {
+          "index": 1,
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "width": null,
+          "height": null,
+          "pix_fmt": null,
+          "sample_rate": "48000",
+          "channels": 2,
+          "r_frame_rate": "0/0",
+          "avg_frame_rate": "0/0",
+          "duration": 11.712
+        }
+      ]
+    },
+    {
+      "order": 2,
+      "source_path": "C:\\Users\\Asus\\Downloads\\Продажи\\2.mp4",
+      "adopted_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\assets\\media\\avatar-island-02.mp4",
+      "sha256": "A61D9B531F9F0BC40F752CA5B5D176CC3E4009EFF1558BF6702172DA246316FE",
+      "duration": 10.92,
+      "streams": [
+        {
+          "index": 0,
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1080,
+          "height": 1920,
+          "pix_fmt": "yuv420p",
+          "sample_rate": null,
+          "channels": null,
+          "r_frame_rate": "25/1",
+          "avg_frame_rate": "25/1",
+          "duration": 10.92
+        },
+        {
+          "index": 1,
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "width": null,
+          "height": null,
+          "pix_fmt": null,
+          "sample_rate": "48000",
+          "channels": 2,
+          "r_frame_rate": "0/0",
+          "avg_frame_rate": "0/0",
+          "duration": 10.92
+        }
+      ]
+    },
+    {
+      "order": 3,
+      "source_path": "C:\\Users\\Asus\\Downloads\\Продажи\\3.mp4",
+      "adopted_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\assets\\media\\avatar-island-03.mp4",
+      "sha256": "C2683128DC6CFE16698D6D70B43BE544C5B5DC7B3C5E38D9F16A2078AAE98EAB",
+      "duration": 11.48,
+      "streams": [
+        {
+          "index": 0,
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1080,
+          "height": 1920,
+          "pix_fmt": "yuv420p",
+          "sample_rate": null,
+          "channels": null,
+          "r_frame_rate": "25/1",
+          "avg_frame_rate": "25/1",
+          "duration": 11.48
+        },
+        {
+          "index": 1,
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "width": null,
+          "height": null,
+          "pix_fmt": null,
+          "sample_rate": "48000",
+          "channels": 2,
+          "r_frame_rate": "0/0",
+          "avg_frame_rate": "0/0",
+          "duration": 11.472
+        }
+      ]
+    },
+    {
+      "order": 4,
+      "source_path": "C:\\Users\\Asus\\Downloads\\Продажи\\4.mp4",
+      "adopted_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\assets\\media\\avatar-island-04.mp4",
+      "sha256": "769B0624E46415778759BE44BD46D098E34F67279B8B200B7C5F72D3EDA4A220",
+      "duration": 6.888,
+      "streams": [
+        {
+          "index": 0,
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1080,
+          "height": 1920,
+          "pix_fmt": "yuv420p",
+          "sample_rate": null,
+          "channels": null,
+          "r_frame_rate": "25/1",
+          "avg_frame_rate": "25/1",
+          "duration": 6.88
+        },
+        {
+          "index": 1,
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "width": null,
+          "height": null,
+          "pix_fmt": null,
+          "sample_rate": "48000",
+          "channels": 2,
+          "r_frame_rate": "0/0",
+          "avg_frame_rate": "0/0",
+          "duration": 6.888
+        }
+      ]
+    }
+  ],
+  "master_audio": {
+    "source_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\work\\diagnostics\\ivc-v3-scenario-20260726T182834Z\\eleven\\voice_master.wav",
+    "adopted_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\assets\\media\\voice_master.wav",
+    "sha256": "4692F4BA55A61FD5CE7AF354AD897FB0422D8F985F46455ECB21514A2BE933FD",
+    "duration": 42.32,
+    "streams": [
+      {
+        "index": 0,
+        "codec_type": "audio",
+        "codec_name": "pcm_s16le",
+        "width": null,
+        "height": null,
+        "pix_fmt": null,
+        "sample_rate": "48000",
+        "channels": 2,
+        "r_frame_rate": "0/0",
+        "avg_frame_rate": "0/0",
+        "duration": 42.32
+      }
+    ]
+  },
+  "derived_assets": {
+    "avatar_base_silent": {
+      "adopted_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\assets\\media\\avatar-base-silent.mp4",
+      "sha256": "27E43A655110344A68EB607A121F8BDB2421A8AEEF81F803DB66B35554D474D7",
+      "duration": 42.333333,
+      "streams": [
+        {
+          "index": 0,
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1080,
+          "height": 1920,
+          "pix_fmt": "yuv420p",
+          "sample_rate": null,
+          "channels": null,
+          "r_frame_rate": "30/1",
+          "avg_frame_rate": "30/1",
+          "duration": 42.333333
+        }
+      ]
+    }
+  },
+  "sfx": [
+    {
+      "name": "whoosh.wav",
+      "source_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\work\\archives\\reels-factory-e2e-20260727-d2aa4090\\job\\revideo\\public\\whoosh.wav",
+      "adopted_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\assets\\media\\sfx\\whoosh.wav",
+      "available": true,
+      "sha256": "F2E588798BF344BF0EE851478E84776A9291ECC2774D6F11B760FF314E66917F",
+      "probe": [
+        {
+          "index": 0,
+          "codec_type": "audio",
+          "codec_name": "pcm_s16le",
+          "width": null,
+          "height": null,
+          "pix_fmt": null,
+          "sample_rate": "44100",
+          "channels": 1,
+          "r_frame_rate": "0/0",
+          "avg_frame_rate": "0/0",
+          "duration": 0.35
+        }
+      ]
+    },
+    {
+      "name": "type.wav",
+      "source_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\work\\archives\\reels-factory-e2e-20260727-d2aa4090\\job\\revideo\\public\\type.wav",
+      "adopted_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\assets\\media\\sfx\\type.wav",
+      "available": true,
+      "sha256": "F6A690F652A045EF92052FDCB3C690AE651869747D71DA63CF86888AC3AF6D9A",
+      "probe": [
+        {
+          "index": 0,
+          "codec_type": "audio",
+          "codec_name": "pcm_s16le",
+          "width": null,
+          "height": null,
+          "pix_fmt": null,
+          "sample_rate": "44100",
+          "channels": 1,
+          "r_frame_rate": "0/0",
+          "avg_frame_rate": "0/0",
+          "duration": 0.04
+        }
+      ]
+    },
+    {
+      "name": "pop.wav",
+      "source_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\work\\archives\\reels-factory-e2e-20260727-d2aa4090\\job\\revideo\\public\\pop.wav",
+      "adopted_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\assets\\media\\sfx\\pop.wav",
+      "available": true,
+      "sha256": "8682ACB1FC5CB05D658DC5C7CA322667C983886DF62F3793E342307D2B05171D",
+      "probe": [
+        {
+          "index": 0,
+          "codec_type": "audio",
+          "codec_name": "pcm_s16le",
+          "width": null,
+          "height": null,
+          "pix_fmt": null,
+          "sample_rate": "44100",
+          "channels": 1,
+          "r_frame_rate": "0/0",
+          "avg_frame_rate": "0/0",
+          "duration": 0.12
+        }
+      ]
+    },
+    {
+      "name": "ding.wav",
+      "source_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\work\\archives\\reels-factory-e2e-20260727-d2aa4090\\job\\revideo\\public\\ding.wav",
+      "adopted_path": "C:\\Users\\Asus\\Documents\\personal_ai\\projects\\content_factory\\reels-factory-hyperframes-workflow-poc\\experiments\\hyperframes-workflow-poc\\stage-03-render\\project\\assets\\media\\sfx\\ding.wav",
+      "available": true,
+      "sha256": "46ED70DD7ED20B673D7D4405B0A44C0DC7839D4E9727B92A854D93AA5F88D63F",
+      "probe": [
+        {
+          "index": 0,
+          "codec_type": "audio",
+          "codec_name": "pcm_s16le",
+          "width": null,
+          "height": null,
+          "pix_fmt": null,
+          "sample_rate": "44100",
+          "channels": 1,
+          "r_frame_rate": "0/0",
+          "avg_frame_rate": "0/0",
+          "duration": 0.5
+        }
+      ]
+    }
+  ]
+}

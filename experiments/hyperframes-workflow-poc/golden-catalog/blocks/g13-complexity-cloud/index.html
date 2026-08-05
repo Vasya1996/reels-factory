@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>G13 · complexity_cloud v2</title>
+<link rel="stylesheet" href="../../tokens.css">
+<style>
+  #scene{padding:118px 60px 104px}
+  #stage{position:relative;flex:1;margin-top:40px}
+  /* плейсхолдер аватара: в проде здесь fullscreen HeyGen-аватар */
+  #avatar{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);width:520px;height:760px;
+    border:6px dashed rgba(27,27,24,.35);border-radius:260px 260px 200px 200px / 340px 340px 160px 160px;
+    display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px}
+  #avatar span{font-family:JBMonoX,monospace;font-size:24px;letter-spacing:.14em;color:rgba(27,27,24,.45);text-transform:uppercase;text-align:center}
+  .cloud{position:absolute;background:var(--card);border:5px solid var(--ink);padding:22px 34px;
+    font-size:38px;font-weight:600;color:var(--ink);box-shadow:6px 8px 0 rgba(27,27,24,.15);white-space:nowrap;
+    opacity:0;transform:rotate(var(--rot,0deg)) scale(.6)}
+  .cloud.in{opacity:.96;transform:rotate(var(--rot,0deg)) scale(1);transition:opacity .22s var(--ease-pop),transform .32s var(--ease-pop)}
+  .cloud.y{background:var(--yellow)} .cloud.m{background:var(--mint)}
+  #stage.collapse .cloud{opacity:0;transform:rotate(var(--rot,0deg)) scale(.4) translate(var(--cx,0px),var(--cy,0px));
+    transition:opacity .4s var(--ease),transform .45s var(--ease)}
+  #payoff{position:absolute;left:50%;bottom:60px;transform:translateX(-50%) rotate(-1deg) scale(.7);
+    background:var(--red);color:var(--card);border:6px solid var(--ink);border-radius:240px 38px 225px 34px / 34px 225px 38px 240px;
+    padding:40px 64px;font-family:MontserratX,sans-serif;font-weight:900;font-size:56px;text-transform:uppercase;
+    box-shadow:var(--shadow-cta);opacity:0;white-space:nowrap}
+  #payoff.in{opacity:1;transform:translateX(-50%) rotate(-1deg) scale(1);transition:opacity .28s var(--ease-pop),transform .4s var(--ease-pop)}
+</style>
+</head>
+<body>
+<div id="fit"><div id="scene">
+  <div class="tech" data-t="0"><span class="dash"></span><span class="lbl">Перечисление · Вокруг аватара</span></div>
+  <h1 style="font-size:88px"><span class="w" data-t="300">МЫ</span> <span class="w" data-t="480">СЛОЖИЛИ</span> <span class="w hl" data-t="700"><i></i>В КУЧУ</span></h1>
+  <div id="stage">
+    <div id="avatar"><span>fullscreen<br>аватар<br>(placeholder)</span></div>
+    <div class="cloud"   style="left:0;top:6%;--rot:-3deg"   data-t="1500">воронки</div>
+    <div class="cloud y" style="right:2%;top:12%;--rot:2deg" data-t="2000">скрипты</div>
+    <div class="cloud m" style="left:4%;top:34%;--rot:1.5deg" data-t="2500">прогревы</div>
+    <div class="cloud"   style="right:0;top:40%;--rot:-2deg"  data-t="3000">триггеры</div>
+    <div class="cloud y" style="left:1%;top:62%;--rot:2.5deg" data-t="3500">офферы</div>
+    <div class="cloud m" style="right:3%;top:66%;--rot:-1.5deg" data-t="4000">дожимы</div>
+    <div id="payoff" data-t="5300">А НУЖНО 3 ВОПРОСА</div>
+  </div>
+</div></div>
+<script src="../../shared.js"></script>
+<script>
+/* схлопывание облака перед payoff; вешаемся после инициализации shared.js */
+addEventListener('DOMContentLoaded',()=>{
+  const stage=document.getElementById('stage');
+  const origPlay=SKB.play;
+  function playWithCollapse(){
+    stage.classList.remove('collapse');
+    origPlay();
+    window.__collapseTimer&&clearTimeout(window.__collapseTimer);
+    window.__collapseTimer=setTimeout(()=>{
+      document.querySelectorAll('.cloud').forEach(el=>{
+        const s=stage.getBoundingClientRect(), b=el.getBoundingClientRect();
+        const cx=(s.left+s.width/2-(b.left+b.width/2)), cy=(s.top+s.height*0.8-(b.top+b.height/2));
+        const sc=Math.min(innerWidth/1080,innerHeight/1920)*0.96;
+        el.style.setProperty('--cx',(cx/sc)+'px'); el.style.setProperty('--cy',(cy/sc)+'px');
+      });
+      stage.classList.add('collapse');
+    },4800);
+  }
+  document.getElementById('replay').onclick=playWithCollapse;
+  playWithCollapse();
+});
+</script>
+</body>
+</html>

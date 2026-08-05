@@ -1,0 +1,487 @@
+{
+  "request_version": 1,
+  "call_budget": 1,
+  "provider_agnostic": true,
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are the single-call Visual Director for a deterministic HyperFrames video\nworkflow. Return one JSON object matching the supplied schema. Do not return\nMarkdown, prose outside JSON, HTML, CSS, JavaScript, URLs, or implementation\ncode.\n\n## Your responsibility\n\nCreate a draft edit plan for the exact locked narration. Decide what the viewer\nsees, which approved layout carries it, which render-ready HyperFrames block or\ncomponent is used, where the avatar remains visible, which transition connects\nthe scenes, and which unresolved media should later be resolved by a script.\n\nYou make creative decisions once. A deterministic validator and compiler will\nderive seconds from word ranges, resolve media, instantiate catalog contracts,\nbuild seek-safe timelines, and render. Never do the compiler's job.\n\n## Immutable input\n\n- Do not rewrite, shorten, reorder, translate, or add narration.\n- Use only the supplied zero-based word indices.\n- Scenes must partition every word exactly once: the first scene starts at word\n  0, the last scene ends at the last word, and every next `word_start` equals\n  the previous `word_end + 1`.\n- Do not output seconds. Word boundaries are the source of truth.\n- Do not split a word or cross a scenario-block boundary accidentally.\n\n## Catalog contract\n\n- Use exact catalog IDs from the input and schema. Never invent an ID, variant,\n  transition, technique, parameter, or runtime.\n- Every scene has exactly one approved `layout_id`.\n- `primary_block_id` and `component_ids` may contain only `render_ready` items.\n- An `adapt_required` item may appear only inside `adaptation_requests`, with a\n  render-ready fallback that preserves the scene if adaptation is rejected.\n- Use catalog descriptions, roles, techniques, parameter contracts, risks, and\n  adaptation notes as evidence for selection.\n- Prefer a semantic block over decorative motion. A component supports the\n  message; it must not become the message.\n- Do not stack more than two components in a scene.\n- `technique_ids` describe the intended visible craft. They are not executable\n  substitutes for catalog items.\n\n## Editorial rhythm\n\n- Target the requested 10–14 scenes and a meaningful visual change roughly\n  every 2–4 seconds. A visual change may be a new layout, block phase, caption\n  treatment, camera state, or transition; it does not require random cutting.\n- The hook must show the avatar and establish the thesis immediately.\n- Preserve eye contact: never plan more than 8 seconds of continuous\n  fullscreen content without the avatar.\n- The CTA must show the avatar and close with the approved social-outro\n  language when appropriate.\n- Build a progression: hook -> complication -> three-question explanation ->\n  ordered payoff -> CTA. Do not use a flat sequence of interchangeable cards.\n- Give each scene one clear concept and one dominant focal action.\n- Use high-impact motion only on semantic punctuation. Let quieter connective\n  scenes breathe.\n\n## Transitions\n\n- The first scene uses `approved:transition:hard_cut` as `transition_in_id`.\n- Choose one primary transition for about 60–70% of later scene changes.\n- Use hard cuts for rapid lists; use one or two accent transitions for a topic\n  change or payoff. Do not use a different transition on every scene.\n- A transition is the handoff. Do not describe a separate exit animation.\n\n## Composition and typography\n\n- Think in video layers, not web-page layouts: background depth, meaningful\n  midground content, and restrained foreground detail.\n- Avoid generic neon-tech decoration, arbitrary gradients, identical card\n  grids, and centered layouts with equal visual weight.\n- Keep Russian on-screen copy short, concrete, and derived only from the locked\n  narration. `headline`, `labels`, and `emphasis_words` are display excerpts,\n  not new claims.\n- Hide captions when a fullscreen semantic visual already repeats the spoken\n  words. Otherwise preserve readable captions.\n- Do not invent coordinates while avatar safe zones are pending. Approved\n  layout IDs own placement.\n\n## Media\n\n- No media inventory is available yet. Do not invent filenames or providers.\n- If photographic B-roll, an image, icon, or SFX would materially improve a\n  scene, add a concise semantic `media_intent`. The resolver will run only after\n  human approval.\n- The plan must still be coherent without optional media; use a render-ready\n  HyperFrames fallback.\n\n## Rationale\n\nKeep `rationale` concise and testable: name the narration idea and why the\nchosen catalog item expresses it. Do not reveal hidden chain-of-thought."
+    },
+    {
+      "role": "user",
+      "content": "{\"task\":\"Create exactly one draft edit plan for human review.\",\"project\":{\"id\":\"sales-three-questions-poc\",\"title\":\"Три вопроса в продажах\",\"deliverable\":\"vertical talking-head reel with HyperFrames semantic visuals\",\"duration_seconds\":42.32,\"canvas\":{\"width\":1080,\"height\":1920,\"fps\":30,\"orientation\":\"portrait\"},\"brand\":{\"language\":\"ru\",\"font_family\":\"Unbounded\",\"keyword_color\":\"#FFE500\",\"watermark\":\"@julia.agents\",\"watermark_from_seconds\":2,\"caption_style\":\"accumulate\"}},\"narration\":{\"locked\":true,\"language\":\"ru\",\"exact_text\":\"Все продажи на свете сводятся к трём вопросам. И порядок этих вопросов решает всё.\\nМы обожаем усложнять продажи. Учим хитрые приёмы. Зубрим скрипты. Ищем волшебные фразы. А в основе — три больших вопроса. Первый: кому продаём? Кто этот человек, чем живёт, какая у него боль. Второй: что продаём? Что человек на самом деле у нас покупает. Третий: как продаём? Где встречаемся с ним, какими словами говорим, в каком виде предлагаем. Всё остальное — надстройка над этими тремя. Звучит просто. Но самое важное — порядок.\\nСначала кто, пото́м что, и только пото́м как.\\nСохрани это видео. Прогони свой продукт по трём вопросам. Прямо сегодня.\",\"blocks\":[{\"id\":\"hook\",\"role\":\"hook\",\"text\":\"Все продажи на свете сводятся к трём вопросам. И порядок этих вопросов решает всё.\",\"char_start\":0,\"char_end\":81,\"word_start\":0,\"word_end\":13,\"start\":0,\"end\":5.28},{\"id\":\"development\",\"role\":\"development\",\"text\":\"Мы обожаем усложнять продажи. Учим хитрые приёмы. Зубрим скрипты. Ищем волшебные фразы. А в основе — три больших вопроса. Первый: кому продаём? Кто этот человек, чем живёт, какая у него боль. Второй: что продаём? Что человек на самом деле у нас покупает. Третий: как продаём? Где встречаемся с ним, какими словами говорим, в каком виде предлагаем. Всё остальное — надстройка над этими тремя. Звучит просто. Но самое важное — порядок.\",\"char_start\":83,\"char_end\":515,\"word_start\":14,\"word_end\":80,\"start\":5.333,\"end\":34.32},{\"id\":\"payoff\",\"role\":\"payoff\",\"text\":\"Сначала кто, пото́м что, и только пото́м как.\",\"char_start\":517,\"char_end\":561,\"word_start\":81,\"word_end\":88,\"start\":34.44,\"end\":37.84},{\"id\":\"cta\",\"role\":\"cta\",\"text\":\"Сохрани это видео. Прогони свой продукт по трём вопросам. Прямо сегодня.\",\"char_start\":563,\"char_end\":634,\"word_start\":89,\"word_end\":99,\"start\":37.96,\"end\":42.32}],\"words\":[{\"id\":\"w000\",\"index\":0,\"text\":\"Все\",\"start\":0,\"end\":0.24,\"block_id\":\"hook\",\"role\":\"hook\"},{\"id\":\"w001\",\"index\":1,\"text\":\"продажи\",\"start\":0.297,\"end\":0.72,\"block_id\":\"hook\",\"role\":\"hook\"},{\"id\":\"w002\",\"index\":2,\"text\":\"на\",\"start\":0.747,\"end\":0.8,\"block_id\":\"hook\",\"role\":\"hook\"},{\"id\":\"w003\",\"index\":3,\"text\":\"свете\",\"start\":0.853,\"end\":1.2,\"block_id\":\"hook\",\"role\":\"hook\"},{\"id\":\"w004\",\"index\":4,\"text\":\"сводятся\",\"start\":1.28,\"end\":1.76,\"block_id\":\"hook\",\"role\":\"hook\"},{\"id\":\"w005\",\"index\":5,\"text\":\"к\",\"start\":1.84,\"end\":1.92,\"block_id\":\"hook\",\"role\":\"hook\"},{\"id\":\"w006\",\"index\":6,\"text\":\"трём\",\"start\":1.947,\"end\":2.16,\"block_id\":\"hook\",\"role\":\"hook\"},{\"id\":\"w007\",\"index\":7,\"text\":\"вопросам\",\"start\":2.217,\"end\":2.96,\"block_id\":\"hook\",\"role\":\"hook\"},{\"id\":\"w008\",\"index\":8,\"text\":\"И\",\"start\":3,\"end\":3.04,\"block_id\":\"hook\",\"role\":\"hook\"},{\"id\":\"w009\",\"index\":9,\"text\":\"порядок\",\"start\":3.1,\"end\":3.52,\"block_id\":\"hook\",\"role\":\"hook\"},{\"id\":\"w010\",\"index\":10,\"text\":\"этих\",\"start\":3.568,\"end\":3.76,\"block_id\":\"hook\",\"role\":\"hook\"},{\"id\":\"w011\",\"index\":11,\"text\":\"вопросов\",\"start\":3.817,\"end\":4.24,\"block_id\":\"hook\",\"role\":\"hook\"},{\"id\":\"w012\",\"index\":12,\"text\":\"решает\",\"start\":4.3,\"end\":4.72,\"block_id\":\"hook\",\"role\":\"hook\"},{\"id\":\"w013\",\"index\":13,\"text\":\"всё\",\"start\":4.8,\"end\":5.28,\"block_id\":\"hook\",\"role\":\"hook\"},{\"id\":\"w014\",\"index\":14,\"text\":\"Мы\",\"start\":5.333,\"end\":5.44,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w015\",\"index\":15,\"text\":\"обожаем\",\"start\":5.493,\"end\":5.92,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w016\",\"index\":16,\"text\":\"усложнять\",\"start\":5.96,\"end\":6.48,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w017\",\"index\":17,\"text\":\"продажи\",\"start\":6.537,\"end\":7.2,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w018\",\"index\":18,\"text\":\"Учим\",\"start\":7.28,\"end\":7.52,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w019\",\"index\":19,\"text\":\"хитрые\",\"start\":7.56,\"end\":7.92,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w020\",\"index\":20,\"text\":\"приёмы\",\"start\":7.98,\"end\":8.68,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w021\",\"index\":21,\"text\":\"Зубрим\",\"start\":8.74,\"end\":9.12,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w022\",\"index\":22,\"text\":\"скрипты\",\"start\":9.173,\"end\":9.76,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w023\",\"index\":23,\"text\":\"Ищем\",\"start\":9.96,\"end\":10.32,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w024\",\"index\":24,\"text\":\"волшебные\",\"start\":10.36,\"end\":10.8,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w025\",\"index\":25,\"text\":\"фразы\",\"start\":10.84,\"end\":11.44,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w026\",\"index\":26,\"text\":\"А\",\"start\":11.52,\"end\":11.6,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w027\",\"index\":27,\"text\":\"в\",\"start\":11.64,\"end\":11.68,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w028\",\"index\":28,\"text\":\"основе\",\"start\":11.749,\"end\":12.16,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w029\",\"index\":29,\"text\":\"три\",\"start\":12.44,\"end\":12.56,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w030\",\"index\":30,\"text\":\"больших\",\"start\":12.608,\"end\":12.88,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w031\",\"index\":31,\"text\":\"вопроса\",\"start\":12.949,\"end\":13.52,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w032\",\"index\":32,\"text\":\"Первый\",\"start\":13.6,\"end\":14.08,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w033\",\"index\":33,\"text\":\"кому\",\"start\":14.176,\"end\":14.56,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w034\",\"index\":34,\"text\":\"продаём\",\"start\":14.613,\"end\":15.2,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w035\",\"index\":35,\"text\":\"Кто\",\"start\":15.32,\"end\":15.52,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w036\",\"index\":36,\"text\":\"этот\",\"start\":15.584,\"end\":15.84,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w037\",\"index\":37,\"text\":\"человек\",\"start\":15.9,\"end\":16.56,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w038\",\"index\":38,\"text\":\"чем\",\"start\":16.6,\"end\":16.72,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w039\",\"index\":39,\"text\":\"живёт\",\"start\":16.78,\"end\":17.36,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w040\",\"index\":40,\"text\":\"какая\",\"start\":17.42,\"end\":17.68,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w041\",\"index\":41,\"text\":\"у\",\"start\":17.72,\"end\":17.76,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w042\",\"index\":42,\"text\":\"него\",\"start\":17.808,\"end\":18,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w043\",\"index\":43,\"text\":\"боль\",\"start\":18.08,\"end\":18.52,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w044\",\"index\":44,\"text\":\"Второй\",\"start\":18.58,\"end\":19.28,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w045\",\"index\":45,\"text\":\"что\",\"start\":19.34,\"end\":19.52,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w046\",\"index\":46,\"text\":\"продаём\",\"start\":19.573,\"end\":20.16,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w047\",\"index\":47,\"text\":\"Что\",\"start\":20.24,\"end\":20.48,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w048\",\"index\":48,\"text\":\"человек\",\"start\":20.54,\"end\":20.96,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w049\",\"index\":49,\"text\":\"на\",\"start\":21.013,\"end\":21.12,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w050\",\"index\":50,\"text\":\"самом\",\"start\":21.16,\"end\":21.36,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w051\",\"index\":51,\"text\":\"деле\",\"start\":21.408,\"end\":21.6,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w052\",\"index\":52,\"text\":\"у\",\"start\":21.64,\"end\":21.68,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w053\",\"index\":53,\"text\":\"нас\",\"start\":21.72,\"end\":21.84,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w054\",\"index\":54,\"text\":\"покупает\",\"start\":21.907,\"end\":22.68,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w055\",\"index\":55,\"text\":\"Третий\",\"start\":22.74,\"end\":23.44,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w056\",\"index\":56,\"text\":\"как\",\"start\":23.5,\"end\":23.68,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w057\",\"index\":57,\"text\":\"продаём\",\"start\":23.733,\"end\":24.32,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w058\",\"index\":58,\"text\":\"Где\",\"start\":24.44,\"end\":24.72,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w059\",\"index\":59,\"text\":\"встречаемся\",\"start\":24.76,\"end\":25.44,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w060\",\"index\":60,\"text\":\"с\",\"start\":25.48,\"end\":25.52,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w061\",\"index\":61,\"text\":\"ним\",\"start\":25.58,\"end\":25.92,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w062\",\"index\":62,\"text\":\"какими\",\"start\":25.96,\"end\":26.24,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w063\",\"index\":63,\"text\":\"словами\",\"start\":26.3,\"end\":26.72,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w064\",\"index\":64,\"text\":\"говорим\",\"start\":26.787,\"end\":27.36,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w065\",\"index\":65,\"text\":\"в\",\"start\":27.4,\"end\":27.44,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w066\",\"index\":66,\"text\":\"каком\",\"start\":27.5,\"end\":27.76,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w067\",\"index\":67,\"text\":\"виде\",\"start\":27.824,\"end\":28.08,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w068\",\"index\":68,\"text\":\"предлагаем\",\"start\":28.128,\"end\":28.8,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w069\",\"index\":69,\"text\":\"Всё\",\"start\":28.88,\"end\":29.12,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w070\",\"index\":70,\"text\":\"остальное\",\"start\":29.16,\"end\":29.76,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w071\",\"index\":71,\"text\":\"надстройка\",\"start\":29.98,\"end\":30.56,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w072\",\"index\":72,\"text\":\"над\",\"start\":30.6,\"end\":30.72,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w073\",\"index\":73,\"text\":\"этими\",\"start\":30.773,\"end\":31.04,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w074\",\"index\":74,\"text\":\"тремя\",\"start\":31.08,\"end\":31.44,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w075\",\"index\":75,\"text\":\"Звучит\",\"start\":31.56,\"end\":32,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w076\",\"index\":76,\"text\":\"просто\",\"start\":32.069,\"end\":32.64,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w077\",\"index\":77,\"text\":\"Но\",\"start\":32.693,\"end\":32.8,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w078\",\"index\":78,\"text\":\"самое\",\"start\":32.853,\"end\":33.12,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w079\",\"index\":79,\"text\":\"важное\",\"start\":33.18,\"end\":33.52,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w080\",\"index\":80,\"text\":\"порядок\",\"start\":33.75,\"end\":34.32,\"block_id\":\"development\",\"role\":\"development\"},{\"id\":\"w081\",\"index\":81,\"text\":\"Сначала\",\"start\":34.44,\"end\":34.88,\"block_id\":\"payoff\",\"role\":\"payoff\"},{\"id\":\"w082\",\"index\":82,\"text\":\"кто\",\"start\":34.98,\"end\":35.52,\"block_id\":\"payoff\",\"role\":\"payoff\"},{\"id\":\"w083\",\"index\":83,\"text\":\"пото́м\",\"start\":35.56,\"end\":35.84,\"block_id\":\"payoff\",\"role\":\"payoff\"},{\"id\":\"w084\",\"index\":84,\"text\":\"что\",\"start\":35.94,\"end\":36.32,\"block_id\":\"payoff\",\"role\":\"payoff\"},{\"id\":\"w085\",\"index\":85,\"text\":\"и\",\"start\":36.44,\"end\":36.56,\"block_id\":\"payoff\",\"role\":\"payoff\"},{\"id\":\"w086\",\"index\":86,\"text\":\"только\",\"start\":36.617,\"end\":36.96,\"block_id\":\"payoff\",\"role\":\"payoff\"},{\"id\":\"w087\",\"index\":87,\"text\":\"пото́м\",\"start\":37.02,\"end\":37.36,\"block_id\":\"payoff\",\"role\":\"payoff\"},{\"id\":\"w088\",\"index\":88,\"text\":\"как\",\"start\":37.46,\"end\":37.84,\"block_id\":\"payoff\",\"role\":\"payoff\"},{\"id\":\"w089\",\"index\":89,\"text\":\"Сохрани\",\"start\":37.96,\"end\":38.4,\"block_id\":\"cta\",\"role\":\"cta\"},{\"id\":\"w090\",\"index\":90,\"text\":\"это\",\"start\":38.44,\"end\":38.56,\"block_id\":\"cta\",\"role\":\"cta\"},{\"id\":\"w091\",\"index\":91,\"text\":\"видео\",\"start\":38.624,\"end\":39.04,\"block_id\":\"cta\",\"role\":\"cta\"},{\"id\":\"w092\",\"index\":92,\"text\":\"Прогони\",\"start\":39.093,\"end\":39.6,\"block_id\":\"cta\",\"role\":\"cta\"},{\"id\":\"w093\",\"index\":93,\"text\":\"свой\",\"start\":39.648,\"end\":39.84,\"block_id\":\"cta\",\"role\":\"cta\"},{\"id\":\"w094\",\"index\":94,\"text\":\"продукт\",\"start\":39.89,\"end\":40.24,\"block_id\":\"cta\",\"role\":\"cta\"},{\"id\":\"w095\",\"index\":95,\"text\":\"по\",\"start\":40.293,\"end\":40.4,\"block_id\":\"cta\",\"role\":\"cta\"},{\"id\":\"w096\",\"index\":96,\"text\":\"трём\",\"start\":40.427,\"end\":40.64,\"block_id\":\"cta\",\"role\":\"cta\"},{\"id\":\"w097\",\"index\":97,\"text\":\"вопросам\",\"start\":40.697,\"end\":41.36,\"block_id\":\"cta\",\"role\":\"cta\"},{\"id\":\"w098\",\"index\":98,\"text\":\"Прямо\",\"start\":41.387,\"end\":41.88,\"block_id\":\"cta\",\"role\":\"cta\"},{\"id\":\"w099\",\"index\":99,\"text\":\"сегодня\",\"start\":41.915,\"end\":42.32,\"block_id\":\"cta\",\"role\":\"cta\"}]},\"constraints\":{\"project_id\":\"sales-three-questions-poc\",\"deliverable\":\"vertical talking-head reel with HyperFrames semantic visuals\",\"canvas\":{\"width\":1080,\"height\":1920,\"fps\":30,\"orientation\":\"portrait\"},\"brand\":{\"language\":\"ru\",\"font_family\":\"Unbounded\",\"keyword_color\":\"#FFE500\",\"watermark\":\"@julia.agents\",\"watermark_from_seconds\":2,\"caption_style\":\"accumulate\"},\"pacing\":{\"target_scene_count_min\":10,\"target_scene_count_max\":14,\"target_visual_change_seconds_min\":2,\"target_visual_change_seconds_max\":4,\"max_fullscreen_without_avatar_seconds\":8,\"max_components_per_scene\":2,\"max_shader_or_accent_transitions\":2},\"transition_direction\":{\"energy\":\"medium\",\"mood\":\"editorial\",\"primary_share_min\":0.6,\"primary_share_max\":0.7,\"opening\":\"distinctive but readable\",\"topic_change\":\"one accent transition\",\"outro\":\"simple closure\"},\"avatar\":{\"video_available_during_planning\":false,\"safe_zone_source\":\"pending_video_analysis\",\"placement_policy\":\"use approved layout IDs; never invent coordinates\",\"hook_requires_face\":true,\"cta_requires_face\":true},\"captions\":{\"default_mode\":\"bottom\",\"hide_when_visual_repeats_spoken_text\":true,\"max_emphasis_words_per_scene\":3},\"media\":{\"inventory_available_during_planning\":false,\"policy\":\"emit semantic media_intents only; deterministic resolver runs after human approval\"},\"catalog_policy\":{\"shortlist\":\"auto-shortlist\",\"render_ready_items_may_be_selected\":true,\"adapt_items_must_not_be_selected_directly\":true,\"adapt_items_may_appear_only_in_adaptation_requests\":true,\"every_adaptation_request_requires_render_ready_fallback\":true}},\"catalog\":{\"catalog_version\":1,\"shortlist_source\":\"stage-01-catalog/shortlist/auto-shortlist.json\",\"item_count\":49,\"render_ready_count\":22,\"adapt_required_count\":27,\"items\":[{\"id\":\"approved:layout:avatar_broll_split\",\"title\":\"Avatar Broll Split\",\"kind\":\"layout\",\"source\":\"approved\",\"description\":\"Кадр разделён между аватаром и B-roll, обе области заполнены.\",\"tags\":[\"approved-montage\",\"avatar\",\"broll\",\"layout\",\"split\"],\"techniques\":[{\"id\":\"avatar_broll_split\",\"name_ru\":\"Split screen: аватар и B-roll\",\"description_ru\":\"Лицо и доказательный материал показываются одновременно.\",\"category\":\"composition_layout\",\"use_when_ru\":[\"Когда два или несколько смысловых слоёв нужно показать одновременно.\"],\"avoid_when_ru\":[\"Когда split или collage делает главный объект слишком мелким.\"]}],\"capabilities\":{\"roles\":[\"layout\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"approved_js_contract\",\"fields\":[\"baseVideo\",\"brollVideo\",\"start\"]},\"execution_mode\":\"render_ready\",\"score\":10,\"selection_reason\":\"Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"approved:layout:avatar_editorial_bubble\",\"title\":\"Avatar Editorial Bubble\",\"kind\":\"layout\",\"source\":\"approved\",\"description\":\"Движущийся аватар находится в крупном editorial bubble рядом с текстом.\",\"tags\":[\"approved-montage\",\"avatar\",\"bubble\",\"editorial\",\"layout\"],\"techniques\":[{\"id\":\"avatar_editorial_bubble\",\"name_ru\":\"Аватар в editorial bubble\",\"description_ru\":\"Ведущий остаётся видимым внутри крупного bubble рядом с пояснением.\",\"category\":\"speaker_layout\",\"use_when_ru\":[\"Когда важно сохранить лицо и прямой контакт ведущего со зрителем.\"],\"avoid_when_ru\":[\"Когда доказательный материал должен занять весь экран.\"]}],\"capabilities\":{\"roles\":[\"layout\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"approved_js_contract\",\"fields\":[\"baseVideo\",\"purpose\",\"text\"]},\"execution_mode\":\"render_ready\",\"score\":10,\"selection_reason\":\"Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"approved:layout:avatar_fullscreen\",\"title\":\"Avatar Fullscreen\",\"kind\":\"layout\",\"source\":\"approved\",\"description\":\"Движущийся аватар занимает весь вертикальный кадр и держит eye contact.\",\"tags\":[\"approved-montage\",\"avatar\",\"fullscreen\",\"layout\"],\"techniques\":[{\"id\":\"avatar_fullscreen_anchor\",\"name_ru\":\"Полноэкранный аватар-якорь\",\"description_ru\":\"Движущийся ведущий удерживает личный контакт.\",\"category\":\"speaker_layout\",\"use_when_ru\":[\"Когда важно сохранить лицо и прямой контакт ведущего со зрителем.\"],\"avoid_when_ru\":[\"Когда доказательный материал должен занять весь экран.\"]}],\"capabilities\":{\"roles\":[\"layout\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"approved_js_contract\",\"fields\":[\"emphasis\",\"id\",\"role\",\"start\"]},\"execution_mode\":\"render_ready\",\"score\":10,\"selection_reason\":\"Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"approved:layout:avatar_object_overlay\",\"title\":\"Avatar Object Overlay\",\"kind\":\"layout\",\"source\":\"approved\",\"description\":\"Движущийся аватар сочетается с предметным overlay, например телефоном.\",\"tags\":[\"approved-montage\",\"avatar\",\"layout\",\"object\",\"overlay\"],\"techniques\":[{\"id\":\"avatar_object_overlay\",\"name_ru\":\"Аватар с предметным overlay\",\"description_ru\":\"Предмет или интерфейс рядом с ведущим объясняет действие продукта.\",\"category\":\"social_and_editorial_overlay\",\"use_when_ru\":[\"Когда сценарий ссылается на профиль, публикацию, уведомление или медиакарточку.\"],\"avoid_when_ru\":[\"Когда показанный сервис или контент не упоминается в речи.\"]}],\"capabilities\":{\"roles\":[\"layout\",\"media_treatment\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"approved_js_contract\",\"fields\":[\"baseVideo\",\"hits\"]},\"execution_mode\":\"render_ready\",\"score\":10,\"selection_reason\":\"Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"approved:layout:broll_archival_collage\",\"title\":\"Broll Archival Collage\",\"kind\":\"layout\",\"source\":\"approved\",\"description\":\"Несколько B-roll слоёв раскладываются как editorial collage.\",\"tags\":[\"approved-montage\",\"archival\",\"broll\",\"collage\",\"layout\"],\"techniques\":[{\"id\":\"archival_broll_collage\",\"name_ru\":\"Editorial collage из B-roll\",\"description_ru\":\"Несколько медиа-слоёв показывают широту примеров.\",\"category\":\"composition_layout\",\"use_when_ru\":[\"Когда два или несколько смысловых слоёв нужно показать одновременно.\"],\"avoid_when_ru\":[\"Когда split или collage делает главный объект слишком мелким.\"]}],\"capabilities\":{\"roles\":[\"layout\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"approved_js_contract\",\"fields\":[\"brollVideo\",\"purpose\",\"text\"]},\"execution_mode\":\"render_ready\",\"score\":10,\"selection_reason\":\"Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"approved:layout:broll_fullscreen\",\"title\":\"Broll Fullscreen\",\"kind\":\"layout\",\"source\":\"approved\",\"description\":\"B-roll занимает весь экран и конкретизирует фразу без лица.\",\"tags\":[\"approved-montage\",\"broll\",\"fullscreen\",\"layout\"],\"techniques\":[{\"id\":\"broll_fullscreen\",\"name_ru\":\"Полноэкранный B-roll\",\"description_ru\":\"Материал занимает весь кадр и конкретизирует тезис.\",\"category\":\"composition_layout\",\"use_when_ru\":[\"Когда два или несколько смысловых слоёв нужно показать одновременно.\"],\"avoid_when_ru\":[\"Когда split или collage делает главный объект слишком мелким.\"]}],\"capabilities\":{\"roles\":[\"layout\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"approved_js_contract\",\"fields\":[\"brollVideo\",\"start\"]},\"execution_mode\":\"render_ready\",\"score\":10,\"selection_reason\":\"Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"approved:layout:checklist_strike\",\"title\":\"Checklist Strike\",\"kind\":\"layout\",\"source\":\"approved\",\"description\":\"Пункты рутины появляются списком и по очереди зачёркиваются.\",\"tags\":[\"approved-montage\",\"checklist\",\"layout\",\"strike\"],\"techniques\":[{\"id\":\"checklist_strike_routine\",\"name_ru\":\"Зачёркивание рутины\",\"description_ru\":\"Повторяющиеся задачи зачёркиваются, чтобы показать избавление от ручной работы.\",\"category\":\"comparison_and_process\",\"use_when_ru\":[\"Когда нужно показать изменение, порядок шагов или причинно-следственную связь.\"],\"avoid_when_ru\":[\"Когда элементы не образуют понятную последовательность или сравнение.\"]}],\"capabilities\":{\"roles\":[\"layout\",\"list\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":true,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"approved_js_contract\",\"fields\":[]},\"execution_mode\":\"render_ready\",\"score\":10,\"selection_reason\":\"Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"approved:layout:progressive_text_card\",\"title\":\"Progressive Text Card\",\"kind\":\"layout\",\"source\":\"approved\",\"description\":\"Фраза собирается крупными типографическими строками.\",\"tags\":[\"approved-montage\",\"card\",\"layout\",\"progressive\",\"text\"],\"techniques\":[{\"id\":\"progressive_text_card\",\"name_ru\":\"Прогрессивная типографическая карточка\",\"description_ru\":\"Фраза собирается крупными смысловыми строками.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"layout\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"approved_js_contract\",\"fields\":[\"emphasis\",\"hits\",\"purpose\"]},\"execution_mode\":\"render_ready\",\"score\":10,\"selection_reason\":\"Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"approved:layout:social_outro\",\"title\":\"Social Outro\",\"kind\":\"layout\",\"source\":\"approved\",\"description\":\"Финальный social lockup фиксирует CTA и handle.\",\"tags\":[\"approved-montage\",\"layout\",\"outro\",\"social\"],\"techniques\":[{\"id\":\"social_outro_lockup\",\"name_ru\":\"Финальный social outro lockup\",\"description_ru\":\"Финальный кадр фиксирует CTA и handle.\",\"category\":\"brand_and_outro\",\"use_when_ru\":[\"Когда нужно представить продукт, автора, логотип или завершить ролик CTA.\"],\"avoid_when_ru\":[\"Когда брендовый экран прерывает объяснение до завершения мысли.\"]}],\"capabilities\":{\"roles\":[\"brand\",\"layout\",\"social_overlay\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"approved_js_contract\",\"fields\":[\"id\"]},\"execution_mode\":\"render_ready\",\"score\":10,\"selection_reason\":\"Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"approved:transition:hard_cut\",\"title\":\"Hard Cut\",\"kind\":\"transition\",\"source\":\"approved\",\"description\":\"Мгновенная смена окна без графического перехода.\",\"tags\":[\"approved-montage\",\"cut\",\"hard\",\"transition\"],\"techniques\":[{\"id\":\"hard_cut_transition\",\"name_ru\":\"Жёсткий монтажный стык\",\"description_ru\":\"Сцена меняется мгновенно без промежуточного графического слоя или анимации.\",\"category\":\"transition\",\"use_when_ru\":[\"Когда смена смыслового блока требует заметного визуального стыка.\"],\"avoid_when_ru\":[\"Когда эффект повторялся недавно или обычный hard cut читается лучше.\"]}],\"capabilities\":{\"roles\":[\"transition\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"approved_js_contract\",\"fields\":[\"id\",\"start\",\"transition\"]},\"execution_mode\":\"render_ready\",\"score\":10,\"selection_reason\":\"Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"approved:transition:transition_blur\",\"title\":\"Transition Blur\",\"kind\":\"transition\",\"source\":\"approved\",\"description\":\"Следующий кадр появляется из размытия и лёгкого scale.\",\"tags\":[\"approved-montage\",\"blur\",\"transition\",\"transition\"],\"techniques\":[{\"id\":\"blur_soft_transition\",\"name_ru\":\"Мягкий blur-переход\",\"description_ru\":\"Кадр появляется из размытия и лёгкого scale.\",\"category\":\"transition\",\"use_when_ru\":[\"Когда смена смыслового блока требует заметного визуального стыка.\"],\"avoid_when_ru\":[\"Когда эффект повторялся недавно или обычный hard cut читается лучше.\"]}],\"capabilities\":{\"roles\":[\"transition\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"approved_js_contract\",\"fields\":[\"id\",\"start\",\"transition\"]},\"execution_mode\":\"render_ready\",\"score\":10,\"selection_reason\":\"Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"approved:transition:transition_chromatic\",\"title\":\"Transition Chromatic\",\"kind\":\"transition\",\"source\":\"approved\",\"description\":\"RGB-полосы создают короткий технологичный акцент.\",\"tags\":[\"approved-montage\",\"chromatic\",\"transition\",\"transition\"],\"techniques\":[{\"id\":\"chromatic_accent_transition\",\"name_ru\":\"Chromatic accent-переход\",\"description_ru\":\"RGB-полосы подчёркивают технологичный смысловой удар.\",\"category\":\"transition\",\"use_when_ru\":[\"Когда смена смыслового блока требует заметного визуального стыка.\"],\"avoid_when_ru\":[\"Когда эффект повторялся недавно или обычный hard cut читается лучше.\"]}],\"capabilities\":{\"roles\":[\"transition\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"approved_js_contract\",\"fields\":[\"id\",\"start\",\"transition\"]},\"execution_mode\":\"render_ready\",\"score\":8,\"selection_reason\":\"Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"approved:transition:transition_push_editorial\",\"title\":\"Transition Push Editorial\",\"kind\":\"transition\",\"source\":\"approved\",\"description\":\"Новый кадр въезжает сбоку и вытесняет предыдущий.\",\"tags\":[\"approved-montage\",\"editorial\",\"push\",\"transition\",\"transition\"],\"techniques\":[{\"id\":\"editorial_push_transition\",\"name_ru\":\"Editorial push-переход\",\"description_ru\":\"Следующий кадр въезжает сбоку и вытесняет предыдущий.\",\"category\":\"transition\",\"use_when_ru\":[\"Когда смена смыслового блока требует заметного визуального стыка.\"],\"avoid_when_ru\":[\"Когда эффект повторялся недавно или обычный hard cut читается лучше.\"]}],\"capabilities\":{\"roles\":[\"transition\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"approved_js_contract\",\"fields\":[\"id\",\"start\",\"transition\"]},\"execution_mode\":\"render_ready\",\"score\":10,\"selection_reason\":\"Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"approved:transition:transition_white_flash\",\"title\":\"Transition White Flash\",\"kind\":\"transition\",\"source\":\"approved\",\"description\":\"Белая вспышка резко вводит следующий смысловой пик.\",\"tags\":[\"approved-montage\",\"flash\",\"transition\",\"transition\",\"white\"],\"techniques\":[{\"id\":\"white_flash_transition\",\"name_ru\":\"Белая flash-смена\",\"description_ru\":\"Белая вспышка резко вводит новый смысловой пик.\",\"category\":\"transition\",\"use_when_ru\":[\"Когда смена смыслового блока требует заметного визуального стыка.\"],\"avoid_when_ru\":[\"Когда эффект повторялся недавно или обычный hard cut читается лучше.\"]}],\"capabilities\":{\"roles\":[\"transition\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"approved_js_contract\",\"fields\":[\"id\",\"start\",\"transition\"]},\"execution_mode\":\"render_ready\",\"score\":10,\"selection_reason\":\"Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"local:block:before_after\",\"title\":\"Before After\",\"kind\":\"block\",\"source\":\"local\",\"description\":\"Карточки сравнивают старое и новое состояние через движение «было → стало».\",\"tags\":[\"before-after\",\"generated-python\",\"reels-factory\"],\"techniques\":[{\"id\":\"before_after_comparison\",\"name_ru\":\"Сравнение «было → стало»\",\"description_ru\":\"Старое состояние уступает место новому, показывая контраст.\",\"category\":\"comparison_and_process\",\"use_when_ru\":[\"Когда нужно показать изменение, порядок шагов или причинно-следственную связь.\"],\"avoid_when_ru\":[\"Когда элементы не образуют понятную последовательность или сравнение.\"]}],\"capabilities\":{\"roles\":[\"comparison\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":true,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"generated_python\",\"fields\":[\"after_label\",\"after_value\",\"before_label\",\"before_value\"]},\"execution_mode\":\"render_ready\",\"score\":11,\"selection_reason\":\"Локальный generated_python block с проверенным builder-контрактом.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"local:block:complexity_cloud\",\"title\":\"Complexity Cloud\",\"kind\":\"block\",\"source\":\"local\",\"description\":\"Несколько шумных тезисов появляются каскадом и схлопываются в одно решение.\",\"tags\":[\"complexity-cloud\",\"generated-python\",\"reels-factory\"],\"techniques\":[{\"id\":\"complexity_to_resolution\",\"name_ru\":\"Схлопывание сложности в решение\",\"description_ru\":\"Несколько шумных тезисов собираются в один ясный вывод.\",\"category\":\"comparison_and_process\",\"use_when_ru\":[\"Когда нужно показать изменение, порядок шагов или причинно-следственную связь.\"],\"avoid_when_ru\":[\"Когда элементы не образуют понятную последовательность или сравнение.\"]}],\"capabilities\":{\"roles\":[\"other\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":false,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"generated_python\",\"fields\":[\"items\",\"resolution\",\"title\"]},\"execution_mode\":\"render_ready\",\"score\":8,\"selection_reason\":\"Локальный generated_python block с проверенным builder-контрактом.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"local:block:concept_nodes\",\"title\":\"Concept Nodes\",\"kind\":\"block\",\"source\":\"local\",\"description\":\"Центральный тезис соединяется линиями с опорными понятиями.\",\"tags\":[\"concept-nodes\",\"generated-python\",\"reels-factory\"],\"techniques\":[{\"id\":\"concept_node_map\",\"name_ru\":\"Карта связанных понятий\",\"description_ru\":\"Центральный тезис соединяется с несколькими опорными понятиями.\",\"category\":\"map_and_diagram\",\"use_when_ru\":[\"Когда география, маршрут или структура связей являются частью аргумента.\"],\"avoid_when_ru\":[\"Когда карта или схема служит только декоративным фоном.\"]}],\"capabilities\":{\"roles\":[\"other\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":false,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"generated_python\",\"fields\":[\"items\",\"title\"]},\"execution_mode\":\"render_ready\",\"score\":8,\"selection_reason\":\"Локальный generated_python block с проверенным builder-контрактом.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"local:block:persona_card\",\"title\":\"Persona Card\",\"kind\":\"block\",\"source\":\"local\",\"description\":\"Карточка аудитории раскрывает человека, контекст и боль.\",\"tags\":[\"generated-python\",\"persona-card\",\"reels-factory\"],\"techniques\":[{\"id\":\"persona_context_card\",\"name_ru\":\"Карточка аудитории\",\"description_ru\":\"Аудитория показана как человек с контекстом и болью.\",\"category\":\"speaker_layout\",\"use_when_ru\":[\"Когда важно сохранить лицо и прямой контакт ведущего со зрителем.\"],\"avoid_when_ru\":[\"Когда доказательный материал должен занять весь экран.\"]}],\"capabilities\":{\"roles\":[\"other\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":false,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"generated_python\",\"fields\":[\"items\",\"title\"]},\"execution_mode\":\"render_ready\",\"score\":8,\"selection_reason\":\"Локальный generated_python block с проверенным builder-контрактом.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"local:block:sequence_flow\",\"title\":\"Sequence Flow\",\"kind\":\"block\",\"source\":\"local\",\"description\":\"Нумерованные шаги раскрываются сверху вниз как обязательный порядок.\",\"tags\":[\"generated-python\",\"reels-factory\",\"sequence-flow\"],\"techniques\":[{\"id\":\"sequence_step_flow\",\"name_ru\":\"Вертикальный flow шагов\",\"description_ru\":\"Шаги раскрываются сверху вниз и подчёркивают порядок.\",\"category\":\"comparison_and_process\",\"use_when_ru\":[\"Когда нужно показать изменение, порядок шагов или причинно-следственную связь.\"],\"avoid_when_ru\":[\"Когда элементы не образуют понятную последовательность или сравнение.\"]}],\"capabilities\":{\"roles\":[\"process\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":true,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"generated_python\",\"fields\":[\"items\",\"title\"]},\"execution_mode\":\"render_ready\",\"score\":11,\"selection_reason\":\"Локальный generated_python block с проверенным builder-контрактом.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"local:block:stat_number\",\"title\":\"Stat Number\",\"kind\":\"block\",\"source\":\"local\",\"description\":\"Крупная цифра досчитывается до значения и фиксирует измеримый тезис.\",\"tags\":[\"generated-python\",\"reels-factory\",\"stat-number\"],\"techniques\":[{\"id\":\"animated_stat_countup\",\"name_ru\":\"Анимированный счётчик числа\",\"description_ru\":\"Число досчитывается до ключевого значения и фиксирует измеримый тезис.\",\"category\":\"data_and_statistics\",\"use_when_ru\":[\"Когда в сценарии есть проверяемые числа, сравнения или динамика показателей.\"],\"avoid_when_ru\":[\"Когда данные отсутствуют или не подтверждают произносимый тезис.\"]}],\"capabilities\":{\"roles\":[\"stat\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":true,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"generated_python\",\"fields\":[\"label_bottom\",\"label_top\",\"prefix\",\"suffix\",\"value\"]},\"execution_mode\":\"render_ready\",\"score\":11,\"selection_reason\":\"Локальный generated_python block с проверенным builder-контрактом.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"local:block:task_list\",\"title\":\"Task List\",\"kind\":\"block\",\"source\":\"local\",\"description\":\"Пункты списка появляются последовательно, последний может стать акцентом.\",\"tags\":[\"generated-python\",\"reels-factory\",\"task-list\"],\"techniques\":[{\"id\":\"task_checklist_reveal\",\"name_ru\":\"Пошаговый список с акцентом\",\"description_ru\":\"Пункты появляются по очереди и превращают перечисление в порядок действий.\",\"category\":\"comparison_and_process\",\"use_when_ru\":[\"Когда нужно показать изменение, порядок шагов или причинно-следственную связь.\"],\"avoid_when_ru\":[\"Когда элементы не образуют понятную последовательность или сравнение.\"]}],\"capabilities\":{\"roles\":[\"list\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":true,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"generated_python\",\"fields\":[\"items\",\"title\"]},\"execution_mode\":\"render_ready\",\"score\":11,\"selection_reason\":\"Локальный generated_python block с проверенным builder-контрактом.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"local:block:value_layers\",\"title\":\"Value Layers\",\"kind\":\"block\",\"source\":\"local\",\"description\":\"Формальный offer сменяется реальной ценностью, которую покупает клиент.\",\"tags\":[\"generated-python\",\"reels-factory\",\"value-layers\"],\"techniques\":[{\"id\":\"value_layer_swap\",\"name_ru\":\"Замена продукта ценностью\",\"description_ru\":\"Формальный продукт визуально сменяется настоящей покупаемой ценностью.\",\"category\":\"comparison_and_process\",\"use_when_ru\":[\"Когда нужно показать изменение, порядок шагов или причинно-следственную связь.\"],\"avoid_when_ru\":[\"Когда элементы не образуют понятную последовательность или сравнение.\"]}],\"capabilities\":{\"roles\":[\"other\"],\"placement\":[\"fullscreen\"],\"supports_overlay\":false,\"supports_text_content\":false,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"generated_python\",\"fields\":[\"actual\",\"offer\",\"title\"]},\"execution_mode\":\"render_ready\",\"score\":8,\"selection_reason\":\"Локальный generated_python block с проверенным builder-контрактом.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"upstream:block:instagram-follow\",\"title\":\"Instagram Follow\",\"kind\":\"block\",\"source\":\"upstream\",\"description\":\"Animated Instagram follow overlay with profile card and follow button\",\"tags\":[\"instagram\",\"overlay\",\"social\"],\"techniques\":[{\"id\":\"social_overlay_instagram_follow\",\"name_ru\":\"Социальный overlay: Instagram Follow\",\"description_ru\":\"Поверх видео появляется Instagram-профиль с аватаром и анимированной кнопкой Follow.\",\"category\":\"social_and_editorial_overlay\",\"use_when_ru\":[\"Когда сценарий ссылается на профиль, публикацию, уведомление или медиакарточку.\"],\"avoid_when_ru\":[\"Когда показанный сервис или контент не упоминается в речи.\"]}],\"capabilities\":{\"roles\":[\"media_treatment\",\"social_overlay\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:block:spotify-card\",\"title\":\"Spotify Now Playing\",\"kind\":\"block\",\"source\":\"upstream\",\"description\":\"Animated Spotify now-playing card with album art and progress bar\",\"tags\":[\"overlay\",\"social\",\"spotify\"],\"techniques\":[{\"id\":\"social_overlay_spotify_card\",\"name_ru\":\"Социальный overlay: Spotify Now Playing\",\"description_ru\":\"Карточка Spotify показывает обложку, текущий трек и движущийся progress bar.\",\"category\":\"social_and_editorial_overlay\",\"use_when_ru\":[\"Когда сценарий ссылается на профиль, публикацию, уведомление или медиакарточку.\"],\"avoid_when_ru\":[\"Когда показанный сервис или контент не упоминается в речи.\"]}],\"capabilities\":{\"roles\":[\"media_treatment\",\"social_overlay\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:block:tiktok-follow\",\"title\":\"TikTok Follow\",\"kind\":\"block\",\"source\":\"upstream\",\"description\":\"Animated TikTok follow overlay with profile card and follow button\",\"tags\":[\"overlay\",\"social\",\"tiktok\"],\"techniques\":[{\"id\":\"social_overlay_tiktok_follow\",\"name_ru\":\"Социальный overlay: TikTok Follow\",\"description_ru\":\"Поверх видео появляется TikTok-профиль с аватаром и анимированной кнопкой подписки.\",\"category\":\"social_and_editorial_overlay\",\"use_when_ru\":[\"Когда сценарий ссылается на профиль, публикацию, уведомление или медиакарточку.\"],\"avoid_when_ru\":[\"Когда показанный сервис или контент не упоминается в речи.\"]}],\"capabilities\":{\"roles\":[\"media_treatment\",\"social_overlay\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:caption-blend-difference\",\"title\":\"Blend Difference\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Auto-inverting text using mix-blend-mode: difference — flips between white and black per-pixel against the background\",\"tags\":[\"blend-mode\",\"contrast\",\"effect\",\"inversion\",\"text\",\"text-effect\"],\"techniques\":[{\"id\":\"caption_blend_difference\",\"name_ru\":\"Caption-приём: Blend Difference\",\"description_ru\":\"Текст автоматически переключается между белым и чёрным по яркости фона благодаря mix-blend-mode: difference.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"caption\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":5,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:caption-clip-wipe\",\"title\":\"Clip Wipe\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Left-to-right clip-path wipe reveal per word\",\"tags\":[\"caption-style\",\"captions\",\"clip-path\",\"reveal\",\"wipe\"],\"techniques\":[{\"id\":\"caption_clip_wipe\",\"name_ru\":\"Caption-приём: Clip Wipe\",\"description_ru\":\"Каждое слово субтитра открывается слева направо отдельной clip-path шторкой.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"caption\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:caption-editorial-emphasis\",\"title\":\"Editorial Emphasis\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Dual-font system with dramatic size contrast for emphasis words\",\"tags\":[\"caption-style\",\"captions\",\"editorial\",\"emphasis\",\"typography\"],\"techniques\":[{\"id\":\"caption_editorial_emphasis\",\"name_ru\":\"Caption-приём: Editorial Emphasis\",\"description_ru\":\"Две гарнитуры и резкий контраст кегля отделяют ключевые слова от остальной фразы.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"caption\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:caption-emoji-pop\",\"title\":\"Emoji Pop\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Emoji integration with stroked text and horizontal squeeze entrance\",\"tags\":[\"caption-style\",\"captions\",\"emoji\",\"social\"],\"techniques\":[{\"id\":\"caption_emoji_pop\",\"name_ru\":\"Caption-приём: Emoji Pop\",\"description_ru\":\"Emoji появляется рядом с обведённым текстом, а строка входит через короткое горизонтальное сжатие.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"caption\",\"social_overlay\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:caption-glitch-rgb\",\"title\":\"Glitch RGB\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"RGB chromatic aberration with CRT scanline overlay\",\"tags\":[\"caption-style\",\"captions\",\"cyber\",\"glitch\",\"tech\"],\"techniques\":[{\"id\":\"caption_glitch_rgb\",\"name_ru\":\"Caption-приём: Glitch RGB\",\"description_ru\":\"У букв расходятся RGB-копии, а поверх текста появляются CRT-линии цифрового экрана.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"caption\",\"media_treatment\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:caption-gradient-fill\",\"title\":\"Gradient Fill\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Gradient-clipped text with elastic bounce entrance\",\"tags\":[\"caption-style\",\"captions\",\"colorful\",\"gradient\"],\"techniques\":[{\"id\":\"caption_gradient_fill\",\"name_ru\":\"Caption-приём: Gradient Fill\",\"description_ru\":\"Буквы заполняются цветным градиентом и входят с упругим bounce-движением.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"caption\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:caption-highlight\",\"title\":\"Highlight\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Red background sweep behind each active word, TikTok-style\",\"tags\":[\"caption-style\",\"captions\",\"highlight\",\"social\",\"tiktok\"],\"techniques\":[{\"id\":\"caption_highlight\",\"name_ru\":\"Caption-приём: Highlight\",\"description_ru\":\"Красная плашка проходит за активным словом и последовательно подсвечивает субтитр в TikTok-стиле.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"caption\",\"social_overlay\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:caption-kinetic-slam\",\"title\":\"Kinetic Slam\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Full-screen single-word display with alternating entrance directions\",\"tags\":[\"caption-style\",\"captions\",\"kinetic\",\"slam\",\"typography\"],\"techniques\":[{\"id\":\"caption_kinetic_slam\",\"name_ru\":\"Caption-приём: Kinetic Slam\",\"description_ru\":\"Слова показываются по одному на весь экран и поочерёдно влетают с разных направлений.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"caption\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:caption-matrix-decode\",\"title\":\"Matrix Decode\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Character scramble animation before text reveal\",\"tags\":[\"caption-style\",\"captions\",\"decode\",\"matrix\",\"scramble\"],\"techniques\":[{\"id\":\"caption_matrix_decode\",\"name_ru\":\"Caption-приём: Matrix Decode\",\"description_ru\":\"Перед появлением правильной фразы символы быстро перебираются как при цифровой расшифровке.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"caption\",\"comparison\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:caption-neon-accent\",\"title\":\"Neon Accent\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Multi-color neon glow accents with wiggle drift animation\",\"tags\":[\"accent\",\"caption-style\",\"captions\",\"glow\",\"neon\"],\"techniques\":[{\"id\":\"caption_neon_accent\",\"name_ru\":\"Caption-приём: Neon Accent\",\"description_ru\":\"Ключевые слова получают разноцветное неоновое свечение и лёгкий плавающий wiggle.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"caption\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:caption-neon-glow\",\"title\":\"Neon Glow\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Cyan and magenta neon glow with keyword accent colors\",\"tags\":[\"caption-style\",\"captions\",\"gaming\",\"glow\",\"neon\"],\"techniques\":[{\"id\":\"caption_neon_glow\",\"name_ru\":\"Caption-приём: Neon Glow\",\"description_ru\":\"Субтитр светится голубым и пурпурным неоном, отдельные слова выделяются дополнительными цветами.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"caption\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:caption-parallax-layers\",\"title\":\"Parallax Layers\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Behind-subject 3D text layering with vertical stretch effect\",\"tags\":[\"3d\",\"caption-style\",\"captions\",\"depth\",\"parallax\"],\"techniques\":[{\"id\":\"caption_parallax_layers\",\"name_ru\":\"Caption-приём: Parallax Layers\",\"description_ru\":\"Крупный текст раскладывается слоями по глубине, проходит за объектом и растягивается по вертикали.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"caption\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:caption-particle-burst\",\"title\":\"Particle Burst\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Keyword words trigger colored particle explosions\",\"tags\":[\"burst\",\"caption-style\",\"captions\",\"effects\",\"particles\"],\"techniques\":[{\"id\":\"caption_particle_burst\",\"name_ru\":\"Caption-приём: Particle Burst\",\"description_ru\":\"При появлении ключевого слова из него разлетаются цветные частицы.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"caption\",\"vfx\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:caption-pill-karaoke\",\"title\":\"Pill Karaoke\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Pill-shaped container with per-word karaoke color highlight\",\"tags\":[\"caption-style\",\"captions\",\"karaoke\",\"pill\"],\"techniques\":[{\"id\":\"caption_pill_karaoke\",\"name_ru\":\"Caption-приём: Pill Karaoke\",\"description_ru\":\"Фраза находится внутри округлой плашки, а произносимое слово последовательно меняет цвет.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"caption\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:caption-texture\",\"title\":\"Texture\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Flowing texture mask over large uppercase text — ships with 6 textures (lava, marble, metal, wood, concrete, rock), configurable via the texture variable\",\"tags\":[\"caption-style\",\"captions\",\"mask\",\"texture\"],\"techniques\":[{\"id\":\"caption_texture\",\"name_ru\":\"Caption-приём: Texture\",\"description_ru\":\"Крупные прописные буквы заполняются движущейся текстурой; variable texture переключает шесть встроенных материалов.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"caption\",\"texture\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"declarative\",\"fields\":[\"texture\"]},\"execution_mode\":\"adapt_required\",\"score\":6,\"selection_reason\":\"Upstream item имеет подходящую роль, совместимую orientation и доказанные declarative variables; runtime ждёт human approval.\",\"adaptation_needed\":[],\"risks\":[]},{\"id\":\"upstream:component:caption-weight-shift\",\"title\":\"Weight Shift\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Elegant font-weight transition between caption lines\",\"tags\":[\"caption-style\",\"captions\",\"minimal\",\"typography\"],\"techniques\":[{\"id\":\"caption_weight_shift\",\"name_ru\":\"Caption-приём: Weight Shift\",\"description_ru\":\"При смене строки толщина шрифта плавно переходит от лёгкого начертания к жирному или обратно.\",\"category\":\"caption_and_typography\",\"use_when_ru\":[\"Когда нужно выделить конкретные слова синхронно с речью.\"],\"avoid_when_ru\":[\"Когда на экране одновременно должен читаться длинный абзац.\"]}],\"capabilities\":{\"roles\":[\"caption\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":false},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":4,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:grain-overlay\",\"title\":\"Grain Overlay\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Animated film grain texture overlay using CSS keyframes — adds warmth and analog character to any composition\",\"tags\":[\"film\",\"grain\",\"overlay\",\"texture\"],\"techniques\":[{\"id\":\"media_treatment_grain_overlay\",\"name_ru\":\"Финишная текстура: Grain Overlay\",\"description_ru\":\"Поверх всей композиции движется мелкое плёночное зерно, добавляющее аналоговую фактуру.\",\"category\":\"texture_and_finishing\",\"use_when_ru\":[\"Когда всему кадру нужна единая фактура или дополнительный фокус.\"],\"avoid_when_ru\":[\"Когда обработка ухудшает читаемость текста и деталей лица.\"]}],\"capabilities\":{\"roles\":[\"media_treatment\",\"texture\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":3,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:grid-pixelate-wipe\",\"title\":\"Grid Pixelate Wipe\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Transition effect where the screen dissolves into a grid of squares that fade out with staggered timing — use between scenes\",\"tags\":[\"grid\",\"pixelate\",\"transition\",\"wipe\"],\"techniques\":[{\"id\":\"catalog_reference_grid_pixelate_wipe\",\"name_ru\":\"Переход: Grid Pixelate Wipe\",\"description_ru\":\"Экран распадается на сетку квадратов, которые исчезают с задержкой и открывают следующую сцену.\",\"category\":\"transition\",\"use_when_ru\":[\"Когда смена смыслового блока требует заметного визуального стыка.\"],\"avoid_when_ru\":[\"Когда эффект повторялся недавно или обычный hard cut читается лучше.\"]}],\"capabilities\":{\"roles\":[\"transition\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":6,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:morph-text\",\"title\":\"Morph Text\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Gooey text morph — cycles through an editable word list using SVG threshold + GSAP-driven blur for a fluid, satisfying transition effect\",\"tags\":[\"animation\",\"gooey\",\"kinetic\",\"morph\",\"text\",\"text-effect\",\"typography\"],\"techniques\":[{\"id\":\"catalog_reference_morph_text\",\"name_ru\":\"Приём процесса: Morph Text\",\"description_ru\":\"Слова из редактируемого списка текуче превращаются друг в друга через SVG threshold и управляемое размытие.\",\"category\":\"comparison_and_process\",\"use_when_ru\":[\"Когда нужно показать изменение, порядок шагов или причинно-следственную связь.\"],\"avoid_when_ru\":[\"Когда элементы не образуют понятную последовательность или сравнение.\"]}],\"capabilities\":{\"roles\":[\"list\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":true,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":3,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:parallax-unzoom\",\"title\":\"Parallax Unzoom\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Reveal transition — focus card scales down from full frame as siblings parallax in to form a grid (reverse of parallax-zoom)\",\"tags\":[\"grid\",\"hero\",\"parallax\",\"reveal\",\"transition\",\"unzoom\"],\"techniques\":[{\"id\":\"transition_parallax_unzoom\",\"name_ru\":\"Переход: Parallax Unzoom\",\"description_ru\":\"Центральная карточка уменьшается от полного экрана, а соседние элементы входят параллаксом и образуют сетку.\",\"category\":\"transition\",\"use_when_ru\":[\"Когда смена смыслового блока требует заметного визуального стыка.\"],\"avoid_when_ru\":[\"Когда эффект повторялся недавно или обычный hard cut читается лучше.\"]}],\"capabilities\":{\"roles\":[\"transition\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":6,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:parallax-zoom\",\"title\":\"Parallax Zoom\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Center card scales up to fill the frame while siblings parallax outward — inspired by the eBay Playbook hero transition\",\"tags\":[\"grid\",\"hero\",\"parallax\",\"transition\",\"zoom\"],\"techniques\":[{\"id\":\"transition_parallax_zoom\",\"name_ru\":\"Переход: Parallax Zoom\",\"description_ru\":\"Центральная карточка увеличивается до полного экрана, а соседние элементы расходятся наружу параллаксом.\",\"category\":\"transition\",\"use_when_ru\":[\"Когда смена смыслового блока требует заметного визуального стыка.\"],\"avoid_when_ru\":[\"Когда эффект повторялся недавно или обычный hard cut читается лучше.\"]}],\"capabilities\":{\"roles\":[\"transition\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":6,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:shimmer-sweep\",\"title\":\"Shimmer Sweep\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Animated light sweep across text or elements using a CSS gradient mask — ideal for AI accents and premium reveals\",\"tags\":[\"effect\",\"highlight\",\"shimmer\",\"text\"],\"techniques\":[{\"id\":\"media_treatment_shimmer_sweep\",\"name_ru\":\"Финишная текстура: Shimmer Sweep\",\"description_ru\":\"Узкая световая полоса проходит по тексту или объекту через градиентную маску.\",\"category\":\"texture_and_finishing\",\"use_when_ru\":[\"Когда всему кадру нужна единая фактура или дополнительный фокус.\"],\"avoid_when_ru\":[\"Когда обработка ухудшает читаемость текста и деталей лица.\"]}],\"capabilities\":{\"roles\":[\"media_treatment\",\"texture\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":3,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:texture-mask-text\",\"title\":\"Texture Mask Text\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"CSS luminance masks that cut holes through letterforms - 66 pre-built texture masks from ambientCG PBR color maps\",\"tags\":[\"effect\",\"mask\",\"text\",\"text-effect\",\"texture\"],\"techniques\":[{\"id\":\"media_treatment_texture_mask_text\",\"name_ru\":\"Финишная текстура: Texture Mask Text\",\"description_ru\":\"Шестьдесят шесть luminance-масок вырезают фактурные отверстия внутри букв.\",\"category\":\"texture_and_finishing\",\"use_when_ru\":[\"Когда всему кадру нужна единая фактура или дополнительный фокус.\"],\"avoid_when_ru\":[\"Когда обработка ухудшает читаемость текста и деталей лица.\"]}],\"capabilities\":{\"roles\":[\"texture\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":3,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]},{\"id\":\"upstream:component:vignette\",\"title\":\"Vignette\",\"kind\":\"component\",\"source\":\"upstream\",\"description\":\"Cinematic radial vignette overlay using a pure-CSS gradient — darkens the edges to pull focus toward the center\",\"tags\":[\"cinematic\",\"effect\",\"overlay\",\"vignette\"],\"techniques\":[{\"id\":\"media_treatment_vignette\",\"name_ru\":\"Финишная текстура: Vignette\",\"description_ru\":\"Радиальный CSS-градиент затемняет края изображения и удерживает внимание в центре.\",\"category\":\"texture_and_finishing\",\"use_when_ru\":[\"Когда всему кадру нужна единая фактура или дополнительный фокус.\"],\"avoid_when_ru\":[\"Когда обработка ухудшает читаемость текста и деталей лица.\"]}],\"capabilities\":{\"roles\":[\"media_treatment\",\"texture\"],\"placement\":[\"overlay\"],\"supports_overlay\":true,\"supports_text_content\":false,\"supports_media_content\":true},\"parameter_contract\":{\"level\":\"none\",\"fields\":[]},\"execution_mode\":\"adapt_required\",\"score\":3,\"selection_reason\":\"Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.\",\"adaptation_needed\":[\"content variables\"],\"risks\":[]}]}}"
+    }
+  ],
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "hyperframes_edit_plan_draft",
+      "strict": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "HyperFrames one-call edit plan draft",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "plan_version",
+          "status",
+          "project_id",
+          "duration_seconds",
+          "creative_direction",
+          "scenes",
+          "global_notes"
+        ],
+        "properties": {
+          "plan_version": {
+            "const": "hf-edit-plan-poc-1"
+          },
+          "status": {
+            "const": "draft"
+          },
+          "project_id": {
+            "const": "sales-three-questions-poc"
+          },
+          "duration_seconds": {
+            "const": 42.32
+          },
+          "creative_direction": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "concept",
+              "mood",
+              "rhythm",
+              "primary_transition_id",
+              "accent_transition_ids"
+            ],
+            "properties": {
+              "concept": {
+                "type": "string",
+                "minLength": 10,
+                "maxLength": 400
+              },
+              "mood": {
+                "type": "string",
+                "minLength": 5,
+                "maxLength": 160
+              },
+              "rhythm": {
+                "type": "string",
+                "minLength": 5,
+                "maxLength": 220
+              },
+              "primary_transition_id": {
+                "type": "string",
+                "enum": [
+                  "approved:transition:hard_cut",
+                  "approved:transition:transition_blur",
+                  "approved:transition:transition_chromatic",
+                  "approved:transition:transition_push_editorial",
+                  "approved:transition:transition_white_flash"
+                ]
+              },
+              "accent_transition_ids": {
+                "type": "array",
+                "uniqueItems": true,
+                "maxItems": 2,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "approved:transition:hard_cut",
+                    "approved:transition:transition_blur",
+                    "approved:transition:transition_chromatic",
+                    "approved:transition:transition_push_editorial",
+                    "approved:transition:transition_white_flash"
+                  ]
+                }
+              }
+            }
+          },
+          "scenes": {
+            "type": "array",
+            "minItems": 8,
+            "maxItems": 18,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "scene_id",
+                "word_start",
+                "word_end",
+                "purpose",
+                "coverage",
+                "layout_id",
+                "primary_block_id",
+                "component_ids",
+                "technique_ids",
+                "transition_in_id",
+                "content",
+                "captions",
+                "avatar_direction",
+                "media_intents",
+                "adaptation_requests",
+                "rationale"
+              ],
+              "properties": {
+                "scene_id": {
+                  "type": "string",
+                  "pattern": "^s[0-9]{2}$"
+                },
+                "word_start": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 99
+                },
+                "word_end": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 99
+                },
+                "purpose": {
+                  "type": "string",
+                  "enum": [
+                    "hook",
+                    "build",
+                    "explain",
+                    "contrast",
+                    "payoff",
+                    "cta"
+                  ]
+                },
+                "coverage": {
+                  "type": "string",
+                  "enum": [
+                    "avatar",
+                    "mixed",
+                    "hyperframes",
+                    "broll"
+                  ]
+                },
+                "layout_id": {
+                  "type": "string",
+                  "enum": [
+                    "approved:layout:avatar_broll_split",
+                    "approved:layout:avatar_editorial_bubble",
+                    "approved:layout:avatar_fullscreen",
+                    "approved:layout:avatar_object_overlay",
+                    "approved:layout:broll_archival_collage",
+                    "approved:layout:broll_fullscreen",
+                    "approved:layout:checklist_strike",
+                    "approved:layout:progressive_text_card",
+                    "approved:layout:social_outro"
+                  ]
+                },
+                "primary_block_id": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "local:block:before_after",
+                        "local:block:complexity_cloud",
+                        "local:block:concept_nodes",
+                        "local:block:persona_card",
+                        "local:block:sequence_flow",
+                        "local:block:stat_number",
+                        "local:block:task_list",
+                        "local:block:value_layers"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "component_ids": {
+                  "type": "array",
+                  "maxItems": 0,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "technique_ids": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "maxItems": 4,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "animated_stat_countup",
+                      "archival_broll_collage",
+                      "avatar_broll_split",
+                      "avatar_editorial_bubble",
+                      "avatar_fullscreen_anchor",
+                      "avatar_object_overlay",
+                      "before_after_comparison",
+                      "blur_soft_transition",
+                      "broll_fullscreen",
+                      "caption_blend_difference",
+                      "caption_clip_wipe",
+                      "caption_editorial_emphasis",
+                      "caption_emoji_pop",
+                      "caption_glitch_rgb",
+                      "caption_gradient_fill",
+                      "caption_highlight",
+                      "caption_kinetic_slam",
+                      "caption_matrix_decode",
+                      "caption_neon_accent",
+                      "caption_neon_glow",
+                      "caption_parallax_layers",
+                      "caption_particle_burst",
+                      "caption_pill_karaoke",
+                      "caption_texture",
+                      "caption_weight_shift",
+                      "catalog_reference_grid_pixelate_wipe",
+                      "catalog_reference_morph_text",
+                      "checklist_strike_routine",
+                      "chromatic_accent_transition",
+                      "complexity_to_resolution",
+                      "concept_node_map",
+                      "editorial_push_transition",
+                      "hard_cut_transition",
+                      "media_treatment_grain_overlay",
+                      "media_treatment_shimmer_sweep",
+                      "media_treatment_texture_mask_text",
+                      "media_treatment_vignette",
+                      "persona_context_card",
+                      "progressive_text_card",
+                      "sequence_step_flow",
+                      "social_outro_lockup",
+                      "social_overlay_instagram_follow",
+                      "social_overlay_spotify_card",
+                      "social_overlay_tiktok_follow",
+                      "task_checklist_reveal",
+                      "transition_parallax_unzoom",
+                      "transition_parallax_zoom",
+                      "value_layer_swap",
+                      "white_flash_transition"
+                    ]
+                  }
+                },
+                "transition_in_id": {
+                  "type": "string",
+                  "enum": [
+                    "approved:transition:hard_cut",
+                    "approved:transition:transition_blur",
+                    "approved:transition:transition_chromatic",
+                    "approved:transition:transition_push_editorial",
+                    "approved:transition:transition_white_flash"
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "headline",
+                    "labels",
+                    "emphasis_words"
+                  ],
+                  "properties": {
+                    "headline": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 80
+                    },
+                    "labels": {
+                      "type": "array",
+                      "maxItems": 5,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40
+                      }
+                    },
+                    "emphasis_words": {
+                      "type": "array",
+                      "uniqueItems": true,
+                      "maxItems": 3,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 30
+                      }
+                    }
+                  }
+                },
+                "captions": {
+                  "type": "string",
+                  "enum": [
+                    "bottom",
+                    "top",
+                    "hidden"
+                  ]
+                },
+                "avatar_direction": {
+                  "type": "string",
+                  "enum": [
+                    "fullscreen",
+                    "split",
+                    "editorial_bubble",
+                    "object_overlay",
+                    "hidden"
+                  ]
+                },
+                "media_intents": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type",
+                      "query",
+                      "purpose",
+                      "required"
+                    ],
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "broll",
+                          "image",
+                          "icon",
+                          "sfx"
+                        ]
+                      },
+                      "query": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 120
+                      },
+                      "purpose": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 160
+                      },
+                      "required": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "adaptation_requests": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "catalog_id",
+                      "fallback_catalog_id",
+                      "reason",
+                      "desired_parameters"
+                    ],
+                    "properties": {
+                      "catalog_id": {
+                        "type": "string",
+                        "enum": [
+                          "upstream:block:instagram-follow",
+                          "upstream:block:spotify-card",
+                          "upstream:block:tiktok-follow",
+                          "upstream:component:caption-blend-difference",
+                          "upstream:component:caption-clip-wipe",
+                          "upstream:component:caption-editorial-emphasis",
+                          "upstream:component:caption-emoji-pop",
+                          "upstream:component:caption-glitch-rgb",
+                          "upstream:component:caption-gradient-fill",
+                          "upstream:component:caption-highlight",
+                          "upstream:component:caption-kinetic-slam",
+                          "upstream:component:caption-matrix-decode",
+                          "upstream:component:caption-neon-accent",
+                          "upstream:component:caption-neon-glow",
+                          "upstream:component:caption-parallax-layers",
+                          "upstream:component:caption-particle-burst",
+                          "upstream:component:caption-pill-karaoke",
+                          "upstream:component:caption-texture",
+                          "upstream:component:caption-weight-shift",
+                          "upstream:component:grain-overlay",
+                          "upstream:component:grid-pixelate-wipe",
+                          "upstream:component:morph-text",
+                          "upstream:component:parallax-unzoom",
+                          "upstream:component:parallax-zoom",
+                          "upstream:component:shimmer-sweep",
+                          "upstream:component:texture-mask-text",
+                          "upstream:component:vignette"
+                        ]
+                      },
+                      "fallback_catalog_id": {
+                        "type": "string",
+                        "enum": [
+                          "approved:layout:avatar_broll_split",
+                          "approved:layout:avatar_editorial_bubble",
+                          "approved:layout:avatar_fullscreen",
+                          "approved:layout:avatar_object_overlay",
+                          "approved:layout:broll_archival_collage",
+                          "approved:layout:broll_fullscreen",
+                          "approved:layout:checklist_strike",
+                          "approved:layout:progressive_text_card",
+                          "approved:layout:social_outro",
+                          "approved:transition:hard_cut",
+                          "approved:transition:transition_blur",
+                          "approved:transition:transition_chromatic",
+                          "approved:transition:transition_push_editorial",
+                          "approved:transition:transition_white_flash",
+                          "local:block:before_after",
+                          "local:block:complexity_cloud",
+                          "local:block:concept_nodes",
+                          "local:block:persona_card",
+                          "local:block:sequence_flow",
+                          "local:block:stat_number",
+                          "local:block:task_list",
+                          "local:block:value_layers"
+                        ]
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 5,
+                        "maxLength": 220
+                      },
+                      "desired_parameters": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "name",
+                            "value"
+                          ],
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 60
+                            },
+                            "value": {
+                              "type": "string",
+                              "maxLength": 160
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "rationale": {
+                  "type": "string",
+                  "minLength": 5,
+                  "maxLength": 260
+                }
+              }
+            }
+          },
+          "global_notes": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 220
+            }
+          }
+        }
+      }
+    }
+  }
+}

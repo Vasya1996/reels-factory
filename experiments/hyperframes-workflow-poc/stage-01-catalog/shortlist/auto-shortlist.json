@@ -1,0 +1,498 @@
+{
+  "catalog_version": 1,
+  "items": [
+    {
+      "id": "local:block:before_after",
+      "title": "Before After",
+      "kind": "block",
+      "score": 11,
+      "reason": "Локальный generated_python block с проверенным builder-контрактом.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "local:block:sequence_flow",
+      "title": "Sequence Flow",
+      "kind": "block",
+      "score": 11,
+      "reason": "Локальный generated_python block с проверенным builder-контрактом.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "local:block:stat_number",
+      "title": "Stat Number",
+      "kind": "block",
+      "score": 11,
+      "reason": "Локальный generated_python block с проверенным builder-контрактом.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "local:block:task_list",
+      "title": "Task List",
+      "kind": "block",
+      "score": 11,
+      "reason": "Локальный generated_python block с проверенным builder-контрактом.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:avatar_broll_split",
+      "title": "Avatar Broll Split",
+      "kind": "layout",
+      "score": 10,
+      "reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:avatar_editorial_bubble",
+      "title": "Avatar Editorial Bubble",
+      "kind": "layout",
+      "score": 10,
+      "reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:avatar_fullscreen",
+      "title": "Avatar Fullscreen",
+      "kind": "layout",
+      "score": 10,
+      "reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:avatar_object_overlay",
+      "title": "Avatar Object Overlay",
+      "kind": "layout",
+      "score": 10,
+      "reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:broll_archival_collage",
+      "title": "Broll Archival Collage",
+      "kind": "layout",
+      "score": 10,
+      "reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:broll_fullscreen",
+      "title": "Broll Fullscreen",
+      "kind": "layout",
+      "score": 10,
+      "reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:checklist_strike",
+      "title": "Checklist Strike",
+      "kind": "layout",
+      "score": 10,
+      "reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:progressive_text_card",
+      "title": "Progressive Text Card",
+      "kind": "layout",
+      "score": 10,
+      "reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:layout:social_outro",
+      "title": "Social Outro",
+      "kind": "layout",
+      "score": 10,
+      "reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:transition:hard_cut",
+      "title": "Hard Cut",
+      "kind": "transition",
+      "score": 10,
+      "reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:transition:transition_blur",
+      "title": "Transition Blur",
+      "kind": "transition",
+      "score": 10,
+      "reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:transition:transition_push_editorial",
+      "title": "Transition Push Editorial",
+      "kind": "transition",
+      "score": 10,
+      "reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:transition:transition_white_flash",
+      "title": "Transition White Flash",
+      "kind": "transition",
+      "score": 10,
+      "reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "approved:transition:transition_chromatic",
+      "title": "Transition Chromatic",
+      "kind": "transition",
+      "score": 8,
+      "reason": "Ранее одобренный Reels Factory pattern с доказанной JS-хореографией.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "local:block:complexity_cloud",
+      "title": "Complexity Cloud",
+      "kind": "block",
+      "score": 8,
+      "reason": "Локальный generated_python block с проверенным builder-контрактом.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "local:block:concept_nodes",
+      "title": "Concept Nodes",
+      "kind": "block",
+      "score": 8,
+      "reason": "Локальный generated_python block с проверенным builder-контрактом.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "local:block:persona_card",
+      "title": "Persona Card",
+      "kind": "block",
+      "score": 8,
+      "reason": "Локальный generated_python block с проверенным builder-контрактом.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "local:block:value_layers",
+      "title": "Value Layers",
+      "kind": "block",
+      "score": 8,
+      "reason": "Локальный generated_python block с проверенным builder-контрактом.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-texture",
+      "title": "Texture",
+      "kind": "component",
+      "score": 6,
+      "reason": "Upstream item имеет подходящую роль, совместимую orientation и доказанные declarative variables; runtime ждёт human approval.",
+      "adaptation_needed": [],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:grid-pixelate-wipe",
+      "title": "Grid Pixelate Wipe",
+      "kind": "component",
+      "score": 6,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:parallax-unzoom",
+      "title": "Parallax Unzoom",
+      "kind": "component",
+      "score": 6,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:parallax-zoom",
+      "title": "Parallax Zoom",
+      "kind": "component",
+      "score": 6,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-blend-difference",
+      "title": "Blend Difference",
+      "kind": "component",
+      "score": 5,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:block:instagram-follow",
+      "title": "Instagram Follow",
+      "kind": "block",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:block:spotify-card",
+      "title": "Spotify Now Playing",
+      "kind": "block",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:block:tiktok-follow",
+      "title": "TikTok Follow",
+      "kind": "block",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-clip-wipe",
+      "title": "Clip Wipe",
+      "kind": "component",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-editorial-emphasis",
+      "title": "Editorial Emphasis",
+      "kind": "component",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-emoji-pop",
+      "title": "Emoji Pop",
+      "kind": "component",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-glitch-rgb",
+      "title": "Glitch RGB",
+      "kind": "component",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-gradient-fill",
+      "title": "Gradient Fill",
+      "kind": "component",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-highlight",
+      "title": "Highlight",
+      "kind": "component",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-kinetic-slam",
+      "title": "Kinetic Slam",
+      "kind": "component",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-matrix-decode",
+      "title": "Matrix Decode",
+      "kind": "component",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-neon-accent",
+      "title": "Neon Accent",
+      "kind": "component",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-neon-glow",
+      "title": "Neon Glow",
+      "kind": "component",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-parallax-layers",
+      "title": "Parallax Layers",
+      "kind": "component",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-particle-burst",
+      "title": "Particle Burst",
+      "kind": "component",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-pill-karaoke",
+      "title": "Pill Karaoke",
+      "kind": "component",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:caption-weight-shift",
+      "title": "Weight Shift",
+      "kind": "component",
+      "score": 4,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:grain-overlay",
+      "title": "Grain Overlay",
+      "kind": "component",
+      "score": 3,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:morph-text",
+      "title": "Morph Text",
+      "kind": "component",
+      "score": 3,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:shimmer-sweep",
+      "title": "Shimmer Sweep",
+      "kind": "component",
+      "score": 3,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:texture-mask-text",
+      "title": "Texture Mask Text",
+      "kind": "component",
+      "score": 3,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    },
+    {
+      "id": "upstream:component:vignette",
+      "title": "Vignette",
+      "kind": "component",
+      "score": 3,
+      "reason": "Подходит по роли, но требует адаптации canvas, content variables или runtime contracts.",
+      "adaptation_needed": [
+        "content variables"
+      ],
+      "risks": []
+    }
+  ]
+}

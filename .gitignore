@@ -13,3 +13,15 @@ dist/
 .pytest_cache/
 .test-deps/
 docs/visual-director-demo/*/edit_plan.json
+
+# HyperFrames workflow POC: тяжёлые артефакты прогонов не версионируем
+experiments/**/snapshots*/
+experiments/**/previews/
+experiments/**/gallery/assets/
+experiments/**/build/
+experiments/**/render-project/
+experiments/**/renders/
+experiments/**/*.png
+experiments/**/*.jpg
+experiments/**/*.mp3
+experiments/**/*.rar
