@@ -63,6 +63,7 @@ log = logging.getLogger(__name__)
 # Шаги разговора. Порядок: всё бесплатное (язык, фото, запись голоса,
 # материал) идёт ДО экрана цены; клон голоса и Клод — только после него.
 CHOOSING_LANGUAGE = "choosing_language"  # язык нового ролика
+CHOOSING_GENDER = "choosing_gender"  # пол ведущего нового ролика
 WAIT_PHOTO = "wait_photo"
 WAIT_VOICE = "wait_voice"            # ждём запись голоса; клон здесь не делаем
 VIEWING_STAGE = "viewing_stage"      # пройденный этап: вперёд, назад, изменить
@@ -92,10 +93,19 @@ FLOW_VERSION = 2
 # навигацией в обе стороны: возвращаться к нему приходится часто (ушёл на
 # оплату, передумал), а переспрашивать уже собранное — терять его работу.
 STAGE_LANGUAGE = "language"
+STAGE_GENDER = "gender"
 STAGE_PHOTO = "photo"
 STAGE_VOICE = "voice"
 STAGE_MATERIAL = "material"
-STAGE_ORDER = (STAGE_LANGUAGE, STAGE_PHOTO, STAGE_VOICE, STAGE_MATERIAL)
+STAGE_ORDER = (STAGE_LANGUAGE, STAGE_GENDER, STAGE_PHOTO, STAGE_VOICE,
+               STAGE_MATERIAL)
+
+# Пол ведущего. Сервис не видит пола по сырью и в сгенерированном тексте пишет
+# «сделала» мужчине. Спрашиваем каждый ролик, как язык, и до генерации
+# сценария: человек меняет ведущего от ролика к ролику, а профильным полем это
+# значило бы один раз выбранный пол на все будущие ролики.
+GENDERS = ("male", "female")
+GENDER_LABELS = {"male": "Мужской", "female": "Женский"}
 
 # Сколько знаков материала показываем в сводке: целиком он в экран не влезет.
 MATERIAL_EXCERPT_CHARS = 150
@@ -125,6 +135,7 @@ ASK_PATH = (
 ASK_LANGUAGE = (
     "На каком языке хотите сделать ролик?"
 )
+ASK_GENDER = "Выберите пол аватара"
 LANGUAGE_SAVED = (
     "Делаем этот ролик на языке: {language}."
 )
@@ -678,12 +689,14 @@ def step_ideas(chat_id: int, text: str, language: str) -> list:
     return res["ideas"]
 
 
-def step_scenario(chat_id: int, idea: dict, language: str) -> dict:
+def step_scenario(chat_id: int, idea: dict, language: str,
+                  gender: str | None = None) -> dict:
     runner = ClaudeSkillRunner()
     # См. step_verbatim: провал тоже платный, списываем в finally.
     try:
         res = run_generated_path(session_dir(chat_id), idea, runner,
-                                 language=normalize_profile_language(language))
+                                 language=normalize_profile_language(language),
+                                 gender=gender)
     finally:
         _charge_claude(chat_id, runner)
     return res["scenario"]
@@ -1117,6 +1130,21 @@ def _kb_language(selected: str | None = None):
     return InlineKeyboardMarkup(rows)
 
 
+def _kb_gender(selected: str | None = None):
+    """Та же механика, что у языка: галочка на выбранном и шаг дальше."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    rows = []
+    for code in GENDERS:
+        mark = " ✅" if code == selected else ""
+        rows.append([InlineKeyboardButton(
+            f"{GENDER_LABELS[code]}{mark}", callback_data=f"reel_gender:{code}"
+        )])
+    if selected:
+        rows.append([InlineKeyboardButton("Продолжить →", callback_data="stage:next")])
+    return InlineKeyboardMarkup(rows)
+
+
 async def _edit_or_reply(msg, text: str, markup=None):
     """Заменить экран на месте, а не плодить сообщения.
 
@@ -1290,8 +1318,36 @@ async def _select_reel_language(msg, chat_id: int, s: dict, language: str):
     _activate_language_voice(s, language)
     save_session(chat_id, s)
     await _edit_or_reply(msg, ASK_LANGUAGE, _kb_language(language))
-    if not _stage_filled(s, STAGE_PHOTO):
+    if not _stage_filled(s, STAGE_GENDER):
         await _next_stage(msg, chat_id, s, STAGE_LANGUAGE)
+
+
+async def _show_gender_choice(msg, chat_id: int, s: dict):
+    s["step"] = CHOOSING_GENDER
+    s.pop("gender", None)
+    save_session(chat_id, s)
+    await msg.reply_text(ASK_GENDER, reply_markup=_kb_gender())
+
+
+async def _select_reel_gender(msg, chat_id: int, s: dict, gender: str):
+    """Пол отмечается галочкой в том же сообщении — как язык.
+
+    Дальше сам не уводим: пол выбирают перед фото, а фото у постоянного
+    пользователя уже есть, и лишний прыжок мимо экрана только сбивает.
+    """
+    if gender not in GENDERS:
+        return
+    s["gender"] = gender
+    s["step"] = VIEWING_STAGE
+    s["stage"] = STAGE_GENDER
+    # Сценарий пишется под род ведущего: сменили пол — прежний текст уже не
+    # про этого человека.
+    s.pop("scenario", None)
+    s.pop("ideas", None)
+    save_session(chat_id, s)
+    await _edit_or_reply(msg, ASK_GENDER, _kb_gender(gender))
+    if not _stage_filled(s, STAGE_PHOTO):
+        await _next_stage(msg, chat_id, s, STAGE_GENDER)
 
 
 async def _ask(msg, chat_id: int, s: dict, step: str, text: str):
@@ -1323,6 +1379,8 @@ def _stage_filled(s: dict, stage: str) -> bool:
     """Данные этапа уже собраны — переспрашивать их незачем."""
     if stage == STAGE_LANGUAGE:
         return bool(_reel_language(s, required=False))
+    if stage == STAGE_GENDER:
+        return (s or {}).get("gender") in GENDERS
     if stage == STAGE_PHOTO:
         return bool(s.get("photo"))
     if stage == STAGE_VOICE:
@@ -1334,6 +1392,8 @@ def _stage_summary(s: dict, stage: str) -> str:
     """Короткая сводка пройденного этапа: что именно человек уже дал."""
     if stage == STAGE_LANGUAGE:
         return f"✅ Язык ролика: {language_label(_reel_language(s))}"
+    if stage == STAGE_GENDER:
+        return f"✅ Пол аватара: {GENDER_LABELS[s['gender']].lower()}"
     if stage == STAGE_PHOTO:
         return "✅ Фото загружено."
     if stage == STAGE_VOICE:
@@ -1385,6 +1445,9 @@ async def _show_stage(msg, chat_id: int, s: dict, stage: str):
             ASK_LANGUAGE, reply_markup=_kb_language(_reel_language(s))
         )
         return
+    if stage == STAGE_GENDER:
+        await msg.reply_text(ASK_GENDER, reply_markup=_kb_gender(s.get("gender")))
+        return
     await msg.reply_text(_stage_summary(s, stage), reply_markup=_kb_stage(stage))
 
 
@@ -1392,6 +1455,8 @@ async def _ask_stage(msg, chat_id: int, s: dict, stage: str):
     """Экран ввода данных этапа."""
     if stage == STAGE_LANGUAGE:
         await _show_language_choice(msg, chat_id, s)
+    elif stage == STAGE_GENDER:
+        await _show_gender_choice(msg, chat_id, s)
     elif stage == STAGE_PHOTO:
         await _ask(msg, chat_id, s, WAIT_PHOTO, ASK_PHOTO)
     elif stage == STAGE_VOICE:
@@ -1704,8 +1769,10 @@ async def _go_back(msg, chat_id: int, s: dict):
     elif step == WAIT_PHOTO:
         await _show_stage(
             msg, chat_id, s,
-            STAGE_PHOTO if _stage_filled(s, STAGE_PHOTO) else STAGE_LANGUAGE,
+            STAGE_PHOTO if _stage_filled(s, STAGE_PHOTO) else STAGE_GENDER,
         )
+    elif step == CHOOSING_GENDER:
+        await _show_stage(msg, chat_id, s, STAGE_LANGUAGE)
     else:  # первый заход: дальше только выбор языка
         await _show_language_choice(msg, chat_id, s)
 
@@ -1806,7 +1873,9 @@ async def on_button(update, context):
     s = load_session(chat_id)
     data = q.data
 
-    if data.startswith("reel_language:"):
+    if data.startswith("reel_gender:"):
+        await _select_reel_gender(q.message, chat_id, s, data.split(":", 1)[1])
+    elif data.startswith("reel_language:"):
         value = data.split(":", 1)[1]
         await _select_reel_language(q.message, chat_id, s, value)
     elif data == "mismatch:change":
@@ -1866,7 +1935,7 @@ async def on_button(update, context):
         await q.message.reply_text(WORKING)
         try:
             sc = await asyncio.to_thread(
-                step_scenario, chat_id, idea, _reel_language(s)
+                step_scenario, chat_id, idea, _reel_language(s), s.get("gender")
             )
         except (ScenarioError, RuntimeError) as e:
             await q.message.reply_text(f"Не получилось собрать сценарий: {e}")
