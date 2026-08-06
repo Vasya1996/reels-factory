@@ -19,23 +19,34 @@ import time
 from pathlib import Path
 
 # Шаги воронки по порядку. Ключ — событие в базе, значение — подпись в сводке.
+#
+# Здесь только то, через что проходят ВСЕ: воронка обязана сужаться. Поэтому
+# шаг засчитывается и когда человек прислал данные, и когда прошёл этап на
+# готовых (у постоянного клиента фото и голос с прошлого ролика). А оплата
+# сюда не входит: с достаточным балансом человек идёт в работу, не заплатив
+# ни разу, и «оплативших» всегда было бы меньше, чем «запустивших генерацию».
 FUNNEL_STEPS = (
     ("start", "Запустили бота"),
     ("stage:language", "Выбрали язык"),
     ("stage:gender", "Выбрали пол аватара"),
-    ("stage:photo", "Прислали фото"),
-    ("stage:voice", "Записали голос"),
-    ("stage:material", "Прислали материал"),
+    ("stage:photo", "Фото готово"),
+    ("stage:voice", "Голос готов"),
+    ("stage:material", "Материал прислан"),
     ("price_shown", "Увидели цену"),
-    ("topup_opened", "Открыли пополнение"),
-    ("invoice_created", "Выставили счёт"),
-    ("payment_received", "Оплатили"),
+    ("balance_ok", "Денег хватило"),
     ("generation_started", "Запустили генерацию"),
     ("scenario_shown", "Получили сценарий"),
     ("scenario_approved", "Утвердили сценарий"),
     ("build_queued", "Отправили в сборку"),
     ("audio_ready", "Получили озвучку"),
     ("reel_delivered", "Получили ролик"),
+)
+
+# Оплата — не общий шаг, а ветка для тех, кому не хватило баланса.
+PAYMENT_STEPS = (
+    ("topup_opened", "Открыли пополнение"),
+    ("invoice_created", "Выставили счёт"),
+    ("payment_received", "Оплатили"),
 )
 
 # Сбои: их считаем отдельно, иначе «отвалился на озвучке» значит и «передумал»,
@@ -101,6 +112,27 @@ class EventStore:
         except sqlite3.Error:
             pass
 
+    def payment_branch(self, since: float = 0.0) -> list[dict]:
+        """Ветка оплаты: считается от тех, кому денег НЕ хватило."""
+        rows = self._cycle_events(since)
+        нужна_оплата = {
+            key for key, events in rows.items()
+            if "price_shown" in events and "topup_opened" in events
+        }
+        out = []
+        previous = len(нужна_оплата)
+        for key, label in PAYMENT_STEPS:
+            count = len({
+                cycle for cycle in нужна_оплата if key in rows[cycle]
+            })
+            share = None if previous in (None, 0) else round(count * 100 / previous)
+            out.append({
+                "event": key, "label": label, "count": count,
+                "share_of_previous": share,
+            })
+            previous = count
+        return out
+
     def funnel(self, since: float = 0.0) -> list[dict]:
         """Сколько циклов дошло до каждого шага.
 
@@ -113,10 +145,18 @@ class EventStore:
         reached: dict[str, set] = {}
         for key, _label in FUNNEL_STEPS:
             reached[key] = set()
+        order = [key for key, _ in FUNNEL_STEPS]
         for (chat_id, cycle_id), events in rows.items():
+            # Дошёл до шага N — значит прошёл и все предыдущие: продукт не даёт
+            # их перепрыгнуть. Считаем по самому дальнему шагу, поэтому воронка
+            # сужается всегда, даже если событие раннего шага не записалось
+            # (например, у постоянного клиента фото осталось с прошлого раза).
+            furthest = -1
             for event in events:
                 if event in reached:
-                    reached[event].add((chat_id, cycle_id))
+                    furthest = max(furthest, order.index(event))
+            for i in range(furthest + 1):
+                reached[order[i]].add((chat_id, cycle_id))
         out = []
         previous = None
         for key, label in FUNNEL_STEPS:
@@ -187,6 +227,16 @@ def render_funnel(store: EventStore, since: float, *, title: str) -> str:
     for row in store.funnel(since):
         share = f" ({row['share_of_previous']}%)" if row["share_of_previous"] is not None else ""
         lines.append(f"{row['label']}: {row['count']}{share}")
+    payment = store.payment_branch(since)
+    if payment and payment[0]["count"]:
+        lines.append("")
+        lines.append("Из них не хватило денег:")
+        for row in payment:
+            share = (
+                f" ({row['share_of_previous']}%)"
+                if row["share_of_previous"] is not None else ""
+            )
+            lines.append(f"— {row['label']}: {row['count']}{share}")
     errors = store.errors(since)
     if errors:
         lines.append("")
@@ -198,7 +248,7 @@ def render_funnel(store: EventStore, since: float, *, title: str) -> str:
         if event != "reel_delivered"
     ][:5]
     if stuck:
-        labels = dict(FUNNEL_STEPS) | ERROR_EVENTS
+        labels = dict(FUNNEL_STEPS) | dict(PAYMENT_STEPS) | ERROR_EVENTS
         lines.append("")
         lines.append("Остановились на:")
         for event, count in stuck:

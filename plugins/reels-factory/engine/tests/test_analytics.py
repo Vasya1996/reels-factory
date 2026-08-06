@@ -27,14 +27,14 @@ def test_воронка_считает_циклы_а_не_события(store):
 
 
 def test_второй_ролик_считается_отдельным_циклом(store):
-    _цикл(store, 1, 1, "start", "price_shown", "payment_received")
+    _цикл(store, 1, 1, "start", "price_shown", "balance_ok")
     _цикл(store, 1, 2, "start", "price_shown")
 
     counts = {r["event"]: r["count"] for r in store.funnel()}
 
     assert counts["start"] == 2
     assert counts["price_shown"] == 2
-    assert counts["payment_received"] == 1
+    assert counts["balance_ok"] == 1
     assert store.totals()["chats"] == 1  # человек один
     assert store.totals()["repeat_chats"] == 1
 
@@ -51,7 +51,7 @@ def test_цикл_попадает_в_период_по_первому_собы�
     свежая = {r["event"]: r["count"] for r in store.funnel(since=time.time() - 86_400)}
 
     assert свежая["start"] == 0
-    assert свежая["payment_received"] == 0
+    assert свежая["price_shown"] == 0
 
 
 def test_проценты_считаются_от_предыдущего_шага(store):
@@ -69,11 +69,52 @@ def test_проценты_считаются_от_предыдущего_шаг�
 def test_дубль_оплаты_не_удваивает_шаг(store):
     """Вебхук и кнопка «Проверить оплату» пишут событие оба — цикл всё равно
     один."""
-    _цикл(store, 1, 1, "start", "payment_received", "payment_received")
+    _цикл(store, 1, 1, "start", "price_shown", "topup_opened",
+          "payment_received", "payment_received")
+
+    оплата = {r["event"]: r["count"] for r in store.payment_branch()}
+
+    assert оплата["payment_received"] == 1
+
+
+def test_пропущенное_событие_раннего_шага_не_ломает_воронку(store):
+    """Событие фото могло не записаться (данные с прошлого ролика), но раз
+    человек дошёл до цены — значит фото у него было."""
+    _цикл(store, 1, 1, "start", "stage:language", "stage:material", "price_shown")
 
     counts = {r["event"]: r["count"] for r in store.funnel()}
 
-    assert counts["payment_received"] == 1
+    assert counts["stage:photo"] == 1
+    assert counts["stage:voice"] == 1
+    assert [r["count"] for r in store.funnel()] == sorted(
+        [r["count"] for r in store.funnel()], reverse=True
+    )
+
+
+def test_воронка_сужается_даже_у_постоянного_клиента(store):
+    """У него фото и голос с прошлого ролика, а денег хватает без оплаты —
+    и всё равно каждый следующий шаг не может быть шире предыдущего."""
+    _цикл(store, 1, 1, "start", "stage:language", "stage:gender", "stage:photo",
+          "stage:voice", "stage:material", "price_shown", "balance_ok",
+          "generation_started")
+
+    counts = [r["count"] for r in store.funnel()]
+
+    assert counts == sorted(counts, reverse=True)
+
+
+def test_ветка_оплаты_считается_от_тех_кому_не_хватило(store):
+    # первый заплатил, второй открыл пополнение и бросил, третьему хватило
+    _цикл(store, 1, 1, "start", "price_shown", "topup_opened",
+          "invoice_created", "payment_received")
+    _цикл(store, 2, 1, "start", "price_shown", "topup_opened")
+    _цикл(store, 3, 1, "start", "price_shown", "balance_ok")
+
+    branch = {r["event"]: r["count"] for r in store.payment_branch()}
+
+    assert branch["topup_opened"] == 2
+    assert branch["invoice_created"] == 1
+    assert branch["payment_received"] == 1
 
 
 def test_сбои_считаются_отдельно_от_шагов(store):
