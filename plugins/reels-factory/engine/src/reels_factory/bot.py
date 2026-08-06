@@ -1475,6 +1475,10 @@ async def _show_stage(msg, chat_id: int, s: dict, stage: str):
     s["step"] = VIEWING_STAGE
     s["stage"] = stage
     save_session(chat_id, s)
+    # Этап пройден и на готовых данных: у постоянного пользователя фото и
+    # голос остались с прошлого ролика, и без этой записи воронка проваливалась
+    # на них, а следующий шаг оказывался «шире» предыдущего.
+    _track(chat_id, s, f"stage:{stage}", "reused")
     if stage == STAGE_LANGUAGE:
         # У языка выбор и есть содержимое: те же кнопки с галочкой, менять
         # его отдельной кнопкой «Изменить» незачем.
@@ -1678,6 +1682,9 @@ async def _start_paid_part(msg, chat_id: int, s: dict):
         if _ledger().balance(chat_id) < need:
             await _show_price(msg, chat_id, s)
             return
+    # Шаг воронки — «денег хватило», а не «оплатил»: у постоянного клиента
+    # баланс уже есть, и он идёт в работу без единого платежа.
+    _track(chat_id, s, "balance_ok")
     await _start_generation(msg, chat_id, s)
 
 
