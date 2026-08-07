@@ -20,7 +20,7 @@ from pathlib import Path
 
 from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.hf_catalog import block_passports
-from reels_factory.hf_gates import density_bounds
+from reels_factory.hf_gates import min_cards
 from reels_factory.hf_layout import avatar_gaps
 from reels_factory.hf_rhythm import MAX_SECONDS_PER_CHANGE, MIN_CARD_GAP
 
@@ -29,21 +29,52 @@ from reels_factory.hf_rhythm import MAX_SECONDS_PER_CHANGE, MIN_CARD_GAP
 # регистрах.
 FONTS = "Manrope, Unbounded"
 
+#: Маршрут, который исполняет сборку. Роутер `/hyperframes` читает его из шапки
+#: BRIEF.md и дальше не переспрашивает («`BRIEF.md` exists → Read `workflow` and
+#: `flow`», hyperframes/SKILL.md:28; ключ описан в
+#: hyperframes-core/references/brief-format.md:13).
+#:
+#: Не `talking-head-recut`: его контракт — «Existing talking-head... footage to
+#: package. The underlying clip plays unchanged»
+#: (hyperframes/references/routes/talking-head-recut.md:3). Мы клип ведущей
+#: режем на острова, часть ролика идёт вовсе без неё и закрывается
+#: непрозрачными сценами — это «custom edit», и роутер такой случай отправляет
+#: сюда сам: «Retiming, reordering... remixing footage is a custom edit and
+#: falls through to `/general-video`» (hyperframes/SKILL.md:67).
+WORKFLOW = "general-video"
+
 
 def _scenario_block(block: dict) -> str:
-    return (f'- **{block.get("role", "?")}** {float(block.get("start", 0)):g}–'
-            f'{float(block.get("end", 0)):g} с: {block.get("speech", "")}')
+    return f'- **{block.get("role", "?")}**: {block.get("speech", "")}'
+
+
+def _phrase_line(phrase: dict) -> str:
+    """Строка фразы для задания.
+
+    Длина нужна не для арифметики, а для выбора блока: у каждого блока в
+    паспорте стоит своя минимальная длительность, и без длины фраз агенту нечем
+    сверить одно с другим. Прогон 12 споткнулся ровно на этом — под блок на
+    6,5 с он отдал две фразы на три секунды.
+    """
+    length = float(phrase["end"]) - float(phrase["start"])
+    return (f'- `{phrase["id"]}` **{phrase["role"]}** {length:.1f} с — '
+            f'{phrase["text"]}')
 
 
 def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
                 clips: list[dict] | None = None, language: str = "ru",
-                retry_reason: str | None = None) -> Path:
+                retry_reason: str | None = None,
+                phrases: list[dict] | None = None) -> Path:
     """Записать BRIEF.md рядом с материалом. Возвращает путь."""
     rdir = Path(rdir)
     rdir.mkdir(parents=True, exist_ok=True)
 
     blocks = "\n".join(_scenario_block(b) for b in scenario.get("blocks") or [])
     blocks = blocks or "Сценарий не передан."
+
+    phrases_block = "\n".join(_phrase_line(p) for p in (phrases or [])) or (
+        "Фразы не размечены.")
+    last_phrase = (phrases or [{"id": 0}])[-1]["id"]
 
     clips_block = "\n".join(
         f'- `{c["file"]}` — с {c["start"]:g} с, длительность {c["duration"]:g} с'
@@ -57,7 +88,7 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     ) or "- пропусков нет, ведущая в кадре весь ролик"
 
     changes = int(duration / MAX_SECONDS_PER_CHANGE)
-    low, high = density_bounds(duration)
+    low = min_cards(duration)
 
     retry_block = (
         f"\n## Повторная сборка\n\nПрошлая версия не прошла проверку:\n\n"
@@ -65,7 +96,18 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
         if retry_reason else ""
     )
 
-    text = f"""# Задание на монтаж рилса
+    text = f"""---
+workflow: {WORKFLOW}
+flow: automation
+storyboard: no
+destination: reels
+aspect: {OUT_W}x{OUT_H}
+language: {language}
+length: {duration:g}s
+narration: yes
+---
+
+# Задание на монтаж рилса
 {retry_block}
 Ты режиссёр монтажа. Композицию **собирает код**. Разметку ты не пишешь ни
 строки: ни `index.html`, ни карточек, ни таймлайна, ни субтитров. Твой ответ —
@@ -73,23 +115,33 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
 
 ## Паспорт задания
 
-| Поле | Значение |
-|---|---|
-| `flow` | `automation` |
-| `storyboard` | `no` |
-| `mode` | `autonomous` |
-| `destination` | вертикальный рилс: Reels, Shorts, TikTok |
-| `aspect` | `{OUT_W}x{OUT_H}` |
-| `length` | {duration:g} с, ровно |
-| `language` | `{language}` |
-| `narration` | `yes` — озвучка готова, лежит в `public/voice.wav` |
+Шапка выше — подтверждённый бриф, вопросов по нему не задавай. Из `flow` и
+`storyboard` выводится `mode: autonomous`. `destination` — вертикальный рилс:
+Reels, Shorts, TikTok. `length` — {duration:g} с ровно. `narration: yes` —
+озвучка готова и лежит в `public/voice.wav`.
+
+Поле `workflow` названо, чтобы ты знал жанр, но **конвейер этого маршрута в
+данном проходе не исполняется**: ни устанавливать его, ни входить в него, ни
+проходить его шаги не надо. От тебя нужен только план — всё остальное делает
+код после тебя.
 
 ## Сценарий
 
-Речь уже записана и разбита на блоки. Это единственный источник смысла:
-монтаж строй от неё, а не от секунд.
+Речь уже записана. Это единственный источник смысла: монтаж строй от неё.
 
 {blocks}
+
+## Фразы озвучки
+
+Речь разбита на пронумерованные фразы. **Секунд в ответе быть не должно** —
+карточка называет фразы, на которые приходит, а когда именно и сколько она
+стоит, считает код по звуку.
+
+Длина каждой фразы дана для одного: свериться с паспортом блока. У блока есть
+минимум («карточка не короче N с»), и сумма длин выбранных фраз обязана его
+покрывать. Не покроет — сборка вернёт карточку тебе.
+
+{phrases_block}
 
 ## Материал (лежит в `public/`)
 
@@ -105,15 +157,19 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
 
 {gaps_block}
 
-Эти интервалы закрывай карточками целиком: без карточки там чёрный экран.
+Фразы этих интервалов обязаны попасть в какую-нибудь карточку: без карточки там
+чёрный экран. Встык их поставит код.
 
 ## Что делает код, а не ты
 
+- **Все секунды.** Начало и конец каждой карточки, зазоры между ними,
+  минимальную длину сцены под выбранный блок, восемь секунд предела и сетку
+  кадров держит код. Считать это в уме не надо — на прошлых прогонах на это
+  уходило по полчаса, и всё равно с ошибкой.
 - **Разметку.** Сцену ставит код по имени блока и содержимому его слотов.
 - **Субтитры.** Пословный титр с переезжающей подсветкой строится по
   `words.json` их готовым компонентом и идёт в промежутках между карточками.
   В план субтитры не пиши и в карточки не превращай.
-- **Сетка кадров.** Пиши времена как есть, хоть 12.47 — код округлит к 1/{FPS}.
 - **Подбор вставок.** Ты называешь словами, что должно быть на экране; ищет и
   подставляет файл код.
 - **Ведущая.** Куда её поставить, решает выбранный блок: у блока со слотом роли
@@ -128,9 +184,10 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
 Блок — **непрозрачная сцена во весь кадр**: под ним не видно ни ведущей, ни
 титра, у него свой текст.
 
-У каждого блока есть родная длительность — за неё его сцена собирается. Держи
-карточку **не короче 70 % родной длительности** выбранного блока: короче — и
-зритель увидит полусобранную сцену. Под короткую карточку бери короткий блок.
+У каждого блока есть родная длительность — за неё его сцена собирается, и в
+паспорте против неё стоит минимум карточки. **Сумма длин фраз карточки обязана
+быть не меньше этого минимума.** Под короткую реплику бери короткий блок, под
+длинный блок отдавай больше фраз.
 
 {block_passports()}
 
@@ -147,17 +204,13 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
 файл детектор сцен, поэтому важно не намерение, а видимое.
 
 - За {duration:g} с нужно **не меньше {changes} заметных смен картинки**.
-- Каждая карточка даёт ровно две смены: приход сцены и её уход. Поэтому перед
-  **каждой** карточкой обязателен зазор **не меньше {MIN_CARD_GAP:g} с**, где в
-  кадре ведущая с титром, — и перед первой тоже: ролик открывается ведущей, а
-  не карточкой, поэтому первая карточка начинается не раньше {MIN_CARD_GAP:g} с.
-  Впритык поставленные карточки дают одну смену вместо двух — планка не
-  возьмётся. Исключение одно: на интервале, где ведущей нет, зазор оставить
-  негде, и там карточки идут встык.
-- Карточек в ролике **от {low} до {high}** — это формула плотности из
-  `talking-head-recut` при {duration:g} с, посчитанная за тебя.
-- Ни одного неподвижного плана длиннее восьми секунд: и карточка, и промежуток
-  между карточками короче восьми секунд.
+- Каждая карточка даёт две смены: приход сцены и её уход. Значит между
+  карточками нужны **свободные фразы** — те, что ты не отдал ни одной карточке:
+  на них зритель видит ведущую с титром. Отдашь карточкам все фразы подряд —
+  смен будет вдвое меньше. Зазор в секундах ставит код, от тебя нужна свободная
+  фраза. Первая фраза ролика всегда свободна: ролик открывается ведущей.
+- Карточек в ролике **не меньше {low}**. Верхней границы нет: плотность выбираешь
+  ты под смысл и формат.
 - Положение ведущей за ролик обязано смениться **не меньше трёх раз**. Оно
   задаётся выбором блока: возьми блоки, где она стоит по-разному, — во весь
   кадр, в рамке-пузыре сбоку, в окне-арке, в углу. Смотри описания блоков.
@@ -185,14 +238,17 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
 Один файл `storyboard.json`. Ничего больше не создавай.
 
 ```json
-{{"cards": [
+{{"message": "главная мысль ролика одной фразой",
+ "audience": "кто это смотрит, одной фразой",
+ "angle": "форма рассказа: как ты ведёшь зрителя от первой фразы к последней",
+ "cards": [
     {{"id": "card-01", "intent": "чем карточка держит зрителя",
-      "startSec": 0, "endSec": 4.2, "accentIndex": 0,
+      "phrases": [1, 2], "accentIndex": 0,
       "contentHints": {{"title": "…", "detail": "…"}},
       "render": {{"block": "g02-avatar-fullscreen-hook",
                  "text": {{"line-1": "ВСЕ ПРОДАЖИ", "line-2": "СВОДЯТСЯ К ТРЁМ"}},
                  "media": {{}}}}}},
-    {{"id": "card-02", "intent": "…", "startSec": 5.0, "endSec": 9.4,
+    {{"id": "card-02", "intent": "…", "phrases": [4, 5],
       "accentIndex": 1, "contentHints": {{"title": "…"}},
       "render": {{"block": "g23-photo-three-steps",
                  "text": {{"line-1": "ЧТО ПРОДАЁМ", "txt-1": "…"}},
@@ -200,6 +256,16 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
   ],
  "catalogGaps": []}}
 ```
+
+`phrases` — номера первой и последней фразы, которые накрывает карточка, из
+списка выше (есть фразы `0`–{last_phrase}). Диапазоны карточек не пересекаются,
+идут по возрастанию, и между ними остаются свободные фразы.
+
+`message`, `audience` и `angle` заполни сам, у клиента их не спрашивай: их
+контракт велит вывести из материала — «Infer when clear», «Derive and echo one
+sentence», «Recommend one route-defined option»
+(hyperframes-core/references/brief-contract.md:71-73). Главная мысль нужна не
+для отчёта: без неё нечем сверять, та ли картинка встала в карточку.
 
 Ключи `text` — имена слотов из паспорта блока, и только они: слота, которого в
 паспорте нет, код не примет. Значения `media` — намерение словами.
@@ -209,10 +275,14 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
 - Не пиши HTML, CSS и JavaScript. Ни файла, ни строки.
 - Не запускай их CLI: ни `hyperframes check`, ни `preview`, ни `render`, ни
   `add`. Блоки ставит код, проверки идут после тебя.
-- Шаги «Design the theme», «Write Each Card's HTML» и «Assemble the
-  Composition» их скила в этом прогоне не твои. Их справочники по темам,
-  стилям и раскладкам не открывай — время прогона ограничено.
+- Оформление, вёрстка сцен и сборка композиции в этом прогоне не твои. Их
+  справочники по темам, стилям и раскладкам не открывай — время прогона
+  ограничено.
 - Не подбирай картинки сам и не запускай распознавание речи.
+- **Не считай секунды.** Ни `startSec`, ни `endSec`, ни длительностей, ни
+  зазоров в ответе быть не должно — код их не примет. Не открывай `words.json`
+  и не пересчитывай тайминги питоном: всё, что тебе нужно знать о времени, уже
+  сказано номерами фраз.
 - Файлы блоков в `public/compositions/` не открывай: всё, что нужно, есть в
   паспортах выше. Шрифты — {FONTS}, объявлять их не нужно.
 

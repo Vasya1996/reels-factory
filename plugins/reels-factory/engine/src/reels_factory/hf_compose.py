@@ -158,22 +158,50 @@ def block_slots(sdk, public: Path, block: str) -> list:
 # ------------------------------------------------------------------ ведущая
 
 def _clip_for(clips: list[dict], start: float) -> dict | None:
+    """Клип, идущий в этот момент. Для пауз между карточками: есть ли вообще
+    что показать во весь кадр."""
     for clip in clips:
         if clip["start"] <= start + 1e-6 < clip["start"] + clip["duration"]:
             return clip
     return None
 
 
+#: Короче двух кадров окно ведущей внутри сцены не ставим вовсе. Их рендер
+#: требует, чтобы объявленное окно набрало не меньше 95 % своих кадров, и на
+#: огрызке в один кадр валит всю сборку: «Video "g14-presenter" captured 0 of
+#: expected 1 frames … aborting render to prevent shipping a wrong MP4».
+MIN_PRESENTER_PIECE = 2.0 / FPS
+
+
 def _presenter_media(clips: list[dict], card: dict) -> dict | None:
-    """Кусок клипа под карточку: какой файл и с какого места внутри него."""
+    """Кусок клипа под карточку: какой файл и с какого места внутри него.
+
+    Клип выбирается по НАИБОЛЬШЕМУ перекрытию с карточкой, а не по её первому
+    кадру. Прогон 10 показал, чем это отличается: карточка начиналась в 23,1 с,
+    а клип ведущей заканчивался в 23,133 — выбор по началу брал уходящий клип и
+    оставлял окно длиной в один кадр, притом что следующий клип покрывал
+    карточку целиком.
+    """
     start, end = _q(card["startSec"]), _q(card["endSec"])
-    clip = _clip_for(clips, start)
-    if not clip:
+    best, piece = None, None
+    for clip in clips:
+        clip_start = float(clip["start"])
+        clip_end = clip_start + float(clip["duration"])
+        overlap_from, overlap_to = max(clip_start, start), min(clip_end, end)
+        overlap = overlap_to - overlap_from
+        if best is not None and overlap <= best:
+            continue
+        best, piece = overlap, {
+            "file": clip["file"],
+            # Клип может покрывать карточку не с самого её начала: окно тогда
+            # появляется позже, а не растягивается на то, чего в файле нет.
+            "start": round(overlap_from - start, 3),
+            "duration": round(overlap, 3),
+            "media_start": round(overlap_from - clip_start, 3),
+        }
+    if best is None or best < MIN_PRESENTER_PIECE - 1e-6:
         return None
-    tail = clip["start"] + clip["duration"] - start
-    return {"file": clip["file"], "start": 0.0,
-            "duration": round(min(end - start, tail), 3),
-            "media_start": round(start - clip["start"], 3)}
+    return piece
 
 
 def _presenter_rect(name: str) -> dict:

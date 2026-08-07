@@ -197,6 +197,40 @@ def test_в_паузе_без_клипа_ведущей_нет():
     assert moments == [(0.0, "none")]
 
 
+CLIPS_REAL = [{"file": "clips/clip-00.mp4", "start": 0.0, "duration": 11.733},
+              {"file": "clips/clip-01.mp4", "start": 12.233, "duration": 10.9},
+              {"file": "clips/clip-02.mp4", "start": 23.133, "duration": 11.5}]
+
+
+def test_окно_ведущей_берёт_клип_с_наибольшим_перекрытием():
+    """Прогон 10 упал на рендере: карточка начиналась в 23,1 с, клип ведущей
+    кончался в 23,133, и выбор по первому кадру давал окно в один кадр —
+    «captured 0 of expected 1 frames … aborting render»."""
+    from reels_factory.hf_compose import _presenter_media
+
+    piece = _presenter_media(CLIPS_REAL, {"startSec": 23.1, "endSec": 26.4})
+    assert piece["file"] == "clips/clip-02.mp4"
+    # клип начинается позже карточки — окно появляется со сдвигом, а не тянется
+    assert piece["start"] == 0.033
+    assert piece["duration"] == 3.267
+    assert piece["media_start"] == 0.0
+
+
+def test_окно_ведущей_не_выходит_за_конец_файла():
+    from reels_factory.hf_compose import _presenter_media
+
+    piece = _presenter_media(CLIPS_REAL, {"startSec": 21.0, "endSec": 26.0})
+    clip = next(c for c in CLIPS_REAL if c["file"] == piece["file"])
+    assert piece["media_start"] + piece["duration"] <= clip["duration"] + 1e-6
+
+
+def test_огрызок_клипа_в_окно_ведущей_не_ставится():
+    """Меньше двух кадров их рендер заворачивает целиком."""
+    from reels_factory.hf_compose import _presenter_media
+
+    assert _presenter_media(CLIPS_REAL, {"startSec": 11.7, "endSec": 12.2}) is None
+
+
 def test_шапка_раскадровки_заполняется_кодом():
     """Агент отдаёт только карточки: в шапке решений нет, а разойтись есть где."""
     from reels_factory.hf_compose import complete_storyboard

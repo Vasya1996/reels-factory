@@ -22,7 +22,9 @@ from reels_factory.face_detect import face_box_for, load_face
 from reels_factory.hf_agent import plan_with_agent
 from reels_factory.hf_assets import vendor_gsap
 from reels_factory.hf_brief import write_brief
-from reels_factory.hf_catalog import serve_catalog, write_project_config
+from reels_factory.hf_catalog import (
+    block_durations, serve_catalog, write_project_config,
+)
 from reels_factory.hf_compose import (
     build_composition, clear_generated, collect_intents, complete_storyboard,
 )
@@ -30,7 +32,9 @@ from reels_factory.hf_fonts import inject_fonts
 from reels_factory.hf_gates import check_media, check_storyboard
 from reels_factory.hf_layout import quantize
 from reels_factory.hf_media import resolve_all
+from reels_factory.hf_phrases import lay_out_cards, phrase_timeline
 from reels_factory.hf_probe import probe_gates
+from reels_factory.hf_slots import min_card_seconds
 from reels_factory.hf_rhythm import rhythm_gates
 from reels_factory.hf_sdk import sdk_session
 from reels_factory.hyperframes_blocks import _HF_VERSION
@@ -106,9 +110,22 @@ def _cli(*args: str, cwd, log: Path | None = None) -> str:
 
 
 def _normalize_words(words: list[dict]) -> list[dict]:
-    return [{"start": round(float(w["start"]), 3),
-             "end": round(float(w["end"]), 3),
-             "text": str(w.get("text") or w.get("word") or "")} for w in words]
+    """Слова к общему виду. Поля синтеза сохраняем.
+
+    `character_start`/`character_end`/`block_index` кладёт `master_audio`
+    (`alignment_to_words`), и по ним фраза находит свои слова без всякого
+    угадывания. Раньше они здесь терялись, и расчёт времён не за что было
+    зацепить — секунды приходилось называть агенту.
+    """
+    kept = ("character_start", "character_end", "block_index")
+    result = []
+    for word in words:
+        item = {"start": round(float(word["start"]), 3),
+                "end": round(float(word["end"]), 3),
+                "text": str(word.get("text") or word.get("word") or "")}
+        item.update({k: word[k] for k in kept if word.get(k) is not None})
+        result.append(item)
+    return result
 
 
 def _normalize_loudness(src: Path, dst: Path) -> Path:
@@ -284,6 +301,22 @@ def _check_findings(log: Path) -> list[str]:
     return found
 
 
+def _card_minimums(board: dict) -> dict[str, float]:
+    """Сколько секунд нужно каждой карточке под её блок.
+
+    Сцена блока собирается за родную длительность; сильно короче — и в кадре
+    полусобранная сцена. Порог тот же, что проверяет `_stage_block`, только
+    считается заранее, чтобы раскладка сразу ставила достаточное окно.
+    """
+    natives = block_durations()
+    minimums = {}
+    for card in board.get("cards") or []:
+        native = natives.get((card.get("render") or {}).get("block"))
+        if native:
+            minimums[card.get("id")] = min_card_seconds(native)
+    return minimums
+
+
 def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                          avatar_mp4s: list, master_audio, alignment_words: list,
                          avatar_render_plan: dict | None = None,
@@ -293,6 +326,10 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
     public = rdir / "public"
     words = _normalize_words(alignment_words)
     duration = quantize(float(timed_scenario.get("total") or 0.0))
+    # Фразы озвучки — общий язык кода и агента: он называет их номерами, код по
+    # ним считает секунды. Считаем один раз, до задания.
+    phrases = phrase_timeline(timed_scenario, words,
+                              language=timed_scenario.get("language", "ru"))
 
     def prepare() -> None:
         public.mkdir(parents=True, exist_ok=True)
@@ -308,7 +345,9 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         # пока агент ещё не начал, чтобы сборка потом не ждала загрузку.
         hf_captions.stage(rdir)
         write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
-                    duration=duration, clips=clips)
+                    duration=duration, clips=clips, phrases=phrases)
+        (rdir / "phrases.json").write_text(
+            json.dumps(phrases, ensure_ascii=False, indent=1), encoding="utf-8")
         (rdir / "clips.json").write_text(
             json.dumps(clips, ensure_ascii=False, indent=1), encoding="utf-8")
         # media.json задание больше не читает: вставки подбираются по намерениям
@@ -332,13 +371,24 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     reset_step(rdir, step)
                 write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
                             duration=duration, clips=saved_clips,
-                            retry_reason=reason)
+                            retry_reason=reason, phrases=phrases)
 
             board = run_step(rdir, "plan",
                              lambda: plan_with_agent(rdir, runner=agent_runner))
             if board is None:
                 board = json.loads(
                     (rdir / "storyboard.json").read_text(encoding="utf-8"))
+            # Секунды считаем здесь: агент назвал только фразы. Не сошлось —
+            # это причина пересборки, а не авария: план он поправит сам.
+            try:
+                board["cards"] = lay_out_cards(
+                    board.get("cards") or [], phrases, clips=saved_clips,
+                    duration=duration, minimums=_card_minimums(board))
+            except RuntimeError as error:
+                reason = str(error)
+                if attempt == MAX_COMPOSE_ATTEMPTS - 1:
+                    raise RuntimeError("план не лёг на озвучку — " + reason)
+                continue
             board = complete_storyboard(board, clips=saved_clips,
                                         duration=duration)
 

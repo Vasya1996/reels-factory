@@ -42,6 +42,37 @@ def test_поля_которые_знает_движок_проставлены(
     assert "1080x1920" in text
 
 
+def test_поля_контракта_агент_выводит_сам(tmp_path):
+    """`message`, `audience`, `angle` — поля их контракта брифа
+    (hyperframes-core/references/brief-contract.md:71-73). Клиента о них не
+    спрашивают: глаголы контракта — infer, derive, recommend."""
+    text = _text(tmp_path)
+    for field in ("message", "audience", "angle"):
+        assert f'"{field}"' in text, f"нет поля {field}"
+    assert "у клиента их не спрашивай" in text
+
+
+def test_фразы_пронумерованы_в_задании(tmp_path):
+    text = _text(tmp_path, phrases=[
+        {"id": 0, "role": "hook", "text": "Все продажи.",
+         "start": 0.0, "end": 2.4},
+        {"id": 1, "role": "hook", "text": "Порядок решает.",
+         "start": 2.4, "end": 5.0}])
+    # длина нужна, чтобы сверить фразы с минимумом выбранного блока
+    assert "`0` **hook** 2.4 с — Все продажи." in text
+    assert "есть фразы `0`–1" in text
+
+
+def test_маршрут_назван_в_шапке(tmp_path):
+    """Роутер читает `workflow` из шапки BRIEF.md и дальше не переспрашивает
+    (hyperframes/SKILL.md:28). Без шапки он выбирал маршрут сам и брал
+    talking-head-recut — контракт упаковки чужого клипа, а не сборки с нуля."""
+    text = _text(tmp_path)
+    assert text.startswith("---\n"), "шапки нет — YAML должен идти первым"
+    assert "workflow: general-video" in text
+    assert "talking-head-recut" not in text
+
+
 def test_язык_можно_задать(tmp_path):
     assert "kk" in _text(tmp_path, language="kk")
 
@@ -157,10 +188,22 @@ def test_положение_ведущей_обязано_меняться(tmp_p
     assert "не меньше трёх раз" in text
 
 
-def test_зазор_между_карточками_назван_числом(tmp_path):
-    """Карточки впритык детектор видит одной склейкой — планка не берётся."""
+def test_зазор_просят_свободной_фразой_а_не_секундами(tmp_path):
+    """Секунды зазора ставит код. От агента нужна фраза, не отданная карточке:
+    карточки впритык детектор видит одной склейкой, и планка не берётся."""
     text = _text(tmp_path)
-    assert "зазор" in text and "0.8 с" in text
+    assert "свободные фразы" in text
+    assert "Зазор в секундах ставит код" in text
+
+
+def test_секунд_у_агента_не_просят(tmp_path):
+    """Прогоны 9 и 10: арифметика стоила по полчаса и всё равно с ошибкой."""
+    text = _text(tmp_path)
+    # в образце ответа секунд нет — они только в запрете
+    sample = text.split("```json")[1].split("```")[0]
+    assert "startSec" not in sample and "endSec" not in sample
+    assert '"phrases": [1, 2]' in sample
+    assert "Не считай секунды" in text
 
 
 def test_пробел_каталога_записывается_а_не_закрывается_вёрсткой(tmp_path):
@@ -175,10 +218,12 @@ def test_служебные_надписи_запрещены(tmp_path):
     assert "фото из каталога" in text
 
 
-def test_число_карточек_дано_числами(tmp_path):
-    """Sonnet сдал 11 карточек при потолке 10: формулу считаем за него."""
+def test_пол_карточек_дан_числом_а_потолка_нет(tmp_path):
+    """Потолок снят вместе с чужой формулой плотности: прогоны 8 и 9 оба
+    отдали ровно 10 карточек — расчётный потолок, а не свой выбор."""
     text = _text(tmp_path)
-    assert "от 5 до 10" in text
+    assert "не меньше 6" in text
+    assert "Верхней границы нет" in text
 
 
 def test_лишняя_работа_запрещена_явно(tmp_path):

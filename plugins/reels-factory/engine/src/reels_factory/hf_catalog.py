@@ -115,6 +115,23 @@ def block_names(catalog_dir=None) -> list[str]:
     return [item["name"] for item in manifest.get("items") or []]
 
 
+def block_durations(catalog_dir=None) -> dict[str, float]:
+    """Родная длительность каждого блока — за неё его сцена собирается.
+
+    Читаем карточку реестра, а не сам блок: то же число, но без открытия
+    стокилобайтного HTML на каждый вопрос. Нужна до сборки — по ней код считает,
+    какой минимум отвести карточке (`hf_slots.min_card_seconds`).
+    """
+    root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
+    durations = {}
+    for name in block_names(catalog_dir):
+        item = json.loads((root / "blocks" / name / "registry-item.json")
+                          .read_text(encoding="utf-8"))
+        if item.get("duration"):
+            durations[name] = float(item["duration"])
+    return durations
+
+
 def block_passports(catalog_dir=None) -> str:
     """Паспорта всех блоков: что за сцена и какие в ней слоты.
 

@@ -1,7 +1,7 @@
 """Гейты раскадровки: их `check` её не читает вовсе, значит проверяем мы."""
 import pytest
 
-from reels_factory.hf_gates import check_media, check_storyboard, density_bounds
+from reels_factory.hf_gates import check_media, check_storyboard, min_cards
 
 DURATION = 41.5
 # три клипа с ведущей, хвост 34.62–41.5 без неё — как в реальном материале
@@ -92,27 +92,39 @@ def test_пустая_раскадровка_валится():
     assert _check([])["D13_density"].startswith("FAIL")
 
 
-def test_группы_субтитров_вместо_карточек_валятся():
-    """34 карточки по 1,7 с — это был пересказ субтитров, а не монтаж."""
+def test_группы_субтитров_ловит_зазор_а_не_плотность():
+    """34 карточки по 1,1 с — пересказ субтитров, а не монтаж.
+
+    Раньше их заворачивал потолок плотности. Потолка больше нет: его считала
+    формула `talking-head-recut`, а `/general-video` числа карточек не называет
+    вовсе. Ловит теперь D21 — между такими карточками негде взять зазор 0,8 с.
+    """
     cards = [_card(i, startSec=round(i * 1.2, 3), endSec=round(i * 1.2 + 1.1, 3))
              for i in range(34)]
-    assert _check(cards)["D13_density"].startswith("FAIL")
+    gates = _check(cards)
+    assert gates["D13_density"] == "PASS"
+    assert gates["D21_card_gaps"].startswith("FAIL")
 
 
 @pytest.mark.parametrize("duration,expected", [
-    (41.5, (5, 10)),    # короткий рилс: базовый темп 6–8 с
-    (121.2, (7, 22)),   # минута с лишним: 8–12 с
+    (41.5, 6),     # 41,5 / 8 — иначе останется кусок длиннее восьми секунд
+    (12.0, 2),
+    (121.2, 16),
 ])
-def test_вилка_плотности_по_их_формуле(duration, expected):
-    assert density_bounds(duration) == expected
+def test_пол_карточек_от_нашей_планки(duration, expected):
+    """Пол выведен из D19 (не больше восьми секунд без смены картинки),
+    а не из их формулы плотности."""
+    assert min_cards(duration) == expected
 
 
-def test_пол_в_пять_карточек_держится():
-    """«minimum 5 cards» скила: короткий ролик всё равно получает ритм."""
-    assert density_bounds(12.0)[0] == 5
+def test_потолка_плотности_больше_нет():
+    """Прогоны 8 и 9 оба упёрлись ровно в расчётный потолок 10."""
+    cards = [_card(i, startSec=round(i * 2.0, 3), endSec=round(i * 2.0 + 1.0, 3))
+             for i in range(20)]
+    assert _check(cards)["D13_density"] == "PASS"
 
 
-# ---------- сетка, зоны, чёрный кадр ----------
+# ---------- сетка, чёрный кадр ----------
 
 def test_время_вне_сетки_кадров_валится():
     cards = _plausible_cards()
@@ -120,10 +132,12 @@ def test_время_вне_сетки_кадров_валится():
     assert _check(cards)["D9_frame_grid"].startswith("FAIL")
 
 
-def test_несуществующая_зона_валится():
+def test_гейта_зоны_больше_нет():
+    """D10 снят: список зон был из `talking-head-recut`, а проверял он значение,
+    которое до гейтов проставляет наш же `complete_storyboard`."""
     cards = _plausible_cards()
     cards[0]["zone"] = "куда-то"
-    assert _check(cards)["D10_zone"].startswith("FAIL")
+    assert "D10_zone" not in _check(cards)
 
 
 def test_интервал_без_ведущей_обязан_быть_закрыт():

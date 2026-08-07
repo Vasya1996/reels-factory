@@ -13,46 +13,35 @@
 """
 from __future__ import annotations
 
+import math
 import re
 from pathlib import Path
 
 from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.hf_layout import (
-    ALLOWED_ZONES, FULL_FRAME_ZONES, VIDEO_RECTS, ZONE_RECTS, avatar_gaps,
-    quantize,
+    FULL_FRAME_ZONES, VIDEO_RECTS, ZONE_RECTS, avatar_gaps, quantize,
 )
 from reels_factory.hf_rhythm import MAX_STATIC_SPAN, MIN_CARD_GAP
 
-#: Базовый темп по длительности ролика — таблица «Step 1 — base pace by
-#: duration» из talking-head-recut/SKILL.md:206-214. Ключ — верхняя граница
-#: длительности в секундах.
-BASE_PACE = ((60, 6.0, 8.0), (180, 8.0, 12.0), (600, 12.0, 20.0),
-             (1800, 20.0, 35.0), (float("inf"), 30.0, 60.0))
 
-#: Множители плотности речи — «Step 2 — density multiplier», там же:216-222.
-#: Крайние значения задают всю вилку допустимого числа карточек.
-DENSITY_MIN, DENSITY_MAX = 0.7, 1.5
+def min_cards(duration: float) -> int:
+    """Наименьшее число карточек, при котором план вообще может взять планку.
 
-#: Пол числа карточек, зафиксированный скилом: «minimum 5 cards» (там же:203).
-MIN_CARDS = 5
+    Верхней границы больше нет. Она приходила из формулы плотности
+    `talking-head-recut` (SKILL.md:206-229) — правила упаковки чужого клипа. На
+    маршруте `/general-video`, по которому мы теперь идём, такой формулы нет
+    вовсе: он велит «Match density to the requested format and message» и прямо
+    отказывается называть число — «not permission to invent claims, scenes, or a
+    fixed number of elements» (general-video/SKILL.md:128). Считать потолок
+    стало нечем, а прогоны 8 и 9 упирались ровно в него: оба отдали 10 карточек
+    при расчётном потолке 10.
 
-
-def density_bounds(duration: float) -> tuple[int, int]:
-    """Сколько карточек допускает их формула плотности при такой длительности.
-
-    Формула (SKILL.md:224-229): secPerCard = basePace × densityMultiplier,
-    cardCount = max(5, round(videoDurationSec / secPerCard)). Плотность речи
-    выбирает агент, поэтому проверяем не число, а вилку: от самой медленной
-    подачи до самой частой.
+    Пол остаётся, но выводится из НАШЕЙ планки приёмки, а не из их формулы:
+    D19 не терпит куска длиннее MAX_STATIC_SPAN без смены картинки, а сменить её
+    в нашей композиции может только карточка. Значит на `duration` секунд их
+    нужно хотя бы столько, сколько таких кусков помещается.
     """
-    duration = float(duration)
-    # самая медленная подача даёт самые длинные карточки, значит их меньше всего
-    longest, shortest = next(
-        (upper * DENSITY_MAX, lower * DENSITY_MIN)
-        for edge, lower, upper in BASE_PACE if duration < edge
-    )
-    return (max(MIN_CARDS, round(duration / longest)),
-            max(MIN_CARDS, round(duration / shortest)))
+    return max(1, math.ceil(float(duration) / MAX_STATIC_SPAN))
 
 
 def _schema_problems(storyboard: dict) -> list[str]:
@@ -198,12 +187,10 @@ def check_storyboard(storyboard: dict, *, clips: list[dict] | None = None,
                      duration: float = 0.0) -> dict:
     """Гейты раскадровки. PASS либо FAIL с перечислением карточек."""
     cards = storyboard.get("cards") or []
-    grid_bad, zone_bad = [], []
+    grid_bad = []
 
     for card in cards:
         card_id = card.get("id", "?")
-        if card.get("zone") not in ALLOWED_ZONES:
-            zone_bad.append(f'{card_id}: зона {card.get("zone")!r} не разрешена')
         for field in ("startSec", "endSec"):
             if field not in card:
                 grid_bad.append(f"{card_id}: нет поля {field}")
@@ -215,12 +202,14 @@ def check_storyboard(storyboard: dict, *, clips: list[dict] | None = None,
     # Плотность. Прошлый прогон вернул 34 «карточки» средней длиной 1,7 с — это
     # были группы субтитров, настоящей графики ноль. Пустая раскадровка при этом
     # проходила все проверки: цикл по пустому списку не спотыкается ни разу.
+    # Сверху больше не ограничиваем — см. min_cards.
     density_bad = []
-    low, high = density_bounds(duration)
-    if duration > 0 and not low <= len(cards) <= high:
+    low = min_cards(duration)
+    if duration > 0 and len(cards) < low:
         density_bad.append(
-            f"карточек {len(cards)}, а формула плотности при {duration:g} с "
-            f"допускает от {low} до {high}; субтитры карточками не считаются")
+            f"карточек {len(cards)}, при {duration:g} с нужно хотя бы {low}, "
+            f"иначе кусок без смены картинки выйдет длиннее {MAX_STATIC_SPAN:g} с; "
+            "субтитры карточками не считаются")
 
     # Интервал без ведущей закрывается ЦЕПОЧКОЙ полноэкранных карточек, а не
     # одной: разбить показ на титул и список — нормальное монтажное решение.
@@ -244,7 +233,12 @@ def check_storyboard(storyboard: dict, *, clips: list[dict] | None = None,
     def gate(problems: list[str]) -> str:
         return "PASS" if not problems else "FAIL: " + "; ".join(problems)
 
-    result = {"D9_frame_grid": gate(grid_bad), "D10_zone": gate(zone_bad),
+    # D10 (зона карточки из списка пяти) снят. Список зон — таблица
+    # `talking-head-recut/SKILL.md:180-188`, у `/general-video` таблицы зон нет
+    # вовсе. Вдобавок гейт проверял значение, которое пишет наш же код:
+    # `complete_storyboard` ставит `zone = "fullscreen"` каждой карточке
+    # (hf_compose.py:264) до того, как гейты успевают её увидеть.
+    result = {"D9_frame_grid": gate(grid_bad),
               "D11_schema": gate(_schema_problems(storyboard)),
               "D12_faceless_cover": gate(cover_bad),
               "D13_density": gate(density_bad),

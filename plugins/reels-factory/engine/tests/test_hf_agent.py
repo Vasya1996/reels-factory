@@ -206,7 +206,9 @@ def test_модель_явным_аргументом_бьёт_окружени�
 # заняла четверть часа на плане из десяти карточек. Регулятор нужен, чтобы
 # мерить это, а не гадать.
 
-def test_усилие_не_задано_флага_нет(monkeypatch, tmp_path):
+def test_усилие_по_умолчанию_среднее(monkeypatch, tmp_path):
+    """На `high` прогон 11 дал два выброшенных хода по 64 000 токенов и
+    27 минут без плана; на `medium` прогон 13 сдал план за десять минут."""
     from reels_factory import hf_agent
 
     monkeypatch.setattr(hf_agent.Path, "home", lambda: tmp_path / "нет-профиля")
@@ -216,17 +218,18 @@ def test_усилие_не_задано_флага_нет(monkeypatch, tmp_path)
 
     hf_agent.HeyGenAgentRunner().run("/hyperframes", cwd=tmp_path)
 
-    assert "--effort" not in seen["cmd"]
+    assert seen["cmd"][seen["cmd"].index("--effort") + 1] == "medium"
 
 
 def test_усилие_из_переменной_окружения(monkeypatch, tmp_path):
+    """Мерить на другом материале — той же ручкой, не правкой кода."""
     from reels_factory import hf_agent
 
     monkeypatch.setattr(hf_agent.Path, "home", lambda: tmp_path / "нет-профиля")
-    monkeypatch.setenv("REELS_AGENT_EFFORT", "medium")
+    monkeypatch.setenv("REELS_AGENT_EFFORT", "high")
     seen = {}
     monkeypatch.setattr(hf_agent.subprocess, "run", _fake_run(seen))
 
     hf_agent.HeyGenAgentRunner().run("/hyperframes", cwd=tmp_path)
 
-    assert seen["cmd"][seen["cmd"].index("--effort") + 1] == "medium"
+    assert seen["cmd"][seen["cmd"].index("--effort") + 1] == "high"
