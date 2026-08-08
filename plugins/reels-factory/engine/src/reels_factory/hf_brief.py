@@ -19,7 +19,6 @@ from pathlib import Path
 
 from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.hf_gates import min_scenes
-from reels_factory.hf_layout import avatar_gaps
 from reels_factory.hf_phrases import MIN_SCENE, faceless_phrases
 from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 
@@ -86,8 +85,14 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
                 clips: list[dict] | None = None, language: str = "ru",
                 retry_reason: str | None = None,
                 phrases: list[dict] | None = None,
-                overlay_passports: str = "") -> Path:
-    """Записать BRIEF.md рядом с материалом. Возвращает путь."""
+                overlay_passports: str = "",
+                avatar_ordered: bool = True) -> Path:
+    """Записать BRIEF.md рядом с материалом. Возвращает путь.
+
+    `avatar_ordered=False` — план до заказа аватара (работа 9): клипов ещё
+    нет, дыры не навязаны, агент сам решает `avatarNeeded`, и по его решению
+    острова закажут.
+    """
     rdir = Path(rdir)
     rdir.mkdir(parents=True, exist_ok=True)
 
@@ -95,13 +100,21 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     blocks = blocks or "Сценарий не передан."
 
     phrases = phrases or []
-    faceless = set(faceless_phrases(phrases, clips or [], duration))
+    faceless = (set(faceless_phrases(phrases, clips or [], duration))
+                if avatar_ordered else set())
     phrases_block = "\n".join(_phrase_line(p, faceless) for p in phrases) or (
         "Фразы не размечены.")
     last_phrase = (phrases or [{"id": 0}])[-1]["id"]
 
-    gaps = avatar_gaps(clips or [], duration)
-    if faceless:
+    if not avatar_ordered:
+        gaps_block = (
+            "Аватар ещё **не заказан** — его купят у HeyGen ровно по твоему "
+            "плану: сцены с `avatarNeeded: true` соберутся в заказ. Внутри "
+            "заказанного куска платятся все его секунды, даже под "
+            "непрозрачной вставкой. При прочих равных полноэкранный биролл "
+            "дешевле ведущей. Сцена с `avatarNeeded: false` обязана стоять с "
+            '`presenter: "none"`.')
+    elif faceless:
         gaps_block = (
             "На эти фразы аватар не заказан — ведущей в кадре нет физически:\n"
             + "\n".join(f"- фраза `{pid}`" for pid in sorted(faceless))

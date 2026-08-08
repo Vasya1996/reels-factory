@@ -364,6 +364,41 @@ def _capture_shots(rdir: Path, board: dict, duration: float) -> Path:
     return sheets[0]
 
 
+def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
+                       agent_runner=None) -> dict:
+    """План агента ДО заказа аватара (работа 9).
+
+    Клипов ещё нет, поэтому бриф не навязывает дыр: агент сам решает
+    `avatarNeeded` по сценам, и острова закажут по его решению
+    (`avatar_islands.apply_agent_coverage`). План и маркер шага ложатся на
+    диск — последующая сборка `assemble_hyperframes` агента повторно не
+    зовёт, она подхватит готовый `plan.json`.
+
+    Возвращает `{"board": план, "scenes": сцены с секундами}` — по вторым
+    считаются интервалы заказа. Фреймворка это не касается: заказ у HeyGen
+    идёт до композиции, HyperFrames видит уже готовые клипы.
+    """
+    rdir = Path(rdir).resolve()
+    (rdir / "public").mkdir(parents=True, exist_ok=True)
+    words = _normalize_words(alignment_words)
+    duration = quantize(float(timed_scenario.get("total") or 0.0))
+    phrases = phrase_timeline(timed_scenario, words,
+                              language=timed_scenario.get("language", "ru"))
+    try:
+        passports = catalog_overlay_passports()
+    except Exception as error:
+        print(f"паспорта накладок не собрались: {error}")
+        passports = ""
+    write_brief(rdir, scenario=timed_scenario, face=None, duration=duration,
+                clips=[], phrases=phrases, overlay_passports=passports,
+                avatar_ordered=False)
+    board = plan_with_agent(rdir, runner=agent_runner)
+    scenes = lay_out_scenes(board.get("scenes") or [], phrases,
+                            duration=duration)
+    _marker(rdir, "plan").write_text("ok", encoding="utf-8")
+    return {"board": board, "scenes": scenes}
+
+
 def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                          avatar_mp4s: list, master_audio, alignment_words: list,
                          avatar_render_plan: dict | None = None,

@@ -254,3 +254,19 @@ def test_лишняя_работа_запрещена_явно(tmp_path):
     assert "Чего не делать" in text
     assert "hyperframes check" in text
     assert "справочники по темам" in text
+
+
+def test_бриф_до_заказа_аватара_отдаёт_решение_агенту(tmp_path):
+    """Работа 9: дыры не навязаны, агент решает avatarNeeded, и по нему
+    закажут острова."""
+    from reels_factory.hf_brief import write_brief
+
+    path = write_brief(
+        tmp_path, scenario={"blocks": [{"role": "hook", "speech": "Привет"}]},
+        face=None, duration=41.5, clips=[], avatar_ordered=False,
+        phrases=[{"id": 0, "role": "hook", "start": 0.0, "end": 2.0,
+                  "text": "Привет"}])
+    text = path.read_text(encoding="utf-8")
+    assert "не заказан" in text and "avatarNeeded: true" in text
+    assert "дешевле" in text
+    assert "ведущей тут нет" not in text
