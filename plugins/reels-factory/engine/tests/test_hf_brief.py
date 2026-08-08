@@ -181,9 +181,12 @@ def test_поле_под_следующий_шаг_заложено(tmp_path):
     assert "avatarNeeded" in _text(tmp_path)
 
 
-def test_вставки_названы_обязательными(tmp_path):
+def test_запрос_вставки_объяснён_без_квоты(tmp_path):
+    """Квоты «не меньше N вставок» больше нет: она загоняла агента в бироллы
+    там, где они не нужны. Отрицательного правила взамен тоже нет — агент
+    руководствуется положительным смыслом (решение Васи 09.08.2026)."""
     text = _text(tmp_path)
-    assert "не меньше чем в трёх сценах" in text
+    assert "не меньше чем в трёх сценах" not in text
     assert "`query`" in text
     assert "ПО-АНГЛИЙСКИ" in text
     assert "brollContext" in text

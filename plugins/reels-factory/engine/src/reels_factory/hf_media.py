@@ -285,15 +285,17 @@ def scan_ocr_rows(tsv: str, frame_height: int) -> str | None:
 _PEXELS_KEY_FILE = Path.home() / ".reels-factory" / "pexels.key"
 
 #: Сколько кандидатов просить у стока на одно намерение.
-PEXELS_LIMIT = 10
+PEXELS_LIMIT = 15
 
 #: Без User-Agent Pexels отдаёт 403 — оплаченная грабля (замер Юли, README
 #: broll-zoom-toolkit, грабля 5).
 _UA = {"User-Agent": "reels-factory/0.2 (b-roll fetch)"}
 
-#: Сколько кандидатов на сцену показываем судье. Больше — дольше сессия,
-#: а решает он обычно между первыми тремя.
-JUDGE_CANDIDATES = 4
+#: Сколько кандидатов на сцену показываем судье. Нам нужны подходящие ролики,
+#: а не популярные: верхушка выдачи Pexels — это популярное, и узкий пул
+#: заставлял судью выбирать из него. Восемь превью на сцену — судья выбирает
+#: по смыслу, а не из того, что чаще качают.
+JUDGE_CANDIDATES = 8
 
 
 def _pexels_key() -> str | None:
