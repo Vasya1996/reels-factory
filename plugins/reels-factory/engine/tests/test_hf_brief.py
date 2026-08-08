@@ -184,7 +184,9 @@ def test_поле_под_следующий_шаг_заложено(tmp_path):
 def test_вставки_названы_обязательными(tmp_path):
     text = _text(tmp_path)
     assert "не меньше чем в трёх сценах" in text
-    assert "`look`" in text
+    assert "`query`" in text
+    assert "ПО-АНГЛИЙСКИ" in text
+    assert "brollContext" in text
 
 
 def test_субтитры_снимаются_с_агента(tmp_path):

@@ -242,3 +242,18 @@ def test_один_ролик_не_ставится_в_две_сцены(monkeypa
             pool=pool)
     assert found["s-01"]["file"].endswith("общий.mp4")
     assert found["s-02"]["file"].endswith("третий.mp4")
+
+
+def test_ролики_одной_серии_не_ставятся_в_разные_сцены(monkeypatch, tmp_path):
+    """Прогон 17: один блокнот в трёх сценах — три «разных» ролика одной
+    съёмочной серии Pexels (соседние номера)."""
+    twin_a = {**_vcand("pexels-36633828"), "series": 36633828}
+    twin_b = {**_vcand("pexels-36633851"), "series": 36633851}
+    other = {**_vcand("pexels-7010308"), "series": 7010308}
+    with _wire_video(monkeypatch, {"блокнот": [twin_a],
+                                   "рука пишет": [twin_b, other]}) as pool:
+        found = hf_media._resolve_videos(
+            tmp_path, [_vreq("s-01", "блокнот"), _vreq("s-02", "рука пишет")],
+            pool=pool)
+    assert found["s-01"]["file"].endswith("pexels-36633828.mp4")
+    assert found["s-02"]["file"].endswith("pexels-7010308.mp4")

@@ -305,28 +305,46 @@ def _pexels_key() -> str | None:
     return None
 
 
-def _best_file(video: dict) -> dict | None:
-    """Лучший файл ролика: вертикальный mp4, по высоте ближе к нашим 1920.
+#: Ролики одной съёмочной серии Pexels идут соседними номерами (один автор
+#: заливает дубли одной сцены пачкой). Ближе этого расстояния — считается
+#: той же серией: прогон 17 поставил один и тот же блокнот в три сцены
+#: тремя «разными» роликами 36633828/36633851.
+SERIES_DISTANCE = 100
+
+
+def _best_file(video: dict, *, portrait_only: bool = True) -> dict | None:
+    """Лучший файл ролика: mp4, по высоте ближе к нашим 1920.
 
     Pexels отдаёт один ролик несколькими перекодировками; берём не самую
     большую, а достаточную — 4K-файл тянется дольше, а кадр у нас 1080x1920.
+    Для вставки в половине кадра годится и горизонтальный HD: прямоугольник
+    1080x1076 он закрывает без растяжения.
     """
-    files = [f for f in video.get("video_files") or []
-             if (f.get("file_type") == "video/mp4"
-                 and (f.get("height") or 0) > (f.get("width") or 0)
-                 and (f.get("height") or 0) >= 1280)]
+    files = []
+    for f in video.get("video_files") or []:
+        if f.get("file_type") != "video/mp4":
+            continue
+        width, height = f.get("width") or 0, f.get("height") or 0
+        if portrait_only and height <= width:
+            continue
+        small = (height < 1280) if portrait_only else (min(width, height) < 1080)
+        if small:
+            continue
+        files.append(f)
     if not files:
         return None
     return min(files, key=lambda f: abs((f.get("height") or 0) - 1920))
 
 
 def search_pexels(intent: str, *, seconds: float = 0.0,
+                  portrait_only: bool = True,
                   limit: int = PEXELS_LIMIT) -> list[dict]:
     """Кандидаты Pexels, в их порядке релевантности.
 
-    Возвращает нормализованные словари: `id`, `duration`, `preview` (кадр),
-    `url` (mp4), `width`/`height` файла. Отсев по метаданным здесь же:
-    короче сцены и мельче кадра не показываем даже судье.
+    `intent` — прямой английский поисковый запрос из плана агента, уходит в
+    сток без изменений. Возвращает нормализованные словари: `id`, `duration`,
+    `preview` (кадр), `url` (mp4), `width`/`height` файла. Отсев по
+    метаданным здесь же: короче сцены и мельче кадра не показываем даже судье.
     """
     import urllib.parse
     import urllib.request
@@ -336,9 +354,12 @@ def search_pexels(intent: str, *, seconds: float = 0.0,
         print("нет ключа Pexels (PEXELS_API_KEY или ~/.reels-factory/"
               "pexels.key) — видео-бироллы не ищутся")
         return []
-    query = urllib.parse.urlencode({
-        "query": intent, "orientation": "portrait", "size": "medium",
-        "per_page": str(limit)})
+    fields = {"query": intent, "size": "medium", "per_page": str(limit)}
+    # Вертикаль сервером — только для полноэкранной вставки; в половину кадра
+    # ложится и горизонтальный HD, там фильтр ориентации лишь сузил бы выдачу.
+    if portrait_only:
+        fields["orientation"] = "portrait"
+    query = urllib.parse.urlencode(fields)
     request = urllib.request.Request(
         f"https://api.pexels.com/videos/search?{query}",
         headers={**_UA, "Authorization": key})
@@ -351,19 +372,27 @@ def search_pexels(intent: str, *, seconds: float = 0.0,
 
     found = []
     for video in payload.get("videos") or []:
-        best = _best_file(video)
+        best = _best_file(video, portrait_only=portrait_only)
         if best is None:
             continue
         if seconds and float(video.get("duration") or 0) < seconds:
             # короче сцены: движок заморозит последний кадр, это брак
             continue
         found.append({"id": f"pexels-{video['id']}",
+                      "series": int(video["id"]),
                       "duration": float(video.get("duration") or 0),
                       "preview": video.get("image"),
                       "url": best["link"],
                       "width": best.get("width"), "height": best.get("height"),
                       "is_transparent": False})
     return found
+
+
+def _same_series(candidate: dict, taken_series: set[int]) -> bool:
+    number = candidate.get("series")
+    if number is None:
+        return False
+    return any(abs(number - other) < SERIES_DISTANCE for other in taken_series)
 
 
 def _download(url: str, target: Path) -> Path | None:
@@ -391,6 +420,11 @@ _JUDGE_PROMPT = """Ты отбираешь видео-бироллы для ве
 реплика, живой и снятый камерой. Отклоняй: не про то, постановочные стоковые
 клише (рукопожатия, «бизнесмен вообще»), кадры с крупным читаемым текстом,
 мультяшное и нарисованное. Если не годится ни один — null.
+
+Не выбирай кандидата, чей кадр почти совпадает с уже выбранным для другой
+сцены — та же обстановка, тот же предмет, тот же ракурс: повтор картинки
+хуже отказа. Ролик смотрят подряд, и два одинаковых кадра зритель видит
+как один.
 
 {scenes}
 
@@ -493,10 +527,24 @@ def _resolve_videos(public: Path, requests: list[dict], *,
     закрывает ведущая (settle_inserts) — кринж хуже отсутствия.
     """
     resolved: dict[str, dict] = {}
-    found = dict(zip(
-        [r["key"] for r in requests],
-        pool.map(lambda r: search_pexels(
-            r["intent"], seconds=float(r.get("seconds") or 0)), requests)))
+
+    def hunt(request: dict) -> list[dict]:
+        # Вертикаль обязательна только там, где вставка закрывает кадр
+        # целиком; в половину кадра (сплит с ведущей) ложится и
+        # горизонтальный HD без растяжения.
+        rect = request.get("rect") or {}
+        portrait = float(rect.get("height") or 1920) > 1500
+        found = search_pexels(request["intent"],
+                              seconds=float(request.get("seconds") or 0),
+                              portrait_only=portrait)
+        if not found and domain:
+            # запасной запрос — тема ролика: хуже точного, лучше пустоты
+            found = search_pexels(domain,
+                                  seconds=float(request.get("seconds") or 0),
+                                  portrait_only=portrait)
+        return found
+
+    found = dict(zip([r["key"] for r in requests], pool.map(hunt, requests)))
 
     previews_dir = public / ".broll-previews"
     jobs = []
@@ -510,20 +558,39 @@ def _resolve_videos(public: Path, requests: list[dict], *,
         pool.map(lambda job: _download(
             job[2], previews_dir / f"{job[0]}-{job[1]}.jpg"), jobs)))
 
+    # Страховка от текста в кадре ДО судьи: OCR по превью снимает кандидата
+    # с крупной надписью («NEW YEAR NEW ME» прогона 17 судья пропустил).
+    for (key, index), path in list(paths.items()):
+        if path is None:
+            continue
+        problem = text_problem(path)
+        if problem:
+            print(f"кандидат {key}/{index} снят по превью: {problem}")
+            paths[(key, index)] = None
+            candidates = found.get(key) or []
+            if index < len(candidates):
+                candidates[index] = {**candidates[index], "vetoed": True}
+
     judged: dict[str, int | None] = {}
+    shown_maps: dict[str, list[int]] = {}
     with_previews = []
     for request in requests:
-        shown = [str(paths.get((request["key"], index)))
-                 for index in range(min(JUDGE_CANDIDATES,
-                                        len(found.get(request["key"]) or [])))
-                 if paths.get((request["key"], index))]
+        candidates = found.get(request["key"]) or []
+        shown, mapping = [], []
+        for index in range(min(JUDGE_CANDIDATES, len(candidates))):
+            path = paths.get((request["key"], index))
+            if path:
+                shown.append(str(path))
+                mapping.append(index)
         if shown:
+            shown_maps[request["key"]] = mapping
             with_previews.append({**request, "previews": shown})
     if with_previews:
         judged = judge_previews(with_previews, domain=domain, anti=anti,
                                 runner=judge_runner)
 
     taken: set[str] = set()
+    taken_series: set[int] = set()
     chosen: dict[str, dict] = {}
     for request in requests:
         candidates = found.get(request["key"]) or []
@@ -531,22 +598,36 @@ def _resolve_videos(public: Path, requests: list[dict], *,
             resolved[request["key"]] = {
                 "error": f"Pexels не дал кандидатов: «{request['intent']}»"}
             continue
-        verdict = judged.get(request["key"], "unjudged")
-        if verdict is None:
+        raw = judged.get(request["key"], "unjudged")
+        if raw is None:
             resolved[request["key"]] = {
                 "error": "судья забраковал всех кандидатов: "
                          f"«{request['intent']}»"}
             continue
         order = candidates
-        if isinstance(verdict, int) and 0 <= verdict < len(candidates):
-            order = [candidates[verdict]] + [c for i, c in enumerate(candidates)
-                                             if i != verdict]
-        pick = next((c for c in order if c["id"] not in taken), None)
+        # Номер судьи — это номер в списке ПОКАЗАННЫХ превью; в номера
+        # кандидатов его переводит карта (превью могло не скачаться или
+        # слететь по OCR, и списки расходятся).
+        mapping = shown_maps.get(request["key"]) or []
+        if isinstance(raw, int) and 0 <= raw < len(mapping):
+            best = mapping[raw]
+            order = [candidates[best]] + [c for i, c in enumerate(candidates)
+                                          if i != best]
+
+        def eligible(candidate: dict) -> bool:
+            return (candidate["id"] not in taken
+                    and not candidate.get("vetoed")
+                    and not _same_series(candidate, taken_series))
+
+        pick = next((c for c in order if eligible(c)), None)
         if pick is None:
             resolved[request["key"]] = {
-                "error": "все кандидаты уже заняты другими сценами"}
+                "error": "все кандидаты заняты, из одной серии с занятыми "
+                         "или сняты по превью"}
             continue
         taken.add(pick["id"])
+        if pick.get("series") is not None:
+            taken_series.add(pick["series"])
         chosen[request["key"]] = pick
 
     def freeze(item: tuple[str, dict]) -> tuple[str, dict]:

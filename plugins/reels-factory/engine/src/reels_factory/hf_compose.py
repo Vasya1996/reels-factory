@@ -140,7 +140,7 @@ def _js(value) -> str:
 def insert_of(scene: dict) -> dict | None:
     """Вставка сцены — либо словарь с намерением, либо ничего."""
     found = scene.get("insert")
-    return found if isinstance(found, dict) and found.get("look") else None
+    return found if isinstance(found, dict) and found.get("query") else None
 
 
 def media_key(scene_id: str) -> str:
@@ -176,7 +176,7 @@ def collect_intents(storyboard: dict) -> list[dict]:
         kind = str(insert.get("kind") or "video").lower()
         requests.append({"key": media_key(scene["id"]),
                          "type": MEDIA_TYPES.get(kind, "video"),
-                         "intent": str(insert["look"]).strip(),
+                         "intent": str(insert["query"]).strip(),
                          "rect": insert_rect(str(scene.get("presenter")
                                                  or "full")),
                          "required": scene.get("presenter") == "none",
@@ -513,10 +513,10 @@ def settle_inserts(board: dict, resolved: dict[str, dict],
         spare = borrow(index, scene)
         if spare is None:
             raise RuntimeError(
-                f'{scene["id"]}: вставка «{insert_of(scene)["look"]}» не '
-                f"подобралась ({start:g}–{end:g} с), и занять картинку не у "
-                "кого — во всём плане не нашлось ни одной пригодной. Опиши "
-                "вставки как настоящие фотографии сцен из жизни")
+                f'{scene["id"]}: вставка «{insert_of(scene)["query"]}» не '
+                f"подобралась ({start:g}–{end:g} с), и занять вставку не у "
+                "кого — во всём плане не нашлось ни одной пригодной. Пиши "
+                "query как действие с предметом по-английски")
         resolved[media_key(scene["id"])] = {"file": spare}
         good[scene["id"]] = spare
         borrowed.append(scene["id"])

@@ -79,9 +79,9 @@ def _schema_problems(storyboard: dict) -> list[str]:
         insert = scene.get("insert")
         if insert is not None and not isinstance(insert, dict):
             problems.append(f"{scene_id}: `insert` должен быть объектом или null")
-        elif isinstance(insert, dict) and not str(insert.get("look") or "").strip():
+        elif isinstance(insert, dict) and not str(insert.get("query") or "").strip():
             problems.append(
-                f"{scene_id}: у вставки нет поля `look` — по нему её и ищут")
+                f"{scene_id}: у вставки нет поля `query` — это английский запрос стокового видео, по нему её и ищут")
         beat = scene.get("beat")
         if beat is not None and beat not in BEATS:
             problems.append(f"{scene_id}: бит {beat!r} неизвестен, есть "
@@ -197,7 +197,7 @@ def check_placeholders(rdir) -> dict:
 
 def _has_insert(scene: dict) -> bool:
     insert = scene.get("insert")
-    return isinstance(insert, dict) and bool(str(insert.get("look") or "").strip())
+    return isinstance(insert, dict) and bool(str(insert.get("query") or "").strip())
 
 
 def check_frame_filled(storyboard: dict) -> dict:
@@ -304,8 +304,8 @@ def _sameness_problems(scenes: list[dict]) -> list[str]:
     for left, right in zip(ordered, ordered[1:]):
         same_presenter = (left.get("presenter") or "full") == (
             right.get("presenter") or "full")
-        left_look = ((left.get("insert") or {}).get("look") or "").strip()
-        right_look = ((right.get("insert") or {}).get("look") or "").strip()
+        left_look = ((left.get("insert") or {}).get("query") or "").strip()
+        right_look = ((right.get("insert") or {}).get("query") or "").strip()
         if same_presenter and left_look == right_look:
             problems.append(
                 f'{left.get("id", "?")} и {right.get("id", "?")} идут подряд с '

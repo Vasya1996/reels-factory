@@ -23,7 +23,7 @@ def _scene(index: int, start: float, end: float, **over):
 
 
 def _photo(look: str) -> dict:
-    return {"look": look, "kind": "photo"}
+    return {"query": look, "kind": "photo"}
 
 
 def _board(scenes, **over):

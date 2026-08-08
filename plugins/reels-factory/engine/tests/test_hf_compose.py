@@ -42,7 +42,7 @@ SCENES = [
      "presenter": "full", "insert": None},
     {"id": "s-02", "intent": "разбор", "startSec": 3.033, "endSec": 6.0,
      "presenter": "pip-br",
-     "insert": {"look": "переговоры в офисе", "kind": "photo"}},
+     "insert": {"query": "переговоры в офисе", "kind": "photo"}},
 ]
 
 FOUND = {"s-02": {"file": ".media/images/a.jpg"}}
@@ -113,7 +113,7 @@ def test_вставки_разложены_по_дорожкам_по_три(run
         scenes.append({"id": f"s-{index:02d}", "intent": "и",
                        "startSec": start, "endSec": round(start + 0.8, 3),
                        "presenter": "pip-br",
-                       "insert": {"look": f"вставка {index}", "kind": "photo"}})
+                       "insert": {"query": f"вставка {index}", "kind": "photo"}})
     html, _ = _build(run, scenes=scenes,
                      resolved={f"s-{i:02d}": {"file": ".media/images/a.jpg"}
                                for i in range(7)})
@@ -146,7 +146,7 @@ def test_выход_вставки_продлевает_её_под_входящ
     той же осью, что входит следующая."""
     scenes = json.loads(json.dumps(SCENES))
     scenes[0]["presenter"] = "pip-tl"
-    scenes[0]["insert"] = {"look": "первая", "kind": "photo"}
+    scenes[0]["insert"] = {"query": "первая", "kind": "photo"}
     resolved = {"s-01": {"file": ".media/images/one.jpg"},
                 "s-02": {"file": ".media/images/a.jpg"}}
     html, _ = _build(run, scenes=scenes, resolved=resolved)
@@ -311,11 +311,11 @@ def test_вставку_для_куска_без_ведущей_занимают
     плохо, чёрный экран — провал: занимаем ту, что не стоит рядом."""
     board = _board([
         {"id": "s-01", "intent": "и", "startSec": 0.0, "endSec": 2.0,
-         "presenter": "pip-br", "insert": {"look": "стол"}},
+         "presenter": "pip-br", "insert": {"query": "стол"}},
         {"id": "s-02", "intent": "и", "startSec": 2.0, "endSec": 4.0,
-         "presenter": "pip-tl", "insert": {"look": "окно"}},
+         "presenter": "pip-tl", "insert": {"query": "окно"}},
         {"id": "s-03", "intent": "и", "startSec": 4.0, "endSec": 6.0,
-         "presenter": "none", "insert": {"look": "не найдётся"}}])
+         "presenter": "none", "insert": {"query": "не найдётся"}}])
     short = [{"file": "clips/clip-00.mp4", "start": 0.0, "duration": 4.0}]
     resolved = {"s-01": {"file": "a.jpg"}, "s-02": {"file": "b.jpg"}}
     settle_inserts(board, resolved, short, 6.0)
@@ -329,9 +329,9 @@ def test_одна_картинка_на_две_сцены_не_ставится(
     брак монтажа, и их линтер зовёт его `duplicate_media_discovery_risk`."""
     board = _board([
         {"id": "s-01", "intent": "и", "startSec": 0.0, "endSec": 3.0,
-         "presenter": "pip-br", "insert": {"look": "стол"}},
+         "presenter": "pip-br", "insert": {"query": "стол"}},
         {"id": "s-02", "intent": "и", "startSec": 3.0, "endSec": 6.0,
-         "presenter": "pip-tl", "insert": {"look": "тот же стол другими словами"}}])
+         "presenter": "pip-tl", "insert": {"query": "тот же стол другими словами"}}])
     lost = settle_inserts(board, {"s-01": {"file": "a.jpg"},
                                   "s-02": {"file": "a.jpg"}}, CLIPS, 6.0)
     assert lost == ["s-02"]
@@ -341,7 +341,7 @@ def test_одна_картинка_на_две_сцены_не_ставится(
 def test_занять_не_у_кого_роняет_сборку():
     board = _board([{"id": "s-01", "intent": "и", "startSec": 0.0,
                      "endSec": 6.0, "presenter": "none",
-                     "insert": {"look": "нечто"}}])
+                     "insert": {"query": "нечто"}}])
     short = [{"file": "clips/clip-00.mp4", "start": 0.0, "duration": 2.0}]
     with pytest.raises(RuntimeError, match="занять\nкартинку не у кого|не у кого"):
         settle_inserts(board, {}, short, 6.0)
