@@ -294,12 +294,14 @@ def _check_findings(log: Path, *, severities=("error", "warning")) -> list[str]:
 def _check_verdict(log: Path) -> str:
     """Вердикт их `check` — по полю `ok` отчёта.
 
-    Код выхода не годится: `hyperframes check` версии 0.7.84 отдаёт ноль всегда.
-    Проверено дважды — на композиции с предупреждением и на заведомо битом
-    вызове («✗ Not a directory»): оба раза печатается «Check failed» и код
-    выхода 0. Поле `ok` считается по их же формуле
+    Код выхода у `check` есть: по построению это `report.ok ? 0 : 1`
+    (check.ts:144 → checkPipeline.ts:1228), а на аварии — единица
+    (check.ts:154). Судим всё равно по полю `ok`: это та же формула
     `errorCount === 0 && (!strict || warningCount === 0)`
-    (packages/cli/src/utils/checkPipeline.ts:1344).
+    (packages/cli/src/utils/checkPipeline.ts:1344) без слоёв npx и shell
+    между нами и процессом, и отчёт всё равно нужен — из него берутся
+    находки для агента. На 0.7.84 через npx код выхода дважды наблюдался
+    нулевым при «Check failed» — где он терялся, не выяснено.
     """
     if not log.exists():
         return "FAIL: их `check` не оставил отчёта"
@@ -492,11 +494,10 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             # место плотнее закрывает наша проба — она снимает живой DOM каждые
             # 0,25 с.
             #
-            # Судим по полю `ok` отчёта, а не по коду выхода: `check` его не
-            # отдаёт вовсе. Проверено на 0.7.84 — и на нашем проекте с
-            # предупреждением, и на заведомо битом вызове («Not a directory»)
-            # команда печатает «Check failed» и выходит с нулём. То есть гейт
-            # D0, написанный на коде выхода, не срабатывал ни разу.
+            # Судим по полю `ok` отчёта, а не по коду выхода — почему, сказано
+            # у _check_verdict. Ненулевой код здесь всё же возможен, и тогда
+            # _cli бросает RuntimeError: ветка except читает находки из того же
+            # отчёта, оба пути сходятся.
             try:
                 _cli("check", "public", "--json", "--strict",
                      "--at", ",".join(f"{time:g}" for time in

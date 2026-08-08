@@ -20,34 +20,27 @@ from pathlib import Path
 from reels_factory.hf_layout import (
     PRESENTER_POSITIONS, avatar_gaps, fills_frame, in_avatar_gap, quantize,
 )
-from reels_factory.hf_rhythm import MAX_SECONDS_PER_CHANGE, MAX_STATIC_SPAN
+from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 
 
 def min_scenes(duration: float) -> int:
-    """Наименьшее число сцен, при котором план вообще может взять планку.
+    """Пол числа сцен — только против дыр, не против ритма.
 
-    Верхней границы нет. Она приходила из формулы плотности
-    `talking-head-recut` (SKILL.md:206-229) — правила упаковки чужого клипа. На
-    маршруте `/general-video`, по которому мы теперь идём, такой формулы нет
-    вовсе: он велит «Match density to the requested format and message» и прямо
-    отказывается называть число — «not permission to invent claims, scenes, or a
-    fixed number of elements» (general-video/SKILL.md:128).
+    Ни верхней границы, ни «правильного» числа нет: их маршрут велит «Match
+    density to the requested format and message» и прямо запрещает число
+    назначать — «not permission to invent claims, scenes, or a fixed number of
+    elements» (general-video/SKILL.md:128). Плотность выбирает агент под смысл.
 
-    Пол выводится из НАШЕЙ планки приёмки, и после перехода на слои считать его
-    надо иначе. Раньше картинку меняла только карточка, и она давала две смены:
-    приход и уход. Теперь сцены выстилают ролик подряд, и смена — это граница
-    между соседними сценами, то есть их на одну меньше, чем сцен. Значит под
-    планку D18 (не реже раза в MAX_SECONDS_PER_CHANGE секунд) нужно на сцену
-    больше, чем смен.
+    Прежняя формула выводила пол из планки D18 (смена не реже раза в
+    MAX_SECONDS_PER_CHANGE) в предположении, что смену картинки даёт только
+    граница сцен. Это дало 21 сцену на 41,5 с — метроном по двум секундам,
+    ровно то, с чем боремся. Предположение неверно: смену дают и переход, и
+    смена положения ведущей, и наезд — D18 меряет их все по готовому файлу.
 
-    Прежний пол из D19 (кусок не длиннее MAX_STATIC_SPAN) остаётся: он слабее,
-    но меряет другое, и обе планки должны быть взяты. Берём большее из двух —
-    иначе план с шестью сценами доезжал бы до рендера и падал на D18 через
-    четыре минуты после того, как это стало известно.
+    Остаётся один пол — из D19: кусок без смены не длиннее MAX_STATIC_SPAN,
+    значит сцен не меньше, чем таких кусков помещается в ролик.
     """
-    from_static = math.ceil(float(duration) / MAX_STATIC_SPAN)
-    from_rate = int(float(duration) / MAX_SECONDS_PER_CHANGE) + 1
-    return max(1, from_static, from_rate)
+    return max(1, math.ceil(float(duration) / MAX_STATIC_SPAN))
 
 
 def _schema_problems(storyboard: dict) -> list[str]:
@@ -192,15 +185,14 @@ def check_storyboard(storyboard: dict, *, clips: list[dict] | None = None,
             if abs(value - quantize(value)) > 0.0005:
                 grid_bad.append(f"{scene_id}: {field}={value} вне сетки кадров")
 
-    # Плотность. Пол считается иначе, чем раньше, — см. min_scenes. Верхней
-    # границы нет: плотность выбирает агент под смысл.
+    # Плотность. Пол только против дыр (см. min_scenes), верхней границы нет:
+    # плотность выбирает агент под смысл.
     density_bad = []
     low = min_scenes(duration)
     if duration > 0 and len(scenes) < low:
         density_bad.append(
-            f"сцен {len(scenes)}, при {duration:g} с нужно хотя бы {low}: смену "
-            "картинки даёт граница между соседними сценами, и при меньшем числе "
-            f"планку D18 не взять")
+            f"сцен {len(scenes)}, при {duration:g} с нужно хотя бы {low}: иначе "
+            f"найдётся кусок длиннее {MAX_STATIC_SPAN:g} с без смены картинки")
 
     def gate(problems: list[str]) -> str:
         return "PASS" if not problems else "FAIL: " + "; ".join(problems)
