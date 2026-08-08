@@ -21,7 +21,7 @@ from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.hf_gates import min_scenes
 from reels_factory.hf_layout import avatar_gaps
 from reels_factory.hf_phrases import MIN_SCENE, faceless_phrases
-from reels_factory.hf_rhythm import MAX_SECONDS_PER_CHANGE, MAX_STATIC_SPAN
+from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 
 # Manrope и Unbounded — единственные гарнитуры проекта, реально несущие
 # кириллицу и (с донорским патчем в hf_fonts.py) казахские буквы в обоих
@@ -109,7 +109,6 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     else:
         gaps_block = "Ведущая в кадре весь ролик."
 
-    changes = int(duration / MAX_SECONDS_PER_CHANGE)
     low = min_scenes(duration)
 
     retry_block = (
@@ -234,13 +233,11 @@ Reels, Shorts, TikTok. `length` — {duration:g} с ровно. `narration: yes`
 
 ## Ритм
 
-Ролик сверяют с эталонными рилсами, разобранными покадрово. Считает готовый
-файл детектор сцен, поэтому важно не намерение, а видимое.
+Темп задают правила твоего же маршрута, чисел мы не назначаем.
 
-- За {duration:g} с нужно **не меньше {changes} заметных смен картинки**. Смену
-  даёт не только граница сцен: переход, смена положения ведущей и наезд тоже
-  считаются. Число сцен под это не подгоняй — плотность выбирай под смысл и
-  формат, метроном из двухсекундных сцен читается хуже, чем живой ритм.
+- Их правило жанра: в быстром вертикальном ролике **одна мысль живёт в кадре
+  1,5–4 секунды**. Сцены разной длины лучше метронома: короткие на
+  перечислениях, длинные на главной мысли. Число сцен выбирай под смысл.
 - Сцен не меньше {low} — иначе найдётся кусок длиннее {MAX_STATIC_SPAN:g} с
   без смены картинки.
 - **Соседние сцены обязаны отличаться картинкой.** Две подряд с одинаковым
