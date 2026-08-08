@@ -218,9 +218,18 @@ def test_секунд_у_агента_не_просят(tmp_path):
 
 
 def test_служебные_надписи_запрещены(tmp_path):
+    """Запреты собраны в negative list — их же приём из visual-design.md:89."""
     text = _text(tmp_path)
-    assert "Служебных надписей на экране не бывает" in text
+    assert "Чего в кадре не бывает" in text
     assert "фото из каталога" in text
+    assert "Стоковых клише" in text
+
+
+def test_биты_объяснены_и_кульминация_одна(tmp_path):
+    text = _text(tmp_path)
+    assert "`climax`" in text
+    assert "Ровно одна на ролик" in text
+    assert "сцена-передышка" in text
 
 
 def test_пол_сцен_дан_числом(tmp_path):

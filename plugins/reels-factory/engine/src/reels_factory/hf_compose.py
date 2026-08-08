@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -79,13 +80,38 @@ CAPTION_BOTTOM = 620
 #: встанет готовый шаблон проекта с объявленными `data-composition-variables`.
 TEMPLATE = Path(__file__).resolve().parents[2] / "templates" / "reel.html"
 
-#: Насколько вставка наезжает за свою сцену. Статичная фотография в кадре —
-#: это ровно то, чего в эталонных рилсах не бывает ни секунды
-#: («Неподвижной картинки не бывает», разбор трёх эталонов). Наезд идёт
-#: трансформой: твин по `left`/`top` их линтер заворачивает ошибкой
-#: `gsap_non_transform_motion` (packages/lint/src/rules/gsap.ts:1976).
-#: Это заглушка до работы 5 — там движение разбирается целиком.
-INSERT_DRIFT = 1.06
+# ------------------------------------------------------------ движение стыков
+#
+# Самодельный наезд scale 1 -> 1.06 выброшен: это ровно их «bad slow push» —
+# «A slow pan or push on elements in the later ~50% of a scene disrupts the
+# viewer's sightline… I'd rather have NO motion than BAD motion»
+# (product-launch-video/references/motion-language.md:111-118). Страница их
+# сайта (prompting/motion.md, правило «The camera is an actor») советует
+# обратное — постоянный push-in; идём за установленными скилами, их исполняет
+# агент. Вместо дрейфа — их же скоростные стыки: cut-the-curve, «вырезка на
+# пике скорости, направление и скорость совпадают по обе стороны»
+# (product-launch-video/references/cut-catalog.md:116-156).
+
+#: Путь и время направленного стыка. Числа их: 230 px за 0,3 с, выход
+#: `power4.in`, вход `power4.out` — зеркальные половины одной кривой; гашение
+#: выхода завершается на ~25–30 % пути (cut-catalog.md:133-149).
+CUT_TRAVEL = 230
+CUT_SECONDS = 0.3
+CUT_FADE = 0.18
+
+#: Биты сцены — их таблица «Narrative position»
+#: (hyperframes-animation/transitions/overview.md:66-75): у ролика один
+#: первичный переход, разный — только там, где меняется глава рассказа.
+BEATS = ("hook", "point", "turn", "climax", "outro")
+
+#: Блок вспышки на кульминации — их накладка из нашего каталога. Прозрачная
+#: страница 1920x1080, пик вспышки на 58 % собственной длительности
+#: (editorial-flash-overlay.html: `hit = duration * 0.58`).
+FLASH_BLOCK = "editorial-flash-overlay"
+FLASH_NATIVE = 4.0
+FLASH_HIT = 0.58
+TRACK_FX = 95
+TRACK_SFX = 98
 
 #: Растровые картинки. Слот может получить и mp4 (например через
 #: `media-use --from`), и тогда тег другой.
@@ -193,12 +219,92 @@ def _insert_tag(scene: dict, rect: dict, source: str, *, start: float,
             f"</div>")
 
 
-def _drift(scene_id: str, start: float, duration: float) -> list[str]:
-    """Медленный наезд вставки. `set` перед `to` — ради холодной перемотки."""
-    target = _js(f"#ins-{scene_id} .ins-media")
-    return [f'tl.set({target}, {{ scale: 1 }}, {start});',
-            f'tl.to({target}, {{ scale: {INSERT_DRIFT}, duration: '
-            f'{duration:.4f}, ease: "none" }}, {start});']
+def _beat(scene: dict) -> str:
+    """Бит сцены. Неназванный — обычная точка рассказа."""
+    value = str(scene.get("beat") or "point")
+    return value if value in BEATS else "point"
+
+
+def _axis(beat: str) -> tuple[str, int]:
+    """Ось стыка и знак направления движения.
+
+    Обычные стыки едут влево — одно направление на весь ролик, глаз ведёт
+    движение через границу (cut-the-curve: «Same path, same direction»).
+    Смена главы (`turn`) — вертикальный вариант: зритель видит, что рассказ
+    повернул.
+    """
+    return ("y", 1) if beat == "turn" else ("x", -1)
+
+
+def _entry(target: str, beat: str, at: float) -> list[str]:
+    """Вход вставки: продолжение движения через стык, а не появление из ничего.
+
+    `fromTo`, не `from`: их правило — начальное состояние явно, иначе холодная
+    перемотка рисует элемент до входа (transitions/overview.md:22).
+    """
+    if beat == "outro":
+        return [f'tl.fromTo({_js(target)}, {{ autoAlpha: 0, '
+                f'filter: "blur(20px)" }}, {{ autoAlpha: 1, '
+                f'filter: "blur(0px)", duration: 0.6, ease: "sine.inOut" }}, '
+                f'{at});']
+    axis, sign = _axis(beat)
+    return [f'tl.fromTo({_js(target)}, {{ {axis}: {-sign * CUT_TRAVEL}, '
+            f'autoAlpha: 0.35 }}, {{ {axis}: 0, autoAlpha: 1, '
+            f'duration: {CUT_SECONDS}, ease: "power4.out" }}, {at});']
+
+
+def _exit(target: str, next_beat: str, at: float) -> list[str]:
+    """Выход вставки под входящую: ось и направление задаёт следующая сцена.
+
+    Гашение короче пути (CUT_FADE < CUT_SECONDS): элемент исчезает, ещё
+    разгоняясь, — «the exit's opacity completes at ~25-30% of its travel»
+    (cut-catalog.md:145-149). Выход `power4.in` зеркален входу `power4.out`.
+    """
+    if next_beat == "outro":
+        return [f'tl.to({_js(target)}, {{ autoAlpha: 0, duration: 0.5, '
+                f'ease: "sine.inOut" }}, {at});']
+    axis, sign = _axis(next_beat)
+    return [
+        f'tl.to({_js(target)}, {{ {axis}: {sign * CUT_TRAVEL}, '
+        f'duration: {CUT_SECONDS}, ease: "power4.in" }}, {at});',
+        f'tl.to({_js(target)}, {{ autoAlpha: 0, duration: {CUT_FADE}, '
+        f'ease: "none" }}, {at});']
+
+
+_CDN_GSAP = re.compile(r'src="https://cdn\.jsdelivr\.net/npm/gsap[^"]*"')
+
+
+def _stage_overlay(public, block: str, scene_id: str) -> str:
+    """Копия накладки под сцену. Возвращает имя копии.
+
+    Копия, а не общий файл: ключ таймлайна сабкомпозиции один на
+    `data-composition-id`, два хоста с одним ключом затёрли бы друг друга.
+    GSAP переводится на локальный: внешние ссылки в композиции запрещены её же
+    контрактом, а файл уже лежит в `vendor/` (hf_assets.vendor_gsap).
+    """
+    source = Path(public) / "compositions" / f"{block}.html"
+    if not source.exists():
+        raise RuntimeError(
+            f"накладка {block} не установлена: нет {source}. Ставит её код "
+            "командой `hyperframes add` перед сборкой")
+    unique = f"{block}--{scene_id}"
+    html = source.read_text(encoding="utf-8")
+    html = html.replace(f'data-composition-id="{block}"',
+                        f'data-composition-id="{unique}"')
+    html = html.replace(f'__timelines["{block}"]', f'__timelines["{unique}"]')
+    html = _CDN_GSAP.sub('src="../vendor/gsap.min.js"', html)
+    target = source.with_name(f"{unique}.html")
+    target.write_text(html, encoding="utf-8")
+    return unique
+
+
+def needed_blocks(storyboard: dict) -> list[str]:
+    """Какие блоки каталога сборка поставит их же `hyperframes add`."""
+    for scene in storyboard.get("scenes") or []:
+        if (_beat(scene) == "climax"
+                and float(scene.get("startSec", 0)) >= FLASH_HIT * FLASH_NATIVE):
+            return [FLASH_BLOCK]
+    return []
 
 
 # ------------------------------------------------------------------ ведущая
@@ -422,7 +528,8 @@ def settle_inserts(board: dict, resolved: dict[str, dict],
 
 def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                       duration: float, words: list[dict],
-                      resolved: dict[str, dict] | None = None) -> Path:
+                      resolved: dict[str, dict] | None = None,
+                      sfx_whoosh: str | None = None) -> Path:
     """Собрать `public/index.html`. Возвращает путь к нему."""
     rdir = Path(rdir)
     public = rdir / "public"
@@ -437,12 +544,20 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # ── вставки ───────────────────────────────────────────────────────────
     # Ниже ведущей по CSS и раньше её в разметке: порядок отрисовки задаёт
     # `z-index` из шаблона, а порядок в DOM повторяет его на случай, если
-    # z-index кто-то перебьёт.
+    # z-index кто-то перебьёт. Внутри слоя входящая вставка ложится поверх
+    # уходящей тем же порядком DOM — стык читается как «push».
+    files = {scene["id"]: (resolved.get(media_key(scene["id"])) or {}).get("file")
+             for scene in scenes if insert_of(scene)}
+    # Дорожки вставок — ротацией: соседние вставки обязаны лежать на разных
+    # дорожках (они пересекаются на время стыка), а больше трёх на одной их
+    # линтер зовёт `timeline_track_too_dense`. Ротация по ceil(n/3) дорожек
+    # закрывает оба требования разом.
+    insert_count = sum(1 for scene in scenes if files.get(scene["id"]))
+    insert_tracks = max(2, -(-insert_count // INSERTS_PER_TRACK))
     staged = 0
-    for scene in scenes:
-        insert = insert_of(scene)
-        found = resolved.get(media_key(scene["id"])) or {}
-        if not insert or not found.get("file"):
+    for position, scene in enumerate(scenes):
+        file = files.get(scene["id"])
+        if not file:
             continue
         rect = insert_rect(str(scene.get("presenter") or "full"))
         if rect is None:
@@ -452,17 +567,63 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 "вставку, либо отправь ведущую в угол (`pip-*`), в половину "
                 "кадра (`stack`, `split`) или убери её из сцены (`none`)")
         start = _q(scene["startSec"])
-        length = _q(scene["endSec"]) - start
+        end = _q(scene["endSec"])
+        image = file.lower().split("?")[0].endswith(_IMAGE_SUFFIXES)
+        follower = scenes[position + 1] if position + 1 < len(scenes) else None
+        next_file = files.get(follower["id"]) if follower else None
+        # Уходящая вставка живёт на CUT_SECONDS дольше своей сцены: их правило
+        # — «outgoing scene content must be fully visible when the transition
+        # starts» (transitions/overview.md:23), стык делает движение, а не
+        # гашение. Пересечение легально: соседние вставки лежат на разных
+        # дорожках (разноска ниже), пересечение запрещено только на одной.
+        # Видео не продлеваем: за концом файла кадр замирает.
+        overlap = CUT_SECONDS if (image and next_file) else 0.0
         body.append(_insert_tag(
-            scene, rect, found["file"], start=start, duration=length,
-            track=TRACK_INSERT + staged // INSERTS_PER_TRACK))
-        # Наезд только у неподвижной вставки: видео и так движется, а гнать
-        # трансформу по `<video>` их дока не советует —
-        # «can cause Chrome to stop rendering video frames»
-        # (docs/reference/html-schema.mdx:94-96).
-        if found["file"].lower().split("?")[0].endswith(_IMAGE_SUFFIXES):
-            timeline += _drift(scene["id"], start, length)
+            scene, rect, file, start=start, duration=end - start + overlap,
+            track=TRACK_INSERT + staged % insert_tracks))
+        target = (f'#ins-{scene["id"]} .ins-media' if image
+                  else f'#ins-{scene["id"]}-box')
+        timeline += _entry(target, _beat(scene), start)
+        if overlap:
+            timeline += _exit(target, _beat(follower), end)
         staged += 1
+
+    # ── вспышка на кульминации ────────────────────────────────────────────
+    # Их накладка целиком: прозрачная сабкомпозиция 1920x1080, вписанная в
+    # вертикальный кадр обёрткой с transform — их загрузчик жёстко ставит
+    # хосту пиксели канваса блока (compositionLoader.ts:517-524), поэтому
+    # масштаб может нести только обёртка вокруг клипа.
+    for scene in scenes:
+        if _beat(scene) != "climax":
+            continue
+        hit = _q(scene["startSec"])
+        flash_start = round(hit - FLASH_HIT * FLASH_NATIVE, 4)
+        flash_length = min(FLASH_NATIVE, duration - flash_start)
+        if flash_start < 0 or flash_length < FLASH_HIT * FLASH_NATIVE + 0.2:
+            continue
+        unique = _stage_overlay(public, FLASH_BLOCK, scene["id"])
+        scale = OUT_H / 1080.0
+        left = -round((1920 * scale - OUT_W) / 2)
+        # Растянутый канвас блока шире кадра: обёртка режет его по краю, а
+        # допуск переполнения снимает находку canvas_overflow их аудита.
+        body.append(
+            f'    <div class="fx"><div data-layout-allow-overflow="true"'
+            f' style="position:absolute;'
+            f'left:{left}px;top:0;transform:scale({scale:.4f});'
+            f'transform-origin:0 0">'
+            f'<div class="clip" data-layout-allow-overflow="true"'
+            f' data-composition-id="{unique}"'
+            f' data-composition-src="compositions/{unique}.html"'
+            f' data-start="{flash_start:.4f}"'
+            f' data-duration="{flash_length:.4f}"'
+            f' data-track-index="{TRACK_FX}"'
+            f' data-width="1920" data-height="1080"></div></div></div>')
+        if sfx_whoosh:
+            body.append(
+                f'    <audio id="sfx-{scene["id"]}" src="{sfx_whoosh}"'
+                f' data-start="{max(0.0, hit - 0.15):.4f}"'
+                f' data-duration="0.6" data-track-index="{TRACK_SFX}"'
+                f' data-volume="0.5"></audio>')
 
     # ── ведущая ───────────────────────────────────────────────────────────
     # `class="clip"` на `<video>` их линтер не требует — теги `video`/`audio` он

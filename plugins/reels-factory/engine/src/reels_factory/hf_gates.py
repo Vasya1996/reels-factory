@@ -17,6 +17,7 @@ import math
 import re
 from pathlib import Path
 
+from reels_factory.hf_compose import BEATS
 from reels_factory.hf_layout import (
     PRESENTER_POSITIONS, avatar_gaps, fills_frame, in_avatar_gap, quantize,
 )
@@ -81,6 +82,10 @@ def _schema_problems(storyboard: dict) -> list[str]:
         elif isinstance(insert, dict) and not str(insert.get("look") or "").strip():
             problems.append(
                 f"{scene_id}: у вставки нет поля `look` — по нему её и ищут")
+        beat = scene.get("beat")
+        if beat is not None and beat not in BEATS:
+            problems.append(f"{scene_id}: бит {beat!r} неизвестен, есть "
+                            f"{', '.join(BEATS)}")
         # Поля прошлого контракта: мы просили их сверх схемы, и они противоречат
         # videoTrack.bounds — соблюсти оба разом нельзя, значит остаётся их.
         for ours in ("contentRect", "videoRect", "zone"):
@@ -138,6 +143,49 @@ def check_media(rdir) -> dict:
             f"вектор не считается — нужен файл {', '.join(IMAGE_SUFFIXES)} "
             "из каталога")
     return {"D16_media_use": "PASS" if not problems
+            else "FAIL: " + "; ".join(problems)}
+
+
+_MARKUP_NOISE = re.compile(r"<(script|style)\b.*?</\1>", re.S | re.I)
+_TEXT_FRAG = re.compile(r">([^<>]+)<")
+_HAS_LETTER = re.compile(r"[^\W\d_]", re.UNICODE)
+
+
+def _text_marks(html: str) -> set[str]:
+    """Видимые текстовые куски разметки. Цифры и значки («01», «✓») не в счёт —
+    это оформление сцены, а не заглушка."""
+    clean = _MARKUP_NOISE.sub("", html)
+    found = set()
+    for fragment in _TEXT_FRAG.findall(clean):
+        text = " ".join(fragment.split())
+        if text and _HAS_LETTER.search(text):
+            found.add(text)
+    return found
+
+
+def check_placeholders(rdir) -> dict:
+    """Заглушка блока не едет в кадр.
+
+    Их линтер такого не ловит вовсе: среди его кодов нет ни одного про
+    незаполненные плейсхолдеры. Правило дешёвое: заглушка — это текст, дословно
+    совпадающий с текстом того же блока в исходном файле. Совпал — слот либо
+    не заполнили, либо не убрали. Судим копии `<блок>--<сцена>.html` против
+    их источников.
+    """
+    compositions = Path(rdir) / "public" / "compositions"
+    problems = []
+    for copy in sorted(compositions.glob("*--*.html")
+                       if compositions.exists() else []):
+        block = copy.name.split("--")[0]
+        source = compositions / f"{block}.html"
+        if not source.exists():
+            continue
+        left = (_text_marks(copy.read_text(encoding="utf-8"))
+                & _text_marks(source.read_text(encoding="utf-8")))
+        if left:
+            problems.append(f'{copy.name}: в кадр едет заглушка: '
+                            + "; ".join(f"«{text}»" for text in sorted(left)[:3]))
+    return {"D22_placeholders": "PASS" if not problems
             else "FAIL: " + "; ".join(problems)}
 
 

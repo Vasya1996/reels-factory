@@ -2,7 +2,8 @@
 import pytest
 
 from reels_factory.hf_gates import (
-    check_frame_filled, check_media, check_storyboard, min_scenes,
+    check_frame_filled, check_media, check_placeholders, check_storyboard,
+    min_scenes,
 )
 from reels_factory.hf_layout import quantize
 
@@ -266,3 +267,43 @@ def test_ссылка_на_несуществующий_файл_не_счита
 def test_внешняя_ссылка_вставкой_не_считается(tmp_path):
     project = _project(tmp_path, '<img src="https://example.com/a.jpg">', image=False)
     assert check_media(project)["D16_media_use"].startswith("FAIL")
+
+
+# ---------- заглушки блоков ----------
+
+def _block_pair(tmp_path, copy_html):
+    compositions = tmp_path / "public" / "compositions"
+    compositions.mkdir(parents=True)
+    (compositions / "lt-clean-bar.html").write_text(
+        '<div><span class="lt-name">Jordan Avery</span>'
+        '<span class="lt-role">Host</span><span class="n">01</span></div>'
+        "<style>.x{color:red}</style><script>var t = 1;</script>",
+        encoding="utf-8")
+    (compositions / "lt-clean-bar--s-02.html").write_text(
+        copy_html, encoding="utf-8")
+    return tmp_path
+
+
+def test_заглушка_в_копии_блока_валится(tmp_path):
+    """Их линтер незаполненных плейсхолдеров не ловит вовсе — среди его кодов
+    нет ни одного про заглушки. Заглушка — текст, дословно совпадающий с
+    исходником блока."""
+    run = _block_pair(
+        tmp_path,
+        '<div><span class="lt-name">Jordan Avery</span>'
+        '<span class="lt-role">Ведущая</span><span class="n">01</span></div>')
+    verdict = check_placeholders(run)["D22_placeholders"]
+    assert verdict.startswith("FAIL") and "Jordan Avery" in verdict
+
+
+def test_заполненная_копия_блока_проходит(tmp_path):
+    """Цифры и значки — оформление сцены, совпадение по ним не заглушка."""
+    run = _block_pair(
+        tmp_path,
+        '<div><span class="lt-name">Вася Андронов</span>'
+        '<span class="lt-role">Ведущая</span><span class="n">01</span></div>')
+    assert check_placeholders(run)["D22_placeholders"] == "PASS"
+
+
+def test_прогон_без_блоков_проходит_гейт_заглушек(tmp_path):
+    assert check_placeholders(tmp_path)["D22_placeholders"] == "PASS"

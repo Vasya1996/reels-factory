@@ -281,23 +281,57 @@ def _plain_classes(nodes: list[Node], slots: list[Slot],
     return " ".join(kept) if kept else None
 
 
+def _element_html(nodes: list[Node], index: int) -> str:
+    """Пересобрать элемент разметкой по разбору: тег, классы, атрибуты.
+
+    Их SDK отдаёт разбор, а не исходную разметку. Текст потомков не
+    восстанавливается намеренно: этим сериализуются только пустые украшения.
+    """
+    node = nodes[index]
+    attrs = "".join(f' {k}="{v}"' for k, v in node.attrs.items()
+                    if not k.startswith("data-hf"))
+    classes = f' class="{" ".join(node.classes)}"' if node.classes else ""
+    inner = "".join(_element_html(nodes, child) for child in node.children)
+    return f"<{node.tag}{classes}{attrs}>{inner}</{node.tag}>"
+
+
 def _decoration(nodes: list[Node], index: int) -> str:
     """Пустые украшения токена — полоска подсветки `<i>` и ей подобные.
 
-    Их SDK отдаёт разбор, а не исходную разметку, поэтому украшение
-    пересобирается по разбору: тег, классы, атрибуты. Текста в нём нет по
-    построению — это фон под словом, нарисованный стилем блока
-    (`.gNN-hl i{position:absolute;inset:0;background:…}`).
+    Текста в них нет по построению — это фон под словом, нарисованный стилем
+    блока (`.gNN-hl i{position:absolute;inset:0;background:…}`).
     """
-    pieces = []
-    for child in nodes[index].children:
-        node = nodes[child]
-        attrs = "".join(f' {k}="{v}"' for k, v in node.attrs.items()
-                        if not k.startswith("data-hf"))
-        classes = f' class="{" ".join(node.classes)}"' if node.classes else ""
-        pieces.append(f"<{node.tag}{classes}{attrs}>"
-                      f"{_decoration(nodes, child)}</{node.tag}>")
-    return "".join(pieces)
+    return "".join(_element_html(nodes, child)
+                   for child in nodes[index].children)
+
+
+def _subtree_text(nodes: list[Node], index: int) -> bool:
+    """Есть ли в поддереве хоть один собственный текст."""
+    node = nodes[index]
+    if node.text and node.text.strip():
+        return True
+    return any(_subtree_text(nodes, child) for child in node.children)
+
+
+def _text_ops(nodes: list[Node], slot: Slot, value: str) -> list[dict]:
+    """Положить строку в текстовый слот, не задев украшений.
+
+    Их `setText` при РОВНО ОДНОМ дочернем элементе пишет текст внутрь него
+    (`resolveSingleChildTextTarget`, packages/sdk/src/engine/model.ts:338-343).
+    На прогоне 13 так слова легли внутрь пустой полоски зачёркивания высотой
+    8 пикселей, а заглушка «первая формулировка» осталась в кадре. Ветка с
+    несколькими детьми у них правильная — меняет только собственные текстовые
+    узлы. Поэтому единственное пустое украшение на время правки снимается и
+    возвращается следом; если в единственном ребёнке есть текст, он сам
+    отдельный слот, и трогать его нельзя — тогда остаётся их поведение.
+    """
+    node = nodes[slot.index]
+    if len(node.children) != 1 or _subtree_text(nodes, node.children[0]):
+        return [set_text(node.hfid, value)]
+    child = nodes[node.children[0]]
+    return [remove_element(child.hfid),
+            set_text(node.hfid, value),
+            add_element(node.hfid, 0, _element_html(nodes, node.children[0]))]
 
 
 def _word_ops(nodes: list[Node], slots: list[Slot], slot: Slot,
@@ -358,6 +392,12 @@ def _media_tag(node: Node, source: str, *, start: float = 0.0,
              'style="object-fit:cover;border-style:solid"']
     if source.lower().split("?")[0].endswith(_IMAGE_SUFFIXES):
         return f"<img {' '.join(attrs)} alt=\"\">"
+    # `class="clip"` на видео обязателен: без него клип в кадре не появляется
+    # вовсе — окно на месте, внутри пусто. Их `check` говорил это шесть раз на
+    # прогоне 13 пометкой «к сведению», и мы прошли мимо; их же
+    # `data-attributes.md:23` советует класс на `<video>` не ставить — это
+    # проверенная кадрами ошибка их доки.
+    attrs[1] = f'class="{" ".join([*node.classes, "clip"])}"'
     attrs += [f'data-start="{start:.4f}"', f'data-duration="{duration:.4f}"']
     if media_start:
         attrs.append(f'data-media-start="{media_start:.4f}"')
@@ -456,5 +496,5 @@ def fill_ops(nodes: list[Node], *, text: dict[str, str] | None = None,
         if slot.kind == "words":
             ops += _word_ops(nodes, slots, slot, value)
         else:
-            ops.append(set_text(node.hfid, value))
+            ops += _text_ops(nodes, slot, value)
     return ops

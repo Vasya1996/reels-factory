@@ -24,10 +24,12 @@ from reels_factory.hf_brief import write_brief
 from reels_factory.hf_catalog import serve_catalog, write_project_config
 from reels_factory.hf_compose import (
     build_composition, clear_generated, collect_intents, complete_storyboard,
-    settle_inserts,
+    needed_blocks, settle_inserts,
 )
 from reels_factory.hf_fonts import inject_fonts
-from reels_factory.hf_gates import check_media, check_storyboard
+from reels_factory.hf_gates import (
+    check_media, check_placeholders, check_storyboard,
+)
 from reels_factory.hf_layout import quantize
 from reels_factory.hf_media import resolve_all
 from reels_factory.hf_phrases import lay_out_scenes, phrase_timeline
@@ -436,6 +438,21 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
 
             def compose() -> dict:
                 clear_generated(public)
+                # Накладки ставит их же `add` из нашего каталога — сервер
+                # реестра поднят на всё время сборки.
+                for block in needed_blocks(board):
+                    if not (public / "compositions" / f"{block}.html").exists():
+                        _cli("add", block, "--no-clipboard", cwd=rdir,
+                             log=rdir / "add.log")
+                # Свуш на кульминации — их встроенная библиотека SFX
+                # (media-use, 19 файлов, работает без сети). Без свуша стык
+                # живёт: не падать из-за звука.
+                whoosh = None
+                if needed_blocks(board):
+                    found_sfx = resolve_all(public, [
+                        {"key": "sfx-whoosh", "type": "sfx",
+                         "intent": "whoosh short"}])
+                    whoosh = (found_sfx.get("sfx-whoosh") or {}).get("file")
                 with sdk_session() as sdk:
                     found = resolve_all(public, collect_intents(board))
                     lost = settle_inserts(board, found, saved_clips, duration,
@@ -445,7 +462,8 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                               "ведущая там встала во весь кадр")
                     build_composition(rdir, sdk, storyboard=board,
                                       clips=saved_clips, duration=duration,
-                                      words=words, resolved=found)
+                                      words=words, resolved=found,
+                                      sfx_whoosh=whoosh)
                 # Шрифты врезаем до проверок: и наши гейты, и их `check` меряют
                 # переполнение и перекрытие по отрисованному тексту, а без наших
                 # @font-face кириллица считалась бы по подменному шрифту.
@@ -466,6 +484,7 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                 (rdir / "storyboard.json").read_text(encoding="utf-8"))
             result = check_storyboard(board, clips=saved_clips, duration=duration)
             result.update(check_media(rdir))
+            result.update(check_placeholders(rdir))
             # Композиция, которая не открывается, — это тоже провал сборки, а не
             # авария движка: агенту есть что чинить, и он получит причину.
             try:

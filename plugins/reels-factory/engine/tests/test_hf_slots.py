@@ -161,6 +161,32 @@ def test_неизвестное_имя_слота_это_ошибка(block):
         fill(text={"его-нет": "текст"})
 
 
+def test_текст_не_попадает_в_пустое_украшение(block):
+    """Их setText при единственном дочернем элементе пишет текст внутрь него
+    (resolveSingleChildTextTarget, packages/sdk/src/engine/model.ts:338-343):
+    на прогоне 13 слова легли внутрь полоски зачёркивания, а заглушка
+    «первая формулировка» осталась в кадре."""
+    _, fill = block
+    html = BLOCK.replace(
+        '<div class="g99-foot">рукописная ремарка</div>',
+        '<div class="g99-old"><span class="g99-repl">первая формулировка'
+        '<span class="g99-strike"></span></span></div>')
+    out = fill(html, text={"line-1": "А", "repl": "новые слова"})
+    assert "первая формулировка" not in out
+    # слова легли в сам слот, а не в полоску; полоска пережила правку пустой
+    assert re.search(r'class="g99-repl"[^>]*>новые слова', out)
+    assert re.search(r'<span[^>]*class="g99-strike"[^>]*></span>', out)
+
+
+def test_видео_в_слоте_несёт_класс_clip(block):
+    """Без него клип в кадре не появляется вовсе: их `check` сказал это шесть
+    раз на прогоне 13 пометкой «к сведению», и мы прошли мимо."""
+    _, fill = block
+    out = fill(media={"art": {"file": "clips/clip-01.mp4", "duration": 3.0}})
+    found = re.search(r'<video [^>]*class="([^"]*)"', out)
+    assert found and "clip" in found.group(1).split()
+
+
 def test_анимация_исчезнувшего_элемента_уходит_из_таймлайна(block):
     """Строка на удалённый селектор пишет «GSAP target not found» покадрово."""
     _, fill = block

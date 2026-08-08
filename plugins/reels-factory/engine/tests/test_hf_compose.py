@@ -123,11 +123,64 @@ def test_вставки_разложены_по_дорожкам_по_три(run
     assert {"3", "4", "5"} <= used
 
 
-def test_вставка_медленно_наезжает(run):
-    """Неподвижной картинки в эталонных рилсах не бывает ни секунды."""
+def test_вставка_входит_скоростным_стыком(run):
+    """Самодельный наезд выброшен — это их «bad slow push». Вход вставки —
+    их cut-the-curve: fromTo с явным началом, путь 230 px, `power4.out`."""
     html, _ = _build(run)
-    assert 'tl.set("#ins-s-02 .ins-media", { scale: 1 }' in html
-    assert 'tl.to("#ins-s-02 .ins-media"' in html
+    assert "scale: 1.06" not in html
+    assert ('tl.fromTo("#ins-s-02 .ins-media", { x: 230, autoAlpha: 0.35 }'
+            in html)
+    assert '"power4.out"' in html
+
+
+def test_смена_главы_едет_вертикально(run):
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["beat"] = "turn"
+    html, _ = _build(run, scenes=scenes)
+    assert 'tl.fromTo("#ins-s-02 .ins-media", { y: -230' in html
+
+
+def test_выход_вставки_продлевает_её_под_входящую(run):
+    """«Outgoing scene content must be fully visible when the transition
+    starts» — уходящая картинка живёт дольше сцены на время стыка и уезжает
+    той же осью, что входит следующая."""
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[0]["presenter"] = "pip-tl"
+    scenes[0]["insert"] = {"look": "первая", "kind": "photo"}
+    resolved = {"s-01": {"file": ".media/images/one.jpg"},
+                "s-02": {"file": ".media/images/a.jpg"}}
+    html, _ = _build(run, scenes=scenes, resolved=resolved)
+    # сцена s-01 идёт 0–3.033, вставка продлена на 0.3 стыка
+    assert 'data-start="0.0000" data-duration="3.3330"' in html
+    assert 'tl.to("#ins-s-01 .ins-media", { x: -230' in html
+    # соседние вставки на разных дорожках — пересечение легально
+    assert 'data-track-index="3"' in html and 'data-track-index="4"' in html
+
+
+def test_кульминация_ставит_вспышку_из_их_каталога(run, monkeypatch):
+    """Их накладка сабкомпозицией: копия под сцену, канвас 1920x1080 вписан
+    обёрткой с transform, пик вспышки приходит на стык."""
+    (run / "public" / "compositions").mkdir(parents=True)
+    (run / "public" / "compositions" / "editorial-flash-overlay.html").write_text(
+        '<div data-composition-id="editorial-flash-overlay" data-duration="4">'
+        "</div><script>window.__timelines = {};</script>",
+        encoding="utf-8")
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["beat"] = "climax"
+    html, _ = _build(run, scenes=scenes)
+    unique = "editorial-flash-overlay--s-02"
+    assert f'data-composition-src="compositions/{unique}.html"' in html
+    # стык на 3.033, пик на 58% из 4 с: старт 3.033 - 2.32 = 0.713
+    assert 'data-start="0.7130"' in html
+    assert (run / "public" / "compositions" / f"{unique}.html").exists()
+
+
+def test_ранняя_кульминация_обходится_без_вспышки(run):
+    """Пику вспышки нужно 2,32 с разбега — раньше него вспышку не поставить."""
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[0]["beat"] = "climax"
+    html, _ = _build(run, scenes=scenes)
+    assert "editorial-flash-overlay" not in html
 
 
 # ---------- ведущая ----------
