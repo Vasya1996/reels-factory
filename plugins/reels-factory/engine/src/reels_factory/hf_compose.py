@@ -690,6 +690,12 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # ── иконки фоновых сцен ──────────────────────────────────────────────
     # Прозрачный значок из их подбора, живёт по их правилам движения: мягкий
     # вход power3 и медленный дрейф — статичные декоративы «мертвы».
+    #
+    # НЕ клип и без data-атрибутов — их же PiP-рецепт «wrapper без data»,
+    # видимостью правит наш таймлайн. Иконка, поставленная timed-клипом,
+    # роняла в их рендерере слой субтитров целиком: превью и снапшот живы,
+    # рендер — без титров и скрима (прогон 21, найдено бинарным поиском;
+    # без иконок тот же рендер рисует всё).
     for scene in scenes:
         found_icon = resolved.get(f'{scene["id"]}::icon') or {}
         if not found_icon.get("file"):
@@ -697,18 +703,20 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         start = _q(scene["startSec"])
         end = _q(scene["endSec"])
         body.append(
-            f'    <div id="icon-{scene["id"]}" class="icon-spot clip"'
-            f' data-start="{start:.4f}" data-duration="{end - start:.4f}"'
-            f' data-track-index="{TRACK_ICON}">'
+            f'    <div id="icon-{scene["id"]}" class="icon-spot">'
             f'<img src="{found_icon["file"]}" alt=""></div>')
+        spot = _js(f'#icon-{scene["id"]}')
         target = _js(f'#icon-{scene["id"]} img')
         cycles = int((end - start) / 4.8) + 1
         timeline += [
+            f'tl.set({spot}, {{ autoAlpha: 0 }}, 0);',
+            f'tl.set({spot}, {{ autoAlpha: 1 }}, {start});',
             f'tl.fromTo({target}, {{ autoAlpha: 0, scale: 0.7, y: 24 }}, '
             f'{{ autoAlpha: 1, scale: 1, y: 0, duration: 0.5, '
             f'ease: "power3.out" }}, {start});',
             f'tl.to({target}, {{ y: -14, duration: 2.4, ease: "sine.inOut", '
-            f'repeat: {cycles}, yoyo: true }}, {start + 0.5});']
+            f'repeat: {cycles}, yoyo: true }}, {start + 0.5});',
+            f'tl.set({spot}, {{ autoAlpha: 0 }}, {end});']
 
     # ── вспышка на кульминации ────────────────────────────────────────────
     # Их накладка целиком: прозрачная сабкомпозиция 1920x1080, вписанная в

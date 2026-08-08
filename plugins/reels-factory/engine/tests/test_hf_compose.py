@@ -417,14 +417,22 @@ def test_накладке_у_края_ролика_не_хватает_врем�
 
 
 def test_иконка_фоновой_сцены_с_дыханием(run):
+    """Иконка — НЕ клип: timed-иконка роняла в их рендерере слой субтитров
+    целиком (прогон 21, бинарный поиск). Видимостью правит наш таймлайн —
+    их же PiP-рецепт «wrapper без data-атрибутов»."""
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["presenter"] = "none"
     scenes[1]["insert"] = None
     scenes[1]["icon"] = {"query": "bookmark save icon"}
     resolved = {"s-02::icon": {"file": ".media/images/icon_001.png"}}
     html, _ = _build(run, scenes=scenes, resolved=resolved)
-    assert 'id="icon-s-02" class="icon-spot clip"' in html
+    assert 'id="icon-s-02" class="icon-spot">' in html
+    assert "icon-spot clip" not in html
+    icon_div = html[html.index('id="icon-s-02"'):html.index("</div>",
+                               html.index('id="icon-s-02"'))]
+    assert "data-start" not in icon_div and "data-track-index" not in icon_div
     assert 'src=".media/images/icon_001.png"' in html
+    assert 'tl.set("#icon-s-02", { autoAlpha: 0 }, 0);' in html
     assert 'tl.fromTo("#icon-s-02 img"' in html
     assert "yoyo: true" in html
 
