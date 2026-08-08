@@ -49,6 +49,7 @@ from pathlib import Path
 
 from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.hf_captions import caption_snippet, write_caption_data
+from reels_factory.hf_frame import DEFAULTS as FRAME_DEFAULTS
 from reels_factory.hf_layout import (
     VIDEO_RECTS, avatar_gaps, in_avatar_gap, insert_rect, quantize,
 )
@@ -530,7 +531,8 @@ def settle_inserts(board: dict, resolved: dict[str, dict],
 def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                       duration: float, words: list[dict],
                       resolved: dict[str, dict] | None = None,
-                      sfx_whoosh: str | None = None) -> Path:
+                      sfx_whoosh: str | None = None,
+                      theme: dict | None = None) -> Path:
     """Собрать `public/index.html`. Возвращает путь к нему."""
     rdir = Path(rdir)
     public = rdir / "public"
@@ -538,9 +540,21 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                     key=lambda scene: float(scene["startSec"]))
     duration = _q(duration)
     resolved = resolved or {}
+    if theme is None:
+        theme = {"colors": dict(FRAME_DEFAULTS["colors"])}
+    colors = theme["colors"]
 
     body: list[str] = []
-    timeline: list[str] = []
+    # Дыхание фоновых глоу — их же требование к декоративам: «статичные
+    # мертвы» (house-style.md:45). Повторы ограничены длиной ролика, а не
+    # бесконечны: repeat: -1 сделал бы длительность таймлайна бесконечной.
+    cycles = int(duration // 12) + 1
+    timeline: list[str] = [
+        f'tl.to("#bg-glow", {{ scale: 1.12, duration: 6, ease: "sine.inOut",'
+        f' repeat: {cycles}, yoyo: true }}, 0);',
+        f'tl.to("#bg-glow-low", {{ scale: 1.09, duration: 7.3,'
+        f' ease: "sine.inOut", repeat: {cycles}, yoyo: true }}, 0);',
+    ]
 
     # ── вставки ───────────────────────────────────────────────────────────
     # Ниже ведущей по CSS и раньше её в разметке: порядок отрисовки задаёт
@@ -658,7 +672,9 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # сцена была непрозрачным блоком со своим текстом. Теперь текста в кадре
     # нет ни у вставки, ни у ведущей, а в эталонных рилсах «текста в кадре нет
     # ни секунды без».
-    write_caption_data(public, words=words, duration=duration)
+    write_caption_data(public, words=words, duration=duration,
+                       brand={"primaryColor": colors["ink"],
+                              "accentColor": colors["accent"]})
     body.append(caption_snippet(sdk, public, track_index=TRACK_CAPTION,
                                 duration=duration))
 
@@ -672,6 +688,8 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                         ("__FPS__", str(FPS)),
                         ("__CAPTION_BOTTOM__", str(CAPTION_BOTTOM)),
                         ("__DURATION__", f"{duration:.4f}"),
+                        ("__BG__", colors["bg"]),
+                        ("__ACCENT__", colors["accent"]),
                         ("__BODY__", "\n".join(body)),
                         ("__TIMELINE__",
                          "\n".join("          " + line for line in timeline))):

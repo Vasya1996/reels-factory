@@ -165,10 +165,12 @@ def test_гейта_зоны_больше_нет():
 
 # ---------- D12: кусок без ведущей ----------
 
-def test_кусок_без_ведущей_обязан_нести_вставку():
+def test_кусок_без_ведущей_без_вставки_это_фоновая_сцена():
+    """С фирменным фоном из frame.md чёрного кадра больше нет: сцена без
+    вставки на куске без аватара — законная фоновая сцена."""
     scenes = _plausible_scenes()
     scenes[19]["insert"] = None
-    assert _check(scenes)["D12_faceless_cover"].startswith("FAIL")
+    assert _check(scenes)["D12_faceless_cover"] == "PASS"
 
 
 def test_ведущая_на_куске_где_её_нет_валится():
@@ -204,10 +206,12 @@ def test_половина_кадра_без_вставки_это_чёрный_�
     assert result["D20_frame_filled"].startswith("FAIL")
 
 
-def test_без_ведущей_и_без_вставки_кадр_пуст():
+def test_фоновая_сцена_без_ведущей_и_вставки_легальна():
+    """Фирменный фон из frame.md закрывает кадр; призыв и передышка — это
+    фон плюс крупный титр."""
     result = check_frame_filled({"scenes": [_scene(1, 0.0, 2.0,
                                                   presenter="none")]})
-    assert result["D20_frame_filled"].startswith("FAIL")
+    assert result["D20_frame_filled"] == "PASS"
 
 
 # ---------- D21: соседние сцены различимы ----------

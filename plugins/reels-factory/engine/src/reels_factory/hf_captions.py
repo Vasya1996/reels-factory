@@ -139,7 +139,8 @@ def caption_snippet(sdk, public, *, track_index: int, duration: float) -> str:
             f'    <script src="{CAPTION_SCRIPT}"></script>')
 
 
-def write_caption_data(public, *, words: list[dict], duration: float) -> Path:
+def write_caption_data(public, *, words: list[dict], duration: float,
+                       brand: dict | None = None) -> Path:
     """Данные титра в их контракте (`version: 1`, сегменты со словами).
 
     Титр идёт весь ролик и ни под чем не молчит. Гасить его приходилось, пока
@@ -167,6 +168,12 @@ def write_caption_data(public, *, words: list[dict], duration: float) -> Path:
                       "text": " ".join(word["text"] for word in segment),
                       "words": segment} for segment in segments],
     }
+    # Цвета титра — контракт компонента: brand.primaryColor уходит в
+    # --hf-caption-primary (цвет слова), brand.accentColor — в плашку
+    # активного слова (caption-highlight.html:91, 260-270). Других цветовых
+    # полей у компонента нет. Значения приходят из frame.md.
+    if brand:
+        payload["brand"] = brand
     target = Path(public) / "caption-data.json"
     target.write_text(json.dumps(payload, ensure_ascii=False, indent=1),
                       encoding="utf-8")

@@ -87,7 +87,7 @@ def _fakes(monkeypatch, tmp_path, storyboards):
                                      "D19_static_span": "PASS"})
 
     def fake_build(rdir, sdk, *, storyboard, clips, duration, words,
-                   resolved=None, sfx_whoosh=None):
+                   resolved=None, sfx_whoosh=None, theme=None):
         public = Path(rdir) / "public"
         (public / "media").mkdir(parents=True, exist_ok=True)
         (public / "media" / "hands.jpg").write_bytes(b"\xff\xd8\xff")

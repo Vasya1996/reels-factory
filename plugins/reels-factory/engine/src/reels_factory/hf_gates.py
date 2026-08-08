@@ -266,11 +266,13 @@ def check_storyboard(storyboard: dict, *, clips: list[dict] | None = None,
 
 def _faceless_problems(scenes: list[dict], clips: list[dict],
                        duration: float) -> list[str]:
-    """Кусок, на который аватар не заказан, закрыт полноэкранной вставкой.
+    """Кусок, на который аватар не заказан, не притворяется, что ведущая есть.
 
-    Смысл гейта прежний, ищет он теперь другое. Раньше — полноэкранную
-    карточку; теперь такого объекта нет, и закрыть чёрный кадр может только
-    вставка во весь кадр, то есть вставка при ведущей `none`.
+    Раньше гейт требовал ещё и вставку: без неё кадр был чёрным. С фирменным
+    фоном из frame.md сцена без вставки — законная фоновая сцена, поэтому
+    осталось одно требование: ведущей на этом куске нет физически, и план
+    обязан честно ставить `none` — иначе названное положение применится к
+    пустому окну.
     """
     problems = []
     gaps = avatar_gaps(clips, duration)
@@ -281,11 +283,11 @@ def _faceless_problems(scenes: list[dict], clips: list[dict],
         end = float(scene.get("endSec", 0))
         if not in_avatar_gap(start, end, gaps):
             continue
-        if scene.get("presenter") != "none" or not _has_insert(scene):
+        if scene.get("presenter") != "none":
             problems.append(
                 f'{scene.get("id", "?")} ({start:g}–{end:g} с) попадает на кусок, '
-                "где ведущей нет вовсе: этой сцене нужна ведущая `none` и "
-                "вставка, иначе там чёрный экран")
+                "где ведущей нет вовсе: положение обязано быть `none` — окно "
+                "всё равно будет пустым")
     return problems
 
 

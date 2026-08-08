@@ -27,6 +27,7 @@ from reels_factory.hf_compose import (
     needed_blocks, settle_inserts,
 )
 from reels_factory.hf_fonts import inject_fonts
+from reels_factory.hf_frame import read_frame
 from reels_factory.hf_gates import (
     check_media, check_placeholders, check_storyboard,
 )
@@ -475,7 +476,8 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     build_composition(rdir, sdk, storyboard=board,
                                       clips=saved_clips, duration=duration,
                                       words=words, resolved=found,
-                                      sfx_whoosh=whoosh)
+                                      sfx_whoosh=whoosh,
+                                      theme=read_frame(rdir))
                 # Шрифты врезаем до проверок: и наши гейты, и их `check` меряют
                 # переполнение и перекрытие по отрисованному тексту, а без наших
                 # @font-face кириллица считалась бы по подменному шрифту.
