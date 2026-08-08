@@ -43,16 +43,15 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import shutil
-import subprocess
 from pathlib import Path
 
-from reels_factory.config import FFMPEG, FFPROBE, FPS, OUT_H, OUT_W
+from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.hf_captions import caption_snippet, write_caption_data
 from reels_factory.hf_layout import (
     VIDEO_RECTS, avatar_gaps, in_avatar_gap, insert_rect, quantize,
 )
+from reels_factory.hf_media import insert_problem
 
 #: Дорожки времени. На одной дорожке клипы не пересекаются — это единственное,
 #: что `data-track-index` значит на самом деле.
@@ -138,7 +137,12 @@ MEDIA_TYPES = {"photo": "image", "icon": "icon", "logo": "logo"}
 
 
 def collect_intents(storyboard: dict) -> list[dict]:
-    """Все намерения под вставки: сцена называет их словами, ищет код."""
+    """Все намерения под вставки: сцена называет их словами, ищет код.
+
+    `rect` — прямоугольник, который файл закроет в кадре: по нему отсев меряет
+    растяжение. `required` — сцена без ведущей: там вставка обязательна, и
+    отсев вправе смягчиться, мыло лучше чёрного кадра.
+    """
     requests = []
     for scene in storyboard.get("scenes") or []:
         insert = insert_of(scene)
@@ -147,7 +151,10 @@ def collect_intents(storyboard: dict) -> list[dict]:
         kind = str(insert.get("kind") or "photo").lower()
         requests.append({"key": media_key(scene["id"]),
                          "type": MEDIA_TYPES.get(kind, "image"),
-                         "intent": str(insert["look"]).strip()})
+                         "intent": str(insert["look"]).strip(),
+                         "rect": insert_rect(str(scene.get("presenter")
+                                                 or "full")),
+                         "required": scene.get("presenter") == "none"})
     return requests
 
 
@@ -288,68 +295,6 @@ def complete_storyboard(board: dict, *, clips: list[dict],
     }
     board["subtitles"] = {"enabled": True}
     return board
-
-
-#: Форматы пикселей с альфа-каналом. Прозрачная вставка занимает весь кадр или
-#: его половину, и сквозь неё виден фон сцены — то есть чёрный прямоугольник.
-#: На прогоне 14 так вышли шесть вставок из четырнадцати, и весь хвост ролика
-#: (37,1–41,5 с) оказался чёрным экраном с одним титром. Их `check` этого не
-#: ловит: геометрия на месте, элемент видим, контраст титра к чёрному отличный.
-_ALPHA_PIX_FMTS = ("rgba", "bgra", "argb", "abgr", "ya8", "ya16", "pal8",
-                   "yuva420p", "yuva422p", "yuva444p", "gbrap")
-
-
-#: Короткая сторона вставки в пикселях. Ниже — это не фотография, а значок:
-#: подбор на прогоне 14 отдал под «три пронумерованные карточки» файл 150x150,
-#: и в кадре 1080x1920 от него осталось мыло. Планка низкая намеренно: каталог
-#: отдаёт в основном мелкие файлы (480x253, 626x391), и они в кадре читаются.
-MIN_INSERT_SIDE = 240
-
-
-#: Ниже этого значения альфа-канал считается настоящей прозрачностью. Канал
-#: сам по себе ещё не дыра: PNG-фотография несёт rgba со сплошной единицей.
-_OPAQUE_ALPHA = 250
-
-
-def _transparent(path) -> bool:
-    """Есть ли в файле реально прозрачные пиксели, а не просто альфа-канал.
-
-    Выдёргиваем альфу отдельным планом и смотрим её минимум — этим же приёмом
-    ffmpeg меряет любой канал (`alphaextract` + `signalstats`).
-    """
-    result = subprocess.run(
-        [FFMPEG, "-v", "error", "-i", str(path), "-vf",
-         "alphaextract,signalstats,metadata=print:file=-", "-an", "-f", "null",
-         "-"],
-        capture_output=True, text=True, encoding="utf-8", errors="replace")
-    found = re.search(r"YMIN=(\d+)", result.stdout or "")
-    return bool(found) and int(found.group(1)) < _OPAQUE_ALPHA
-
-
-def insert_problem(path) -> str | None:
-    """Чем подобранный файл не годится во вставку. `None` — годится.
-
-    Спрашиваем ffprobe — он и так в зависимостях, а `pix_fmt` и размер он
-    отдаёт одним вызовом.
-    """
-    result = subprocess.run(
-        [FFPROBE, "-v", "error", "-select_streams", "v:0",
-         "-show_entries", "stream=pix_fmt,width,height", "-of", "csv=p=0",
-         str(path)],
-        capture_output=True, text=True, encoding="utf-8", errors="replace")
-    parts = (result.stdout or "").strip().split(",")
-    if len(parts) < 3:
-        return "файл не читается"
-    try:
-        width, height = int(parts[0]), int(parts[1])
-    except ValueError:
-        return "файл не читается"
-    if min(width, height) < MIN_INSERT_SIDE:
-        return (f"файл {width}x{height} — мельче {MIN_INSERT_SIDE} px по короткой "
-                "стороне, в кадре останется мыло")
-    if parts[2].strip().lower() in _ALPHA_PIX_FMTS and _transparent(path):
-        return "файл прозрачный — сквозь него виден чёрный фон"
-    return None
 
 
 def _content_mark(public, file: str) -> str:

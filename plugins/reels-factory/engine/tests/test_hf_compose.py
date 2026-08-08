@@ -199,8 +199,20 @@ def test_раскадровка_переписывается_округлённ�
 
 def test_намерения_собираются_из_плана():
     requests = collect_intents(_board(json.loads(json.dumps(SCENES))))
-    assert requests == [{"key": "s-02", "type": "image",
-                         "intent": "переговоры в офисе"}]
+    assert len(requests) == 1
+    assert requests[0]["key"] == "s-02"
+    assert requests[0]["type"] == "image"
+    assert requests[0]["intent"] == "переговоры в офисе"
+    # под pip-* вставка занимает весь кадр — по этому прямоугольнику отсев
+    # меряет растяжение; вставка при ведущей в кадре не обязательна
+    assert requests[0]["rect"]["width"] == 1080
+    assert requests[0]["required"] is False
+
+
+def test_вставка_без_ведущей_помечена_обязательной():
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    assert collect_intents(_board(scenes))[0]["required"] is True
 
 
 def test_вид_вставки_переводится_в_тип_подбора():
