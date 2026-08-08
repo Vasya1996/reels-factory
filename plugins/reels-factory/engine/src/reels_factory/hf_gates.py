@@ -86,6 +86,23 @@ def _schema_problems(storyboard: dict) -> list[str]:
         if beat is not None and beat not in BEATS:
             problems.append(f"{scene_id}: бит {beat!r} неизвестен, есть "
                             f"{', '.join(BEATS)}")
+        overlay = scene.get("overlay")
+        if overlay is not None:
+            if (not isinstance(overlay, dict)
+                    or not str(overlay.get("block") or "").strip()):
+                problems.append(
+                    f"{scene_id}: `overlay` — объект с полем `block` (имя "
+                    "накладки из списка в задании) и, если есть слоты, `text`")
+            elif not isinstance(overlay.get("text") or {}, dict):
+                problems.append(f"{scene_id}: `overlay.text` — объект "
+                                "«имя слота → строка»")
+        icon = scene.get("icon")
+        if icon is not None and (
+                not isinstance(icon, dict)
+                or not str(icon.get("query") or "").strip()):
+            problems.append(
+                f"{scene_id}: `icon` — объект с полем `query`, английский "
+                "запрос значка")
         # Поля прошлого контракта: мы просили их сверх схемы, и они противоречат
         # videoTrack.bounds — соблюсти оба разом нельзя, значит остаётся их.
         for ours in ("contentRect", "videoRect", "zone"):

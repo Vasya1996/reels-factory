@@ -364,3 +364,82 @@ def test_свой_videoTrack_агента_не_переживает_сборку
     board = complete_storyboard({"scenes": [], "videoTrack": [{"sourcePath": "x"}]},
                                 clips=CLIPS, duration=6.0)
     assert isinstance(board["videoTrack"], dict)
+
+
+# ---------- накладки агента и иконки ----------
+
+_LT = ('<!doctype html><html><head><style>.lt{color:red}</style></head><body>'
+       '<div id="root" data-composition-id="lt-clean-bar" data-start="0"'
+       ' data-width="1920" data-height="1080" data-duration="4.8">'
+       '<div class="clip lt" data-start="0" data-duration="4.8">'
+       '<span class="lt-name">Jordan Avery</span>'
+       '<span class="lt-role">Host</span></div></div>'
+       '<script>window.__timelines = window.__timelines || {};'
+       'var tl = {};</script></body></html>')
+
+
+def _with_lt(run):
+    compositions = run / "public" / "compositions"
+    compositions.mkdir(parents=True, exist_ok=True)
+    (compositions / "lt-clean-bar.html").write_text(_LT, encoding="utf-8")
+    return run
+
+
+def test_накладка_агента_встаёт_сабкомпозицией_с_текстом(run):
+    """Их блок из каталога: копия под сцену, слоты заполняет код их SDK,
+    широкий канвас вписан по ширине кадра над полосой титра."""
+    _with_lt(run)
+    scenes = json.loads(json.dumps(SCENES))
+    # сцене нужен запас под родные 4.8 с блока (порог 0.7 доли)
+    scenes[0]["endSec"] = 2.0
+    scenes[1]["startSec"] = 2.0
+    scenes[1]["overlay"] = {"block": "lt-clean-bar",
+                            "text": {"name": "Мария", "role": "продажи"}}
+    html, _ = _build(run, scenes=scenes)
+    unique = "lt-clean-bar--s-02"
+    assert f'data-composition-src="compositions/{unique}.html"' in html
+    assert 'data-track-index="40"' in html
+    copy = (run / "public" / "compositions" / f"{unique}.html").read_text(
+        encoding="utf-8")
+    assert ">Мария<" in copy and "Jordan Avery" not in copy
+
+
+def test_накладке_у_края_ролика_не_хватает_времени(run):
+    """Родная длительность 4.8 с не влезает в хвост — внятная ошибка."""
+    _with_lt(run)
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["startSec"] = 4.0
+    scenes[0]["endSec"] = 4.0
+    scenes[1]["overlay"] = {"block": "lt-clean-bar",
+                            "text": {"name": "М", "role": "п"}}
+    with pytest.raises(RuntimeError, match="накладке"):
+        _build(run, scenes=scenes)
+
+
+def test_иконка_фоновой_сцены_с_дыханием(run):
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = None
+    scenes[1]["icon"] = {"query": "bookmark save icon"}
+    resolved = {"s-02::icon": {"file": ".media/images/icon_001.png"}}
+    html, _ = _build(run, scenes=scenes, resolved=resolved)
+    assert 'id="icon-s-02" class="icon-spot clip"' in html
+    assert 'src=".media/images/icon_001.png"' in html
+    assert 'tl.fromTo("#icon-s-02 img"' in html
+    assert "yoyo: true" in html
+
+
+def test_запрос_иконки_попадает_в_намерения():
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[0]["icon"] = {"query": "fire flame icon"}
+    requests = collect_intents(_board(scenes))
+    icons = [r for r in requests if r["type"] == "icon"]
+    assert icons and icons[0]["key"] == "s-01::icon"
+    assert icons[0]["intent"] == "fire flame icon"
+
+
+def test_накладка_агента_попадает_в_установку_блоков():
+    from reels_factory.hf_compose import needed_blocks
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["overlay"] = {"block": "lt-soft-pill", "text": {}}
+    assert needed_blocks(_board(scenes)) == ["lt-soft-pill"]

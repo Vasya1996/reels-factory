@@ -132,6 +132,44 @@ def block_durations(catalog_dir=None) -> dict[str, float]:
     return durations
 
 
+def overlay_names(catalog_dir=None) -> list[str]:
+    """Имена накладок каталога — блоков с тегом `overlay`.
+
+    Ровно те 23 их блока, что перенесены ревизией работы 5: нижние трети,
+    вспышки, фактура, соц-карточки. Наши 25 полноэкранных агенту по-прежнему
+    не выдаются — у них тега `overlay` нет.
+    """
+    root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
+    found = []
+    for name in block_names(catalog_dir):
+        item = json.loads((root / "blocks" / name / "registry-item.json")
+                          .read_text(encoding="utf-8"))
+        if "overlay" in (item.get("tags") or []):
+            found.append(name)
+    return found
+
+
+def overlay_passports(catalog_dir=None) -> str:
+    """Паспорта накладок для задания агенту: имя, длительность, слоты."""
+    from reels_factory.hf_sdk import sdk_session
+    from reels_factory.hf_slots import passport
+
+    root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
+    pages = []
+    with sdk_session() as sdk:
+        for name in overlay_names(catalog_dir):
+            folder = root / "blocks" / name
+            item = json.loads(
+                (folder / "registry-item.json").read_text(encoding="utf-8"))
+            sdk.open(name, folder / f"{name}.html")
+            pages.append(passport(
+                sdk.elements(name), name=name, title=item.get("title", ""),
+                description=item.get("description", ""),
+                duration=item.get("duration")))
+            sdk.close(name)
+    return "\n\n".join(pages)
+
+
 def block_passports(catalog_dir=None) -> str:
     """Паспорта всех блоков: что за сцена и какие в ней слоты.
 

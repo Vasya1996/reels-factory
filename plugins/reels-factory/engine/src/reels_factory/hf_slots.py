@@ -86,11 +86,20 @@ class Slot:
 
 
 def _slot_class(node: Node) -> str | None:
-    """Имя слота из класса вида `gNN-<имя>`. Первый класс и есть смысловой."""
+    """Имя слота из класса элемента.
+
+    Наши блоки несут классы `gNN-<имя>`, их накладки — короткий префикс
+    (`lt-name`, `nt-headline`) либо семантическое имя целиком
+    (`display-name`, `notification-title` в соц-карточках). Берём смысловую
+    часть — паспорт с именем «div-3» агенту не годится.
+    """
     for cls in node.classes:
-        match = re.match(r"^g\d\d-(.+)$", cls)
+        match = re.match(r"^(?:g\d\d|[a-z]{2})-(.+)$", cls)
         if match:
             return match.group(1)
+    for cls in node.classes:
+        if cls not in ("clip",) and re.match(r"^[a-z][a-z0-9-]+$", cls):
+            return cls
     return None
 
 

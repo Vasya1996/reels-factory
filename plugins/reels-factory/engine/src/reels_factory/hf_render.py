@@ -21,7 +21,10 @@ from reels_factory.face_detect import face_box_for, load_face
 from reels_factory.hf_agent import plan_with_agent
 from reels_factory.hf_assets import vendor_gsap
 from reels_factory.hf_brief import write_brief
-from reels_factory.hf_catalog import serve_catalog, write_project_config
+from reels_factory.hf_catalog import (
+    overlay_passports as catalog_overlay_passports, serve_catalog,
+    write_project_config,
+)
 from reels_factory.hf_compose import (
     build_composition, clear_generated, collect_intents, complete_storyboard,
     needed_blocks, settle_inserts,
@@ -375,6 +378,19 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
     phrases = phrase_timeline(timed_scenario, words,
                               language=timed_scenario.get("language", "ru"))
 
+    # Паспорта их накладок — в задание. Собираются их SDK по каталогу; отказ
+    # каталога не роняет сборку: агент просто останется без накладок.
+    passports_cache: dict[str, str] = {}
+
+    def _passports() -> str:
+        if "text" not in passports_cache:
+            try:
+                passports_cache["text"] = catalog_overlay_passports()
+            except Exception as error:
+                print(f"паспорта накладок не собрались: {error}")
+                passports_cache["text"] = ""
+        return passports_cache["text"]
+
     def prepare() -> None:
         public.mkdir(parents=True, exist_ok=True)
         clips = _place_clips(public, avatar_mp4s, avatar_render_plan, timed_scenario)
@@ -389,7 +405,8 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         # пока агент ещё не начал, чтобы сборка потом не ждала загрузку.
         hf_captions.stage(rdir)
         write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
-                    duration=duration, clips=clips, phrases=phrases)
+                    duration=duration, clips=clips, phrases=phrases,
+                    overlay_passports=_passports())
         (rdir / "phrases.json").write_text(
             json.dumps(phrases, ensure_ascii=False, indent=1), encoding="utf-8")
         (rdir / "clips.json").write_text(
@@ -416,7 +433,8 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     reset_step(rdir, step)
                 write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
                             duration=duration, clips=saved_clips,
-                            retry_reason=reason, phrases=phrases)
+                            retry_reason=reason, phrases=phrases,
+                            overlay_passports=_passports())
 
             board = run_step(rdir, "plan",
                              lambda: plan_with_agent(rdir, runner=agent_runner))

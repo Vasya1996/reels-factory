@@ -114,6 +114,16 @@ FLASH_HIT = 0.58
 TRACK_FX = 95
 TRACK_SFX = 98
 
+#: Дорожки накладок агента и слоя иконок. Соседние накладки могут пересечься
+#: по времени — ротация по двум дорожкам это разводит.
+TRACK_OVERLAY = 40
+TRACK_ICON = 15
+
+#: Куда садится накладка с широким канвасом 1920x1080: вписывается по ширине
+#: кадра (масштаб 0.5625) и висит над полосой титра. Вертикальные накладки
+#: (1080x1920) встают во весь кадр как есть.
+OVERLAY_WIDE_TOP = 640
+
 #: Растровые картинки. Слот может получить и mp4 (например через
 #: `media-use --from`), и тогда тег другой.
 _IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".svg")
@@ -172,17 +182,22 @@ def collect_intents(storyboard: dict) -> list[dict]:
     requests = []
     for scene in storyboard.get("scenes") or []:
         insert = insert_of(scene)
-        if not insert:
-            continue
-        kind = str(insert.get("kind") or "video").lower()
-        requests.append({"key": media_key(scene["id"]),
-                         "type": MEDIA_TYPES.get(kind, "video"),
-                         "intent": str(insert["query"]).strip(),
-                         "rect": insert_rect(str(scene.get("presenter")
-                                                 or "full")),
-                         "required": scene.get("presenter") == "none",
-                         "seconds": round(float(scene.get("endSec", 0))
-                                          - float(scene.get("startSec", 0)), 3)})
+        if insert:
+            kind = str(insert.get("kind") or "video").lower()
+            requests.append({"key": media_key(scene["id"]),
+                             "type": MEDIA_TYPES.get(kind, "video"),
+                             "intent": str(insert["query"]).strip(),
+                             "rect": insert_rect(str(scene.get("presenter")
+                                                     or "full")),
+                             "required": scene.get("presenter") == "none",
+                             "seconds": round(float(scene.get("endSec", 0))
+                                              - float(scene.get("startSec", 0)),
+                                              3)})
+        icon = scene.get("icon")
+        if isinstance(icon, dict) and str(icon.get("query") or "").strip():
+            requests.append({"key": f'{scene["id"]}::icon', "type": "icon",
+                             "intent": str(icon["query"]).strip(),
+                             "rect": None, "required": False, "seconds": 0})
     return requests
 
 
@@ -275,38 +290,70 @@ def _exit(target: str, next_beat: str, at: float) -> list[str]:
 
 _CDN_GSAP = re.compile(r'src="https://cdn\.jsdelivr\.net/npm/gsap[^"]*"')
 
+_CANVAS = re.compile(
+    r'data-composition-id="[^"]+"[^>]*data-width="(\d+)"[^>]*'
+    r'data-height="(\d+)"', re.S)
+_NATIVE = re.compile(
+    r'data-composition-id="[^"]+"[^>]*data-duration="([\d.]+)"', re.S)
 
-def _stage_overlay(public, block: str, scene_id: str) -> str:
-    """Копия накладки под сцену. Возвращает имя копии.
+
+def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
+                   text: dict | None = None) -> tuple[str, float, tuple]:
+    """Копия накладки под сцену. Возвращает (имя, родная длительность, канвас).
 
     Копия, а не общий файл: ключ таймлайна сабкомпозиции один на
     `data-composition-id`, два хоста с одним ключом затёрли бы друг друга.
-    GSAP переводится на локальный: внешние ссылки в композиции запрещены её же
-    контрактом, а файл уже лежит в `vendor/` (hf_assets.vendor_gsap).
+    Текст в слоты вписывает наш код их же SDK (`hf_slots.fill_ops`) — у них
+    механизма нет, агент у них правит файл руками
+    (hyperframes-registry/SKILL.md:78). GSAP переводится на локальный:
+    внешние ссылки в композиции запрещены её же контрактом.
     """
+    from reels_factory.hf_slots import fill_ops, prune_timeline
+
     source = Path(public) / "compositions" / f"{block}.html"
     if not source.exists():
         raise RuntimeError(
             f"накладка {block} не установлена: нет {source}. Ставит её код "
             "командой `hyperframes add` перед сборкой")
     unique = f"{block}--{scene_id}"
-    html = source.read_text(encoding="utf-8")
+    target = source.with_name(f"{unique}.html")
+    if text and sdk is not None:
+        sdk.open(unique, source)
+        sdk.dispatch(unique, fill_ops(sdk.elements(unique), text=text))
+        sdk.save(unique, target)
+        sdk.close(unique)
+        html = target.read_text(encoding="utf-8")
+    else:
+        html = source.read_text(encoding="utf-8")
     html = html.replace(f'data-composition-id="{block}"',
                         f'data-composition-id="{unique}"')
     html = html.replace(f'__timelines["{block}"]', f'__timelines["{unique}"]')
     html = _CDN_GSAP.sub('src="../vendor/gsap.min.js"', html)
-    target = source.with_name(f"{unique}.html")
+    if text:
+        html = prune_timeline(html)
     target.write_text(html, encoding="utf-8")
-    return unique
+
+    canvas_match = _CANVAS.search(html)
+    canvas = ((int(canvas_match.group(1)), int(canvas_match.group(2)))
+              if canvas_match else (1920, 1080))
+    native_match = _NATIVE.search(html)
+    native = float(native_match.group(1)) if native_match else 4.0
+    return unique, native, canvas
 
 
 def needed_blocks(storyboard: dict) -> list[str]:
     """Какие блоки каталога сборка поставит их же `hyperframes add`."""
+    found: list[str] = []
     for scene in storyboard.get("scenes") or []:
+        block = (scene.get("overlay") or {}).get("block") \
+            if isinstance(scene.get("overlay"), dict) else None
+        if block and block not in found:
+            found.append(str(block))
         if (_beat(scene) == "climax"
-                and float(scene.get("startSec", 0)) >= FLASH_HIT * FLASH_NATIVE):
-            return [FLASH_BLOCK]
-    return []
+                and float(scene.get("startSec", 0)) >= FLASH_HIT * FLASH_NATIVE
+                and FLASH_BLOCK not in found):
+            found.append(FLASH_BLOCK)
+    return found
 
 
 # ------------------------------------------------------------------ ведущая
@@ -603,6 +650,66 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             timeline += _exit(target, _beat(follower), end)
         staged += 1
 
+    # ── накладки агента: их блоки из каталога ────────────────────────────
+    # Плашка живёт свою родную длительность от начала сцены — резать чужой
+    # таймлайн сильно короче значит показать полусобранную сцену
+    # (min_card_seconds, порог проверен кадрами прогона 13).
+    staged_overlays = 0
+    for scene in scenes:
+        overlay = scene.get("overlay")
+        if not isinstance(overlay, dict) or not overlay.get("block"):
+            continue
+        from reels_factory.hf_slots import min_card_seconds
+
+        start = _q(scene["startSec"])
+        unique, native, canvas = _stage_overlay(
+            public, str(overlay["block"]), scene["id"], sdk=sdk,
+            text={k: str(v) for k, v in (overlay.get("text") or {}).items()})
+        length = round(min(native, duration - start), 4)
+        if length < min_card_seconds(native):
+            raise RuntimeError(
+                f'{scene["id"]}: накладке {overlay["block"]} нужно '
+                f"{min_card_seconds(native):g} с, а до конца ролика "
+                f"{duration - start:.2f} — поставь её раньше или возьми короче")
+        wide = canvas[0] > canvas[1]
+        scale = OUT_W / canvas[0]
+        box = (f"left:0;top:{OVERLAY_WIDE_TOP}px" if wide else "left:0;top:0")
+        body.append(
+            f'    <div class="ovl" style="{box}">'
+            f'<div data-layout-allow-overflow="true" style="position:absolute;'
+            f'left:0;top:0;transform:scale({scale:.4f});transform-origin:0 0">'
+            f'<div id="ovl-{scene["id"]}" class="clip"'
+            f' data-composition-id="{unique}"'
+            f' data-composition-src="compositions/{unique}.html"'
+            f' data-start="{start:.4f}" data-duration="{length:.4f}"'
+            f' data-track-index="{TRACK_OVERLAY + staged_overlays % 2}"'
+            f' data-width="{canvas[0]}" data-height="{canvas[1]}"></div>'
+            f"</div></div>")
+        staged_overlays += 1
+
+    # ── иконки фоновых сцен ──────────────────────────────────────────────
+    # Прозрачный значок из их подбора, живёт по их правилам движения: мягкий
+    # вход power3 и медленный дрейф — статичные декоративы «мертвы».
+    for scene in scenes:
+        found_icon = resolved.get(f'{scene["id"]}::icon') or {}
+        if not found_icon.get("file"):
+            continue
+        start = _q(scene["startSec"])
+        end = _q(scene["endSec"])
+        body.append(
+            f'    <div id="icon-{scene["id"]}" class="icon-spot clip"'
+            f' data-start="{start:.4f}" data-duration="{end - start:.4f}"'
+            f' data-track-index="{TRACK_ICON}">'
+            f'<img src="{found_icon["file"]}" alt=""></div>')
+        target = _js(f'#icon-{scene["id"]} img')
+        cycles = int((end - start) / 4.8) + 1
+        timeline += [
+            f'tl.fromTo({target}, {{ autoAlpha: 0, scale: 0.7, y: 24 }}, '
+            f'{{ autoAlpha: 1, scale: 1, y: 0, duration: 0.5, '
+            f'ease: "power3.out" }}, {start});',
+            f'tl.to({target}, {{ y: -14, duration: 2.4, ease: "sine.inOut", '
+            f'repeat: {cycles}, yoyo: true }}, {start + 0.5});']
+
     # ── вспышка на кульминации ────────────────────────────────────────────
     # Их накладка целиком: прозрачная сабкомпозиция 1920x1080, вписанная в
     # вертикальный кадр обёрткой с transform — их загрузчик жёстко ставит
@@ -616,7 +723,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         flash_length = min(FLASH_NATIVE, duration - flash_start)
         if flash_start < 0 or flash_length < FLASH_HIT * FLASH_NATIVE + 0.2:
             continue
-        unique = _stage_overlay(public, FLASH_BLOCK, scene["id"])
+        unique, _, _ = _stage_overlay(public, FLASH_BLOCK, scene["id"])
         scale = OUT_H / 1080.0
         left = -round((1920 * scale - OUT_W) / 2)
         # Растянутый канвас блока шире кадра: обёртка режет его по краю, а

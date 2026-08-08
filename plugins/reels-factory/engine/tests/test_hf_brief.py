@@ -114,7 +114,8 @@ def test_наших_блоков_агенту_больше_не_выдают(tmp
     text = _text(tmp_path)
     assert "g02-avatar-fullscreen-hook" not in text
     assert "Блоки каталога" not in text
-    assert "слот" not in text.lower()
+    # «слот» в задании теперь законен: их накладки несут текстовые слоты,
+    # а наши 25 полноэкранных по-прежнему не выдаются (строка выше).
 
 
 def test_словарь_положений_ведущей_в_задании(tmp_path):

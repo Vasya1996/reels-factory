@@ -85,7 +85,8 @@ def _positions_block() -> str:
 def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
                 clips: list[dict] | None = None, language: str = "ru",
                 retry_reason: str | None = None,
-                phrases: list[dict] | None = None) -> Path:
+                phrases: list[dict] | None = None,
+                overlay_passports: str = "") -> Path:
     """Записать BRIEF.md рядом с материалом. Возвращает путь."""
     rdir = Path(rdir)
     rdir.mkdir(parents=True, exist_ok=True)
@@ -277,6 +278,24 @@ laptop». Абстракция вроде «order symbol» не найдётся
   картинку с надписью.
 - Значков, эмодзи и рисованной графики вместо фотографий.
 
+## Их накладки из каталога
+
+Поверх кадра можно ставить готовые накладки их каталога — поле `overlay`
+сцены: `{{"block": "имя", "text": {{"слот": "строка"}}}}`. Слоты заполняются
+твоими строками, разметку вписывает код. Накладка живёт свою родную
+длительность от начала сцены. Плашка с именем уместна, когда диктор
+представляется или называет цифру; соц-карточка — на призыве; зерно и
+световые протечки — фактура настроения. Ниже паспорта, бери что хочешь:
+
+{overlay_passports}
+
+## Иконка фоновой сцены
+
+Фоновой сцене можно дать анимированный значок — поле `icon`:
+`{{"query": "английский запрос значка"}}`, например «bookmark save icon» или
+«fire flame icon». Значок встаёт в верхней трети кадра, мягко входит и
+дышит; подбор отдаёт прозрачный файл, фон под ним — фирменный.
+
 ## Оформление: заполни `frame.md`
 
 Рядом со `storyboard.json` создай `frame.md` — спеку оформления по их канону:
@@ -323,11 +342,17 @@ Unbounded, они уже стоят.
       "presenter": "pip-br",
       "insert": {{"query": "hand flipping through handwritten sales scripts",
                  "kind": "video"}},
+      "overlay": {{"block": "lt-clean-bar",
+                  "text": {{"name": "Три вопроса", "role": "база продаж"}}}},
       "avatarNeeded": true}},
     {{"id": "s-03", "intent": "…", "beat": "turn", "phrases": [3, 3],
       "presenter": "none",
       "insert": {{"query": "person arranging papers on meeting table",
                  "kind": "video"}},
+      "avatarNeeded": false}},
+    {{"id": "s-04", "intent": "призыв", "beat": "outro", "phrases": [4, 4],
+      "presenter": "none", "insert": null,
+      "icon": {{"query": "bookmark save icon"}},
       "avatarNeeded": false}}
   ]}}
 ```
