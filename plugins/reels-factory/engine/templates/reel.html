@@ -33,6 +33,16 @@
       #video-wrap.pip-pill, #video-wrap[class~="pip-pill"] { border-radius: 18px;
         box-shadow: 0 24px 60px -20px rgba(0,0,0,.45),
                     0 0 0 5px rgba(255,255,255,.85); }
+      /* Скрим под полосой титра: белое слово на светлой фотографии — это
+         2:1, а их аудит меряет контраст по живым пикселям и под --strict
+         роняет сборку (contrast_aa_failure, прогон 16). Полное лечение —
+         обработка фото их media-treatment (работа 7); скрим — времянка,
+         которая держит читаемость на любом фоне. Лежит над ведущей и
+         вставкой, под титром. */
+      #caption-scrim { position: absolute; left: 0; right: 0; bottom: 0;
+        height: 920px; z-index: 25; pointer-events: none;
+        background: linear-gradient(180deg, rgba(11,11,12,0) 0%,
+          rgba(11,11,12,0.55) 32%, rgba(11,11,12,0.65) 100%); }
       /* Компонент субтитров рассчитан на отдельную страницу и держит себя
          `position: relative`; внутри нашей сцены он обязан лечь слоем. */
       #highlight { position: absolute; left: 0; top: 0; z-index: 30; }
@@ -54,6 +64,7 @@
          data-duration="__DURATION__" data-fps="__FPS__"
          data-width="__W__" data-height="__H__">
 __BODY__
+      <div id="caption-scrim"></div>
       <script src="vendor/gsap.min.js"></script>
       <script>
         (function () {
