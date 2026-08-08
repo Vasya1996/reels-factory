@@ -17,8 +17,18 @@ driver»**. Дословно про случай «видео лежит в ко
   шкале в глобальном времени**, потому что шкала подкомпозиции не достаёт до
   элементов вне себя;
 - звук всегда отдельным `<audio>`, даже если файл тот же, что у видео;
-- дорожки: сцены на `data-track-index="1"`, видео на `2`, звук на `10` — чтобы
-  проверка перекрытий не путала слои.
+- дорожки: сцены, видео и звук разводятся по разным `data-track-index`.
+
+**Поправка от 08.08.2026 (проверено по коду клона 0.7.84).** Дорожка — это
+только про пересечение по времени, а не про порядок слоёв: клипы на одной
+дорожке пересекаться не могут (`overlapping_clips_same_track`, error,
+`packages/lint/src/rules/composition.ts:578`), и ради этого их и разводят.
+Порядок отрисовки держит CSS `z-index` — рантайм номер дорожки не читает вовсе:
+«Track index is display-only; render never reads it»
+(`packages/core/src/runtime/timeline.ts:599`), «Visual layering is controlled by
+CSS `z-index`» (`hyperframes-core/references/tracks-and-clips.md:22`). Их же
+`docs/reference/html-schema.mdx:56` пишет «Controls z-ordering» — это ошибка в
+их доке, не полагайся на неё.
 
 **Шов, из-за которого пилот писал `postassemble.mjs`, в этой схеме не
 возникает.** Он возник потому, что мы отдали сборку `assemble-index.mjs` —
