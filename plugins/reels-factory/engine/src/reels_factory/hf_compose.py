@@ -148,18 +148,17 @@ def media_key(scene_id: str) -> str:
     return str(scene_id)
 
 
-#: Какой тип `media-use` просить под названный агентом вид вставки. Стокового
-#: видео у них нет: `heygen asset search --type video` отвечает «--type must be
-#: one of [image icon]», а `resolve --type video` уходит в генерацию аватара
-#: (`media-use/scripts/lib/heygen-video-provider.mjs`) — это платно и не про
-#: перебивку. Поэтому вставка сейчас всегда неподвижный файл.
+#: Какой тип подбора просить под названный агентом вид вставки. Основной вид —
+#: видео-биролл (решение 08.08.2026): живое видео из Pexels, суд моделью,
+#: заморозка их `resolve --from`. Фото — запасной путь через их каталог.
 #:
 #: `icon` и `logo` агенту не предлагаются: их подбор отдаёт прозрачный PNG
 #: (проверено на прогоне 14 — все три иконки пришли 200x200 rgba), а вставка
 #: занимает весь кадр или его половину, и сквозь прозрачное там виден чёрный
 #: фон сцены. Значок поверх картинки — это накладка, и её место в работе с их
 #: реестром накладок, а не здесь.
-MEDIA_TYPES = {"photo": "image", "icon": "icon", "logo": "logo"}
+MEDIA_TYPES = {"video": "video", "photo": "image", "icon": "icon",
+               "logo": "logo"}
 
 
 def collect_intents(storyboard: dict) -> list[dict]:
@@ -174,13 +173,15 @@ def collect_intents(storyboard: dict) -> list[dict]:
         insert = insert_of(scene)
         if not insert:
             continue
-        kind = str(insert.get("kind") or "photo").lower()
+        kind = str(insert.get("kind") or "video").lower()
         requests.append({"key": media_key(scene["id"]),
-                         "type": MEDIA_TYPES.get(kind, "image"),
+                         "type": MEDIA_TYPES.get(kind, "video"),
                          "intent": str(insert["look"]).strip(),
                          "rect": insert_rect(str(scene.get("presenter")
                                                  or "full")),
-                         "required": scene.get("presenter") == "none"})
+                         "required": scene.get("presenter") == "none",
+                         "seconds": round(float(scene.get("endSec", 0))
+                                          - float(scene.get("startSec", 0)), 3)})
     return requests
 
 

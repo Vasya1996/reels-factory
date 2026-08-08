@@ -94,9 +94,11 @@ def _schema_problems(storyboard: dict) -> list[str]:
     return problems
 
 
-#: Растровые вставки. Векторные иконки сюда не входят намеренно: нарисованный
+#: Файлы, которые считаются настоящей вставкой: видео-бироллы и растровые
+#: фотографии. Векторные иконки сюда не входят намеренно: нарисованный
 #: значок — это не картинка под смысл фразы.
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif")
+MEDIA_SUFFIXES = IMAGE_SUFFIXES + (".mp4", ".webm", ".mov")
 
 _ASSET_REF = re.compile(r"""(?:src|href)\s*=\s*["']([^"']+)["']"""
                         r"""|url\(\s*["']?([^"')]+)["']?\s*\)""", re.I)
@@ -124,7 +126,10 @@ def check_media(rdir) -> dict:
             ref = (src or url).split("?")[0].split("#")[0]
             if ref.startswith(("http://", "https://", "data:")):
                 continue
-            if not ref.lower().endswith(IMAGE_SUFFIXES):
+            if not ref.lower().endswith(MEDIA_SUFFIXES):
+                continue
+            # клипы ведущей — не вставка: они лежат в clips/ и есть всегда
+            if ref.startswith("clips/"):
                 continue
             if (page.parent / ref).exists() or (public / ref).exists():
                 used.append(ref)
@@ -133,15 +138,16 @@ def check_media(rdir) -> dict:
     problems = []
     if not ledgers:
         problems.append("нет реестра media-use (.media/manifest.jsonl) — "
-                        "картинки не подбирались")
+                        "вставки не подбирались")
     if not used:
         # Прогон 03.08 закончился пятью нарисованными от руки SVG и самодельной
         # записью в реестре: агент решил, что media-use недоступен, и подменил
-        # результат своей графикой. Растр отличает найденное от нарисованного.
+        # результат своей графикой. Файл из подбора отличает найденное от
+        # нарисованного.
         problems.append(
-            "в композиции нет ни одной подобранной картинки; нарисованный "
-            f"вектор не считается — нужен файл {', '.join(IMAGE_SUFFIXES)} "
-            "из каталога")
+            "в композиции нет ни одной подобранной вставки; нарисованный "
+            f"вектор не считается — нужен файл {', '.join(MEDIA_SUFFIXES)} "
+            "из подбора")
     return {"D16_media_use": "PASS" if not problems
             else "FAIL: " + "; ".join(problems)}
 

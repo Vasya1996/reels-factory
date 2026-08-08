@@ -1,27 +1,25 @@
-"""Подбор вставок: их поиск, наш отсев, их заморозка.
+"""Подбор вставок: поиск, суд моделью, заморозка их средствами.
 
 Что показать под фразу, решает агент — он присылает намерение словами. Дальше
-всё механика, и делается она их же средствами:
+всё механика:
 
-1. кандидатов ищет их CLI — `heygen asset search`, ранжирование семантическое,
-   их (`media-use/scripts/lib/heygen-search.mjs`);
-2. выбранный файл замораживает их `resolve --from <url>`: файл ложится в
-   `.media`, запись — в их реестр `manifest.jsonl` (resolve.mjs, ветка ingest);
-3. наш здесь только отсев. Сам скил не отсеивает ничего: его провайдер берёт
-   первый ответ поиска вслепую (`image-provider.mjs:7`), и на прогоне 15 так в
-   кадр доехали водяной знак dreamstime, мыло 500x281 и один снимок на две
-   сцены. А «спросить ещё раз» через их `resolve` нельзя: одинаковое намерение
-   детерминированно возвращает тот же файл из манифеста (resolve.md, «How it
-   works», шаги 1 и 3). Их же философия отдаёт выбор нам: «media-use does not
-   semantically match for you — you are the judge» (references/resolve.md:76).
+1. **Видео-бироллы** ищутся в Pexels — единственный сток с серверным фильтром
+   вертикали (`orientation=portrait`; Pixabay и Coverr фильтруют только
+   клиентом, замерено 08.08.2026). Своего стока у HyperFrames нет вовсе —
+   проверено по клону, скилам и сайту вплоть до 0.7.101: тип `video` в
+   media-use умеет только генерацию (аватар за деньги либо LTX на Apple
+   Silicon). Их канонический путь — «принеси файл сам»: «`<video>` — Video
+   clips, B-roll, A-roll» (docs/concepts/compositions.mdx:25).
+2. **Кандидатов судит модель глазами** по превью-кадрам: их же философия —
+   «media-use does not semantically match for you — you are the judge»
+   (references/resolve.md:76). Метаданные отсеивают мелкое и короткое, смысл
+   судит одна дешёвая сессия на весь ролик.
+3. **Заморозка** — их `resolve --from`: файл ложится в `.media`, запись — в их
+   реестр `manifest.jsonl` (resolve.mjs, ветка ingest). Скачиваем сами (Pexels
+   отдаёт 403 без User-Agent — оплаченная грабля), замораживаем локальный файл.
 
-Порядок кандидатов внутри запроса — их ранжирование; мы только вычёркиваем
-негодных, первый уцелевший и берётся.
-
-Видео вместо фото взять неоткуда: их каталог отдаёт `image` и `icon` и ничего
-больше (`heygen asset search --type` v0.5.0), а `--type video` у их skill — это
-генерация (платный HeyGen-аватар либо локальный LTX на GPU, которого у нас
-нет). Живость неподвижной вставки — забота слоя движения, не подбора.
+Картинки (`image`) остаются запасным путём — их каталог, их ранжирование, наш
+отсев; подробности у соответствующих функций ниже.
 """
 from __future__ import annotations
 
@@ -281,6 +279,171 @@ def scan_ocr_rows(tsv: str, frame_height: int) -> str | None:
     return None
 
 
+# ------------------------------------------------------------ видео-бироллы
+
+#: Ключ Pexels: переменная окружения либо файл в связке рядом с ключом HeyGen.
+_PEXELS_KEY_FILE = Path.home() / ".reels-factory" / "pexels.key"
+
+#: Сколько кандидатов просить у стока на одно намерение.
+PEXELS_LIMIT = 10
+
+#: Без User-Agent Pexels отдаёт 403 — оплаченная грабля (замер Юли, README
+#: broll-zoom-toolkit, грабля 5).
+_UA = {"User-Agent": "reels-factory/0.2 (b-roll fetch)"}
+
+#: Сколько кандидатов на сцену показываем судье. Больше — дольше сессия,
+#: а решает он обычно между первыми тремя.
+JUDGE_CANDIDATES = 4
+
+
+def _pexels_key() -> str | None:
+    key = os.environ.get("PEXELS_API_KEY")
+    if key:
+        return key.strip()
+    if _PEXELS_KEY_FILE.exists():
+        return _PEXELS_KEY_FILE.read_text(encoding="utf-8").strip()
+    return None
+
+
+def _best_file(video: dict) -> dict | None:
+    """Лучший файл ролика: вертикальный mp4, по высоте ближе к нашим 1920.
+
+    Pexels отдаёт один ролик несколькими перекодировками; берём не самую
+    большую, а достаточную — 4K-файл тянется дольше, а кадр у нас 1080x1920.
+    """
+    files = [f for f in video.get("video_files") or []
+             if (f.get("file_type") == "video/mp4"
+                 and (f.get("height") or 0) > (f.get("width") or 0)
+                 and (f.get("height") or 0) >= 1280)]
+    if not files:
+        return None
+    return min(files, key=lambda f: abs((f.get("height") or 0) - 1920))
+
+
+def search_pexels(intent: str, *, seconds: float = 0.0,
+                  limit: int = PEXELS_LIMIT) -> list[dict]:
+    """Кандидаты Pexels, в их порядке релевантности.
+
+    Возвращает нормализованные словари: `id`, `duration`, `preview` (кадр),
+    `url` (mp4), `width`/`height` файла. Отсев по метаданным здесь же:
+    короче сцены и мельче кадра не показываем даже судье.
+    """
+    import urllib.parse
+    import urllib.request
+
+    key = _pexels_key()
+    if not key:
+        print("нет ключа Pexels (PEXELS_API_KEY или ~/.reels-factory/"
+              "pexels.key) — видео-бироллы не ищутся")
+        return []
+    query = urllib.parse.urlencode({
+        "query": intent, "orientation": "portrait", "size": "medium",
+        "per_page": str(limit)})
+    request = urllib.request.Request(
+        f"https://api.pexels.com/videos/search?{query}",
+        headers={**_UA, "Authorization": key})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as answer:
+            payload = json.loads(answer.read().decode("utf-8"))
+    except Exception as error:  # сеть и лимиты — не повод ронять сборку
+        print(f"поиск Pexels не ответил: {error}")
+        return []
+
+    found = []
+    for video in payload.get("videos") or []:
+        best = _best_file(video)
+        if best is None:
+            continue
+        if seconds and float(video.get("duration") or 0) < seconds:
+            # короче сцены: движок заморозит последний кадр, это брак
+            continue
+        found.append({"id": f"pexels-{video['id']}",
+                      "duration": float(video.get("duration") or 0),
+                      "preview": video.get("image"),
+                      "url": best["link"],
+                      "width": best.get("width"), "height": best.get("height"),
+                      "is_transparent": False})
+    return found
+
+
+def _download(url: str, target: Path) -> Path | None:
+    import urllib.request
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    request = urllib.request.Request(url, headers=_UA)
+    try:
+        with urllib.request.urlopen(request, timeout=180) as answer:
+            target.write_bytes(answer.read())
+    except Exception as error:
+        print(f"не скачалось {url}: {error}")
+        return None
+    return target if target.stat().st_size > 0 else None
+
+
+_JUDGE_PROMPT = """Ты отбираешь видео-бироллы для вертикального рилса.
+
+Тема ролика: {domain}
+Чего в ролике быть не должно: {anti}
+
+Ниже сцены. У каждой — реплика диктора, которую биролл иллюстрирует, и
+превью-кадры кандидатов (файлы). Посмотри кадры инструментом Read и для
+каждой сцены выбери ОДИН кандидат, который буквально показывает то, о чём
+реплика, живой и снятый камерой. Отклоняй: не про то, постановочные стоковые
+клише (рукопожатия, «бизнесмен вообще»), кадры с крупным читаемым текстом,
+мультяшное и нарисованное. Если не годится ни один — null.
+
+{scenes}
+
+Ответь ТОЛЬКО JSON без пояснений: {{"<id сцены>": <номер кандидата или null>, …}}
+"""
+
+
+def judge_previews(requests: list[dict], *, domain: str = "", anti: str = "",
+                   runner=None) -> dict[str, int | None]:
+    """Один суд на весь ролик: дешёвая сессия смотрит превью и выбирает.
+
+    `requests` — `[{"key", "intent", "speech", "previews": [пути]}]`.
+    Возвращает `{key: индекс выбранного | None}`. Без судьи (нет previews или
+    сессия упала) — берётся первый кандидат, как раньше: суд улучшает выбор,
+    но его отказ не должен останавливать фабрику.
+    """
+    from reels_factory.hf_agent import HeyGenAgentRunner
+
+    blocks = []
+    for request in requests:
+        lines = [f'Сцена `{request["key"]}`: диктор говорит «{request.get("speech") or request["intent"]}»,'
+                 f' показать: {request["intent"]}']
+        for index, preview in enumerate(request["previews"]):
+            lines.append(f"- кандидат {index}: {preview}")
+        blocks.append("\n".join(lines))
+    prompt = _JUDGE_PROMPT.format(domain=domain or "не указана",
+                                  anti=anti or "не указано",
+                                  scenes="\n\n".join(blocks))
+
+    if runner is None:
+        runner = HeyGenAgentRunner(timeout_s=300, model="claude-haiku-4-5")
+        # Дешёвой модели глубина рассуждения не передаётся вовсе: конструктор
+        # подхватил бы REELS_AGENT_EFFORT из окружения раннера, а флаг там про
+        # модель плана, не про судью.
+        runner.effort = None
+    try:
+        answer = runner.run(prompt)
+    except Exception as error:
+        print(f"судья бироллов не ответил ({error}) — берём первых кандидатов")
+        return {}
+    match = re.search(r"\{.*\}", answer, re.S)
+    if not match:
+        print("судья бироллов не вернул JSON — берём первых кандидатов")
+        return {}
+    try:
+        verdicts = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        print("JSON судьи не разбирается — берём первых кандидатов")
+        return {}
+    return {str(key): (int(value) if value is not None else None)
+            for key, value in verdicts.items()}
+
+
 # ------------------------------------------------------------------- подбор
 
 def _resolve_one(project: Path, kind: str, intent: str) -> dict:
@@ -319,12 +482,107 @@ def _claim(request: dict, candidates: list[dict], taken: set[str],
     return None
 
 
-def resolve_all(public, requests: list[dict]) -> dict[str, dict]:
+def _resolve_videos(public: Path, requests: list[dict], *,
+                    domain: str = "", anti: str = "",
+                    judge_runner=None,
+                    pool: ThreadPoolExecutor) -> dict[str, dict]:
+    """Видео-бироллы: поиск в Pexels, суд моделью, заморозка их `resolve`.
+
+    Выбор строго в порядке запросов; один ролик не ставится дважды.
+    Вердикт `null` судьи уважается: сцена остаётся без вставки, и её
+    закрывает ведущая (settle_inserts) — кринж хуже отсутствия.
+    """
+    resolved: dict[str, dict] = {}
+    found = dict(zip(
+        [r["key"] for r in requests],
+        pool.map(lambda r: search_pexels(
+            r["intent"], seconds=float(r.get("seconds") or 0)), requests)))
+
+    previews_dir = public / ".broll-previews"
+    jobs = []
+    for request in requests:
+        for index, cand in enumerate(
+                (found.get(request["key"]) or [])[:JUDGE_CANDIDATES]):
+            if cand.get("preview"):
+                jobs.append((request["key"], index, cand["preview"]))
+    paths = dict(zip(
+        [(key, index) for key, index, _ in jobs],
+        pool.map(lambda job: _download(
+            job[2], previews_dir / f"{job[0]}-{job[1]}.jpg"), jobs)))
+
+    judged: dict[str, int | None] = {}
+    with_previews = []
+    for request in requests:
+        shown = [str(paths.get((request["key"], index)))
+                 for index in range(min(JUDGE_CANDIDATES,
+                                        len(found.get(request["key"]) or [])))
+                 if paths.get((request["key"], index))]
+        if shown:
+            with_previews.append({**request, "previews": shown})
+    if with_previews:
+        judged = judge_previews(with_previews, domain=domain, anti=anti,
+                                runner=judge_runner)
+
+    taken: set[str] = set()
+    chosen: dict[str, dict] = {}
+    for request in requests:
+        candidates = found.get(request["key"]) or []
+        if not candidates:
+            resolved[request["key"]] = {
+                "error": f"Pexels не дал кандидатов: «{request['intent']}»"}
+            continue
+        verdict = judged.get(request["key"], "unjudged")
+        if verdict is None:
+            resolved[request["key"]] = {
+                "error": "судья забраковал всех кандидатов: "
+                         f"«{request['intent']}»"}
+            continue
+        order = candidates
+        if isinstance(verdict, int) and 0 <= verdict < len(candidates):
+            order = [candidates[verdict]] + [c for i, c in enumerate(candidates)
+                                             if i != verdict]
+        pick = next((c for c in order if c["id"] not in taken), None)
+        if pick is None:
+            resolved[request["key"]] = {
+                "error": "все кандидаты уже заняты другими сценами"}
+            continue
+        taken.add(pick["id"])
+        chosen[request["key"]] = pick
+
+    def freeze(item: tuple[str, dict]) -> tuple[str, dict]:
+        key, cand = item
+        raw = _download(cand["url"], public / ".broll-tmp" / f"{cand['id']}.mp4")
+        if raw is None:
+            return key, {"error": f"биролл не скачался: {cand['url']}"}
+        answer = ingest(public, str(raw), kind="video")
+        raw.unlink(missing_ok=True)
+        if not answer.get("ok") or not answer.get("path"):
+            return key, {"error": answer.get("error") or "заморозка не удалась"}
+        return key, {"file": answer["path"], "intent": ""}
+
+    for key, answer in pool.map(freeze, list(chosen.items())):
+        answer["intent"] = next(r["intent"] for r in requests
+                                if r["key"] == key)
+        resolved[key] = answer
+        if "file" in answer:
+            problem = insert_problem(public / answer["file"],
+                                     next(r.get("rect") for r in requests
+                                          if r["key"] == key))
+            if problem:
+                print(f"биролл «{answer['intent']}» отклонён: {problem}")
+                resolved[key] = {"error": problem}
+    return resolved
+
+
+def resolve_all(public, requests: list[dict], *, context: dict | None = None,
+                judge_runner=None) -> dict[str, dict]:
     """Подобрать все вставки: поиск и заморозка параллельно, выбор по порядку.
 
-    `requests` — список `{"key", "type", "intent", "rect", "required"}`; `rect`
-    — прямоугольник, который файл закроет в кадре, `required` — сцена без
-    ведущей, где вставка обязательна. Возвращает
+    `requests` — список `{"key", "type", "intent", "rect", "required",
+    "seconds", "speech"}`; `rect` — прямоугольник, который файл закроет в
+    кадре, `required` — сцена без ведущей, где вставка обязательна, `speech` —
+    реплика диктора для судьи. `context` — `{"domain": …, "anti": …}` из плана
+    агента. Возвращает
     `{key: {"file": путь относительно public} | {"error": …}}`.
 
     Выбор кандидатов идёт строго в порядке запросов, а не наперегонки: иначе
@@ -338,12 +596,21 @@ def resolve_all(public, requests: list[dict]) -> dict[str, dict]:
     if not requests:
         return {}
 
+    videos = [r for r in requests if r.get("type") == "video"]
     searchable = [r for r in requests if r.get("type", "image") == "image"]
-    blind = [r for r in requests if r.get("type", "image") != "image"]
+    blind = [r for r in requests
+             if r.get("type", "image") not in ("image", "video")]
 
     resolved: dict[str, dict] = {}
 
     with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
+        if videos:
+            resolved.update(_resolve_videos(
+                public, videos,
+                domain=str((context or {}).get("domain") or ""),
+                anti=str((context or {}).get("anti") or ""),
+                judge_runner=judge_runner, pool=pool))
+
         found = dict(zip(
             [r["key"] for r in searchable],
             pool.map(lambda r: search_assets(r["intent"]), searchable)))

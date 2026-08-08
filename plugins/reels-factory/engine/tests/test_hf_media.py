@@ -155,3 +155,90 @@ def test_пустой_каталог_отдаёт_ошибку_а_не_пада�
     _wire(monkeypatch, {})
     found = resolve_all(tmp_path, [_request("s-01", "не найдётся")])
     assert "error" in found["s-01"]
+
+
+# ---------- видео-бироллы ----------
+
+def _pexels_video(vid, duration=12.0, files=None):
+    return {"id": vid, "duration": duration,
+            "image": f"https://images.pexels.com/{vid}.jpeg",
+            "video_files": files if files is not None else [
+                {"file_type": "video/mp4", "width": 1080, "height": 1920,
+                 "link": f"https://videos.pexels.com/video-files/{vid}-hd.mp4"},
+                {"file_type": "video/mp4", "width": 2160, "height": 3840,
+                 "link": f"https://videos.pexels.com/video-files/{vid}-4k.mp4"}]}
+
+
+def test_лучший_файл_ближе_к_нашей_высоте():
+    """4K тянется дольше, кадр у нас 1080x1920 — берём достаточное."""
+    best = hf_media._best_file(_pexels_video("а"))
+    assert best["height"] == 1920
+
+
+def test_горизонтальные_и_мелкие_файлы_не_берутся():
+    video = _pexels_video("а", files=[
+        {"file_type": "video/mp4", "width": 1920, "height": 1080,
+         "link": "https://cdn/х.mp4"},
+        {"file_type": "video/mp4", "width": 540, "height": 960,
+         "link": "https://cdn/м.mp4"}])
+    assert hf_media._best_file(video) is None
+
+
+def _wire_video(monkeypatch, catalog, verdicts=None):
+    from concurrent.futures import ThreadPoolExecutor
+    monkeypatch.setattr(hf_media, "search_pexels",
+                        lambda intent, **kw: catalog.get(intent, []))
+    monkeypatch.setattr(hf_media, "_download",
+                        lambda url, target: target)
+    monkeypatch.setattr(
+        hf_media, "ingest",
+        lambda public, src, **kw: {"ok": True,
+                                   "path": ".media/video/"
+                                           + str(src).rsplit("\\", 1)[-1]
+                                                     .rsplit("/", 1)[-1]})
+    monkeypatch.setattr(hf_media, "insert_problem", lambda path, rect=None: None)
+    monkeypatch.setattr(hf_media, "judge_previews",
+                        lambda requests, **kw: verdicts or {})
+    monkeypatch.setattr(hf_media.Path, "unlink",
+                        lambda self, missing_ok=False: None)
+    return ThreadPoolExecutor(max_workers=2)
+
+
+def _vreq(key, intent, seconds=3.0):
+    return {"key": key, "type": "video", "intent": intent, "rect": FULL,
+            "required": False, "seconds": seconds, "speech": "реплика"}
+
+
+def _vcand(id_, duration=12.0):
+    return {"id": id_, "duration": duration, "preview": f"https://p/{id_}.jpg",
+            "url": f"https://v/{id_}.mp4", "width": 1080, "height": 1920,
+            "is_transparent": False}
+
+
+def test_вердикт_судьи_уважается(monkeypatch, tmp_path):
+    with _wire_video(monkeypatch,
+                     {"стол": [_vcand("первый"), _vcand("второй")]},
+                     verdicts={"s-01": 1}) as pool:
+        found = hf_media._resolve_videos(tmp_path, [_vreq("s-01", "стол")],
+                                         pool=pool)
+    assert found["s-01"]["file"].endswith("второй.mp4")
+
+
+def test_null_судьи_оставляет_сцену_без_вставки(monkeypatch, tmp_path):
+    """Кринж хуже отсутствия: сцену закроет ведущая."""
+    with _wire_video(monkeypatch, {"стол": [_vcand("первый")]},
+                     verdicts={"s-01": None}) as pool:
+        found = hf_media._resolve_videos(tmp_path, [_vreq("s-01", "стол")],
+                                         pool=pool)
+    assert "error" in found["s-01"]
+
+
+def test_один_ролик_не_ставится_в_две_сцены(monkeypatch, tmp_path):
+    with _wire_video(monkeypatch,
+                     {"стол": [_vcand("общий"), _vcand("другой")],
+                      "стол крупно": [_vcand("общий"), _vcand("третий")]}) as pool:
+        found = hf_media._resolve_videos(
+            tmp_path, [_vreq("s-01", "стол"), _vreq("s-02", "стол крупно")],
+            pool=pool)
+    assert found["s-01"]["file"].endswith("общий.mp4")
+    assert found["s-02"]["file"].endswith("третий.mp4")

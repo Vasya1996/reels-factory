@@ -212,6 +212,19 @@ def lay_out_scenes(scenes: list[dict], phrases: list[dict], *,
     return [item["scene"] for item in placed]
 
 
+def speech_between(phrases: list[dict], start: float, end: float) -> str:
+    """Слова диктора внутри окна сцены — для судьи вставок.
+
+    Диапазоны фраз к этому моменту уже сняты с плана (раскладка их вычистила),
+    поэтому реплика восстанавливается по времени: фраза принадлежит сцене, в
+    которую попадает её середина.
+    """
+    picked = [phrase["text"] for phrase in phrases
+              if start - 0.001 <= (float(phrase["start"])
+                                   + float(phrase["end"])) / 2 < end]
+    return " ".join(picked)
+
+
 def _check_tiling(placed: list[dict], phrases: list[dict]) -> None:
     """Сцены идут подряд по фразам, без дырок и без нахлёста.
 

@@ -32,7 +32,9 @@ from reels_factory.hf_gates import (
 )
 from reels_factory.hf_layout import quantize
 from reels_factory.hf_media import resolve_all
-from reels_factory.hf_phrases import lay_out_scenes, phrase_timeline
+from reels_factory.hf_phrases import (
+    lay_out_scenes, phrase_timeline, speech_between,
+)
 from reels_factory.hf_probe import probe_gates
 from reels_factory.hf_rhythm import rhythm_gates
 from reels_factory.hf_sdk import sdk_session
@@ -453,8 +455,18 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                         {"key": "sfx-whoosh", "type": "sfx",
                          "intent": "whoosh short"}])
                     whoosh = (found_sfx.get("sfx-whoosh") or {}).get("file")
+                # Судье вставок нужна реплика диктора под каждой сценой и
+                # тема ролика — без них он судил бы картинку без смысла.
+                requests = collect_intents(board)
+                for request in requests:
+                    scene = next((s for s in board.get("scenes") or []
+                                  if str(s.get("id")) == request["key"]), {})
+                    request["speech"] = speech_between(
+                        phrases, float(scene.get("startSec", 0)),
+                        float(scene.get("endSec", 0)))
                 with sdk_session() as sdk:
-                    found = resolve_all(public, collect_intents(board))
+                    found = resolve_all(public, requests,
+                                        context=board.get("brollContext"))
                     lost = settle_inserts(board, found, saved_clips, duration,
                                           public=public)
                     if lost:

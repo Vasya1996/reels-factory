@@ -80,7 +80,8 @@ def _fakes(monkeypatch, tmp_path, storyboards):
     monkeypatch.setattr(hf_render, "collect_intents", lambda board: [])
     monkeypatch.setattr(hf_render, "settle_inserts",
                         lambda board, found, clips, duration, public=None: [])
-    monkeypatch.setattr(hf_render, "resolve_all", lambda public, requests: {})
+    monkeypatch.setattr(hf_render, "resolve_all",
+                        lambda public, requests, **kw: {})
     monkeypatch.setattr(hf_render, "rhythm_gates",
                         lambda mp4: {"D18_change_rate": "PASS",
                                      "D19_static_span": "PASS"})
