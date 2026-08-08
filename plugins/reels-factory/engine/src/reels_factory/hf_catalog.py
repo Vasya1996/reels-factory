@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -132,16 +133,25 @@ def block_durations(catalog_dir=None) -> dict[str, float]:
     return durations
 
 
+#: Наши 25 полноэкранных блоков: имена вида g07-…. Агенту не выдаются — это
+#: решение, а не пауза (см. задание, «Возврат наших блоков»).
+_OUR_BLOCK = re.compile(r"^g\d\d-")
+
+
 def overlay_names(catalog_dir=None) -> list[str]:
-    """Имена накладок каталога — блоков с тегом `overlay`.
+    """Имена накладок каталога — их блоков с тегом `overlay`.
 
     Ровно те 23 их блока, что перенесены ревизией работы 5: нижние трети,
-    вспышки, фактура, соц-карточки. Наши 25 полноэкранных агенту по-прежнему
-    не выдаются — у них тега `overlay` нет.
+    вспышки, фактура, соц-карточки. Фильтра по одному тегу мало: наши
+    полноэкранные блоки тоже несут тег `overlay` в своих карточках — прогон
+    20 получил в паспорта наш g21, поставил его, и сборку завернули D22
+    (заглушка) и их `content_overlap`. Поэтому наши имена исключаются явно.
     """
     root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
     found = []
     for name in block_names(catalog_dir):
+        if _OUR_BLOCK.match(name):
+            continue
         item = json.loads((root / "blocks" / name / "registry-item.json")
                           .read_text(encoding="utf-8"))
         if "overlay" in (item.get("tags") or []):
