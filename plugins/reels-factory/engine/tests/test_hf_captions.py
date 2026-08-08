@@ -31,9 +31,6 @@ WORDS = [{"start": 0.1, "end": 0.5, "text": "Все"},
          {"start": 4.2, "end": 4.6, "text": "скрыто"},
          {"start": 8.0, "end": 8.4, "text": "снова"}]
 
-CARDS = [{"id": "c1", "zone": "fullscreen", "startSec": 4.0, "endSec": 5.0}]
-
-
 def _public(tmp_path):
     target = tmp_path / COMPONENT_REL
     target.parent.mkdir(parents=True)
@@ -41,11 +38,13 @@ def _public(tmp_path):
     return tmp_path
 
 
-def test_слова_под_полноэкранной_карточкой_в_титр_не_идут(tmp_path):
-    write_caption_data(_public(tmp_path), words=WORDS, cards=CARDS, duration=10.0)
+def test_титр_идёт_весь_ролик(tmp_path):
+    """Гасить его было нужно, пока сцена была непрозрачным блоком со своим
+    текстом. В слоёном кадре своего текста нет ни у вставки, ни у ведущей."""
+    write_caption_data(_public(tmp_path), words=WORDS, duration=10.0)
     data = json.loads((tmp_path / "caption-data.json").read_text(encoding="utf-8"))
     said = [w["text"] for s in data["segments"] for w in s["words"]]
-    assert said == ["Все", "продажи", "снова"]
+    assert said == ["Все", "продажи", "скрыто", "снова"]
 
 
 def _snippet(public):
@@ -55,7 +54,7 @@ def _snippet(public):
 
 
 def test_данные_в_их_контракте(tmp_path):
-    write_caption_data(_public(tmp_path), words=WORDS, cards=[], duration=10.0)
+    write_caption_data(_public(tmp_path), words=WORDS, duration=10.0)
     data = json.loads((tmp_path / "caption-data.json").read_text(encoding="utf-8"))
     assert data["version"] == 1
     assert data["resolution"] == {"width": 1080, "height": 1920}
@@ -65,7 +64,7 @@ def test_данные_в_их_контракте(tmp_path):
 
 def test_сниппет_без_внешних_ссылок(tmp_path):
     public = _public(tmp_path)
-    write_caption_data(public, words=WORDS, cards=[], duration=10.0)
+    write_caption_data(public, words=WORDS, duration=10.0)
     snippet = _snippet(public)
     assert "fonts.googleapis.com" not in snippet
     assert "cdn.jsdelivr.net" not in snippet
@@ -74,24 +73,30 @@ def test_сниппет_без_внешних_ссылок(tmp_path):
 def test_гарнитура_подменена_в_обоих_местах(tmp_path):
     """Компонент и рисует, и меряет ширину одним именем — менять надо оба."""
     public = _public(tmp_path)
-    write_caption_data(public, words=WORDS, cards=[], duration=10.0)
+    write_caption_data(public, words=WORDS, duration=10.0)
     snippet = _snippet(public)
-    assert "Montserrat" not in snippet
-    assert snippet.count("Unbounded") == 2
+    engine = (public / "captions.js").read_text(encoding="utf-8")
+    assert "Montserrat" not in snippet and "Montserrat" not in engine
+    # рисует стиль, меряет ширину движок — гарнитура подменена в обоих
+    assert "Unbounded" in snippet and "Unbounded" in engine
 
 
 def test_корень_подогнан_под_наш_кадр(tmp_path):
     public = _public(tmp_path)
-    write_caption_data(public, words=WORDS, cards=[], duration=10.0)
+    write_caption_data(public, words=WORDS, duration=10.0)
     snippet = _snippet(public)
     assert 'data-width="1080"' in snippet and 'data-height="1920"' in snippet
     assert 'data-duration="10.0000"' in snippet
     assert 'data-track-index="8"' in snippet
 
 
-def test_данные_приходят_сразу_а_не_запросом(tmp_path):
-    """Компонент умеет и `fetch`, и глобал; в рендере честнее глобал."""
+def test_движок_титра_уезжает_отдельным_файлом(tmp_path):
+    """Их линтер считает строки index.html и за 300 даёт предупреждение
+    `composition_file_too_large`; под `--strict` оно роняет сборку. В прогоне
+    13 из 684 строк 608 были этим скриптом и его данными."""
     public = _public(tmp_path)
-    write_caption_data(public, words=WORDS, cards=[], duration=10.0)
+    write_caption_data(public, words=WORDS, duration=10.0)
     snippet = _snippet(public)
-    assert "window.__HF_CAPTION__ = {" in snippet
+    assert "window.__HF_CAPTION__ = {" in (
+        public / "captions.js").read_text(encoding="utf-8")
+    assert '<script src="captions.js">' in snippet

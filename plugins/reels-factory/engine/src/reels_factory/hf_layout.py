@@ -5,6 +5,15 @@ talking-head-recut (таблица composition layouts, колонка portrait)
 обновляется отдельно от нас, поэтому значения зафиксированы здесь.
 
 Безопасных зон движок не знает вовсе — это наше знание.
+
+Кадр собирается слоями: ведущая — обычный клип, вставка — обычный
+`<img>`/`<video>` поверх или под ней. Порядок отрисовки держит CSS `z-index`, а
+не `data-track-index`: тот у них «display-only; render never reads it»
+(packages/core/src/runtime/timeline.ts:599). Словаря позиций у них нет ни в
+`/general-video`, ни в блоках реестра, поэтому конкретные прямоугольники — наши.
+
+Зоны карточек (`ZONE_RECTS`, `ALLOWED_ZONES`, `FACELESS_ZONES`) к слоёному кадру
+отношения не имеют и остаются здесь ради консольного маршрута `editplan`.
 """
 from __future__ import annotations
 
@@ -42,6 +51,60 @@ ZONE_RECTS = {
     "lower-third": {"left": 0, "top": 1344, "width": 1080, "height": 576},
     "side-panel": {"left": 0, "top": 1152, "width": 1080, "height": 768},
 }
+
+#: Позиции ведущей, которые агент вправе назвать. `overlay` и `pip` из
+#: VIDEO_RECTS сюда не входят: первый повторяет `full`, второй — `pip-tr`, и
+#: два имени одного прямоугольника агенту только мешают выбирать.
+#: `split` (ведущая в нижней половине) снят. В вертикальном кадре её лицо
+#: попадает туда же, где идёт титр: `moved_face` переносит центр лица в 1187 px,
+#: полоса титра занимает 1040–1300, и гейт D8 «текст на лице» валится всегда.
+#: Прогон 15 упёрся в это на первой же сцене со `split`. Верхняя половина
+#: (`stack`) такого не даёт — там лицо уезжает в 169 px.
+PRESENTER_POSITIONS = ("full", "punch", "pip-tr", "pip-tl", "pip-br", "pip-bl",
+                       "stack", "none")
+
+#: Где встаёт вставка при каждой позиции ведущей.
+#:
+#: Слои кадра статичны: у элемента один `data-track-index` на весь ролик, и
+#: поменять порядок по ходу нечем. Значит вставка и ведущая либо не
+#: пересекаются вовсе, либо ведущей в этот момент не видно. Отсюда таблица:
+#: под `pip-*` и `none` вставка занимает весь кадр (ведущая лежит выше и
+#: остаётся видна поверх неё), под `stack` и `split` — ровно ту половину, где
+#: ведущей нет. Под `full` и `punch` места для вставки в кадре нет: она бы
+#: закрыла собой ведущую.
+INSERT_RECTS = {
+    "none": {"left": 0, "top": 0, "width": OUT_W, "height": OUT_H},
+    "pip-tr": {"left": 0, "top": 0, "width": OUT_W, "height": OUT_H},
+    "pip-tl": {"left": 0, "top": 0, "width": OUT_W, "height": OUT_H},
+    "pip-br": {"left": 0, "top": 0, "width": OUT_W, "height": OUT_H},
+    "pip-bl": {"left": 0, "top": 0, "width": OUT_W, "height": OUT_H},
+    "stack": {"left": 0, "top": 844, "width": OUT_W, "height": OUT_H - 844},
+}
+
+#: Позиции, при которых ведущая закрывает кадр целиком.
+FULL_FRAME_PRESENTER = {"full", "punch", "overlay"}
+
+
+def insert_rect(presenter: str) -> dict | None:
+    """Прямоугольник вставки под названную позицию ведущей.
+
+    `None` — вставку ставить некуда: ведущая занимает весь кадр.
+    """
+    return INSERT_RECTS.get(presenter)
+
+
+def fills_frame(presenter: str, has_insert: bool) -> bool:
+    """Закрыт ли кадр целиком при этой раскладке.
+
+    Ведущая во весь кадр закрывает его сама. Иначе кадр закрывает вставка — она
+    либо во весь кадр (под `pip-*` и `none`), либо дополняет ведущую до целого
+    (под `stack` и `split`). Без вставки в этих раскладках остаток кадра —
+    чёрный прямоугольник.
+    """
+    if presenter in FULL_FRAME_PRESENTER:
+        return True
+    return has_insert and presenter in INSERT_RECTS
+
 
 # Все пять зон скила (talking-head-recut/SKILL.md:180-188) разрешены: своих
 # ограничений поверх его геометрии мы не вводим — они однажды уже зажали
@@ -85,6 +148,20 @@ def avatar_gaps(clips: list[dict], duration: float) -> list[tuple[float, float]]
     if duration - cursor > 1.0 / FPS:
         gaps.append((cursor, duration))
     return gaps
+
+
+def in_avatar_gap(start: float, end: float,
+                  gaps: list[tuple[float, float]]) -> bool:
+    """Попадает ли кусок на пропуск между островами аватара.
+
+    Допуск в кадр обязателен: границы сцен округлены к сетке кадров, а границы
+    островов — нет, и на стыке они расходятся на сотые доли секунды. Без допуска
+    сцена, кончающаяся ровно там, где начинается пропуск, считалась бы
+    попавшей в него и теряла ведущую целиком.
+    """
+    frame = 1.0 / FPS
+    return any(min(end, gap_end) - max(start, gap_start) > frame
+               for gap_start, gap_end in gaps)
 
 
 def face_box(face: dict | None) -> dict | None:

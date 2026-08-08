@@ -7,9 +7,9 @@
 читает вовсе — по их же словам, `storyboard.json` не парсит ни одна команда
 (talking-head-recut/SKILL.md:604-606).
 
-Значит наше здесь: схема, сетка кадров, плотность карточек и закрытые
-интервалы без ведущей. Лицо и подвижность ведущей меряются на живой композиции
-в `hf_probe.py` — раскадровка о них врать умеет, DOM нет.
+Значит наше здесь: схема, сетка кадров, плотность сцен, закрытые интервалы без
+ведущей и различимость соседних сцен. Лицо и подвижность ведущей меряются на
+живой композиции в `hf_probe.py` — раскадровка о них врать умеет, DOM нет.
 """
 from __future__ import annotations
 
@@ -17,40 +17,53 @@ import math
 import re
 from pathlib import Path
 
-from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.hf_layout import (
-    FULL_FRAME_ZONES, VIDEO_RECTS, ZONE_RECTS, avatar_gaps, quantize,
+    PRESENTER_POSITIONS, avatar_gaps, fills_frame, in_avatar_gap, quantize,
 )
-from reels_factory.hf_rhythm import MAX_STATIC_SPAN, MIN_CARD_GAP
+from reels_factory.hf_rhythm import MAX_SECONDS_PER_CHANGE, MAX_STATIC_SPAN
 
 
-def min_cards(duration: float) -> int:
-    """Наименьшее число карточек, при котором план вообще может взять планку.
+def min_scenes(duration: float) -> int:
+    """Наименьшее число сцен, при котором план вообще может взять планку.
 
-    Верхней границы больше нет. Она приходила из формулы плотности
+    Верхней границы нет. Она приходила из формулы плотности
     `talking-head-recut` (SKILL.md:206-229) — правила упаковки чужого клипа. На
     маршруте `/general-video`, по которому мы теперь идём, такой формулы нет
     вовсе: он велит «Match density to the requested format and message» и прямо
     отказывается называть число — «not permission to invent claims, scenes, or a
-    fixed number of elements» (general-video/SKILL.md:128). Считать потолок
-    стало нечем, а прогоны 8 и 9 упирались ровно в него: оба отдали 10 карточек
-    при расчётном потолке 10.
+    fixed number of elements» (general-video/SKILL.md:128).
 
-    Пол остаётся, но выводится из НАШЕЙ планки приёмки, а не из их формулы:
-    D19 не терпит куска длиннее MAX_STATIC_SPAN без смены картинки, а сменить её
-    в нашей композиции может только карточка. Значит на `duration` секунд их
-    нужно хотя бы столько, сколько таких кусков помещается.
+    Пол выводится из НАШЕЙ планки приёмки, и после перехода на слои считать его
+    надо иначе. Раньше картинку меняла только карточка, и она давала две смены:
+    приход и уход. Теперь сцены выстилают ролик подряд, и смена — это граница
+    между соседними сценами, то есть их на одну меньше, чем сцен. Значит под
+    планку D18 (не реже раза в MAX_SECONDS_PER_CHANGE секунд) нужно на сцену
+    больше, чем смен.
+
+    Прежний пол из D19 (кусок не длиннее MAX_STATIC_SPAN) остаётся: он слабее,
+    но меряет другое, и обе планки должны быть взяты. Берём большее из двух —
+    иначе план с шестью сценами доезжал бы до рендера и падал на D18 через
+    четыре минуты после того, как это стало известно.
     """
-    return max(1, math.ceil(float(duration) / MAX_STATIC_SPAN))
+    from_static = math.ceil(float(duration) / MAX_STATIC_SPAN)
+    from_rate = int(float(duration) / MAX_SECONDS_PER_CHANGE) + 1
+    return max(1, from_static, from_rate)
 
 
 def _schema_problems(storyboard: dict) -> list[str]:
-    """Расхождения с их схемой v3 (SKILL.md:130-165, 610-616)."""
+    """Расхождения с их схемой v3 (SKILL.md:130-165, 610-616).
+
+    Схема их, но список сцен у нас называется `scenes`, а не `cards`: карточкой
+    была непрозрачная сцена во весь кадр, и этого объекта в кадре больше нет.
+    Схему это не ломает — их же дока говорит про `storyboard.json`, что «no CLI
+    command consumes it» (talking-head-recut/SKILL.md:125): файл существует,
+    чтобы решения были явными, а разбирает его только наш код.
+    """
     problems = []
     if storyboard.get("schemaVersion") != 3:
         problems.append(
             f'schemaVersion={storyboard.get("schemaVersion")!r}, ожидается 3')
-    for field in ("composition", "videoTrack", "subtitles", "cards"):
+    for field in ("composition", "videoTrack", "subtitles", "scenes"):
         if field not in storyboard:
             problems.append(f"нет поля {field}")
     composition = storyboard.get("composition") or {}
@@ -60,16 +73,26 @@ def _schema_problems(storyboard: dict) -> list[str]:
     if not isinstance(video, dict) or not video.get("bounds"):
         problems.append("videoTrack.bounds не задан — геометрия ведущей живёт там")
 
-    for card in storyboard.get("cards") or []:
-        card_id = card.get("id", "?")
-        for field in ("intent", "contentHints", "accentIndex"):
-            if field not in card:
-                problems.append(f"{card_id}: нет поля {field}")
+    for scene in storyboard.get("scenes") or []:
+        scene_id = scene.get("id", "?")
+        if "intent" not in scene:
+            problems.append(f"{scene_id}: нет поля intent")
+        position = scene.get("presenter")
+        if position not in PRESENTER_POSITIONS:
+            problems.append(
+                f"{scene_id}: положение ведущей {position!r} неизвестно, есть "
+                f"{', '.join(PRESENTER_POSITIONS)}")
+        insert = scene.get("insert")
+        if insert is not None and not isinstance(insert, dict):
+            problems.append(f"{scene_id}: `insert` должен быть объектом или null")
+        elif isinstance(insert, dict) and not str(insert.get("look") or "").strip():
+            problems.append(
+                f"{scene_id}: у вставки нет поля `look` — по нему её и ищут")
         # Поля прошлого контракта: мы просили их сверх схемы, и они противоречат
         # videoTrack.bounds — соблюсти оба разом нельзя, значит остаётся их.
-        for ours in ("contentRect", "videoRect"):
-            if ours in card:
-                problems.append(f"{card_id}: поле {ours} их схемой не предусмотрено")
+        for ours in ("contentRect", "videoRect", "zone"):
+            if ours in scene:
+                problems.append(f"{scene_id}: поле {ours} их схемой не предусмотрено")
     return problems
 
 
@@ -125,162 +148,122 @@ def check_media(rdir) -> dict:
             else "FAIL: " + "; ".join(problems)}
 
 
-#: Зоны, где карточке разрешён непрозрачный фон. Для `video-overlay` и
-#: `lower-third` их контракт это прямо запрещает: «the card's .root MUST NOT
-#: paint a full opaque background» (talking-head-recut/SKILL.md:631-637), эти
-#: карточки живут поверх видимого кадра.
-OPAQUE_ZONES = {"fullscreen", "side-panel", "whiteboard-area"}
-
-
-def _covers_frame(rects: list[dict]) -> bool:
-    """Закрывают ли прямоугольники кадр целиком.
-
-    Разрезаем кадр по границам прямоугольников и смотрим каждую клетку: для
-    осевых прямоугольников это точно, а их всего два.
-    """
-    xs = sorted({0, OUT_W} | {r["left"] for r in rects}
-                | {r["left"] + r["width"] for r in rects})
-    ys = sorted({0, OUT_H} | {r["top"] for r in rects}
-                | {r["top"] + r["height"] for r in rects})
-    for x0, x1 in zip(xs, xs[1:]):
-        if x1 <= 0 or x0 >= OUT_W:
-            continue
-        for y0, y1 in zip(ys, ys[1:]):
-            if y1 <= 0 or y0 >= OUT_H:
-                continue
-            cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-            if not any(r["left"] <= cx <= r["left"] + r["width"]
-                       and r["top"] <= cy <= r["top"] + r["height"]
-                       for r in rects):
-                return False
-    return True
+def _has_insert(scene: dict) -> bool:
+    insert = scene.get("insert")
+    return isinstance(insert, dict) and bool(str(insert.get("look") or "").strip())
 
 
 def check_frame_filled(storyboard: dict) -> dict:
-    """Ни на одной карточке кадр не пустует.
+    """Ни на одной сцене кадр не пустует.
 
-    Уменьшенное окно ведущей закрывает седьмую часть кадра. Если карточка над
-    ним прозрачная, всё остальное — чёрный прямоугольник. Проверяем по
-    геометрии: окно ведущей плюс непрозрачная карточка обязаны закрыть кадр.
+    Считалось это по геометрии окна ведущей плюс непрозрачной карточки. Кадр из
+    слоёв закрывают другие два прямоугольника: ведущая и вставка. Ведущая во
+    весь кадр закрывает его сама; в углу или в половине — остальное обязана
+    закрыть вставка, иначе там чёрный прямоугольник. Ровно это и было видно на
+    прогоне 13: пустые две трети кадра.
+
+    Геометрию пересчитывать не надо: таблица `INSERT_RECTS` построена как
+    дополнение к раскладке ведущей, и `fills_frame` отвечает по ней.
     """
     problems = []
-    for card in storyboard.get("cards") or []:
-        render = card.get("render") or {}
-        if render.get("kind") == "block":
-            continue                      # блок — сцена во весь кадр
-        zone = card.get("zone")
-        position = card.get("presenter") or "full"
-        rects = []
-        if position != "none" and position in VIDEO_RECTS:
-            rects.append(VIDEO_RECTS[position])
-        if zone in OPAQUE_ZONES and zone in ZONE_RECTS:
-            rects.append(ZONE_RECTS[zone])
-        if not rects or not _covers_frame(rects):
+    for scene in storyboard.get("scenes") or []:
+        position = str(scene.get("presenter") or "full")
+        if not fills_frame(position, _has_insert(scene)):
             problems.append(
-                f'{card.get("id", "?")}: ведущая {position!r} и зона {zone!r} '
-                "не закрывают кадр — остальное будет чёрным")
+                f'{scene.get("id", "?")}: ведущая {position!r} без вставки не '
+                "закрывает кадр — остальное будет чёрным")
     return {"D20_frame_filled": "PASS" if not problems
             else "FAIL: " + "; ".join(problems)}
 
 
 def check_storyboard(storyboard: dict, *, clips: list[dict] | None = None,
                      duration: float = 0.0) -> dict:
-    """Гейты раскадровки. PASS либо FAIL с перечислением карточек."""
-    cards = storyboard.get("cards") or []
+    """Гейты раскадровки. PASS либо FAIL с перечислением сцен."""
+    scenes = storyboard.get("scenes") or []
     grid_bad = []
 
-    for card in cards:
-        card_id = card.get("id", "?")
+    for scene in scenes:
+        scene_id = scene.get("id", "?")
         for field in ("startSec", "endSec"):
-            if field not in card:
-                grid_bad.append(f"{card_id}: нет поля {field}")
+            if field not in scene:
+                grid_bad.append(f"{scene_id}: нет поля {field}")
                 continue
-            value = float(card[field])
+            value = float(scene[field])
             if abs(value - quantize(value)) > 0.0005:
-                grid_bad.append(f"{card_id}: {field}={value} вне сетки кадров")
+                grid_bad.append(f"{scene_id}: {field}={value} вне сетки кадров")
 
-    # Плотность. Прошлый прогон вернул 34 «карточки» средней длиной 1,7 с — это
-    # были группы субтитров, настоящей графики ноль. Пустая раскадровка при этом
-    # проходила все проверки: цикл по пустому списку не спотыкается ни разу.
-    # Сверху больше не ограничиваем — см. min_cards.
+    # Плотность. Пол считается иначе, чем раньше, — см. min_scenes. Верхней
+    # границы нет: плотность выбирает агент под смысл.
     density_bad = []
-    low = min_cards(duration)
-    if duration > 0 and len(cards) < low:
+    low = min_scenes(duration)
+    if duration > 0 and len(scenes) < low:
         density_bad.append(
-            f"карточек {len(cards)}, при {duration:g} с нужно хотя бы {low}, "
-            f"иначе кусок без смены картинки выйдет длиннее {MAX_STATIC_SPAN:g} с; "
-            "субтитры карточками не считаются")
-
-    # Интервал без ведущей закрывается ЦЕПОЧКОЙ полноэкранных карточек, а не
-    # одной: разбить показ на титул и список — нормальное монтажное решение.
-    # Допуск в кадр — на зазоры, которые агент оставляет между карточками.
-    frame = 1.0 / FPS
-    spans = sorted(
-        (float(c.get("startSec", 0)), float(c.get("endSec", 0)))
-        for c in cards if c.get("zone") in FULL_FRAME_ZONES
-    )
-    cover_bad = []
-    for start, end in avatar_gaps(clips or [], duration):
-        cursor = start
-        for span_start, span_end in spans:
-            if span_start <= cursor + frame + 0.001:
-                cursor = max(cursor, span_end)
-        if cursor < end - frame - 0.001:
-            cover_bad.append(
-                f"интервал {start:g}–{end:g} без ведущей не закрыт полноэкранной "
-                "карточкой — будет чёрный экран")
+            f"сцен {len(scenes)}, при {duration:g} с нужно хотя бы {low}: смену "
+            "картинки даёт граница между соседними сценами, и при меньшем числе "
+            f"планку D18 не взять")
 
     def gate(problems: list[str]) -> str:
         return "PASS" if not problems else "FAIL: " + "; ".join(problems)
 
     # D10 (зона карточки из списка пяти) снят. Список зон — таблица
     # `talking-head-recut/SKILL.md:180-188`, у `/general-video` таблицы зон нет
-    # вовсе. Вдобавок гейт проверял значение, которое пишет наш же код:
-    # `complete_storyboard` ставит `zone = "fullscreen"` каждой карточке
-    # (hf_compose.py:264) до того, как гейты успевают её увидеть.
+    # вовсе, а самих зон после перехода на слои не осталось.
     result = {"D9_frame_grid": gate(grid_bad),
               "D11_schema": gate(_schema_problems(storyboard)),
-              "D12_faceless_cover": gate(cover_bad),
+              "D12_faceless_cover": gate(
+                  _faceless_problems(scenes, clips or [], duration)),
               "D13_density": gate(density_bad),
-              "D21_card_gaps": gate(_gap_problems(cards, clips or [], duration))}
+              "D21_scene_contrast": gate(_sameness_problems(scenes))}
     result.update(check_frame_filled(storyboard))
     return result
 
 
-def _has_clip(clips: list[dict], at: float) -> bool:
-    return any(c["start"] <= at + 1e-6 < c["start"] + c["duration"] for c in clips)
+def _faceless_problems(scenes: list[dict], clips: list[dict],
+                       duration: float) -> list[str]:
+    """Кусок, на который аватар не заказан, закрыт полноэкранной вставкой.
 
-
-def _gap_problems(cards: list[dict], clips: list[dict],
-                  duration: float) -> list[str]:
-    """Между соседними карточками есть зазор, и ни один кусок не длиннее восьми.
-
-    Приход сцены и её уход детектор считает двумя сменами только когда между
-    сценами есть кадр без них: карточки впритык он видит как одну склейку.
-
-    Зазор требуем только там, где есть чем его занять: на интервале без клипа
-    ведущей пустое место — это чёрный кадр, и там карточки обязаны идти
-    встык (это же требует D12). Предел в восемь секунд меряет и D19, но уже на
-    готовом файле — здесь видно до рендера.
+    Смысл гейта прежний, ищет он теперь другое. Раньше — полноэкранную
+    карточку; теперь такого объекта нет, и закрыть чёрный кадр может только
+    вставка во весь кадр, то есть вставка при ведущей `none`.
     """
     problems = []
-    ordered = sorted(
-        ((float(c.get("startSec", 0)), float(c.get("endSec", 0)),
-          c.get("id", "?")) for c in cards if "startSec" in c and "endSec" in c))
-    cursor = 0.0
-    for start, end, card_id in ordered:
-        if (start - cursor < MIN_CARD_GAP - 0.001
-                and _has_clip(clips, cursor)
-                and _has_clip(clips, max(start - 0.001, cursor))):
+    gaps = avatar_gaps(clips, duration)
+    if not gaps:
+        return problems
+    for scene in scenes:
+        start = float(scene.get("startSec", 0))
+        end = float(scene.get("endSec", 0))
+        if not in_avatar_gap(start, end, gaps):
+            continue
+        if scene.get("presenter") != "none" or not _has_insert(scene):
             problems.append(
-                f"перед {card_id} зазор {max(start - cursor, 0):.2f} с, нужен "
-                f"хотя бы {MIN_CARD_GAP:g} с — иначе смена картинки не считается")
-        if end - start > MAX_STATIC_SPAN:
+                f'{scene.get("id", "?")} ({start:g}–{end:g} с) попадает на кусок, '
+                "где ведущей нет вовсе: этой сцене нужна ведущая `none` и "
+                "вставка, иначе там чёрный экран")
+    return problems
+
+
+def _sameness_problems(scenes: list[dict]) -> list[str]:
+    """Соседние сцены отличаются картинкой.
+
+    Прежний D21 требовал зазор между карточками: приход сцены и её уход детектор
+    считал двумя сменами только тогда, когда между ними был кадр без карточки.
+    В слоёном кадре зазора нет и быть не может — сцены выстилают ролик. Смену
+    даёт сама граница, но только если по её сторонам разная картинка: две сцены
+    подряд с ведущей во весь кадр и без вставки — это один план, а не два, и
+    детектор их не разделит.
+    """
+    problems = []
+    ordered = sorted(scenes, key=lambda scene: float(scene.get("startSec", 0)))
+    for left, right in zip(ordered, ordered[1:]):
+        same_presenter = (left.get("presenter") or "full") == (
+            right.get("presenter") or "full")
+        left_look = ((left.get("insert") or {}).get("look") or "").strip()
+        right_look = ((right.get("insert") or {}).get("look") or "").strip()
+        if same_presenter and left_look == right_look:
             problems.append(
-                f"{card_id} идёт {end - start:.1f} с, предел {MAX_STATIC_SPAN:g}")
-        cursor = max(cursor, end)
-    if duration - cursor > MAX_STATIC_SPAN:
-        problems.append(
-            f"после последней карточки {duration - cursor:.1f} с без смены "
-            f"картинки, предел {MAX_STATIC_SPAN:g}")
+                f'{left.get("id", "?")} и {right.get("id", "?")} идут подряд с '
+                "одинаковой картинкой — зритель увидит один план, а не два. "
+                "Смени в одной из них положение ведущей или вставку, либо "
+                "объедини их в одну сцену")
     return problems

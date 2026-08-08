@@ -12,7 +12,6 @@ import json
 import os
 import shutil
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from reels_factory import hf_captions
@@ -22,19 +21,17 @@ from reels_factory.face_detect import face_box_for, load_face
 from reels_factory.hf_agent import plan_with_agent
 from reels_factory.hf_assets import vendor_gsap
 from reels_factory.hf_brief import write_brief
-from reels_factory.hf_catalog import (
-    block_durations, serve_catalog, write_project_config,
-)
+from reels_factory.hf_catalog import serve_catalog, write_project_config
 from reels_factory.hf_compose import (
     build_composition, clear_generated, collect_intents, complete_storyboard,
+    settle_inserts,
 )
 from reels_factory.hf_fonts import inject_fonts
 from reels_factory.hf_gates import check_media, check_storyboard
 from reels_factory.hf_layout import quantize
 from reels_factory.hf_media import resolve_all
-from reels_factory.hf_phrases import lay_out_cards, phrase_timeline
+from reels_factory.hf_phrases import lay_out_scenes, phrase_timeline
 from reels_factory.hf_probe import probe_gates
-from reels_factory.hf_slots import min_card_seconds
 from reels_factory.hf_rhythm import rhythm_gates
 from reels_factory.hf_sdk import sdk_session
 from reels_factory.hyperframes_blocks import _HF_VERSION
@@ -50,12 +47,13 @@ RENDER_QUALITY = os.environ.get("REELS_RENDER_QUALITY", "standard")
 #: на сервере ядер и памяти другое количество.
 RENDER_WORKERS = os.environ.get("REELS_RENDER_WORKERS", "8")
 
-STEPS = ("prepare", "plan", "compose", "gates", "render", "loudness")
+STEPS = ("prepare", "plan", "compose", "gates", "shots", "render", "loudness")
 MAX_COMPOSE_ATTEMPTS = 2
 
-#: Сколько блоков каталога ставим разом. `npx` на каждый вызов тратит секунды
-#: на разрешение пакета, и пять блоков подряд — это полминуты ожидания ни на чём.
-INSTALL_PARALLEL = 4
+#: До скольких сцен контактный лист снимает ещё и пару кадров вокруг каждой
+#: склейки. Выше — только середины: съёмка идёт по кадру за раз, и при видео в
+#: композиции каждый кадр тянет за собой отдельный вызов ffmpeg.
+SNAPSHOT_SEAM_LIMIT = 10
 
 # Ключевой кадр на каждый кадр. Их рендерер перематывает видео покадрово, и на
 # редком GOP (по умолчанию у x264 — 250 кадров) перемотка попадает мимо: под
@@ -259,33 +257,19 @@ def _prepare_material(plan: dict, public: Path, rdir: Path) -> list[dict]:
     return media
 
 
-def _install_blocks(rdir: Path, names: list[str]) -> None:
-    """Поставить названные блоки их же командой, параллельно."""
-    missing = [name for name in dict.fromkeys(names)
-               if not (rdir / "public" / "compositions" / f"{name}.html").exists()]
-    if not missing:
-        return
-    with ThreadPoolExecutor(max_workers=INSTALL_PARALLEL) as pool:
-        errors = list(pool.map(
-            lambda name: _install_one(rdir, name), missing))
-    failed = [error for error in errors if error]
-    if failed:
-        raise RuntimeError("; ".join(failed))
+#: Секции их отчёта `check`, где лежат находки. Их пять, и `ok` считается по
+#: сумме ошибок и (под `--strict`) предупреждений всех пяти
+#: (packages/cli/src/utils/checkPipeline.ts:1331-1344).
+CHECK_SECTIONS = ("lint", "runtime", "layout", "motion", "contrast")
 
 
-def _install_one(rdir: Path, name: str) -> str | None:
-    try:
-        _cli("add", name, "--no-clipboard", cwd=rdir)
-    except RuntimeError as error:
-        return str(error)
-    if not (rdir / "public" / "compositions" / f"{name}.html").exists():
-        return (f"блок {name} не встал в public/compositions; "
-                "проверь, что он есть в каталоге")
-    return None
+def _check_findings(log: Path, *, severities=("error", "warning")) -> list[str]:
+    """Находки из их отчёта `check` — чтобы они дошли до агента словами.
 
-
-def _check_findings(log: Path) -> list[str]:
-    """Ошибки из их отчёта `check` — чтобы они дошли до агента словами."""
+    Формат отчёта — `CheckReport` (packages/cli/src/utils/checkTypes.ts:260-282):
+    на верхнем уровне никаких `errors`/`issues`, находки лежат в `findings`
+    каждой из пяти секций.
+    """
     if not log.exists():
         return []
     try:
@@ -293,28 +277,81 @@ def _check_findings(log: Path) -> list[str]:
     except json.JSONDecodeError:
         return []
     found = []
-    for item in report.get("errors") or report.get("issues") or []:
-        if isinstance(item, dict):
-            found.append(f'{item.get("code", "?")}: {item.get("message", "")}')
-        else:
-            found.append(str(item))
+    for name in CHECK_SECTIONS:
+        section = report.get(name) or {}
+        for item in section.get("findings") or []:
+            if not isinstance(item, dict):
+                found.append(str(item))
+                continue
+            if item.get("severity") not in severities:
+                continue
+            where = item.get("selector") or item.get("sourceFile") or ""
+            found.append(f'{item.get("code", "?")} [{name}] {where}: '
+                         f'{item.get("message", "")}')
     return found
 
 
-def _card_minimums(board: dict) -> dict[str, float]:
-    """Сколько секунд нужно каждой карточке под её блок.
+def _check_verdict(log: Path) -> str:
+    """Вердикт их `check` — по полю `ok` отчёта.
 
-    Сцена блока собирается за родную длительность; сильно короче — и в кадре
-    полусобранная сцена. Порог тот же, что проверяет `_stage_block`, только
-    считается заранее, чтобы раскладка сразу ставила достаточное окно.
+    Код выхода не годится: `hyperframes check` версии 0.7.84 отдаёт ноль всегда.
+    Проверено дважды — на композиции с предупреждением и на заведомо битом
+    вызове («✗ Not a directory»): оба раза печатается «Check failed» и код
+    выхода 0. Поле `ok` считается по их же формуле
+    `errorCount === 0 && (!strict || warningCount === 0)`
+    (packages/cli/src/utils/checkPipeline.ts:1344).
     """
-    natives = block_durations()
-    minimums = {}
-    for card in board.get("cards") or []:
-        native = natives.get((card.get("render") or {}).get("block"))
-        if native:
-            minimums[card.get("id")] = min_card_seconds(native)
-    return minimums
+    if not log.exists():
+        return "FAIL: их `check` не оставил отчёта"
+    try:
+        report = json.loads(log.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return "FAIL: отчёт их `check` не разбирается"
+    if report.get("ok"):
+        return "PASS"
+    found = _check_findings(log)
+    return "FAIL: " + "; ".join(found[:6] or ["без находок, но ok=false"])
+
+
+def _scene_midpoints(board: dict) -> list[float]:
+    """Середина каждой сцены. Число выборок считается от плана, а не назначается
+    константой: сцен бывает и семь, и двадцать пять."""
+    return sorted({round((float(scene["startSec"]) + float(scene["endSec"])) / 2, 3)
+                   for scene in board.get("scenes") or []})
+
+
+def _snapshot_times(board: dict, duration: float) -> list[float]:
+    """Когда снимать кадры контактного листа.
+
+    Их же рецепт: середина каждой сцены плюс пара кадров вокруг каждой склейки
+    — «--at <frame-midpoints-and-each-cut-minus-0.1s-and-plus-0.2s>»
+    (product-launch-video/SKILL.md:195). Съёмка последовательная, один кадр —
+    один seek (packages/cli/src/commands/snapshot.ts:403), поэтому пара вокруг
+    склейки берётся только тогда, когда кадров и так немного.
+    """
+    times = set(_scene_midpoints(board))
+    if len(times) <= SNAPSHOT_SEAM_LIMIT:
+        for scene in board.get("scenes") or []:
+            start = float(scene["startSec"])
+            if start > 0:
+                times.add(round(max(0.0, start - 0.1), 3))
+                times.add(round(start + 0.2, 3))
+    return sorted(time for time in times if 0 <= time < duration)
+
+
+def _capture_shots(rdir: Path, board: dict, duration: float) -> Path:
+    """Контактный лист композиции до рендера. Возвращает путь к нему."""
+    times = _snapshot_times(board, duration)
+    _cli("snapshot", "public", "--output", "snapshots",
+         "--at", ",".join(f"{time:g}" for time in times), "--no-end",
+         cwd=rdir, log=rdir / "snapshot.log")
+    shots = rdir / "snapshots"
+    sheets = sorted(shots.glob("contact-sheet*.jpg"))
+    if not sheets:
+        raise RuntimeError(
+            f"`hyperframes snapshot` не оставил контактный лист в {shots} — "
+            "судить кадры до рендера нечем")
+    return sheets[0]
 
 
 def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
@@ -367,7 +404,8 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         write_project_config(rdir, registry_url)
         for attempt in range(MAX_COMPOSE_ATTEMPTS):
             if reason is not None:
-                for step in ("plan", "compose", "gates", "render", "loudness"):
+                for step in ("plan", "compose", "gates", "shots", "render",
+                             "loudness"):
                     reset_step(rdir, step)
                 write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
                             duration=duration, clips=saved_clips,
@@ -376,14 +414,16 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             board = run_step(rdir, "plan",
                              lambda: plan_with_agent(rdir, runner=agent_runner))
             if board is None:
+                # Не `storyboard.json`: его переписывает сборка, дописывая
+                # секунды и снимая `phrases`. Пересборка без агента обязана
+                # читать то, что агент действительно вернул.
                 board = json.loads(
-                    (rdir / "storyboard.json").read_text(encoding="utf-8"))
+                    (rdir / "plan.json").read_text(encoding="utf-8"))
             # Секунды считаем здесь: агент назвал только фразы. Не сошлось —
             # это причина пересборки, а не авария: план он поправит сам.
             try:
-                board["cards"] = lay_out_cards(
-                    board.get("cards") or [], phrases, clips=saved_clips,
-                    duration=duration, minimums=_card_minimums(board))
+                board["scenes"] = lay_out_scenes(
+                    board.get("scenes") or [], phrases, duration=duration)
             except RuntimeError as error:
                 reason = str(error)
                 if attempt == MAX_COMPOSE_ATTEMPTS - 1:
@@ -394,12 +434,13 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
 
             def compose() -> dict:
                 clear_generated(public)
-                _install_blocks(rdir, [
-                    (card.get("render") or {}).get("block")
-                    for card in board.get("cards") or []])
                 with sdk_session() as sdk:
-                    found = resolve_all(
-                        public, collect_intents(sdk, public, board))
+                    found = resolve_all(public, collect_intents(board))
+                    lost = settle_inserts(board, found, saved_clips, duration,
+                                          public=public)
+                    if lost:
+                        print(f"вставка не нашлась у сцен: {', '.join(lost)} — "
+                              "ведущая там встала во весь кадр")
                     build_composition(rdir, sdk, storyboard=board,
                                       clips=saved_clips, duration=duration,
                                       words=words, resolved=found)
@@ -417,6 +458,10 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     raise RuntimeError("сборка не состоялась — " + reason)
                 continue
 
+            # Судим то, что реально собралось: подбор вставок мог не ответить,
+            # и тогда сцена уже переписана на ведущую во весь кадр.
+            board = json.loads(
+                (rdir / "storyboard.json").read_text(encoding="utf-8"))
             result = check_storyboard(board, clips=saved_clips, duration=duration)
             result.update(check_media(rdir))
             # Композиция, которая не открывается, — это тоже провал сборки, а не
@@ -430,16 +475,34 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             # схлопываются в одну, и её находки уходят агенту тем же путём, что
             # и наши.
             #
+            # `--strict` роняет прогон и на предупреждениях: без него
+            # `ok = errorCount === 0 && (!options.strict || warningCount === 0)`
+            # (packages/cli/src/utils/checkPipeline.ts:1344), и в прогоне 13 все
+            # находки прошли мимо именно так.
+            #
+            # `--at` вместо равномерной сетки: без него берутся середины девяти
+            # равных отрезков (`buildLayoutSampleTimes`,
+            # packages/cli/src/utils/layoutAudit.ts:79-92), и в прогоне 13 две
+            # выборки из девяти пришлись на паузы, а одна сцена не проверялась
+            # вовсе. Отдаём середину каждой сцены — тогда без проверки не
+            # останется ни одна.
+            #
             # Без `--at-transitions`: выборки на границах твинов стоят четыре
-            # минуты из пяти (34 с против 4 м 8 с на том же проекте), а искали
-            # они дефект ручного твина. Твинов в композиции больше нет — код
-            # ставит стыки, — и то же место плотнее закрывает наша проба: она
-            # снимает живой DOM каждые 0,25 с, то есть 166 точек против их
-            # девяти. `--snapshots` тоже не нужен: монтаж судят по кадрам
-            # готового mp4, а не по снимкам композиции.
+            # минуты из пяти (34 с против 4 м 8 с на том же проекте), а то же
+            # место плотнее закрывает наша проба — она снимает живой DOM каждые
+            # 0,25 с.
+            #
+            # Судим по полю `ok` отчёта, а не по коду выхода: `check` его не
+            # отдаёт вовсе. Проверено на 0.7.84 — и на нашем проекте с
+            # предупреждением, и на заведомо битом вызове («Not a directory»)
+            # команда печатает «Check failed» и выходит с нулём. То есть гейт
+            # D0, написанный на коде выхода, не срабатывал ни разу.
             try:
-                _cli("check", "public", "--json",
+                _cli("check", "public", "--json", "--strict",
+                     "--at", ",".join(f"{time:g}" for time in
+                                      _scene_midpoints(board)),
                      cwd=rdir, log=rdir / "check.json")
+                result["D0_check"] = _check_verdict(rdir / "check.json")
             except RuntimeError as error:
                 result["D0_check"] = "FAIL: " + "; ".join(
                     _check_findings(rdir / "check.json") or [str(error)])
@@ -454,6 +517,14 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             reason = "; ".join(failed)
             if attempt == MAX_COMPOSE_ATTEMPTS - 1:
                 raise RuntimeError("сборка не прошла проверки — " + reason)
+
+    # Снимки композиции перед рендером — обязательный шаг их же конвейера
+    # (product-launch-video/SKILL.md:195-197): «snapshot stitches the captured
+    # frames into one contact sheet (snapshots/contact-sheet.jpg). Inspect the
+    # midpoint frames for layout failures». Четыре минуты рендера, чтобы
+    # увидеть пустой кадр, — слишком дорогой способ это узнать.
+    board = json.loads((rdir / "storyboard.json").read_text(encoding="utf-8"))
+    run_step(rdir, "shots", lambda: _capture_shots(rdir, board, duration))
 
     raw = rdir / "reel.raw.mp4"
     run_step(rdir, "render",
@@ -477,11 +548,7 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
     (rdir / "words.fixed.json").write_text(
         json.dumps(words, ensure_ascii=False, indent=1), encoding="utf-8")
 
-    # Пробелы каталога: чего агенту не хватило. Расширение каталога в это
-    # задание не входит, поэтому список просто доезжает до отчёта.
-    board = json.loads((rdir / "storyboard.json").read_text(encoding="utf-8"))
     return {"mp4": str(final), "dur": duration, "timed_scenario": timed_scenario,
             "words_fixed": words, "gates": gate_result,
-            "catalog_gaps": board.get("catalogGaps") or [],
             "agent_cost_usd": getattr(agent_runner, "total_cost_usd", 0.0),
             "agent_runs": getattr(agent_runner, "runs", [])}

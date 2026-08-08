@@ -1,6 +1,6 @@
-"""Фразы озвучки и раскладка карточек по ним.
+"""Фразы озвучки и раскладка сцен по ним.
 
-Секунды карточек считает код, а не агент. Прогоны 9 и 10 показали цену обратного:
+Секунды сцен считает код, а не агент. Прогоны 9 и 10 показали цену обратного:
 модель тратила по 30–45 тысяч токенов на ход, перебирая в уме зазоры, минимальные
 длительности блоков и покрытие кусков без ведущей, а десятый прогон всё равно
 развалился на трёх сотых секунды и потребовал второй сессии.
@@ -18,9 +18,10 @@ general-video/SKILL.md:107; механика — faceless-explainer/scripts/audi
 """
 from __future__ import annotations
 
+from reels_factory.config import FPS
 from reels_factory.editplan import _phrase_spans
 from reels_factory.hf_layout import quantize
-from reels_factory.hf_rhythm import MAX_STATIC_SPAN, MIN_CARD_GAP
+from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 
 #: Сколько слов уходит на фразу при пропорциональном дележе, когда пословный
 #: список разошёлся со сценарием. Порядок слов при этом сохраняется.
@@ -114,105 +115,129 @@ def phrase_span(phrases: list[dict], first: int, last: int) -> tuple[float, floa
     return by_id[first]["start"], by_id[last]["end"]
 
 
-def _has_clip(clips: list[dict], at: float) -> bool:
-    return any(c["start"] <= at + 1e-6 < c["start"] + c["duration"] for c in clips)
+def faceless_phrases(phrases: list[dict], clips: list[dict],
+                     duration: float) -> list[int]:
+    """Номера фраз, на которых ведущей в кадре нет физически.
 
-
-def lay_out_cards(cards: list[dict], phrases: list[dict], *,
-                  clips: list[dict], duration: float,
-                  minimums: dict[str, float] | None = None) -> list[dict]:
-    """Поставить карточки на таймлайн по названным фразам.
-
-    Агент называет только `phrases: [первая, последняя]`. Секунды, зазоры,
-    минимальные длительности сцен и сетку кадров держит этот код.
-
-    Порядок правил важен, и он такой:
-
-    1. Границы берутся у фраз — карточка приходит на свою реплику.
-    2. Карточка не короче своего блока (`minimums`): не хватило — тянем вправо,
-       пока не упрёмся в следующую карточку или в конец ролика.
-    3. Карточка не длиннее восьми секунд: лишнее срезаем справа.
-    4. Перед карточкой зазор, где под ним есть ведущая: не хватило — сдвигаем
-       начало вправо, но не настолько, чтобы нарушить пункт 2.
-    5. Всё округляется к сетке кадров последним действием, чтобы округление не
-       съело зазор.
+    Аватар заказывают островами, и между ними остаются куски, где показывать
+    нечего. Агенту это надо знать номерами фраз, а не секундами: секунд он не
+    видит, а сцены назначает по фразам. Пересечение меньше кадра не считается —
+    это стык, а не дыра.
     """
-    minimums = minimums or {}
+    from reels_factory.hf_layout import avatar_gaps, in_avatar_gap
+
+    gaps = avatar_gaps(clips, duration)
+    return [phrase["id"] for phrase in phrases
+            if in_avatar_gap(float(phrase["start"]), float(phrase["end"]), gaps)]
+
+
+#: Короче этого сцена читается вспышкой, а не планом. Число — из эталонов: там
+#: самый короткий план 0,5 с (`reference-reels-montage-language`), берём с
+#: запасом на кадр. Фразы бывают и по 0,2 с («вопроса.»), поэтому такую сцену
+#: код дотягивает за счёт следующей, а не заворачивает план.
+MIN_SCENE = 0.6
+
+
+def lay_out_scenes(scenes: list[dict], phrases: list[dict], *,
+                   duration: float) -> list[dict]:
+    """Поставить сцены на таймлайн по названным фразам.
+
+    Агент называет только `phrases: [первая, последняя]`. Секунды и сетку
+    кадров держит этот код.
+
+    Сцены **выстилают ролик целиком**, без зазоров: кадр теперь собран слоями, и
+    промежутка «между сценами», где показывать нечего, не бывает — там всё
+    равно стоит ведущая, просто это отдельная сцена, которую агент назвал сам.
+    Прежний зазор был нужен другому кадру: непрозрачные карточки впритык
+    детектор сцен считал одной склейкой, и зазор разводил их. Теперь смену даёт
+    сама граница сцен — за это отвечает D21.
+
+    Порядок правил:
+
+    1. Границы берутся у фраз — сцена приходит на свою реплику.
+    2. Сцены идут подряд и покрывают все фразы: дырка означает чёрный кадр.
+    3. Сцена не короче MIN_SCENE: не хватило — двигаем границу вправо, за счёт
+       следующей. Начало сцены не трогаем: оно сидит на произносимом слове.
+    4. Сцена не длиннее восьми секунд — это D19, и он же предел здесь.
+    5. Округление к сетке кадров последним действием.
+    """
     duration = quantize(duration)
+    if not scenes:
+        raise RuntimeError("в плане нет ни одной сцены")
+
     placed: list[dict] = []
-    for card in cards:
-        span = card.get("phrases")
+    for scene in scenes:
+        span = scene.get("phrases")
         if not isinstance(span, (list, tuple)) or len(span) != 2:
             raise RuntimeError(
-                f'{card.get("id", "?")}: нет поля `phrases` — карточка обязана '
+                f'{scene.get("id", "?")}: нет поля `phrases` — сцена обязана '
                 "назвать первую и последнюю фразу, которые накрывает. Секунды "
                 "(`startSec`, `endSec`) считает код, в плане их быть не должно")
-        first, last = span
-        start, end = phrase_span(phrases, int(first), int(last))
+        first, last = int(span[0]), int(span[1])
+        start, end = phrase_span(phrases, first, last)
         # Копия, а не оригинал: план агента остаётся тем, что он написал, —
         # при пересборке его перечитывают с диска и раскладывают заново.
-        placed.append({"card": dict(card), "start": start, "end": end,
-                       "span": (int(first), int(last))})
+        placed.append({"scene": dict(scene), "start": start, "end": end,
+                       "span": (first, last)})
     placed.sort(key=lambda item: item["start"])
 
-    for index, item in enumerate(placed):
-        card = item["card"]
-        ceiling = (placed[index + 1]["start"] if index + 1 < len(placed)
-                   else duration)
-        need = float(minimums.get(card.get("id"), 0.0))
+    _check_tiling(placed, phrases)
 
-        if item["end"] - item["start"] < need:
-            item["end"] = min(ceiling, item["start"] + need)
-        item["end"] = min(item["end"], item["start"] + MAX_STATIC_SPAN, duration)
-        if item["end"] - item["start"] < need - 0.001:
-            # Тянуть дальше некуда: справа стоит следующая карточка. Сдвигать её
-            # нельзя — она сидит на своей реплике. Значит выбор блока и реплик
-            # не сходится, а это решение агента, не наше.
-            raise RuntimeError(
-                f'{card.get("id", "?")}: на фразы {item["span"][0]}–'
-                f'{item["span"][1]} приходится '
-                f'{item["end"] - item["start"]:.1f} с, а блок '
-                f'{(card.get("render") or {}).get("block")} собирается дольше и '
-                f"требует {need:g} с. Дай этой карточке больше фраз или возьми "
-                "блок покороче")
+    # Первая сцена начинается с нуля, последняя доходит до конца ролика: между
+    # первым словом и нулём есть вдох, и он тоже чей-то кадр.
+    placed[0]["start"] = 0.0
+    placed[-1]["end"] = duration
 
-        floor = placed[index - 1]["end"] if index else 0.0
-        gap = item["start"] - floor
-        if gap < MIN_CARD_GAP and _has_clip(clips, floor):
-            # Двигаем начало вправо, а не растягиваем предыдущую карточку:
-            # предыдущая уже стоит на своей реплике, и трогать её — значит
-            # сдвинуть картинку с произносимого слова.
-            shifted = min(floor + MIN_CARD_GAP, item["end"] - need)
-            item["start"] = max(item["start"], min(shifted, item["end"]))
-
-    _close_faceless(placed, clips, duration)
+    for index, item in enumerate(placed[:-1]):
+        following = placed[index + 1]
+        if item["end"] - item["start"] < MIN_SCENE:
+            item["end"] = min(item["start"] + MIN_SCENE, following["end"])
+        following["start"] = item["end"]
+    if placed[-1]["end"] - placed[-1]["start"] < MIN_SCENE - 0.001:
+        raise RuntimeError(
+            f'{placed[-1]["scene"].get("id", "?")}: последней сцене осталось '
+            f'{placed[-1]["end"] - placed[-1]["start"]:.2f} с, а сцена не бывает '
+            f"короче {MIN_SCENE:g} с. Отдай ей больше фраз или объедини с соседней")
 
     for item in placed:
-        card = item["card"]
-        card["startSec"] = quantize(item["start"])
-        card["endSec"] = quantize(item["end"])
-        card.pop("phrases", None)
-    return [item["card"] for item in placed]
-
-
-def _close_faceless(placed: list[dict], clips: list[dict],
-                    duration: float) -> None:
-    """Куски без ведущей закрыть карточками встык — иначе там чёрный кадр.
-
-    Зазор в таком куске оставлять негде: под ним не ведущая, а пустота. Это же
-    требует гейт D12, и раньше следить за этим приходилось агенту.
-    """
-    from reels_factory.hf_layout import avatar_gaps
-
-    for start, end in avatar_gaps(clips, duration):
-        inside = [item for item in placed
-                  if item["end"] > start + 1e-6 and item["start"] < end - 1e-6]
-        if not inside:
+        scene = item["scene"]
+        scene["startSec"] = quantize(item["start"])
+        scene["endSec"] = quantize(item["end"])
+        if scene["endSec"] - scene["startSec"] > MAX_STATIC_SPAN + 0.001:
             raise RuntimeError(
-                f"кусок {start:g}–{end:g} с идёт без ведущей, а карточки на него "
-                "не назначено — там будет чёрный экран. Назови фразы этого куска "
-                "какой-нибудь карточке")
-        inside[0]["start"] = min(inside[0]["start"], start)
-        inside[-1]["end"] = max(inside[-1]["end"], end)
-        for left, right in zip(inside, inside[1:]):
-            right["start"] = left["end"] = max(left["end"], right["start"])
+                f'{scene.get("id", "?")}: сцена идёт '
+                f'{scene["endSec"] - scene["startSec"]:.1f} с, предел '
+                f"{MAX_STATIC_SPAN:g} с — картинка застынет. Разрежь её на две")
+        scene.pop("phrases", None)
+    return [item["scene"] for item in placed]
+
+
+def _check_tiling(placed: list[dict], phrases: list[dict]) -> None:
+    """Сцены идут подряд по фразам, без дырок и без нахлёста.
+
+    Дырка — это кусок ролика, который никто не оформил: раньше там показывали
+    ведущую по умолчанию, но «по умолчанию» и давало неподвижные куски. Теперь
+    каждый кусок ролика назван, и чем он занят — решение агента, а не побочный
+    эффект.
+    """
+    expected = 0
+    last_id = phrases[-1]["id"] if phrases else -1
+    for item in placed:
+        first, last = item["span"]
+        if last < first:
+            raise RuntimeError(
+                f'{item["scene"].get("id", "?")}: фразы {first}–{last} идут '
+                "задом наперёд")
+        if first != expected:
+            what = ("пропущены фразы" if first > expected
+                    else "фразы уже заняты предыдущей сценой")
+            raise RuntimeError(
+                f'{item["scene"].get("id", "?")}: начинается с фразы {first}, '
+                f"а ожидалась {expected} — {what}. Сцены обязаны выстилать всю "
+                "озвучку подряд, без пропусков и без наложений")
+        expected = last + 1
+    if expected != last_id + 1:
+        raise RuntimeError(
+            f"сцены заканчиваются на фразе {expected - 1}, а в озвучке фразы "
+            f"0–{last_id}. Хвост без сцены — это чёрный экран; отдай оставшиеся "
+            "фразы последней сцене или добавь ещё одну")

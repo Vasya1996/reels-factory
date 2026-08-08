@@ -92,14 +92,25 @@ def _piece(pattern: re.Pattern, html: str, what: str) -> str:
     return match.group(1) if match.groups() else match.group(0)
 
 
+#: Куда уезжают данные титра и движок компонента. Отдельным файлом, а не
+#: строками в композиции: их линтер считает физические строки `index.html` и
+#: за 300 даёт предупреждение `composition_file_too_large`
+#: (packages/lint/src/rules/composition.ts:16,379). В прогоне 13 их вышло 684,
+#: из них 608 — этот скрипт и его данные, а под `--strict` предупреждение
+#: роняет сборку. Тело `<style>` линтер из счёта выбрасывает
+#: (`countStructuralLines`, там же:82-84), поэтому стиль остаётся на месте.
+CAPTION_SCRIPT = "captions.js"
+
+
 def caption_snippet(sdk, public, *, track_index: int, duration: float) -> str:
-    """Готовый кусок композиции: стиль, корень и движок титра.
+    """Готовый кусок композиции: стиль, корень и ссылка на движок титра.
 
     Внешние ссылки компонента (шрифт с Google Fonts, GSAP с CDN) не переносим:
     они запрещены контрактом композиции, GSAP уже подключён локально, а шрифты
     врезает движок.
     """
-    path = Path(public) / COMPONENT_REL
+    public = Path(public)
+    path = public / COMPONENT_REL
     html = path.read_text(encoding="utf-8")
     style = _piece(_HEAD_STYLE, html, "блока <style>")
     script = _piece(_SCRIPT, html, "скрипта компонента")
@@ -117,58 +128,28 @@ def caption_snippet(sdk, public, *, track_index: int, duration: float) -> str:
     root = root.replace('data-composition-id="caption-highlight"',
                         f'data-composition-id="caption-highlight"'
                         f' data-track-index="{track_index}"')
-    data = (Path(public) / "caption-data.json").read_text(encoding="utf-8")
+    data = (public / "caption-data.json").read_text(encoding="utf-8")
+    body = script.replace(_THEIR_FONT, _OUR_FONT)
+    # Тело `<script>…</script>` кладём в файл без обёртки-тега.
+    body = re.sub(r"^\s*<script>|</script>\s*$", "", body).strip()
+    (public / CAPTION_SCRIPT).write_text(
+        f"window.__HF_CAPTION__ = {data};\n{body}\n", encoding="utf-8")
     return (f"    <style>{style.replace(_THEIR_FONT, _OUR_FONT)}</style>\n"
             f"    {root}\n"
-            f"    <script>window.__HF_CAPTION__ = {data};</script>\n"
-            f"    {script.replace(_THEIR_FONT, _OUR_FONT)}")
+            f'    <script src="{CAPTION_SCRIPT}"></script>')
 
 
-#: Единственная зона их таблицы, которая по контракту оставляет кадр видимым:
-#: «full canvas, expects mostly-transparent card» (talking-head-recut/
-#: SKILL.md:187). Остальные четыре либо кроют кадр целиком, либо садятся в
-#: нижнюю часть — ровно туда, где идёт титр. Под ними титр молчит: иначе он
-#: ложится на их текст, и это ровно те `content_overlap` и `text_occluded`,
-#: которые находит их же `check`.
-CAPTION_ZONE = "video-overlay"
-
-
-def _muted(card: dict) -> bool:
-    """Молчит ли титр под этой карточкой.
-
-    Блок каталога — готовая сцена со своим текстом, где бы он ни стоял, так
-    что под ним титр молчит всегда. Из своих карточек агента титр переживает
-    только прозрачную `video-overlay`.
-    """
-    if (card.get("render") or {}).get("kind") == "block":
-        return True
-    return card.get("zone") != CAPTION_ZONE
-
-
-def _muted_spans(cards: list[dict]) -> list[tuple[float, float]]:
-    return [(float(card["startSec"]), float(card["endSec"]))
-            for card in cards if _muted(card)]
-
-
-def write_caption_data(public, *, words: list[dict], cards: list[dict],
-                       duration: float) -> Path:
+def write_caption_data(public, *, words: list[dict], duration: float) -> Path:
     """Данные титра в их контракте (`version: 1`, сегменты со словами).
 
-    Слова под непрозрачной карточкой выбрасываем: там своя графика со своим
-    текстом, и титр лёг бы поверх неё.
+    Титр идёт весь ролик и ни под чем не молчит. Гасить его приходилось, пока
+    сцена была непрозрачным блоком со своим текстом: два текста в одном кадре —
+    это `content_overlap` и `text_occluded` их же линтера. В слоёном кадре
+    своего текста нет ни у вставки, ни у ведущей, а эталонные рилсы держат титр
+    непрерывно — «текста в кадре нет ни секунды без».
     """
-    blocked = _muted_spans(cards)
-    kept = []
-    for word in words:
-        # Слово выбрасываем при ЛЮБОМ пересечении с карточкой, а не по середине.
-        # По середине слово на стыке оставалось, компонент держал всю его группу
-        # до конца её последнего слова, и титр висел поверх пришедшей сцены —
-        # видно на кадре 16,9 с прогона 04.08.
-        if any(float(word["start"]) < end and float(word["end"]) > start
-               for start, end in blocked):
-            continue
-        kept.append({"text": word["text"], "start": round(float(word["start"]), 3),
-                     "end": round(float(word["end"]), 3)})
+    kept = [{"text": word["text"], "start": round(float(word["start"]), 3),
+             "end": round(float(word["end"]), 3)} for word in words]
 
     segments, current = [], []
     for word in kept:

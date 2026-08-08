@@ -1,67 +1,100 @@
 """Сборка `public/index.html` по плану агента.
 
-Раньше композицию писал агент: 670 строк, из них 200 — таймлайн и 72 — спаны
-субтитров. Потом — только карточки своей вёрстки, и это всё ещё было 42 тысячи
-токенов на выходе, то есть четверть часа прогона. Теперь агент не пишет
-разметку вовсе: он называет блок каталога и содержимое его слотов, а сцену
-ставит код.
+Кадр собирается слоями, а не чередой непрозрачных сцен. Это их же канон:
+«For full-frame motion … prefer a **shared background layer + transparent timed
+content layers** over stacked opaque scene backgrounds. Stacking opaque scene
+divs means every scene change has to repaint the entire frame»
+(hyperframes-core/references/full-screen-motion.md:3-7).
 
-Правку самих блоков делает их редактор композиций (`hf_sdk.py`,
-`@hyperframes/sdk`): элементы, их атрибуты, собственный текст и твины, которые
-в элемент целятся, читает он, и правки идут его операциями.
+Слои снизу вверх:
 
-Сам файл композиции собирается здесь, из шаблона `templates/reel.html`. Их SDK
-это не умеет и не заявляет: он открывает **существующую** композицию
+1. вставка — подобранный `media-use` файл, обычный `<img>`/`<video>` во весь
+   кадр либо в половине, где ведущей нет;
+2. ведущая — клип в обёртке, обёртке таймлайн меняет геометрию. Обёртка без
+   `data-*` — так велит их рецепт PiP: «Animate a wrapper div for
+   position/size. The video fills the wrapper. The wrapper has NO data
+   attributes» (hyperframes-creative/references/composition-patterns.md:11-14);
+3. субтитры — их готовый компонент `caption-highlight` (`hf_captions.py`);
+4. звук — мастер-дорожка.
+
+Порядок слоёв держит CSS `z-index`, а НЕ `data-track-index`. Их дока в одном
+месте обещает обратное («Controls z-ordering (higher = in front)»,
+docs/reference/html-schema.mdx:56), но код говорит прямо: «Track index is
+display-only; render never reads it» (packages/core/src/runtime/timeline.ts:599),
+и вторая страница доков это подтверждает — «Does not control z-ordering (use CSS
+z-index for that)» (docs/concepts/data-attributes.mdx:14). `data-track-index`
+остаётся дорожкой времени: на одной дорожке клипы пересекаться не могут, иначе
+их линтер даёт ошибку `overlapping_clips_same_track`
+(packages/lint/src/rules/composition.ts:614).
+
+Сам файл композиции собирается из шаблона `templates/reel.html`. Их SDK это не
+умеет и не заявляет: он открывает **существующую** композицию
 (`packages/sdk/src/session.ts:858`), а единственная его операция, добавляющая
 разметку, отказывает на любом фрагменте со `<script>`
 (`packages/sdk/src/engine/mutate.ts:1649-1652`). Наша композиция без скриптов
 невозможна: их же компонент субтитров подключается вставкой куска с `<script>`
-(`docs/catalog/components/caption-highlight.mdx`), а `addGsapTween` требует
-уже объявленного таймлайна (`packages/sdk/src/engine/mutate.ts:1747-1749`).
-Поэтому каркас — данные (шаблон), а не код: структура ролика в него не зашита,
-и подставить вместо него готовый шаблон проекта можно будет без правок здесь.
+(`docs/catalog/components/caption-highlight.mdx`).
 
-Субтитры не наши: их пословный караоке-титр берётся готовым компонентом
-`caption-highlight` из их реестра (`hf_captions.py`).
+Блоки нашего каталога здесь больше не ставятся. Слой подстановки (`hf_slots.py`)
+и сам каталог (`hf_catalog.py`) остались на месте: вернуть их — одна строка в
+задании агенту.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import re
+import shutil
+import subprocess
 from pathlib import Path
 
-from reels_factory.config import FPS, OUT_H, OUT_W
+from reels_factory.config import FFMPEG, FFPROBE, FPS, OUT_H, OUT_W
 from reels_factory.hf_captions import caption_snippet, write_caption_data
-from reels_factory.hf_layout import VIDEO_RECTS, quantize
-from reels_factory.hf_sdk import set_timing
-from reels_factory.hf_slots import (
-    fill_ops, find_slots, min_card_seconds, prune_timeline,
+from reels_factory.hf_layout import (
+    VIDEO_RECTS, avatar_gaps, in_avatar_gap, insert_rect, quantize,
 )
 
-#: Слои кадра. Ведущая под карточками: блок каталога — непрозрачная сцена во
-#: весь кадр, и там, где ведущая нужна, она стоит внутри самого блока.
+#: Дорожки времени. На одной дорожке клипы не пересекаются — это единственное,
+#: что `data-track-index` значит на самом деле.
 TRACK_VIDEO = 2
-TRACK_CARD = 5
-TRACK_CAPTION = 8
-TRACK_AUDIO = 20
+TRACK_INSERT = 3
+TRACK_CAPTION = 90
+TRACK_AUDIO = 99
+
+#: Сколько вставок кладём на одну дорожку. Их линтер за четвёртую даёт
+#: предупреждение `timeline_track_too_dense`
+#: (packages/lint/src/rules/composition.ts:17,409), а под `--strict`
+#: предупреждение роняет сборку. Теги `video` и `audio` из этого счёта
+#: исключены (там же:18), поэтому клипы ведущей и звук делить не надо. Раскладка
+#: по дорожкам — ровно то, как выглядит любая монтажка: несколько дорожек, на
+#: каждой непересекающиеся клипы. На порядок отрисовки это не влияет вовсе
+#: (`timeline.ts:599`), его держит z-index.
+INSERTS_PER_TRACK = 3
 
 #: Отступ титра от низа кадра. Нижняя граница их вилки для 9:16
 #: (embedded-captions/references/rail.md:20-21): выше — начинает спорить с
-#: карточками, ниже — попадает под интерфейс платформы.
+#: картинкой, ниже — попадает под интерфейс платформы.
 CAPTION_BOTTOM = 620
-
-#: Полоса, которую титр занимает: две строки кегля 80 плюс отступы.
-CAPTION_BAND = {"left": 0, "top": OUT_H - CAPTION_BOTTOM - 260,
-                "width": OUT_W, "height": 260}
 
 #: Каркас композиции. Файл, а не строка в коде: следующим шагом на его место
 #: встанет готовый шаблон проекта с объявленными `data-composition-variables`.
 TEMPLATE = Path(__file__).resolve().parents[2] / "templates" / "reel.html"
 
-#: Наименьший кусок паузы, который стоит показывать отдельным планом. Порог
-#: привязан к наименьшему зазору между карточками (0,8 с): агент ставит зазоры
-#: ровно по нижней границе, и на пороге в полсекунды наезд не срабатывал ни
-#: разу — прогон 04.08 дал 18 смен вместо 20 при десяти карточках.
-PUNCH_MIN_HALF = 0.35
+#: Насколько вставка наезжает за свою сцену. Статичная фотография в кадре —
+#: это ровно то, чего в эталонных рилсах не бывает ни секунды
+#: («Неподвижной картинки не бывает», разбор трёх эталонов). Наезд идёт
+#: трансформой: твин по `left`/`top` их линтер заворачивает ошибкой
+#: `gsap_non_transform_motion` (packages/lint/src/rules/gsap.ts:1976).
+#: Это заглушка до работы 5 — там движение разбирается целиком.
+INSERT_DRIFT = 1.06
+
+#: Растровые картинки. Слот может получить и mp4 (например через
+#: `media-use --from`), и тогда тег другой.
+_IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".svg")
+
+#: Вставки, которые вписываются целиком, а не обрезаются: у логотипа и значка
+#: обрезать нечего.
+_CONTAIN_KINDS = {"logo", "icon"}
 
 
 def _q(value: float) -> float:
@@ -77,132 +110,91 @@ def _js(value) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
-def _clean_text(text: dict[str, str]) -> dict[str, str]:
-    """Убрать из текста плана разделитель плашки-рубрики.
+# ------------------------------------------------------------------ вставки
 
-    Гейт D17 считает `·` на экране служебной надписью и заворачивает сборку
-    целиком. В прогоне 03.08 повторную сессию агента — четверть часа — вызвала
-    ровно одна такая точка в его собственном тексте. Запрет стоит и в задании,
-    но полагаться на то, что модель его соблюдёт, дороже, чем срезать точку
-    здесь: смысла строки она не несёт.
+def insert_of(scene: dict) -> dict | None:
+    """Вставка сцены — либо словарь с намерением, либо ничего."""
+    found = scene.get("insert")
+    return found if isinstance(found, dict) and found.get("look") else None
+
+
+def media_key(scene_id: str) -> str:
+    """Ключ подобранной вставки. Вставка у сцены одна, поэтому ключ — её id."""
+    return str(scene_id)
+
+
+#: Какой тип `media-use` просить под названный агентом вид вставки. Стокового
+#: видео у них нет: `heygen asset search --type video` отвечает «--type must be
+#: one of [image icon]», а `resolve --type video` уходит в генерацию аватара
+#: (`media-use/scripts/lib/heygen-video-provider.mjs`) — это платно и не про
+#: перебивку. Поэтому вставка сейчас всегда неподвижный файл.
+#:
+#: `icon` и `logo` агенту не предлагаются: их подбор отдаёт прозрачный PNG
+#: (проверено на прогоне 14 — все три иконки пришли 200x200 rgba), а вставка
+#: занимает весь кадр или его половину, и сквозь прозрачное там виден чёрный
+#: фон сцены. Значок поверх картинки — это накладка, и её место в работе с их
+#: реестром накладок, а не здесь.
+MEDIA_TYPES = {"photo": "image", "icon": "icon", "logo": "logo"}
+
+
+def collect_intents(storyboard: dict) -> list[dict]:
+    """Все намерения под вставки: сцена называет их словами, ищет код."""
+    requests = []
+    for scene in storyboard.get("scenes") or []:
+        insert = insert_of(scene)
+        if not insert:
+            continue
+        kind = str(insert.get("kind") or "photo").lower()
+        requests.append({"key": media_key(scene["id"]),
+                         "type": MEDIA_TYPES.get(kind, "image"),
+                         "intent": str(insert["look"]).strip()})
+    return requests
+
+
+def _insert_tag(scene: dict, rect: dict, source: str, *, start: float,
+                duration: float, track: int) -> str:
+    """Слой вставки: клип-обёртка с рамкой и медиа внутри неё.
+
+    Обёртка несёт время и `class="clip"`, потому что клип обязан быть прямым
+    потомком корня композиции («Visual clips (`class="clip"`) must be DIRECT
+    children of the composition root … To wrap/transform a clip, put the wrapper
+    _inside_ the clip», hyperframes-core/references/data-attributes.md:25).
+    Наезд целится в медиа внутри, а не в саму обёртку: видимостью клипа
+    распоряжается рантайм, и анимировать его же — драться с ним
+    (`full-screen-motion.md:57`).
     """
-    return {key: " ".join(str(value or "").replace("·", " ").split())
-            for key, value in text.items()}
+    kind = str((insert_of(scene) or {}).get("kind") or "photo").lower()
+    fit = "contain" if kind in _CONTAIN_KINDS else "cover"
+    box = _rect_style(rect)
+    name = f'ins-{scene["id"]}'
+    if source.lower().split("?")[0].endswith(_IMAGE_SUFFIXES):
+        return (f'    <div id="{name}" class="ins clip" style="{box}"'
+                f' data-start="{start:.4f}" data-duration="{duration:.4f}"'
+                f' data-track-index="{track}">'
+                f'<img class="ins-media" src="{source}" alt=""'
+                f' style="object-fit:{fit}"></div>')
+    # У видео время живёт на самом теге: `<video>` внутри клипа их линтер
+    # заворачивает ошибкой `video_nested_in_timed_element`
+    # (packages/lint/src/rules/media.ts:383), а без `id` — ошибкой
+    # `media_missing_id`, «this video will be FROZEN in renders» (там же:486).
+    # Рамка остаётся, но времени не несёт.
+    return (f'    <div id="{name}-box" class="ins" style="{box}">'
+            f'<video id="{name}" class="ins-media clip" src="{source}"'
+            f' muted playsinline'
+            f' data-start="{start:.4f}" data-duration="{duration:.4f}"'
+            f' data-track-index="{track}" style="object-fit:{fit}"></video>'
+            f"</div>")
 
 
-# -------------------------------------------------------------------- блоки
-
-def _stage_block(sdk, public: Path, card: dict, block: str, *, duration: float,
-                 text: dict, media: dict) -> str:
-    """Положить блок под карточку своей копией и вернуть её имя файла.
-
-    Копия на карточку, а не общий файл: один блок может встретиться дважды, а
-    ключ таймлайна у сабкомпозиции один на `data-composition-id` — два хоста с
-    одним ключом затёрли бы друг друга.
-    """
-    source = public / "compositions" / f"{block}.html"
-    if not source.exists():
-        raise RuntimeError(
-            f"блок {block} не установлен: нет {source}. Ставит его код "
-            "командой `hyperframes add` перед сборкой")
-    unique = f'{block}--{card["id"]}'
-    sdk.open(unique, source)
-    nodes = sdk.elements(unique)
-    native = next((float(n.attrs.get("data-duration") or 0) for n in nodes
-                   if n.attrs.get("data-composition-id")), 0.0)
-    # Сцена блока собирается своим таймлайном за родную длительность. Обрезать
-    # её сильно короче — значит показать полусобранную сцену: на прогоне 04.08
-    # блок g05 родной длительности 4,5 с стоял 1,2 с, и в кадре была пустота с
-    # одним титром. Растянуть чужой таймлайн нечем: он живёт в `<script>` блока.
-    floor = min_card_seconds(native) if native else 0.0
-    if floor and duration < floor - 0.001:
-        raise RuntimeError(
-            f'{card["id"]}: блок {block} собирается {native:g} с, а карточке '
-            f"отведено {duration:.2f} с — сцена не успеет собраться. Дай ей "
-            f"не меньше {floor:g} с (это число стоит в паспорте блока) или "
-            "возьми блок короче")
-    ops = fill_ops(nodes, text=text, media=media)
-    # Длительность блока — карточкина: родная (3–8 с) оставила бы после себя
-    # замерший хвост или обрезала сцену на середине. Правим и корень
-    # композиции, и его клип: рантайм смотрит на оба.
-    for node in nodes:
-        if node.attrs.get("data-composition-id") or node.has_class("clip"):
-            ops.append(set_timing(node.hfid, duration=round(duration, 4)))
-    sdk.dispatch(unique, ops)
-    target = public / "compositions" / f"{unique}.html"
-    sdk.save(unique, target)
-    sdk.close(unique)
-    # Что осталось текстом. Имя композиции их SDK менять не даёт вовсе —
-    # «data-composition-id is a reserved composition attribute and cannot be
-    # reassigned» (`packages/sdk/src/engine/mutate.ts`), а тело `<script>` он не
-    # правит по устройству: «GSAP is managed by the composition's single script
-    # block» (там же:1653). Копия блока обязана называться по-своему, иначе две
-    # карточки одного блока затрут друг другу таймлайн.
-    html = target.read_text(encoding="utf-8")
-    html = html.replace(f'data-composition-id="{block}"',
-                        f'data-composition-id="{unique}"')
-    html = html.replace(f'__timelines["{block}"]', f'__timelines["{unique}"]')
-    target.write_text(prune_timeline(html), encoding="utf-8")
-    return unique
-
-
-def block_slots(sdk, public: Path, block: str) -> list:
-    source = public / "compositions" / f"{block}.html"
-    name = f"passport--{block}"
-    sdk.open(name, source)
-    slots = find_slots(sdk.elements(name))
-    sdk.close(name)
-    return slots
+def _drift(scene_id: str, start: float, duration: float) -> list[str]:
+    """Медленный наезд вставки. `set` перед `to` — ради холодной перемотки."""
+    target = _js(f"#ins-{scene_id} .ins-media")
+    return [f'tl.set({target}, {{ scale: 1 }}, {start});',
+            f'tl.to({target}, {{ scale: {INSERT_DRIFT}, duration: '
+            f'{duration:.4f}, ease: "none" }}, {start});']
 
 
 # ------------------------------------------------------------------ ведущая
-
-def _clip_for(clips: list[dict], start: float) -> dict | None:
-    """Клип, идущий в этот момент. Для пауз между карточками: есть ли вообще
-    что показать во весь кадр."""
-    for clip in clips:
-        if clip["start"] <= start + 1e-6 < clip["start"] + clip["duration"]:
-            return clip
-    return None
-
-
-#: Короче двух кадров окно ведущей внутри сцены не ставим вовсе. Их рендер
-#: требует, чтобы объявленное окно набрало не меньше 95 % своих кадров, и на
-#: огрызке в один кадр валит всю сборку: «Video "g14-presenter" captured 0 of
-#: expected 1 frames … aborting render to prevent shipping a wrong MP4».
-MIN_PRESENTER_PIECE = 2.0 / FPS
-
-
-def _presenter_media(clips: list[dict], card: dict) -> dict | None:
-    """Кусок клипа под карточку: какой файл и с какого места внутри него.
-
-    Клип выбирается по НАИБОЛЬШЕМУ перекрытию с карточкой, а не по её первому
-    кадру. Прогон 10 показал, чем это отличается: карточка начиналась в 23,1 с,
-    а клип ведущей заканчивался в 23,133 — выбор по началу брал уходящий клип и
-    оставлял окно длиной в один кадр, притом что следующий клип покрывал
-    карточку целиком.
-    """
-    start, end = _q(card["startSec"]), _q(card["endSec"])
-    best, piece = None, None
-    for clip in clips:
-        clip_start = float(clip["start"])
-        clip_end = clip_start + float(clip["duration"])
-        overlap_from, overlap_to = max(clip_start, start), min(clip_end, end)
-        overlap = overlap_to - overlap_from
-        if best is not None and overlap <= best:
-            continue
-        best, piece = overlap, {
-            "file": clip["file"],
-            # Клип может покрывать карточку не с самого её начала: окно тогда
-            # появляется позже, а не растягивается на то, чего в файле нет.
-            "start": round(overlap_from - start, 3),
-            "duration": round(overlap, 3),
-            "media_start": round(overlap_from - clip_start, 3),
-        }
-    if best is None or best < MIN_PRESENTER_PIECE - 1e-6:
-        return None
-    return piece
-
 
 def _presenter_rect(name: str) -> dict:
     rect = VIDEO_RECTS.get(name)
@@ -212,246 +204,28 @@ def _presenter_rect(name: str) -> dict:
     return rect
 
 
-#: Ключ подобранной вставки: карточка и слот.
-def media_key(card_id: str, slot: str) -> str:
-    return f"{card_id}::{slot}"
-
-
-def _card_words(card: dict) -> str:
-    """Чем карточка держит зрителя — словами самой карточки."""
-    hints = card.get("contentHints") or {}
-    parts = [str(hints.get(key) or "") for key in ("title", "detail", "kicker")]
-    parts.append(str(card.get("intent") or ""))
-    return " ".join(part for part in parts if part).strip()
-
-
-def photo_slots(sdk, public, block: str) -> list[str]:
-    """Слоты блока под картинку — все, кроме окна ведущей."""
-    return [slot.name for slot in block_slots(sdk, public, block)
-            if slot.kind in ("image", "video") and slot.role != "presenter"]
-
-
-def collect_intents(sdk, public, storyboard: dict) -> list[dict]:
-    """Все намерения под вставки: из плана, а где его нет — из слов карточки.
-
-    Агент называет словами, что должно быть на экране, и подбор делает код.
-    Но выбрав блок с фотослотом, он этим уже решил, что там фотография; если
-    намерение он назвать забыл, слот уехал бы пустым и гейт D16 завернул бы
-    сборку — прогон 04.08 потерял на этом целую сессию, четверть часа. Поэтому
-    пустое намерение достраивается из собственных слов карточки: сцену выбрал
-    агент, а слова в ней — его же.
-    """
-    requests = []
-    for card in storyboard.get("cards") or []:
-        render = card.get("render") or {}
-        block = render.get("block")
-        if not block:
-            continue
-        named = {name: value for name, value in (render.get("media") or {}).items()
-                 if isinstance(value, str) and value.strip()}
-        for name in photo_slots(sdk, public, block):
-            intent = named.get(name) or _card_words(card)
-            if not intent:
-                continue
-            requests.append({"key": media_key(card["id"], name),
-                             "type": "image", "intent": intent.strip()})
-    return requests
-
-
-def complete_storyboard(board: dict, *, clips: list[dict],
-                        duration: float) -> dict:
-    """Дописать шапку раскадровки: она целиком выводится из материала.
-
-    `schemaVersion`, `composition`, `videoTrack` и `subtitles` решений не
-    содержат — размер кадра, частота, длительность и путь к клипу известны до
-    агента. Прогон 03.08 на Sonnet потерял на этом попытку: агент отдал
-    `videoTrack` списком по клипу на запись, гейт схемы искал `bounds` и
-    заворачивал сборку. Спрашивать у агента то, что мы знаем сами, — способ
-    получить расхождение, а не план.
-
-    Зона карточки тоже выводится: карточка теперь всегда блок каталога, а блок
-    — непрозрачная сцена во весь кадр.
-    """
-    board = dict(board)
-    board["schemaVersion"] = 3
-    board["composition"] = {
-        "fps": FPS, "width": OUT_W, "height": OUT_H,
-        "durationSeconds": _q(duration), "layout": "portrait",
-        "themeId": (board.get("composition") or {}).get("themeId", "noir"),
-        "seed": (board.get("composition") or {}).get("seed", 42),
-    }
-    board["videoTrack"] = {
-        "sourcePath": clips[0]["file"] if clips else "clips/clip-00.mp4",
-        "startSec": 0, "endSec": _q(duration),
-        "bounds": {"x": 0, "y": 0, "width": OUT_W, "height": OUT_H},
-    }
-    board["subtitles"] = {"enabled": True}
-    for card in board.get("cards") or []:
-        render = card.setdefault("render", {})
-        render.setdefault("kind", "block")
-        card["zone"] = "fullscreen"
-    return board
-
-
-def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
-                      duration: float, words: list[dict],
-                      resolved: dict[str, dict] | None = None) -> Path:
-    """Собрать `public/index.html`. Возвращает путь к нему."""
-    rdir = Path(rdir)
-    public = rdir / "public"
-    cards = sorted(storyboard.get("cards") or [],
-                   key=lambda card: float(card["startSec"]))
-    duration = _q(duration)
-    resolved = resolved or {}
-
-    body: list[str] = []
-    timeline: list[str] = []
-
-    # ── ведущая ───────────────────────────────────────────────────────────
-    # `class="clip"` обязателен на каждом элементе с временем — их квикстарт
-    # называет это правилом: «timed elements need data-start, data-duration,
-    # data-track-index and class="clip"»
-    # (https://hyperframes.heygen.com/quickstart). Тот же класс стоит на
-    # `<video>` в примере композиции на главной их репозитория. Без него клип
-    # с ведущей в кадре не появляется вовсе: окно на месте, внутри пусто.
-    videos = "\n".join(
-        f'      <video class="clip" id="clip-{index:02d}" src="{clip["file"]}"'
-        f' muted playsinline'
-        f' data-start="{_q(clip["start"]):.4f}"'
-        f' data-duration="{_q(clip["duration"]):.4f}"'
-        f' data-track-index="{TRACK_VIDEO}"></video>'
-        for index, clip in enumerate(clips))
-    moments = presenter_timeline(cards, clips, duration)
-    first = moments[0][1] if moments else "full"
-    initial = next((name for _, name in moments if name != "none"), "full")
-    style = _rect_style(_presenter_rect(initial))
-    if first == "none":
-        style += ";visibility:hidden;opacity:0"
-        timeline.append('tl.set("#video-wrap", { autoAlpha: 0 }, 0);')
-    body.append(f'    <div id="video-wrap" style="{style}">\n'
-                f"{videos}\n    </div>")
-    previous = first
-    for time, position in moments[1:]:
-        timeline += _presenter_move(previous, position, _q(time))
-        previous = position
-
-    # ── карточки ──────────────────────────────────────────────────────────
-    for card in cards:
-        start, end = _q(card["startSec"]), _q(card["endSec"])
-        render = card.get("render") or {}
-        block = render.get("block")
-        if not block:
-            raise RuntimeError(
-                f'{card["id"]}: не назван блок каталога. Карточка собирается '
-                "только блоком; если подходящего нет, это дырка каталога — "
-                "её место в списке пробелов, а не в вёрстке на лету")
-        media = {}
-        for slot in block_slots(sdk, public, block):
-            if slot.role == "presenter":
-                piece = _presenter_media(clips, card)
-                if piece:
-                    media[slot.name] = piece
-        for name in photo_slots(sdk, public, block):
-            found = resolved.get(media_key(card["id"], name)) or {}
-            # Не подобралась — слот уедет пустым, как незаполненный. Ронять
-            # из-за одной картинки весь прогон дорого: каталог отвечает не на
-            # каждое намерение. Что вставок не осталось совсем, ловит D16.
-            if found.get("file"):
-                media[name] = {"file": found["file"]}
-        unique = _stage_block(sdk, public, card, block, duration=end - start,
-                              text=_clean_text(render.get("text") or {}),
-                              media=media)
-        # `class="clip"` обязателен и на хосте сабкомпозиции: без него рантайм
-        # держит элемент видимым весь ролик и не смотрит на
-        # data-start/data-duration. Блок — непрозрачная сцена во весь кадр,
-        # поэтому забытый класс кроет ведущую от начала и до конца.
-        body.append(
-            f'    <div id="host-{card["id"]}" class="clip"'
-            f' data-composition-id="{unique}"'
-            f' data-composition-src="compositions/{unique}.html"'
-            f' data-start="{start:.4f}" data-duration="{end - start:.4f}"'
-            f' data-track-index="{TRACK_CARD}"'
-            f' data-width="{OUT_W}" data-height="{OUT_H}"></div>')
-        # Титр под карточкой гасим таймлайном, а не только выброшенными словами.
-        # Компонент держит группу слов на экране до начала следующей, поэтому
-        # последняя группа паузы доживала до пришедшей сцены и ложилась поверх
-        # неё — кадр 13,3 с прогона 04.08.
-        timeline.append(f'tl.set("#highlight", {{ autoAlpha: 0 }}, {start});')
-        timeline.append(f'tl.set("#highlight", {{ autoAlpha: 1 }}, {end});')
-
-    # ── субтитры ──────────────────────────────────────────────────────────
-    write_caption_data(public, words=words, cards=cards, duration=duration)
-    body.append(caption_snippet(sdk, public, track_index=TRACK_CAPTION,
-                                duration=duration))
-
-    body.append(
-        f'    <audio id="voice" src="voice.wav" data-start="0"'
-        f' data-duration="{duration:.4f}" data-track-index="{TRACK_AUDIO}"'
-        f' data-volume="1"></audio>')
-
-    html = TEMPLATE.read_text(encoding="utf-8")
-    for name, value in (("__W__", str(OUT_W)), ("__H__", str(OUT_H)),
-                        ("__FPS__", str(FPS)),
-                        ("__CAPTION_BOTTOM__", str(CAPTION_BOTTOM)),
-                        ("__DURATION__", f"{duration:.4f}"),
-                        ("__BODY__", "\n".join(body)),
-                        ("__TIMELINE__",
-                         "\n".join("          " + line for line in timeline))):
-        html = html.replace(name, value)
-    target = public / "index.html"
-    target.write_text(html, encoding="utf-8")
-
-    # Раскадровку переписываем округлённой: гейт сетки кадров должен судить те
-    # времена, что реально встали в композицию, а не те, что назвал агент.
-    for card in cards:
-        card["startSec"], card["endSec"] = _q(card["startSec"]), _q(card["endSec"])
-    storyboard["cards"] = cards
-    (rdir / "storyboard.json").write_text(
-        json.dumps(storyboard, ensure_ascii=False, indent=1), encoding="utf-8")
-    return target
-
-
-def presenter_timeline(cards: list[dict], clips: list[dict],
+def presenter_timeline(scenes: list[dict], clips: list[dict],
                        duration: float) -> list[tuple]:
-    """Где общее окно ведущей в каждый момент ролика.
+    """Где окно ведущей в каждый момент ролика.
 
-    Под карточкой его нет никогда: карточка — блок каталога, непрозрачная
-    сцена во весь кадр, и ведущая там либо внутри сцены, либо её нет вовсе.
-    Верить полю `presenter` из плана нельзя было ровно по этой причине: прогон
-    03.08 назначил `pip-tr` и `split` карточкам-блокам, окно послушно переехало
-    и осталось за сценой — проба насчитала два положения вместо четырёх.
+    Положение называет агент — это его главный ритмический инструмент. Код
+    держит одно: где ведущей физически нет (аватар туда не заказан), окно
+    гасится независимо от плана. Плану тут верить нельзя — на прогоне 03.08
+    названное положение честно применялось к пустому окну, и проба считала
+    положения, которых зритель не видел.
 
-    Между карточками зритель смотрит на ведущую во весь кадр. Без этого правила
-    после сцены, где ведущая жила внутри блока, кадр оставался чёрным до самой
-    следующей карточки.
+    Смотрим на пропуски между островами, а не на «попала ли сцена целиком в
+    один клип»: соседние острова идут встык, и сцена на их стыке ведущую не
+    теряет.
     """
+    gaps = avatar_gaps(clips, duration)
     moments: list[tuple[float, str]] = []
-    cursor = 0.0
-    frame = 1.0 / FPS
-
-    def pause(start: float, end: float) -> None:
-        """Пауза между карточками: полный кадр, а на длинной — ещё и наезд.
-
-        Пауза одним неподвижным планом — потерянная смена картинки: детектор
-        сцен видит только приход и уход карточки. В эталонных рилсах пауза
-        всегда разрезана «попом» — наездом на ведущую. Режем ровно посередине
-        и только там, где паузы хватает на оба куска.
-        """
-        if not _clip_for(clips, start):
-            moments.append((start, "none"))
-            return
-        moments.append((start, "full"))
-        if end - start >= 2 * PUNCH_MIN_HALF:
-            moments.append((_q((start + end) / 2), "punch"))
-
-    for card in cards:
-        start, end = _q(card["startSec"]), _q(card["endSec"])
-        if start - cursor > frame:
-            pause(cursor, start)
-        moments.append((start, "none"))
-        cursor = max(cursor, end)
-    if duration - cursor > frame:
-        pause(cursor, duration)
+    for scene in scenes:
+        start, end = _q(scene["startSec"]), _q(scene["endSec"])
+        position = str(scene.get("presenter") or "full")
+        if position != "none" and in_avatar_gap(start, end, gaps):
+            position = "none"
+        moments.append((start, position))
 
     collapsed: list[tuple[float, str]] = []
     for time, position in moments:
@@ -460,7 +234,7 @@ def presenter_timeline(cards: list[dict], clips: list[dict],
     return collapsed
 
 
-def _presenter_move(previous: str, position: str, at: float) -> list[str]:
+def _presenter_move(position: str, at: float) -> list[str]:
     """Перестановка окна ведущей мгновенная — стыком, а не переездом.
 
     Твин по `left`/`top` их линтер заворачивает ошибкой
@@ -486,8 +260,330 @@ def _presenter_move(previous: str, position: str, at: float) -> list[str]:
         f' autoAlpha: 1 }}, {at});']
 
 
+# -------------------------------------------------------------- раскадровка
+
+def complete_storyboard(board: dict, *, clips: list[dict],
+                        duration: float) -> dict:
+    """Дописать шапку раскадровки: она целиком выводится из материала.
+
+    `schemaVersion`, `composition`, `videoTrack` и `subtitles` решений не
+    содержат — размер кадра, частота, длительность и путь к клипу известны до
+    агента. Прогон 03.08 на Sonnet потерял на этом попытку: агент отдал
+    `videoTrack` списком по клипу на запись, гейт схемы искал `bounds` и
+    заворачивал сборку. Спрашивать у агента то, что мы знаем сами, — способ
+    получить расхождение, а не план.
+    """
+    board = dict(board)
+    board["schemaVersion"] = 3
+    board["composition"] = {
+        "fps": FPS, "width": OUT_W, "height": OUT_H,
+        "durationSeconds": _q(duration), "layout": "portrait",
+        "themeId": (board.get("composition") or {}).get("themeId", "noir"),
+        "seed": (board.get("composition") or {}).get("seed", 42),
+    }
+    board["videoTrack"] = {
+        "sourcePath": clips[0]["file"] if clips else "clips/clip-00.mp4",
+        "startSec": 0, "endSec": _q(duration),
+        "bounds": {"x": 0, "y": 0, "width": OUT_W, "height": OUT_H},
+    }
+    board["subtitles"] = {"enabled": True}
+    return board
+
+
+#: Форматы пикселей с альфа-каналом. Прозрачная вставка занимает весь кадр или
+#: его половину, и сквозь неё виден фон сцены — то есть чёрный прямоугольник.
+#: На прогоне 14 так вышли шесть вставок из четырнадцати, и весь хвост ролика
+#: (37,1–41,5 с) оказался чёрным экраном с одним титром. Их `check` этого не
+#: ловит: геометрия на месте, элемент видим, контраст титра к чёрному отличный.
+_ALPHA_PIX_FMTS = ("rgba", "bgra", "argb", "abgr", "ya8", "ya16", "pal8",
+                   "yuva420p", "yuva422p", "yuva444p", "gbrap")
+
+
+#: Короткая сторона вставки в пикселях. Ниже — это не фотография, а значок:
+#: подбор на прогоне 14 отдал под «три пронумерованные карточки» файл 150x150,
+#: и в кадре 1080x1920 от него осталось мыло. Планка низкая намеренно: каталог
+#: отдаёт в основном мелкие файлы (480x253, 626x391), и они в кадре читаются.
+MIN_INSERT_SIDE = 240
+
+
+#: Ниже этого значения альфа-канал считается настоящей прозрачностью. Канал
+#: сам по себе ещё не дыра: PNG-фотография несёт rgba со сплошной единицей.
+_OPAQUE_ALPHA = 250
+
+
+def _transparent(path) -> bool:
+    """Есть ли в файле реально прозрачные пиксели, а не просто альфа-канал.
+
+    Выдёргиваем альфу отдельным планом и смотрим её минимум — этим же приёмом
+    ffmpeg меряет любой канал (`alphaextract` + `signalstats`).
+    """
+    result = subprocess.run(
+        [FFMPEG, "-v", "error", "-i", str(path), "-vf",
+         "alphaextract,signalstats,metadata=print:file=-", "-an", "-f", "null",
+         "-"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace")
+    found = re.search(r"YMIN=(\d+)", result.stdout or "")
+    return bool(found) and int(found.group(1)) < _OPAQUE_ALPHA
+
+
+def insert_problem(path) -> str | None:
+    """Чем подобранный файл не годится во вставку. `None` — годится.
+
+    Спрашиваем ffprobe — он и так в зависимостях, а `pix_fmt` и размер он
+    отдаёт одним вызовом.
+    """
+    result = subprocess.run(
+        [FFPROBE, "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=pix_fmt,width,height", "-of", "csv=p=0",
+         str(path)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace")
+    parts = (result.stdout or "").strip().split(",")
+    if len(parts) < 3:
+        return "файл не читается"
+    try:
+        width, height = int(parts[0]), int(parts[1])
+    except ValueError:
+        return "файл не читается"
+    if min(width, height) < MIN_INSERT_SIDE:
+        return (f"файл {width}x{height} — мельче {MIN_INSERT_SIDE} px по короткой "
+                "стороне, в кадре останется мыло")
+    if parts[2].strip().lower() in _ALPHA_PIX_FMTS and _transparent(path):
+        return "файл прозрачный — сквозь него виден чёрный фон"
+    return None
+
+
+def _content_mark(public, file: str) -> str:
+    """Отпечаток содержимого картинки. Имя файла для этого не годится: подбор
+    кладёт один и тот же снимок под разными именами."""
+    if public is None:
+        return file
+    path = Path(public) / file
+    if not path.exists():
+        return file
+    return hashlib.md5(path.read_bytes()).hexdigest()
+
+
+def _copy_for(public, file: str, scene_id: str) -> str:
+    """Копия занятой картинки под своим именем.
+
+    Тот же `src` дважды их линтер считает риском двойного обнаружения медиа
+    (`duplicate_media_discovery_risk`), и под `--strict` это валит сборку. Копия
+    стоит килобайты и снимает вопрос.
+    """
+    if public is None:
+        return file
+    source = Path(public) / file
+    target = source.with_name(f"{source.stem}--{scene_id}{source.suffix}")
+    if not target.exists():
+        shutil.copyfile(source, target)
+    return str(target.relative_to(Path(public))).replace("\\", "/")
+
+
+def settle_inserts(board: dict, resolved: dict[str, dict],
+                   clips: list[dict], duration: float,
+                   public=None) -> list[str]:
+    """Свести план с тем, что реально нашёл `media-use`.
+
+    Вставка засчитывается, только если файл нашёлся и годится (см.
+    `insert_problem`). Ронять прогон из-за одной картинки дорого, а оставить как
+    есть нельзя: на её месте будет чёрный прямоугольник. Дальше по обстановке:
+    где ведущая есть — сцена отдаётся ей во весь кадр, где её нет — картинка
+    занимается у другой сцены. Повтор кадра плох, чёрный экран — провал.
+
+    Возвращает список сцен, оставшихся без вставки, — для отчёта.
+    """
+    gaps = avatar_gaps(clips, duration)
+    scenes = board.get("scenes") or []
+
+    def usable(scene_id: str) -> str | None:
+        found = resolved.get(media_key(scene_id)) or {}
+        if not found.get("file"):
+            return None
+        if public is not None and insert_problem(Path(public) / found["file"]):
+            return None
+        return found["file"]
+
+    # Одна картинка на одну сцену. `media-use` отвечает на близкие намерения
+    # одним и тем же снимком — на прогоне 15 три сцены получили общий файл, а
+    # ещё две получили один снимок под разными именами (`image_002.jpg` и
+    # `image_014.jpg` совпали побайтно). Поэтому сверяем содержимое, а не путь.
+    # Повтор кадра — и монтажный брак (в эталонных рилсах картинка не
+    # повторяется), и находка их линтера: `duplicate_media_discovery_risk`
+    # (packages/lint/src/rules/media.ts:239), а под `--strict` она валит сборку.
+    good: dict[str, str | None] = {}
+    taken: set[str] = set()
+    for scene in scenes:
+        if not insert_of(scene):
+            continue
+        file = usable(scene["id"])
+        mark = _content_mark(public, file) if file else None
+        if mark is not None and mark in taken:
+            file = None
+        elif mark is not None:
+            taken.add(mark)
+        good[scene["id"]] = file
+
+    def neighbours(index: int, what: str) -> set:
+        return {(scenes[i].get(what) if 0 <= i < len(scenes) else None)
+                for i in (index - 1, index + 1)}
+
+    def borrow(index: int, scene: dict) -> str | None:
+        """Занять картинку у другой сцены — но не у соседней.
+
+        Повтор кадра плох, но кадр, слившийся с соседним, ломает счёт смен
+        картинки (D21), а чёрный экран — вообще провал. Копия под своим именем:
+        тот же `src` дважды их линтер зовёт `duplicate_media_discovery_risk`.
+        """
+        near = {good.get(scenes[i].get("id")) if 0 <= i < len(scenes) else None
+                for i in (index - 1, index + 1)}
+        spare = next((file for file in good.values()
+                      if file and file not in near), None)
+        return _copy_for(public, spare, scene["id"]) if spare else None
+
+    lost, borrowed = [], []
+    for index, scene in enumerate(scenes):
+        if not insert_of(scene) or good.get(scene["id"]):
+            continue
+        start, end = _q(scene["startSec"]), _q(scene["endSec"])
+        # Соседи обязаны отличаться картинкой (D21), иначе две сцены подряд
+        # читаются одним планом. Без вставки сцену закрывает только ведущая во
+        # весь кадр, и таких раскладок ровно две.
+        free = [name for name in ("full", "punch")
+                if name not in neighbours(index, "presenter")]
+        faceless = in_avatar_gap(start, end, gaps)
+        if not faceless and free:
+            lost.append(scene["id"])
+            scene["insert"] = None
+            scene["presenter"] = free[0]
+            continue
+        # Ведущей тут нет вовсе, либо обе полнокадровые раскладки уже заняты
+        # соседями. Остаётся картинка.
+        spare = borrow(index, scene)
+        if spare is None:
+            raise RuntimeError(
+                f'{scene["id"]}: вставка «{insert_of(scene)["look"]}» не '
+                f"подобралась ({start:g}–{end:g} с), и занять картинку не у "
+                "кого — во всём плане не нашлось ни одной пригодной. Опиши "
+                "вставки как настоящие фотографии сцен из жизни")
+        resolved[media_key(scene["id"])] = {"file": spare}
+        good[scene["id"]] = spare
+        borrowed.append(scene["id"])
+    if borrowed:
+        print("вставку заняли у соседней сцены: " + ", ".join(borrowed))
+    return lost
+
+
+# ----------------------------------------------------------------- сборка
+
+def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
+                      duration: float, words: list[dict],
+                      resolved: dict[str, dict] | None = None) -> Path:
+    """Собрать `public/index.html`. Возвращает путь к нему."""
+    rdir = Path(rdir)
+    public = rdir / "public"
+    scenes = sorted(storyboard.get("scenes") or [],
+                    key=lambda scene: float(scene["startSec"]))
+    duration = _q(duration)
+    resolved = resolved or {}
+
+    body: list[str] = []
+    timeline: list[str] = []
+
+    # ── вставки ───────────────────────────────────────────────────────────
+    # Ниже ведущей по CSS и раньше её в разметке: порядок отрисовки задаёт
+    # `z-index` из шаблона, а порядок в DOM повторяет его на случай, если
+    # z-index кто-то перебьёт.
+    staged = 0
+    for scene in scenes:
+        insert = insert_of(scene)
+        found = resolved.get(media_key(scene["id"])) or {}
+        if not insert or not found.get("file"):
+            continue
+        rect = insert_rect(str(scene.get("presenter") or "full"))
+        if rect is None:
+            raise RuntimeError(
+                f'{scene["id"]}: ведущая стоит {scene.get("presenter")!r} и '
+                "закрывает кадр целиком — вставке места нет. Либо убери "
+                "вставку, либо отправь ведущую в угол (`pip-*`), в половину "
+                "кадра (`stack`, `split`) или убери её из сцены (`none`)")
+        start = _q(scene["startSec"])
+        length = _q(scene["endSec"]) - start
+        body.append(_insert_tag(
+            scene, rect, found["file"], start=start, duration=length,
+            track=TRACK_INSERT + staged // INSERTS_PER_TRACK))
+        # Наезд только у неподвижной вставки: видео и так движется, а гнать
+        # трансформу по `<video>` их дока не советует —
+        # «can cause Chrome to stop rendering video frames»
+        # (docs/reference/html-schema.mdx:94-96).
+        if found["file"].lower().split("?")[0].endswith(_IMAGE_SUFFIXES):
+            timeline += _drift(scene["id"], start, length)
+        staged += 1
+
+    # ── ведущая ───────────────────────────────────────────────────────────
+    # `class="clip"` на `<video>` их линтер не требует — теги `video`/`audio` он
+    # из проверки исключает (packages/lint/src/rules/composition.ts:548), а одна
+    # страница доков его прямо запрещает (docs/reference/html-schema.mdx:92).
+    # Но их же справочник ставит его в примере (variables-and-media.md:74), а у
+    # нас без него клип в кадре не появлялся вовсе: окно на месте, внутри пусто.
+    # Оставляем — проверено кадрами.
+    videos = "\n".join(
+        f'      <video class="clip" id="clip-{index:02d}" src="{clip["file"]}"'
+        f' muted playsinline'
+        f' data-start="{_q(clip["start"]):.4f}"'
+        f' data-duration="{_q(clip["duration"]):.4f}"'
+        f' data-track-index="{TRACK_VIDEO}"></video>'
+        for index, clip in enumerate(clips))
+    moments = presenter_timeline(scenes, clips, duration)
+    first = moments[0][1] if moments else "full"
+    initial = next((name for _, name in moments if name != "none"), "full")
+    style = _rect_style(_presenter_rect(initial))
+    if first == "none":
+        style += ";visibility:hidden;opacity:0"
+        timeline.append('tl.set("#video-wrap", { autoAlpha: 0 }, 0);')
+    body.append(f'    <div id="video-wrap" style="{style}">\n'
+                f"{videos}\n    </div>")
+    for time, position in moments[1:]:
+        timeline += _presenter_move(position, _q(time))
+
+    # ── субтитры ──────────────────────────────────────────────────────────
+    # Титр идёт весь ролик и больше не гасится: гасить его было нужно, пока
+    # сцена была непрозрачным блоком со своим текстом. Теперь текста в кадре
+    # нет ни у вставки, ни у ведущей, а в эталонных рилсах «текста в кадре нет
+    # ни секунды без».
+    write_caption_data(public, words=words, duration=duration)
+    body.append(caption_snippet(sdk, public, track_index=TRACK_CAPTION,
+                                duration=duration))
+
+    body.append(
+        f'    <audio id="voice" src="voice.wav" data-start="0"'
+        f' data-duration="{duration:.4f}" data-track-index="{TRACK_AUDIO}"'
+        f' data-volume="1"></audio>')
+
+    html = TEMPLATE.read_text(encoding="utf-8")
+    for name, value in (("__W__", str(OUT_W)), ("__H__", str(OUT_H)),
+                        ("__FPS__", str(FPS)),
+                        ("__CAPTION_BOTTOM__", str(CAPTION_BOTTOM)),
+                        ("__DURATION__", f"{duration:.4f}"),
+                        ("__BODY__", "\n".join(body)),
+                        ("__TIMELINE__",
+                         "\n".join("          " + line for line in timeline))):
+        html = html.replace(name, value)
+    target = public / "index.html"
+    target.write_text(html, encoding="utf-8")
+
+    # Раскадровку переписываем округлённой: гейт сетки кадров должен судить те
+    # времена, что реально встали в композицию, а не те, что назвал агент.
+    for scene in scenes:
+        scene["startSec"] = _q(scene["startSec"])
+        scene["endSec"] = _q(scene["endSec"])
+    storyboard["scenes"] = scenes
+    (rdir / "storyboard.json").write_text(
+        json.dumps(storyboard, ensure_ascii=False, indent=1), encoding="utf-8")
+    return target
+
+
 def clear_generated(public: Path) -> None:
-    """Убрать копии блоков прошлой попытки: имя копии зависит от карточки."""
+    """Убрать копии блоков прошлой попытки: имя копии зависело от карточки."""
     compositions = public / "compositions"
     if not compositions.exists():
         return

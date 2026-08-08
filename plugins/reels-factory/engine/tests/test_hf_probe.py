@@ -26,9 +26,14 @@ def _text(left, top, width, height, text="карточка"):
             "sourceFile": "index.html"}
 
 
-def _sample(time, *, video=FULL_FRAME, texts=(), src=("compositions/kicker.html",)):
+#: Вставка в кадре: обычный клип с идентификатором `ins-<сцена>`.
+INSERT = {"id": "ins-s-01", "visible": True}
+
+
+def _sample(time, *, video=FULL_FRAME, texts=(), clips=(INSERT,),
+            src=("compositions/kicker.html",)):
     return {"time": time, "videoRect": dict(video), "texts": list(texts),
-            "clips": [], "compositionSrc": list(src),
+            "clips": [dict(clip) for clip in clips], "compositionSrc": list(src),
             "fingerprint": f"печать-{time}",
             "canvas": {"width": 1080, "height": 1920}}
 
@@ -134,12 +139,30 @@ def test_ведущей_нет_нигде_валится():
         "D14_presenter_moves"].startswith("FAIL")
 
 
-# ---------- D15: блоки каталога ----------
+# ---------- D15: вставки видны ----------
 
-def test_композиция_без_блоков_каталога_валится():
-    samples = [_sample(0.0, src=()), _sample(3.0, video=PIP, src=())]
+def test_композиция_без_вставок_валится():
+    """Гейт был про блоки каталога, но их в кадре может не быть вовсе. Дыра,
+    которую он закрывал, осталась: прогон 03.08 вернул ролик без графики."""
+    samples = [_sample(0.0, clips=()), _sample(3.0, video=PIP, clips=())]
     assert gates_from_report(_report(samples), FACE)[
-        "D15_catalog_blocks"].startswith("FAIL")
+        "D15_inserts_visible"].startswith("FAIL")
+
+
+def test_объявленная_но_невидимая_вставка_валится():
+    """D16 смотрит разметку, здесь — отрисованную композицию: их `check` шесть
+    раз сказал, что окно ведущей внутри блока не рисуется, и мы прошли мимо."""
+    dead = {"id": "ins-s-01", "visible": False}
+    samples = [_sample(0.0, clips=[dead]), _sample(3.0, video=PIP, clips=[dead])]
+    assert gates_from_report(_report(samples), FACE)[
+        "D15_inserts_visible"].startswith("FAIL")
+
+
+def test_видимая_вставка_принимается():
+    alive = {"id": "ins-s-01", "visible": True}
+    samples = [_sample(0.0, clips=[alive]), _sample(3.0, video=PIP, clips=[alive])]
+    assert gates_from_report(_report(samples), FACE)[
+        "D15_inserts_visible"].startswith("PASS")
 
 
 # ---------- недостоверный прогон ----------
@@ -148,7 +171,7 @@ def test_замерший_таймлайн_валит_все_гейты():
     """Их sweep_static: перемотка ничего не двинула, значит зелёный — вранью."""
     samples = [_sample(0.0), _sample(3.0, video=PIP)]
     gates = gates_from_report(_report(samples, sweepStatic=True), FACE)
-    assert set(gates) == {"D8_face", "D14_presenter_moves", "D15_catalog_blocks",
+    assert set(gates) == {"D8_face", "D14_presenter_moves", "D15_inserts_visible",
                           "D17_service_text"}
     assert all(value.startswith("FAIL") for value in gates.values())
 

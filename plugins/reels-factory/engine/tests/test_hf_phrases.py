@@ -1,12 +1,14 @@
-"""Секунды карточек считает код по фразам озвучки, а не агент.
+"""Секунды сцен считает код по фразам озвучки, а не агент.
 
 Прогоны 9 и 10: агент тратил по 30–45 тысяч токенов на ход, перебирая зазоры и
 минимальные длительности, и всё равно ошибся на три сотых секунды.
 """
 import pytest
 
-from reels_factory.hf_phrases import lay_out_cards, phrase_span, phrase_timeline
-from reels_factory.hf_rhythm import MAX_STATIC_SPAN, MIN_CARD_GAP
+from reels_factory.hf_phrases import (
+    MIN_SCENE, faceless_phrases, lay_out_scenes, phrase_span, phrase_timeline,
+)
+from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 
 SCENARIO = {
     "total": 12.0,
@@ -73,77 +75,92 @@ def test_несуществующая_фраза_названа_внятно():
         phrase_span(phrases, 0, 9)
 
 
-# ---------- раскладка карточек ----------
+# ---------- раскладка сцен ----------
 
-#: ведущая в кадре весь ролик — на такой раскладке правило про куски без неё
-#: не срабатывает и не мешает смотреть на остальные правила
+#: ведущая в кадре весь ролик
 CLIPS = [{"file": "clips/clip-00.mp4", "start": 0.0, "duration": 12.0}]
 
 #: клип кончается на 9.0 — хвост 9–12 идёт без ведущей
 CLIPS_TAIL = [{"file": "clips/clip-00.mp4", "start": 0.0, "duration": 9.0}]
 
 
-def _cards(*specs):
-    return [{"id": f"card-{i:02d}", "phrases": list(span)}
+def _scenes(*specs):
+    return [{"id": f"s-{i:02d}", "phrases": list(span)}
             for i, span in enumerate(specs, start=1)]
 
 
-def test_карточка_встаёт_на_названные_фразы():
+def test_сцена_встаёт_на_названные_фразы():
     phrases = phrase_timeline(SCENARIO, WORDS)
-    cards = lay_out_cards(_cards((1, 1)), phrases, clips=CLIPS, duration=12.0)
-    assert cards[0]["startSec"] == pytest.approx(2.9, abs=0.034)
-    assert cards[0]["endSec"] == pytest.approx(6.0, abs=0.034)
+    scenes = lay_out_scenes(_scenes((0, 0), (1, 1), (2, 2), (3, 3)), phrases,
+                            duration=12.0)
+    assert scenes[1]["startSec"] == pytest.approx(2.9, abs=0.034)
+    assert scenes[1]["endSec"] == pytest.approx(6.0, abs=0.034)
     # секунд агент больше не называет — их в плане и не было
-    assert "phrases" not in cards[0]
+    assert "phrases" not in scenes[1]
 
 
-def test_короткая_карточка_дотягивается_до_минимума_блока():
+def test_сцены_выстилают_ролик_целиком():
+    """Промежутков не бывает: неназванный кусок — это картинка по умолчанию,
+    а «по умолчанию» и давало неподвижные куски."""
     phrases = phrase_timeline(SCENARIO, WORDS)
-    cards = lay_out_cards(_cards((0, 0)), phrases, clips=CLIPS, duration=12.0,
-                          minimums={"card-01": 4.5})
-    assert cards[0]["endSec"] - cards[0]["startSec"] >= 4.5 - 0.034
+    scenes = lay_out_scenes(_scenes((0, 1), (2, 3)), phrases, duration=12.0)
+    assert scenes[0]["startSec"] == 0.0
+    assert scenes[-1]["endSec"] == pytest.approx(12.0, abs=0.001)
+    for left, right in zip(scenes, scenes[1:]):
+        assert left["endSec"] == right["startSec"]
 
 
-def test_блок_не_влезающий_в_свои_фразы_возвращается_агенту():
-    """Прогон 12: под блок на 6,5 с агент отдал две фразы на три секунды.
-    Растянуть некуда — справа следующая карточка на своей реплике."""
+def test_пропущенная_фраза_возвращается_агенту():
     phrases = phrase_timeline(SCENARIO, WORDS)
-    with pytest.raises(RuntimeError, match="больше фраз или возьми блок"):
-        lay_out_cards(_cards((0, 0), (1, 1), (3, 3)), phrases, clips=CLIPS_TAIL,
-                      duration=12.0, minimums={"card-01": 6.5})
+    with pytest.raises(RuntimeError, match="пропущены фразы"):
+        lay_out_scenes(_scenes((0, 0), (2, 3)), phrases, duration=12.0)
 
 
-def test_карточка_не_длиннее_предела_неподвижного_куска():
+def test_фраза_в_двух_сценах_возвращается_агенту():
     phrases = phrase_timeline(SCENARIO, WORDS)
-    cards = lay_out_cards(_cards((0, 3)), phrases, clips=CLIPS, duration=12.0)
-    assert cards[0]["endSec"] - cards[0]["startSec"] <= MAX_STATIC_SPAN + 0.001
+    with pytest.raises(RuntimeError, match="уже заняты"):
+        lay_out_scenes(_scenes((0, 1), (1, 3)), phrases, duration=12.0)
 
 
-def test_зазор_между_карточками_держит_код():
+def test_недосказанный_хвост_возвращается_агенту():
     phrases = phrase_timeline(SCENARIO, WORDS)
-    cards = lay_out_cards(_cards((0, 0), (1, 1)), phrases, clips=CLIPS,
-                          duration=12.0)
-    assert cards[1]["startSec"] - cards[0]["endSec"] >= MIN_CARD_GAP - 0.034
+    with pytest.raises(RuntimeError, match="Хвост без сцены"):
+        lay_out_scenes(_scenes((0, 1), (2, 2)), phrases, duration=12.0)
 
 
-def test_кусок_без_ведущей_закрывается_встык():
-    """Клип кончается на 9.0, дальше ведущей нет — до 12.0 обязана стоять сцена."""
+def test_сцена_длиннее_предела_возвращается_агенту():
     phrases = phrase_timeline(SCENARIO, WORDS)
-    cards = lay_out_cards(_cards((0, 0), (3, 3)), phrases, clips=CLIPS_TAIL,
-                          duration=12.0)
-    assert cards[-1]["endSec"] == pytest.approx(12.0, abs=0.034)
+    with pytest.raises(RuntimeError, match=f"предел {MAX_STATIC_SPAN:g}"):
+        lay_out_scenes(_scenes((0, 3)), phrases, duration=12.0)
 
 
-def test_незакрытый_кусок_без_ведущей_называется_ошибкой():
+def test_вспышка_дотягивается_за_счёт_соседней():
+    """Фраза бывает и в две десятых секунды — сцена на ней читается вспышкой."""
     phrases = phrase_timeline(SCENARIO, WORDS)
-    with pytest.raises(RuntimeError, match="без ведущей"):
-        lay_out_cards(_cards((0, 0)), phrases, clips=CLIPS_TAIL, duration=12.0)
+    phrases[1]["end"] = phrases[1]["start"] + 0.2
+    phrases[2]["start"] = phrases[1]["end"]
+    scenes = lay_out_scenes(_scenes((0, 0), (1, 1), (2, 2), (3, 3)), phrases,
+                            duration=12.0)
+    assert scenes[1]["endSec"] - scenes[1]["startSec"] >= MIN_SCENE - 0.034
+    assert scenes[2]["startSec"] == scenes[1]["endSec"]
 
 
 def test_времена_ложатся_на_сетку_кадров():
     phrases = phrase_timeline(SCENARIO, WORDS)
-    cards = lay_out_cards(_cards((0, 0), (3, 3)), phrases, clips=CLIPS_TAIL,
-                          duration=12.0)
-    for card in cards:
+    scenes = lay_out_scenes(_scenes((0, 1), (2, 3)), phrases, duration=12.0)
+    for scene in scenes:
         for field in ("startSec", "endSec"):
-            assert abs(card[field] * 30 - round(card[field] * 30)) < 1e-6
+            assert abs(scene[field] * 30 - round(scene[field] * 30)) < 1e-6
+
+
+# ---------- где ведущей нет ----------
+
+def test_фразы_без_ведущей_названы_номерами():
+    """Агент не видит секунд, значит про пропуски аватара ему говорят фразами."""
+    phrases = phrase_timeline(SCENARIO, WORDS)
+    assert faceless_phrases(phrases, CLIPS_TAIL, 12.0) == [3]
+
+
+def test_без_пропусков_список_пуст():
+    phrases = phrase_timeline(SCENARIO, WORDS)
+    assert faceless_phrases(phrases, CLIPS, 12.0) == []

@@ -531,11 +531,18 @@ async function collectSample(page) {
       return found;
     };
 
+    // Смотрим ЛЮБОЙ клип внутри обёртки, а не первый. Клипы ведущей лежат в
+    // `#video-wrap` слоем друг на друге, и движок показывает тот, чьё окно
+    // сейчас идёт; первый гаснет после своего куска. Проверка по первому
+    // объявляла ведущую спрятанной на весь остаток ролика — на прогоне 14
+    // гейт подвижности насчитал 4 положения вместо девяти, притом что в
+    // готовом mp4 она на месте.
     const shown = (candidate) => {
-      const video = candidate.video || candidate.element.querySelector("video");
-      return (
-        presenterVisible(candidate.element) && (!video || presenterVisible(video))
-      );
+      if (!presenterVisible(candidate.element)) return false;
+      const videos = candidate.video
+        ? [candidate.video]
+        : Array.from(candidate.element.querySelectorAll("video"));
+      return videos.length === 0 || videos.some(presenterVisible);
     };
     const candidates = presenterCandidates();
     const presenter = candidates.find(shown) || candidates[0] || null;

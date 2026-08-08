@@ -155,8 +155,9 @@ def _gate_presenter_moves(samples: list[dict]) -> str:
     shown = "; ".join(f'{int(r["left"])},{int(r["top"])} '
                       f'{int(r["width"])}x{int(r["height"])}' for r in distinct)
     return (f"FAIL: у ведущей за ролик {len(distinct)} положения вместо "
-            f"{MIN_PRESENTER_POSITIONS} — {shown}. Положение задаёт блок: "
-            "возьми блоки с разной раскладкой ведущей")
+            f"{MIN_PRESENTER_POSITIONS} — {shown}. Положение называешь ты "
+            "полем `presenter` каждой сцены: раскидай её по кадру — во весь "
+            "кадр, в угол, в половину")
 
 
 #: Служебная надпись на экране. Ловим три следа, каждый — из разбора прогона
@@ -184,12 +185,41 @@ def _gate_service_text(samples: list[dict]) -> str:
     return f"FAIL: служебная надпись в кадре — {shown}"
 
 
-def _gate_catalog_blocks(report: dict) -> str:
-    sources = report.get("compositionSrc") or []
-    if sources:
-        return "PASS"
-    return ("FAIL: в композиции нет ни одного data-composition-src — "
-            "блоки каталога не подключены")
+#: Префикс идентификатора вставки — его ставит `hf_compose._insert_tag`.
+INSERT_ID_PREFIX = "ins-"
+
+
+def _gate_inserts_visible(samples: list[dict]) -> str:
+    """Вставки не просто объявлены, а видны в кадре.
+
+    Гейт был про блоки каталога: «есть хоть один `data-composition-src`». После
+    перехода на слои блоков в композиции может не быть вовсе, и проверять их
+    наличие стало бессмысленно. Но дыру, которую он закрывал, закрывать надо:
+    прогон 03.08 вернул ролик, где графики не было совсем.
+
+    Меряем теперь то же самое, но честнее. D16 смотрит разметку — что файл
+    подобран и подключён. Здесь смотрим отрисованную композицию: вставка
+    действительно видна, а не спрятана нулевой прозрачностью, нулевым размером
+    или чужим слоем. Прогон 13 показал, что разница есть: `check` шесть раз
+    сказал, что окно ведущей внутри блока не рисуется вовсе, и мы прошли мимо.
+    """
+    seen, visible = set(), set()
+    for sample in samples:
+        for clip in sample.get("clips") or []:
+            name = str(clip.get("id") or "")
+            if not name.startswith(INSERT_ID_PREFIX):
+                continue
+            seen.add(name)
+            if clip.get("visible"):
+                visible.add(name)
+    if not seen:
+        return ("FAIL: в композиции нет ни одной вставки — кадр весь ролик "
+                "занимают ведущая и титр")
+    blind = sorted(seen - visible)
+    if blind:
+        return (f"FAIL: вставки объявлены, но в кадре не появились: "
+                f'{", ".join(blind[:5])}')
+    return f"PASS: вставок в кадре {len(visible)}"
 
 
 def gates_from_report(report: dict, face: dict | None = None) -> dict[str, str]:
@@ -204,11 +234,11 @@ def gates_from_report(report: dict, face: dict | None = None) -> dict[str, str]:
         reason = ("FAIL: таймлайн не двигался под перемоткой — "
                   "вердикты пробы недостоверны")
         return {"D8_face": reason, "D14_presenter_moves": reason,
-                "D15_catalog_blocks": reason, "D17_service_text": reason}
+                "D15_inserts_visible": reason, "D17_service_text": reason}
     return {
         "D8_face": _gate_face(samples, face),
         "D14_presenter_moves": _gate_presenter_moves(samples),
-        "D15_catalog_blocks": _gate_catalog_blocks(report),
+        "D15_inserts_visible": _gate_inserts_visible(samples),
         "D17_service_text": _gate_service_text(samples),
     }
 

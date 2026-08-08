@@ -5,7 +5,8 @@ import pytest
 
 from reels_factory.hf_agent import plan_with_agent
 
-_BOARD = {"cards": [{"id": "card-01", "startSec": 0, "endSec": 3}]}
+_BOARD = {"scenes": [{"id": "s-01", "intent": "и", "phrases": [0, 1],
+                      "presenter": "full", "insert": None}]}
 
 
 class _Runner:
@@ -43,9 +44,9 @@ def test_пустая_раскадровка_ошибка(tmp_path):
     (tmp_path / "BRIEF.md").write_text("задание", encoding="utf-8")
     runner = _Runner(tmp_path)
     runner.run = lambda prompt, cwd=None: (
-        (tmp_path / "storyboard.json").write_text('{"cards": []}',
+        (tmp_path / "storyboard.json").write_text('{"scenes": []}',
                                                   encoding="utf-8"), "готово")[1]
-    with pytest.raises(RuntimeError, match="ни одной карточки"):
+    with pytest.raises(RuntimeError, match="ни одной сцены"):
         plan_with_agent(tmp_path, runner=runner)
 
 
@@ -203,7 +204,7 @@ def test_модель_явным_аргументом_бьёт_окружени�
 # ---------- глубина рассуждения ----------
 #
 # На `high` (умолчание Sonnet 5) сессия отдала 42 тысячи токенов выхода и
-# заняла четверть часа на плане из десяти карточек. Регулятор нужен, чтобы
+# заняла четверть часа на плане из десяти сцен. Регулятор нужен, чтобы
 # мерить это, а не гадать.
 
 def test_усилие_по_умолчанию_среднее(monkeypatch, tmp_path):

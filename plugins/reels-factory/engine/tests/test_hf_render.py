@@ -8,7 +8,8 @@ from reels_factory.hf_render import STEPS, reset_step, run_step, step_done
 
 
 def test_шаги_в_нужном_порядке():
-    assert STEPS == ("prepare", "plan", "compose", "gates", "render", "loudness")
+    assert STEPS == ("prepare", "plan", "compose", "gates", "shots", "render",
+                     "loudness")
 
 
 def test_маркер_отмечает_шаг(tmp_path):
@@ -43,6 +44,13 @@ def _fakes(monkeypatch, tmp_path, storyboards):
         calls.append(args)
         if args[0] == "render":
             Path(args[args.index("--output") + 1]).write_bytes(b"mp4")
+        if args[0] == "check" and log is not None:
+            # их `check` кода выхода не отдаёт — вердикт читается из отчёта
+            Path(log).write_text('{"ok": true}', encoding="utf-8")
+        if args[0] == "snapshot":
+            shots = Path(cwd) / "snapshots"
+            shots.mkdir(parents=True, exist_ok=True)
+            (shots / "contact-sheet.jpg").write_bytes(b"jpg")
         return ""
 
     monkeypatch.setattr(hf_render, "_cli", fake_cli)
@@ -66,11 +74,12 @@ def _fakes(monkeypatch, tmp_path, storyboards):
     monkeypatch.setattr(hf_render, "probe_gates",
                         lambda rdir, **k: {"D8_face": "PASS",
                                            "D14_presenter_moves": "PASS",
-                                           "D15_catalog_blocks": "PASS",
+                                           "D15_inserts_visible": "PASS",
                                            "D17_service_text": "PASS"})
     monkeypatch.setattr(hf_render.hf_captions, "stage", lambda rdir: rdir)
-    monkeypatch.setattr(hf_render, "_install_blocks", lambda rdir, names: None)
-    monkeypatch.setattr(hf_render, "collect_intents", lambda sdk, public, board: [])
+    monkeypatch.setattr(hf_render, "collect_intents", lambda board: [])
+    monkeypatch.setattr(hf_render, "settle_inserts",
+                        lambda board, found, clips, duration, public=None: [])
     monkeypatch.setattr(hf_render, "resolve_all", lambda public, requests: {})
     monkeypatch.setattr(hf_render, "rhythm_gates",
                         lambda mp4: {"D18_change_rate": "PASS",
@@ -88,6 +97,10 @@ def _fakes(monkeypatch, tmp_path, storyboards):
         target.write_text(
             '<html><body><img src="media/hands.jpg"></body></html>',
             encoding="utf-8")
+        # настоящая сборка переписывает раскадровку округлённой, и гейты судят
+        # именно её — фейк обязан делать то же самое
+        (Path(rdir) / "storyboard.json").write_text(
+            json.dumps(storyboard, ensure_ascii=False), encoding="utf-8")
         return target
 
     monkeypatch.setattr(hf_render, "build_composition", fake_build)
@@ -105,7 +118,8 @@ def _fakes(monkeypatch, tmp_path, storyboards):
         # Свой экземпляр на каждый вызов: настоящий агент пишет файл, и сборка
         # читает его с диска — общего объекта между попытками не бывает.
         board = json.loads(json.dumps(queue.pop(0)))
-        (Path(rdir) / "storyboard.json").write_text(json.dumps(board), encoding="utf-8")
+        for name in ("storyboard.json", "plan.json"):
+            (Path(rdir) / name).write_text(json.dumps(board), encoding="utf-8")
         return board
 
     monkeypatch.setattr(hf_render, "plan_with_agent", fake_agent)
@@ -124,7 +138,7 @@ PLAN = {"windows": [], "phrases": [], "log": [],
 _SENTENCES = ["Мы продаём людям.", "Мы решаем боль.", "Мы даём результат.",
               "Порядок тут решает.", "Сначала спроси кому.", "Потом спроси что.",
               "И только как.", "Всё прочее вторично.", "Сохрани это видео.",
-              "Прогони свой продукт."]
+              "Прогони свой продукт.", "Проверь свою нишу.", "Сделай это сегодня."]
 TIMED = {"total": 20.0,
          "blocks": [{"role": "hook", "start": 0.0, "end": 20.0,
                      "speech": " ".join(_SENTENCES)}]}
@@ -136,7 +150,7 @@ for _i, _w in enumerate(" ".join(_SENTENCES).split()):
                   "text": _w})
 
 
-def _board(cards):
+def _board(scenes):
     return {"schemaVersion": 3,
             "composition": {"fps": 30, "width": 1080, "height": 1920,
                             "durationSeconds": 20.0, "layout": "portrait"},
@@ -144,20 +158,19 @@ def _board(cards):
                            "endSec": 20.0,
                            "bounds": {"x": 0, "y": 0, "width": 1080, "height": 1920}},
             "subtitles": {"enabled": True},
-            "cards": cards}
+            "scenes": scenes}
 
 
-# Карточки на нечётных фразах: чётные остаются свободными, и на них зритель
-# видит ведущую — иначе смена картинки не считается (гейт D21).
-GOOD = _board([{"id": f"c{i}", "intent": "зачем", "accentIndex": 0,
-                "phrases": [i * 2 + 1, i * 2 + 1],
-                "contentHints": {"title": "Т"},
-                "render": {"kind": "block", "block": "g99-demo"}}
-               for i in range(5)])
+# Сцены выстилают озвучку подряд, соседние отличаются положением ведущей:
+# смену картинки даёт сама граница между ними (гейт D21).
+GOOD = _board([{"id": f"s-{i:02d}", "intent": "зачем", "phrases": [i, i],
+                "presenter": "full" if i % 2 else "punch", "insert": None}
+               for i in range(len(_SENTENCES))])
 # Наше прежнее поле сверх схемы: соблюсти его и videoTrack.bounds разом нельзя.
-BAD = _board([{"id": "c1", "intent": "зачем", "accentIndex": 0,
-               "phrases": [1, 3], "contentHints": {"title": "Т"},
-               "contentRect": {"left": 200, "top": 400, "width": 700, "height": 300}}])
+BAD = _board([dict(scene, **({"contentRect": {"left": 200, "top": 400,
+                                              "width": 700, "height": 300}}
+                             if index == 0 else {}))
+              for index, scene in enumerate(json.loads(json.dumps(GOOD["scenes"])))])
 
 
 def test_сборка_проходит_все_шаги(tmp_path, monkeypatch):
@@ -175,6 +188,7 @@ def test_сборка_проходит_все_шаги(tmp_path, monkeypatch):
     assert any(a[0] == "check" for a in calls)
     assert any(a[0] == "render" for a in calls)
     assert res["gates"]["D8_face"] == "PASS"
+    assert res["gates"]["D0_check"] == "PASS"
     assert Path(res["mp4"]).exists()
     # каталог прописан до того, как агента позвали
     assert (tmp_path / "hyperframes.json").exists()
@@ -225,6 +239,34 @@ def test_находки_их_проверки_отправляют_на_повт
     assert "canvas_overflow" in (tmp_path / "BRIEF.md").read_text(encoding="utf-8")
     assert Path(res["mp4"]).exists()
     assert any(a[0] == "render" for a in calls)
+
+
+def test_их_check_судится_по_отчёту_а_не_по_коду_выхода(tmp_path, monkeypatch):
+    """`hyperframes check` 0.7.84 отдаёт ноль всегда — и на предупреждении, и на
+    «Not a directory». Гейт, написанный на коде выхода, не срабатывал ни разу."""
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [GOOD, GOOD])
+    real_cli = hf_render._cli
+    seen = []
+
+    def failing_check(*args, cwd, log=None):
+        if args[0] == "check":
+            seen.append(args)
+            Path(log).write_text(
+                '{"ok": false, "strict": true, "lint": {"findings": ['
+                '{"code": "composition_file_too_large", "severity": "warning",'
+                ' "message": "684 lines"}]}}', encoding="utf-8")
+            return ""
+        return real_cli(*args, cwd=cwd, log=log)
+
+    monkeypatch.setattr(hf_render, "_cli", failing_check)
+
+    with pytest.raises(RuntimeError, match="composition_file_too_large"):
+        hf_render.assemble_hyperframes(
+            tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+            master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+    assert len(seen) == 2
 
 
 def test_две_неудачи_подряд_роняют_сборку(tmp_path, monkeypatch):

@@ -9,14 +9,20 @@
         overflow: hidden; background: #0b0b0c;
         font-family: 'Manrope', 'Unbounded', sans-serif;
       }
-      /* Свой фон у сцены, а не только у body: блок каталога — отдельная
-         страница со своим `html,body{background:…}`, и при врезке
-         сабкомпозиции это правило красит весь кадр. Там, где карточки нет,
-         зритель видел бы бумажный фон блока весь ролик. */
+      /* Свой фон у сцены, а не только у body: врезанная сабкомпозиция —
+         отдельная страница со своим `html,body{background:…}`, и это правило
+         красит весь кадр. */
       #stage { position: relative; width: 100%; height: 100%; overflow: hidden;
         background: #0b0b0c; }
+      /* Порядок слоёв держит z-index, а не `data-track-index`: тот у них
+         «display-only; render never reads it»
+         (packages/core/src/runtime/timeline.ts:599). Снизу вверх:
+         вставка -> ведущая -> титр. */
+      .ins { position: absolute; overflow: hidden; z-index: 10; }
+      .ins .ins-media { position: absolute; inset: 0;
+        width: 100%; height: 100%; will-change: transform; }
       #video-wrap { position: absolute; left: 0; top: 0;
-        width: __W__px; height: __H__px; overflow: hidden; }
+        width: __W__px; height: __H__px; overflow: hidden; z-index: 20; }
       /* Клипы лежат слоем друг на друге, а не в потоке. Без `position:
          absolute` второй клип встаёт под первым, то есть за нижним краем
          обёртки с `overflow:hidden`, и весь остаток ролика идёт по чёрному:
@@ -29,7 +35,7 @@
                     0 0 0 5px rgba(255,255,255,.85); }
       /* Компонент субтитров рассчитан на отдельную страницу и держит себя
          `position: relative`; внутри нашей сцены он обязан лечь слоем. */
-      #highlight { position: absolute; left: 0; top: 0; }
+      #highlight { position: absolute; left: 0; top: 0; z-index: 30; }
       /* Титр компонент сажает на 140px от низа и масштабирует по высоте кадра
          — в портрете это 249px, слишком низко: там платформа рисует свой
          интерфейс. Их же справочник по рельсу титров велит для 9:16 держать

@@ -137,6 +137,11 @@ def plan_with_agent(rdir, *, runner=None) -> dict:
     if not storyboard.exists():
         raise RuntimeError(f"агент не вернул {storyboard}")
     board = json.loads(storyboard.read_text(encoding="utf-8"))
-    if not (board.get("cards") or []):
-        raise RuntimeError("в раскадровке нет ни одной карточки")
+    if not (board.get("scenes") or []):
+        raise RuntimeError("в раскадровке нет ни одной сцены")
+    # Нетронутая копия плана. `storyboard.json` сборка переписывает — дописывает
+    # секунды и снимает `phrases`, — и пересборка без агента читала бы уже не
+    # план, а его отпечаток: диапазонов фраз там нет, разложить нечего.
+    (rdir / "plan.json").write_text(
+        json.dumps(board, ensure_ascii=False, indent=1), encoding="utf-8")
     return board

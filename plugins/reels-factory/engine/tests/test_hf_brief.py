@@ -58,9 +58,9 @@ def test_фразы_пронумерованы_в_задании(tmp_path):
          "start": 0.0, "end": 2.4},
         {"id": 1, "role": "hook", "text": "Порядок решает.",
          "start": 2.4, "end": 5.0}])
-    # длина нужна, чтобы сверить фразы с минимумом выбранного блока
+    # длина нужна, чтобы агент не назначал сцену на фразу короче минимума
     assert "`0` **hook** 2.4 с — Все продажи." in text
-    assert "есть фразы `0`–1" in text
+    assert "есть фразы\n`0`–1" in text or "есть фразы `0`–1" in text
 
 
 def test_маршрут_назван_в_шапке(tmp_path):
@@ -84,13 +84,13 @@ def test_сценарий_по_блокам_передан(tmp_path):
     for role in ("hook", "development", "payoff", "cta"):
         assert role in text
     assert "Все продажи на свете" in text
-    assert "12.22" in text or "12,22" in text
 
 
-def test_расписание_клипов_передано(tmp_path):
+def test_расписание_клипов_секундами_не_передаётся(tmp_path):
+    """Секунд агент не видит вовсе: где ведущей нет, ему говорят номерами фраз.
+    Расписание клипов в секундах он всё равно ни с чем не мог бы сверить."""
     text = _text(tmp_path)
-    assert "clips/avatar_0.mp4" in text
-    assert "12.22" in text or "12,22" in text
+    assert "clips/avatar_0.mp4" not in text
 
 
 def test_материал_перечислен(tmp_path):
@@ -107,13 +107,23 @@ def test_пооконной_раскадровки_нет(tmp_path):
     assert "window-000" not in text
 
 
-def test_паспорта_блоков_в_задании(tmp_path):
-    """Блоки описаны слотами прямо в задании: открывать их файлы незачем."""
+def test_наших_блоков_агенту_больше_не_выдают(tmp_path):
+    """Полноэкранная непрозрачная сцена выбивала ведущую из кадра, и вокруг неё
+    была написана половина гейтов. Блоки остались на диске — их просто не
+    предлагают."""
     text = _text(tmp_path)
-    assert "g02-avatar-fullscreen-hook" in text
-    assert "`line-1`" in text and "роль presenter" in text
-    # Плашка-рубрика блока агенту не предлагается вовсе.
-    assert "Рубрика · Глава" not in text
+    assert "g02-avatar-fullscreen-hook" not in text
+    assert "Блоки каталога" not in text
+    assert "слот" not in text.lower()
+
+
+def test_словарь_положений_ведущей_в_задании(tmp_path):
+    """Позиции нет в списке — падаем внятно, а не додумываем."""
+    text = _text(tmp_path)
+    for position in ("full", "punch", "pip-tr", "stack", "none"):
+        assert f"`{position}`" in text
+    # `split` снят: лицо ведущей в нижней половине попадает в полосу титра
+    assert "`split`" not in text
 
 
 # ---------- границы ----------
@@ -152,34 +162,35 @@ def test_что_вернуть_названо(tmp_path):
     assert "storyboard.json" in text
     # Композицию собирает код — просить её у агента больше нельзя.
     assert "public/index.html" not in text
-    assert "catalogGaps" in text
 
 
-def test_у_агента_просят_только_карточки(tmp_path):
+def test_у_агента_просят_только_сцены(tmp_path):
     """Шапку схемы заполняет код: решений в ней нет, а разойтись есть где —
     на Sonnet агент отдал videoTrack списком и потерял попытку."""
     text = _text(tmp_path)
-    assert '"cards"' in text
-    assert "contentHints" in text and '"intent"' in text
+    assert '"scenes"' in text
+    assert '"presenter"' in text and '"intent"' in text
     assert '"videoTrack"' not in text and '"schemaVersion": 3,' not in text
     # Поля, которые мы просили сверх схемы, противоречили videoTrack.bounds.
     assert "contentRect" not in text and "videoRect" not in text
+    assert '"zone"' not in text
+
+
+def test_поле_под_следующий_шаг_заложено(tmp_path):
+    """Работа 8 переставит заказ островов после плана — читать он будет это."""
+    assert "avatarNeeded" in _text(tmp_path)
 
 
 def test_вставки_названы_обязательными(tmp_path):
     text = _text(tmp_path)
-    assert "не меньше двух" in text
-    assert "`media`" in text
+    assert "не меньше чем в трёх сценах" in text
+    assert "`look`" in text
 
 
 def test_субтитры_снимаются_с_агента(tmp_path):
     text = _text(tmp_path)
     assert "Субтитры" in text
-    assert "в карточки не превращай" in text
-
-
-def test_плотность_карточек_по_их_формуле(tmp_path):
-    assert "плотност" in _text(tmp_path).lower()
+    assert "в сцены не превращай" in text
 
 
 def test_положение_ведущей_обязано_меняться(tmp_path):
@@ -188,12 +199,12 @@ def test_положение_ведущей_обязано_меняться(tmp_p
     assert "не меньше трёх раз" in text
 
 
-def test_зазор_просят_свободной_фразой_а_не_секундами(tmp_path):
-    """Секунды зазора ставит код. От агента нужна фраза, не отданная карточке:
-    карточки впритык детектор видит одной склейкой, и планка не берётся."""
+def test_смену_картинки_даёт_граница_сцен(tmp_path):
+    """Зазора между сценами больше нет: кадр из слоёв, сцены выстилают ролик,
+    и две одинаковые подряд детектор видит одним планом."""
     text = _text(tmp_path)
-    assert "свободные фразы" in text
-    assert "Зазор в секундах ставит код" in text
+    assert "Соседние сцены обязаны отличаться картинкой" in text
+    assert "свободные фразы" not in text
 
 
 def test_секунд_у_агента_не_просят(tmp_path):
@@ -206,24 +217,18 @@ def test_секунд_у_агента_не_просят(tmp_path):
     assert "Не считай секунды" in text
 
 
-def test_пробел_каталога_записывается_а_не_закрывается_вёрсткой(tmp_path):
-    text = _text(tmp_path)
-    assert "пробел каталога" in text.lower()
-    assert "catalogGaps" in text
-
-
 def test_служебные_надписи_запрещены(tmp_path):
     text = _text(tmp_path)
     assert "Служебных надписей на экране не бывает" in text
     assert "фото из каталога" in text
 
 
-def test_пол_карточек_дан_числом_а_потолка_нет(tmp_path):
-    """Потолок снят вместе с чужой формулой плотности: прогоны 8 и 9 оба
-    отдали ровно 10 карточек — расчётный потолок, а не свой выбор."""
+def test_пол_сцен_дан_числом(tmp_path):
+    """Смену даёт граница между сценами, значит сцен нужно на одну больше, чем
+    смен: 41,5 с при планке «не реже раза в две секунды» — это 21."""
     text = _text(tmp_path)
-    assert "не меньше 6" in text
-    assert "Верхней границы нет" in text
+    assert "не меньше 21" in text
+    assert "не меньше 20 заметных смен" in text
 
 
 def test_лишняя_работа_запрещена_явно(tmp_path):
