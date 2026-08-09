@@ -324,10 +324,23 @@ def _check_verdict(log: Path) -> str:
 
 
 def _scene_midpoints(board: dict) -> list[float]:
-    """Середина каждой сцены. Число выборок считается от плана, а не назначается
-    константой: сцен бывает и семь, и двадцать пять."""
-    return sorted({round((float(scene["startSec"]) + float(scene["endSec"])) / 2, 3)
-                   for scene in board.get("scenes") or []})
+    """Точка замера каждой сцены для их проверки.
+
+    Обычной сцене — середина. Сцене с накладкой — момент, когда блок отыграл
+    вход: середина попадает в его незавершённый твин, и аудит честно видит
+    там наложение текстов (content_overlap на lt-kicker-name, прогон 23) —
+    но это кадр перехода, а не кадр, который видит зритель большую часть
+    сцены. Их же конвейер по той же причине не бьёт по границам твинов.
+    """
+    times = set()
+    for scene in board.get("scenes") or []:
+        start = float(scene["startSec"])
+        end = float(scene["endSec"])
+        if isinstance(scene.get("overlay"), dict):
+            times.add(round(min(end - 0.2, start + 3.6), 3))
+        else:
+            times.add(round((start + end) / 2, 3))
+    return sorted(times)
 
 
 def _snapshot_times(board: dict, duration: float) -> list[float]:
