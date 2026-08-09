@@ -328,7 +328,15 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     html = html.replace(f'data-composition-id="{block}"',
                         f'data-composition-id="{unique}"')
     html = html.replace(f'__timelines["{block}"]', f'__timelines["{unique}"]')
-    html = _CDN_GSAP.sub('src="../vendor/gsap.min.js"', html)
+    # Копия GSAP лежит РЯДОМ с блоками, а не через ../: путь выше корня их
+    # линтер запрещает (invalid_parent_traversal_in_asset_path, прогон 23) —
+    # рендер резолвит его от файла блока, живой просмотр — от корня проекта,
+    # и сойтись они не могут.
+    vendored = source.parent / "gsap-vendor.min.js"
+    original = Path(public) / "vendor" / "gsap.min.js"
+    if not vendored.exists() and original.exists():
+        shutil.copyfile(original, vendored)
+    html = _CDN_GSAP.sub('src="gsap-vendor.min.js"', html)
     if text:
         html = prune_timeline(html)
     target.write_text(html, encoding="utf-8")
