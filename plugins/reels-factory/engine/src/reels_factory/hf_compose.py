@@ -119,14 +119,22 @@ TRACK_SFX = 98
 TRACK_OVERLAY = 40
 TRACK_ICON = 15
 
-#: Куда садится накладка с широким канвасом 1920x1080: вписывается по ширине
-#: кадра (масштаб 0.5625, бокс высотой 607) и стоит ЦЕЛИКОМ выше полосы
-#: титра — низ бокса на 967, полоса слов начинается от ~1000 (группа титра
-#: прижата к bottom 620). На 640 нижняя треть блока ложилась прямо на слова
-#: титра: content_overlap #lt-name против span.hl-word-text, прогон 23.
-#: Их же правило — caption-band keep-out: контент планируется выше полосы.
+#: Полоса титра — их же формула (product-launch-video/scripts/lib/
+#: dimensions.mjs:36-45): у полосы есть верх, и «frame content must end
+#: safetyPx above the band top». Их полоса — нижние 16,67% (титр у низа);
+#: наш титр стоит по их rail-гайду для 9:16 на 620 от низа, и его полоса
+#: выше: верх зоны слов ~1000 — замерен их же аудитом (слово титра на
+#: y=1127 при двух строках, прогон 23). Широкая накладка (канвас 1920x1080)
+#: вписывается по ширине кадра и ставится так, чтобы весь её бокс кончался
+#: выше foregroundMaxY: на прежних 640 нижняя треть блока ложилась прямо
+#: на слова титра (content_overlap #lt-name против span.hl-word-text).
 #: Вертикальные накладки (1080x1920) встают во весь кадр как есть.
-OVERLAY_WIDE_TOP = 360
+CAPTION_BAND_TOP = 1000
+CAPTION_BAND_SAFETY = 20
+
+
+def _overlay_wide_top(box_height: float) -> int:
+    return max(0, CAPTION_BAND_TOP - CAPTION_BAND_SAFETY - round(box_height))
 
 #: Растровые картинки. Слот может получить и mp4 (например через
 #: `media-use --from`), и тогда тег другой.
@@ -688,7 +696,8 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 f"{duration - start:.2f} — поставь её раньше или возьми короче")
         wide = canvas[0] > canvas[1]
         scale = OUT_W / canvas[0]
-        box = (f"left:0;top:{OVERLAY_WIDE_TOP}px" if wide else "left:0;top:0")
+        box = (f"left:0;top:{_overlay_wide_top(canvas[1] * scale)}px"
+               if wide else "left:0;top:0")
         body.append(
             f'    <div class="ovl" style="{box}">'
             f'<div data-layout-allow-overflow="true" style="position:absolute;'
