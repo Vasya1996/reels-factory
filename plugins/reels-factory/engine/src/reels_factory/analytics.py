@@ -31,6 +31,8 @@ FUNNEL_STEPS = (
     ("stage:gender", "Выбрали пол аватара"),
     ("stage:photo", "Фото готово"),
     ("stage:voice", "Голос готов"),
+    ("demo_started", "Демо запустилось"),
+    ("demo_sent", "Увидели своё демо"),
     ("stage:material", "Материал прислан"),
     ("price_shown", "Увидели цену"),
     ("balance_ok", "Денег хватило"),
@@ -54,6 +56,8 @@ PAYMENT_STEPS = (
 ERROR_EVENTS = {
     "error:invoice": "счёт не выставился",
     "error:voice_clone": "голос не создался",
+    "error:demo": "демо не собралось",
+    "error:demo_send": "демо не отправилось",
     "error:scenario": "сценарий не написался",
     "error:build": "сборка упала",
     "error:qa": "не прошло проверку качества",
