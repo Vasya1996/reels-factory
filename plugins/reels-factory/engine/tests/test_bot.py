@@ -30,6 +30,7 @@ class _Msg:
         self.markups = []
         self.kinds = []      # 'reply' — новое сообщение, 'edit' — правка на месте
         self.videos = []
+        self.photos = []
 
     async def reply_text(self, text, reply_markup=None):
         self.replies.append(text)
@@ -50,6 +51,11 @@ class _Msg:
                           width=None, height=None):
         self.videos.append((video, caption, reply_markup))
         self.video_sizes = (width, height)
+        self.replies.append(caption)
+        self.markups.append(reply_markup)
+
+    async def reply_photo(self, photo, caption=None, reply_markup=None):
+        self.photos.append((photo, caption, reply_markup))
         self.replies.append(caption)
         self.markups.append(reply_markup)
 
@@ -1261,6 +1267,32 @@ def test_демо_не_повторяется_на_том_же_фото_и_за�
     _press("stage:edit", msg)
     asyncio.run(bot.on_message(_Update(_Msg(voice=object())), None))
     assert len(демо) == 1
+
+
+def test_сводка_фото_показывает_само_сохранённое_фото(work, tmp_path):
+    """Голое «✅ Фото загружено» рядом с примером читалось как «бот засчитал
+    пример за моё фото» — показываем, что именно сохранено."""
+    фото = tmp_path / "моё.jpg"
+    фото.write_bytes(b"jpg")
+    s = _паспорт(photo={"asset_id": "asset-1", "file": str(фото)})
+    bot.save_session(7, s)
+
+    msg = _Msg()
+    asyncio.run(bot._show_stage(msg, 7, s, bot.STAGE_PHOTO))
+
+    assert [c for _, c, _ in msg.photos] == [bot.PHOTO_SUMMARY_CAPTION]
+
+
+def test_сводка_фото_без_файла_остаётся_текстом(work):
+    """Файл мог не пережить перенос сервера — сводка не должна падать."""
+    s = _паспорт()  # photo.file указывает на несуществующий «фото.jpg»
+    bot.save_session(7, s)
+
+    msg = _Msg()
+    asyncio.run(bot._show_stage(msg, 7, s, bot.STAGE_PHOTO))
+
+    assert msg.photos == []
+    assert "Фото загружено" in msg.replies[-1]
 
 
 class _FakeJobs:

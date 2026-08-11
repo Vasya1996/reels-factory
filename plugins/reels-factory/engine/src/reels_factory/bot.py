@@ -297,6 +297,10 @@ def _ask_voice_text(language: str) -> str:
 
 
 PHOTO_SAVED = "✅ Фото получено"
+PHOTO_SUMMARY_CAPTION = (
+    "✅ Это фото у меня уже сохранено 👆 Из него соберу вашего двойника.\n"
+    "Хотите другое: жмите «Изменить»."
+)
 VOICE_SAVED = "✅ Запись голоса получена"
 CLONING_VOICE_MSG = "Делаю голос по вашей записи, это займёт минуту…"
 PRICE_ENOUGH_MSG = (
@@ -1648,6 +1652,23 @@ async def _show_stage(msg, chat_id: int, s: dict, stage: str):
     if stage == STAGE_GENDER:
         await msg.reply_text(ASK_GENDER, reply_markup=_kb_gender(s.get("gender")))
         return
+    if stage == STAGE_PHOTO:
+        # Показываем само сохранённое фото: голое «✅ Фото загружено» рядом с
+        # примером читалось как «бот засчитал пример за моё фото».
+        raw = (s.get("photo") or {}).get("file")
+        photo_path = Path(str(raw)) if raw else None
+        reply_photo = getattr(msg, "reply_photo", None)
+        if photo_path and photo_path.exists() and reply_photo is not None:
+            try:
+                with photo_path.open("rb") as fh:
+                    await reply_photo(
+                        fh,
+                        caption=PHOTO_SUMMARY_CAPTION,
+                        reply_markup=_kb_stage(stage),
+                    )
+                return
+            except Exception as e:
+                log.warning("сохранённое фото чата %s не ушло: %s", chat_id, e)
     await msg.reply_text(_stage_summary(s, stage), reply_markup=_kb_stage(stage))
 
 
