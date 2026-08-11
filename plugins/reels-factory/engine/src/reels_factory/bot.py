@@ -1,13 +1,17 @@
 """Телеграм-бот фабрики: сырьё или готовый текст -> утверждённый сценарий.
 
-Разговор: /start или /new -> язык ролика -> фото -> запись голоса -> выбор
-пути -> материал -> экран цены -> оплата -> клон голоса и сценарий в чате ->
-правка текста руками или утверждение -> готовность.
+Разговор: /start (пример ролика) -> язык -> пол -> фото -> запись голоса ->
+бесплатное демо «Это я. Твой аватар!» -> выбор пути -> материал -> экран
+цены -> оплата -> сценарий в чате -> правка текста руками или утверждение ->
+готовность.
 
-Порядок держится на одном правиле: до экрана цены не уходит ни один платный
-вызов. Фото загружается в HeyGen бесплатно, запись голоса просто лежит файлом,
-материал принимается как есть. Клон голоса (ElevenLabs) и сценарий (Клод) —
-первые платные шаги, и оба живут за экраном цены.
+Порядок держится на одном правиле: до экрана цены человек НЕ платит. Фото
+загружается в HeyGen бесплатно, запись голоса просто лежит файлом, материал
+принимается как есть. Единственные наши затраты до цены — бесплатное для
+человека демо (клон голоса + 2-3 секунды HeyGen): оно показывает новичку его
+двойника до разговора о деньгах и потому окупается конверсией. Сценарий
+(Клод) и рендер ролика — платные шаги за экраном цены; клон, сделанный ради
+демо, там переиспользуется.
 
 По кнопке «Создать ролик» durable worker сначала создаёт только master audio и
 присылает его на проверку. Подтверждение продолжает ту же immutable job без
@@ -62,8 +66,8 @@ from reels_factory.tts import tts_model_for_language
 
 log = logging.getLogger(__name__)
 
-# Шаги разговора. Порядок: всё бесплатное (язык, фото, запись голоса,
-# материал) идёт ДО экрана цены; клон голоса и Клод — только после него.
+# Шаги разговора. Порядок: всё бесплатное для человека (язык, пол, фото,
+# запись голоса, демо, материал) идёт ДО экрана цены; Клод и рендер — после.
 CHOOSING_LANGUAGE = "choosing_language"  # язык нового ролика
 CHOOSING_GENDER = "choosing_gender"  # пол ведущего нового ролика
 WAIT_PHOTO = "wait_photo"
@@ -123,11 +127,26 @@ ROLE_RU = {"hook": "хук", "context": "контекст", "development": "ра
            "payoff": "вывод", "cta": "призыв"}
 
 HELLO = (
-    "Пришлите идею или готовый сценарий с репликами — верну вертикальный "
-    "ролик для Reels, Shorts и TikTok.\n\n"
-    "В кадре будет ваш ИИ-аватар с вашим реалистичным голосом. Снимать и "
-    "монтировать не придётся: нужны только фото и минутная запись голоса."
+    "Привет! Я делаю ролики с вашим ИИ-двойником: ваше лицо, ваш голос, "
+    "без съёмки и монтажа.\n\n"
+    "Вот пример, всё сделано по одному фото 👆\n\n"
+    "Как это работает:\n"
+    "1. Фото и 2 минуты голоса (займёт 5 минут)\n"
+    "2. Бесплатное демо: ваш оживший аватар, чтобы оценить качество\n"
+    "3. Понравилось: присылаете сценарий, я называю точную цену ролика, "
+    "вы оплачиваете ровно её"
 )
+
+# Ассеты онбординга: пример готового ролика (в приветствии) и образец
+# правильного фото (на экране фото). Лежат в репо рядом с движком; их
+# отсутствие не должно ронять разговор — тогда экран уходит просто текстом.
+_ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
+DEMO_EXAMPLE_MP4 = _ASSETS_DIR / "demo_example.mp4"
+PHOTO_EXAMPLE_PNG = _ASSETS_DIR / "photo_example.png"
+
+# Telegram file_id уже залитых ассетов: повторная отправка по file_id
+# мгновенна, а 20-мегабайтный пример не гоняется на каждый /start.
+_ASSET_FILE_ID_CACHE = "asset_file_ids.json"
 ASK_PATH = (
     "Пришлите сценарий или просто идею о чем будет рассказывать ваш аватар.\n\n"
     "➡️\"У меня готовый сценарий\" если хотите чтобы аватар дословно следовал "
@@ -166,8 +185,11 @@ ASK_EDIT = (
 )
 APPROVED_MSG = "Сценарий утверждён и сохранён."
 ASK_PHOTO = (
-    "Пришлите своё фото — для генерации идентичного вам AI-аватара.\n\n"
-    "Как правильно сделать фото:\n"
+    "Шаг 1 из 2. Пришлите своё фото, по нему соберу вашего двойника.\n\n"
+    "Это фото оживёт: двойник будет в этой одежде и в этом месте говорить в "
+    "камеру. Выбирайте фото так, как будто уже записываете в нём ролик для "
+    "своего блога.\n\n"
+    "Как правильно сделать фото (пример выше 👆):\n"
     "— по пояс, чтобы руки были в кадре: тогда ведущий будет жестикулировать;\n"
     "— смотрите в камеру, ровный свет, без тёмных очков и без чужих лиц в "
     "кадре;\n"
@@ -177,14 +199,40 @@ ASK_PHOTO = (
     "кольца, часы, одежда. Чего на фото нет, то модель додумает по-своему."
 )
 ASK_VOICE = (
-    "Запишите голосовое сообщение, чтобы аватар говорил вашим голосом.\n"
-    "Текст для прочтения вслух отправим по кнопке ниже.\n\n"
-    "Как правильно записать голос:\n"
-    "— Тихая комната: без музыки, телевизора и эха. Только ваш голос.\n"
-    "— Читайте живо, с интонацией — мы скопируем вашу манеру.\n"
-    "— Не переигрывайте: держите один настрой и одну громкость всю запись, "
-    "не переходите с шёпота на высокие тона.\n"
-    "— Микрофон на одном расстоянии, не отворачивайтесь."
+    "Шаг 2 из 2. Теперь голос: двойник будет говорить точно как вы.\n\n"
+    "Как записать:\n"
+    "— зажмите микрофон 🎤 справа от поля ввода и читайте, не отпуская, "
+    "минимум 2 минуты;\n"
+    "— тихая комната: без музыки, телевизора и эха. Только ваш голос;\n"
+    "— читайте живо, с интонацией — мы скопируем вашу манеру. Не "
+    "переигрывайте: держите один настрой и одну громкость всю запись;\n"
+    "— микрофон на одном расстоянии, не отворачивайтесь.\n\n"
+    "Текст для прочтения вслух пришлю по кнопке ниже.\n\n"
+    "Не бойтесь ошибиться: перед созданием ролика дам послушать озвучку, "
+    "запись можно будет переделать."
+)
+
+# --- Демо «оживший аватар»: бесплатный шаг между голосом и материалом ---
+# Показываем человеку его двойника ДО разговора о деньгах: 2-3 секунды,
+# фиксированная фраза. Фраза не настраивается пользователем, чтобы демо
+# нельзя было использовать как бесплатный генератор роликов.
+DEMO_PHRASES = {
+    "ru": "Это я. Твой аватар!",
+    "kk": "Бұл мен. Сенің аватарың!",
+}
+# По гайду HeyGen: один жест плюс выражение лица, максимум два такта.
+DEMO_MOTION_PROMPT = (
+    "Avatar raises one hand in a friendly wave, then nods with a warm smile."
+)
+DEMO_EXPRESSIVENESS = "medium"
+DEMO_BUILDING_MSG = (
+    "Всё на месте! Собираю вашего двойника: оживляю фото и клонирую голос. "
+    "Займёт около 5 минут, пришлю сюда 👇"
+)
+DEMO_READY_MSG = (
+    "👆 Ваш двойник готов. Лицо с вашего фото, голос с вашей записи.\n\n"
+    "Дальше он озвучит ваш сценарий, я добавлю субтитры и соберу ролик для "
+    "публикации."
 )
 
 # Образец для чтения на языке ролика: клон копирует манеру, поэтому текст
@@ -384,6 +432,7 @@ _PROFILE_KEYS = (
     "pending_previous_voice",
     "pay_currency",      # валюта счёта: выбрана человеком, спрашиваем один раз
     "pending_order",     # неоплаченный счёт: /new не должен его терять
+    "demo",              # ключ и файл показанного демо: не генерить повторно
 )
 _LOOP_KEYS = _PROFILE_KEYS
 
@@ -732,6 +781,31 @@ def step_photo(chat_id: int, photo: Path) -> str:
     from reels_factory.avatar import upload_photo_asset
 
     return upload_photo_asset(photo)
+
+
+def step_demo(chat_id: int, photo_asset_id: str, voice_id: str,
+              language: str) -> Path:
+    """Демо «Это я. Твой аватар!»: TTS фразы клоном + оживление фото в HeyGen.
+
+    Единственная генерация до экрана цены. Фраза 2-3 секунды, поэтому
+    себестоимость копеечная, а человек впервые видит СВОЁ лицо и голос —
+    ради этого демо и существует.
+    """
+    from reels_factory.avatar import HeyGenClient
+    from reels_factory.tts import synth_voice
+
+    workdir = session_dir(chat_id) / "demo"
+    workdir.mkdir(parents=True, exist_ok=True)
+    phrase = DEMO_PHRASES.get(language) or DEMO_PHRASES["ru"]
+    wav = workdir / f"demo_{language}.wav"
+    synth_voice(phrase, wav, voice_id=voice_id,
+                model_id=tts_model_for_language(language))
+    client = HeyGenClient(
+        avatar_id=photo_asset_id,
+        motion_prompt=DEMO_MOTION_PROMPT,
+        expressiveness=DEMO_EXPRESSIVENESS,
+    )
+    return client.generate(wav, workdir / f"demo_{language}.mp4")
 
 
 def step_voice(chat_id: int, audio: Path, language: str) -> str:
@@ -1319,7 +1393,12 @@ async def _show_start(msg, chat_id: int, s: dict, session_builder=fresh_session)
         next_session["step"] = CHOOSING_LANGUAGE
         save_session(chat_id, next_session)
         if not next_session.get("photo"):
-            await msg.reply_text(HELLO)
+            # Приветствие с примером готового ролика: новичок сначала ВИДИТ
+            # продукт и честные условия, а уже потом отдаёт фото и голос.
+            if not await _reply_media_asset(
+                msg, "video", DEMO_EXAMPLE_MP4, HELLO
+            ):
+                await msg.reply_text(HELLO)
         await msg.reply_text(ASK_LANGUAGE, reply_markup=_kb_language())
         return
     save_session(chat_id, next_session)
@@ -1394,6 +1473,68 @@ async def _ask(msg, chat_id: int, s: dict, step: str, text: str):
     await msg.reply_text(text, reply_markup=_kb_back())
 
 
+def _asset_ids_path() -> Path:
+    return WORK_ROOT / "bot" / _ASSET_FILE_ID_CACHE
+
+
+def _load_asset_ids() -> dict:
+    try:
+        data = json.loads(_asset_ids_path().read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_asset_id(key: str, file_id: str) -> None:
+    path = _asset_ids_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ids = _load_asset_ids()
+    ids[key] = file_id
+    path.write_text(json.dumps(ids, ensure_ascii=False), encoding="utf-8")
+
+
+async def _reply_media_asset(msg, kind: str, path: Path, caption: str,
+                             markup=None) -> bool:
+    """Отправить ассет онбординга (пример ролика/фото) с кэшем file_id.
+
+    Первый раз файл заливается с диска, дальше летит мгновенный file_id.
+    False — ассета нет и отправить нечем: экран уходит просто текстом,
+    разговор из-за картинки не падает.
+    """
+    key = f"{kind}:{path.name}"
+    send = getattr(msg, "reply_video" if kind == "video" else "reply_photo",
+                   None)
+    if send is None:
+        # Сообщение без медиа-методов (например, урезанный дубль в тестах) —
+        # экран уходит текстом.
+        return False
+    cached = _load_asset_ids().get(key)
+    if cached:
+        try:
+            await send(cached, caption=caption, reply_markup=markup)
+            return True
+        except Exception as e:
+            # file_id живёт в рамках токена бота: сменили бота — перезальём.
+            log.warning("ассет %s не ушёл по file_id: %s", key, e)
+    if not path.exists():
+        return False
+    try:
+        with path.open("rb") as fh:
+            sent = await send(fh, caption=caption, reply_markup=markup)
+    except Exception as e:
+        log.warning("ассет %s не загрузился: %s", key, e)
+        return False
+    try:
+        media = sent.video if kind == "video" else (
+            sent.photo[-1] if sent.photo else None)
+        file_id = getattr(media, "file_id", None)
+        if file_id:
+            _save_asset_id(key, file_id)
+    except Exception:
+        pass
+    return True
+
+
 async def _ask_voice(msg, chat_id: int, s: dict, language: str):
     """Экран записи голоса: к инструкции добавлен образец для чтения."""
     s["step"] = WAIT_VOICE
@@ -1401,6 +1542,16 @@ async def _ask_voice(msg, chat_id: int, s: dict, language: str):
     await msg.reply_text(
         _ask_voice_text(language), reply_markup=_kb_voice_sample()
     )
+
+
+async def _ask_photo_screen(msg, chat_id: int, s: dict):
+    """Экран фото: образец правильного кадра и инструкция одной карточкой."""
+    s["step"] = WAIT_PHOTO
+    save_session(chat_id, s)
+    if not await _reply_media_asset(
+        msg, "photo", PHOTO_EXAMPLE_PNG, ASK_PHOTO, _kb_back()
+    ):
+        await msg.reply_text(ASK_PHOTO, reply_markup=_kb_back())
 
 
 async def _profile_stage(msg, chat_id: int, s: dict):
@@ -1499,7 +1650,7 @@ async def _ask_stage(msg, chat_id: int, s: dict, stage: str):
     elif stage == STAGE_GENDER:
         await _show_gender_choice(msg, chat_id, s)
     elif stage == STAGE_PHOTO:
-        await _ask(msg, chat_id, s, WAIT_PHOTO, ASK_PHOTO)
+        await _ask_photo_screen(msg, chat_id, s)
     elif stage == STAGE_VOICE:
         await _ask_voice(msg, chat_id, s, _reel_language(s))
     elif s.get("material_mode"):
@@ -1621,27 +1772,18 @@ async def _show_price(msg, chat_id: int, s: dict, *, checked: bool = False):
     )
 
 
-async def _ensure_voice_clone(msg, chat_id: int, s: dict) -> bool:
-    """Сделать голос по записи. Первый платный шаг, живёт за экраном цены.
+async def _clone_pending_voice(chat_id: int, s: dict, language: str) -> bool:
+    """Сделать клон по pending-записи, если она есть. True — рабочий голос
+    языка существует (создали сейчас или был готов раньше).
 
     Прежний клон удаляем только после того, как новый создан и сохранён:
-    упавший клон не должен оставить человека вообще без голоса.
+    упавший клон не должен оставить человека вообще без голоса. Ошибки
+    ElevenLabs летят наружу — колеры сами решают, как о них говорить.
     """
-    language = _reel_language(s)
     sample = _pending_voice_sample(s, language)
     if sample is None:
-        if _voice_for_language(s, language):
-            return True
-        await _ask_voice(msg, chat_id, s, language)
-        return False
-    await msg.reply_text(CLONING_VOICE_MSG)
-    try:
-        voice_id = await asyncio.to_thread(step_voice, chat_id, sample, language)
-    except Exception as e:
-        _track(chat_id, s, "error:voice_clone", str(e)[:120])
-        await msg.reply_text(f"Голос не принялся: {str(e)[:200]}")
-        await _ask_voice(msg, chat_id, s, language)
-        return False
+        return bool(_voice_for_language(s, language))
+    voice_id = await asyncio.to_thread(step_voice, chat_id, sample, language)
     previous = _voice_for_language(s, language)
     voices = dict(s.get("voices") or {})
     voices[language] = voice_id
@@ -1666,6 +1808,81 @@ async def _ensure_voice_clone(msg, chat_id: int, s: dict) -> bool:
             # из-за неё человек ждать не должен.
             log.warning("не удалось удалить старый клон голоса %s: %s", previous, e)
     return True
+
+
+async def _ensure_voice_clone(msg, chat_id: int, s: dict) -> bool:
+    """Голос по записи с разговором об ошибках — путь платной генерации."""
+    language = _reel_language(s)
+    if _pending_voice_sample(s, language) is None:
+        if _voice_for_language(s, language):
+            return True
+        await _ask_voice(msg, chat_id, s, language)
+        return False
+    await msg.reply_text(CLONING_VOICE_MSG)
+    try:
+        return await _clone_pending_voice(chat_id, s, language)
+    except Exception as e:
+        _track(chat_id, s, "error:voice_clone", str(e)[:120])
+        await msg.reply_text(f"Голос не принялся: {str(e)[:200]}")
+        await _ask_voice(msg, chat_id, s, language)
+        return False
+
+
+def _demo_key(s: dict, language: str) -> str | None:
+    """Отпечаток входа демо: то же фото и та же запись — тот же результат,
+    генерить заново нечего. Замена любого из них даёт новый ключ."""
+    photo = ((s or {}).get("photo") or {}).get("asset_id")
+    sample = _voice_sample_for_language(s, language)
+    if not photo or sample is None:
+        return None
+    try:
+        sample_sha1 = hashlib.sha1(sample.read_bytes()).hexdigest()
+    except OSError:
+        return None
+    return hashlib.sha1(
+        f"{photo}|{language}|{sample_sha1}".encode("utf-8")
+    ).hexdigest()[:16]
+
+
+async def _maybe_send_demo(msg, chat_id: int, s: dict) -> None:
+    """Бесплатное демо двойника: 2-3 секунды «Это я. Твой аватар!».
+
+    Живёт между голосом и материалом — человек впервые видит своё лицо и
+    голос ДО разговора о деньгах. Ради демо клон голоса делается раньше
+    экрана цены; для платной части он потом переиспользуется как готовый.
+    Демо — подарок, а не ворота: любая ошибка здесь молча пропускает шаг,
+    разговор продолжается без демо.
+    """
+    language = _reel_language(s)
+    key = _demo_key(s, language)
+    if key is None or (s.get("demo") or {}).get("key") == key:
+        return
+    await msg.reply_text(DEMO_BUILDING_MSG)
+    _track(chat_id, s, "demo_started")
+    photo = (s.get("photo") or {}).get("asset_id")
+    try:
+        if not await _clone_pending_voice(chat_id, s, language):
+            return
+        mp4 = await asyncio.to_thread(
+            step_demo, chat_id, photo, _voice_for_language(s, language),
+            language,
+        )
+    except Exception as e:
+        # Клон остаётся pending и будет сделан заново на платном пути —
+        # человека ошибкой демо не останавливаем.
+        _track(chat_id, s, "error:demo", str(e)[:120])
+        log.warning("демо чата %s не собралось: %s", chat_id, e)
+        return
+    s["demo"] = {"key": key, "file": str(mp4)}
+    save_session(chat_id, s)
+    try:
+        with Path(mp4).open("rb") as fh:
+            await msg.reply_video(fh, caption=DEMO_READY_MSG)
+    except Exception as e:
+        _track(chat_id, s, "error:demo_send", str(e)[:120])
+        log.warning("демо чата %s не отправилось: %s", chat_id, e)
+        return
+    _track(chat_id, s, "demo_sent")
 
 
 async def _start_paid_part(msg, chat_id: int, s: dict):
@@ -2032,7 +2249,7 @@ async def on_button(update, context):
         # Кнопки прежних версий экрана: живут в истории чата вечно.
         await _choose_path_stage(q.message, chat_id, s)
     elif data in ("profile:photo", "photo:new"):
-        await _ask(q.message, chat_id, s, WAIT_PHOTO, ASK_PHOTO)
+        await _ask_photo_screen(q.message, chat_id, s)
     elif data in ("profile:voice", "voice:new"):
         await _ask_voice(q.message, chat_id, s, _reel_language(s))
     elif data == "voice_sample":
@@ -2132,7 +2349,7 @@ async def on_button(update, context):
 
 async def _photo_stage(msg, chat_id: int, s: dict):
     """Фото — второй шаг после языка. Загрузка в HeyGen бесплатна."""
-    await _ask(msg, chat_id, s, WAIT_PHOTO, ASK_PHOTO)
+    await _ask_photo_screen(msg, chat_id, s)
 
 
 # Суммы пополнения. Товаров в дашборде больше нет: счёт создаётся запросом в
@@ -2893,6 +3110,9 @@ async def on_message(update, context):
         save_session(chat_id, s)
         _track(chat_id, s, "stage:photo")
         await msg.reply_text(PHOTO_SAVED)
+        # Замена фото при уже принятом голосе — вход демо изменился: новичка
+        # это не касается (голоса ещё нет), а старому покажем нового двойника.
+        await _maybe_send_demo(msg, chat_id, s)
         await _next_stage(msg, chat_id, s, STAGE_PHOTO)
         return
 
@@ -2907,9 +3127,10 @@ async def on_message(update, context):
         except Exception as e:
             await msg.reply_text(f"Запись не принялась: {str(e)[:200]}")
             return
-        # Клон здесь не делаем: он платный и живёт за экраном цены. Файл
-        # запоминаем как исходник, прежний клон этого языка не трогаем — он
-        # останется рабочим, если человек так и не дойдёт до оплаты.
+        # Клон здесь не делаем: его создаст демо-шаг ниже (_maybe_send_demo
+        # -> _ensure_voice_clone). Файл запоминаем как исходник, прежний клон
+        # этого языка не трогаем — он останется рабочим, если новый клон
+        # не получится.
         old_sample = _voice_sample_for_language(s, language)
         samples = dict(s.get("voice_samples") or {})
         samples[language] = str(path)
@@ -2922,6 +3143,9 @@ async def on_message(update, context):
         if old_sample and str(old_sample) != str(path):
             Path(old_sample).unlink(missing_ok=True)
         await msg.reply_text(VOICE_SAVED)
+        # Оба входа демо собраны — показываем человеку его двойника до
+        # экрана цены.
+        await _maybe_send_demo(msg, chat_id, s)
         await _next_stage(msg, chat_id, s, STAGE_VOICE)
         return
 

@@ -413,7 +413,7 @@ def test_после_пола_новичка_просят_фото(work):
     s = bot.load_session(7)
     assert s["gender"] == "male"
     assert s["step"] == bot.WAIT_PHOTO
-    assert "AI-аватара" in msg.replies[-1]
+    assert "двойника" in msg.replies[-1]
 
 
 def test_выбор_пути_открывается_после_фото_и_голоса(work):
@@ -495,6 +495,7 @@ def test_при_смене_ru_на_kk_русский_голос_сохраняе
             captured_languages.append(language) or "voice-kk"
         ),
     )
+    monkeypatch.setattr(bot, "step_demo", _fake_step_demo)
     monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
     bot.save_session(7, _паспорт(
         step=bot.DONE,
@@ -520,9 +521,11 @@ def test_при_смене_ru_на_kk_русский_голос_сохраняе
 
     asyncio.run(bot.on_message(_Update(_Msg(voice=object())), None))
     recorded = bot.load_session(7)
-    assert captured_languages == []  # клон платный, его тут ещё не делают
-    assert recorded["voices"] == {"ru": "voice-ru"}
-    assert recorded["voice_pending"]["kk"] == recorded["voice_samples"]["kk"]
+    # Клон нового языка делается сразу — ради бесплатного демо двойника.
+    # Русский голос при этом остаётся нетронутым.
+    assert captured_languages == ["kk"]
+    assert recorded["voices"] == {"ru": "voice-ru", "kk": "voice-kk"}
+    assert not recorded["voice_pending"]
     assert recorded["step"] == bot.CHOOSING
 
 
@@ -1054,7 +1057,17 @@ def профиль(monkeypatch):
     monkeypatch.setattr(
         bot, "step_voice", lambda chat_id, path, language: "voice-1"
     )
+    monkeypatch.setattr(bot, "step_demo", _fake_step_demo)
     monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
+
+
+def _fake_step_demo(chat_id, photo_asset_id, voice_id, language):
+    """Демо без HeyGen: настоящий файл, чтобы бот смог его отправить."""
+    d = bot.session_dir(chat_id) / "demo"
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / f"demo_{language}.mp4"
+    path.write_bytes(b"demo")
+    return path
 
 
 async def _fake_download(context, media, chat_id):
@@ -1074,7 +1087,7 @@ def test_первый_ролик_требует_фото_сразу_после_�
     _press("reel_gender:male", msg)
 
     assert bot.load_session(7)["step"] == bot.WAIT_PHOTO
-    assert "AI-аватара" in msg.replies[-1]
+    assert "двойника" in msg.replies[-1]
 
 
 def test_утверждение_сценария_ведёт_сразу_к_сборке(work, профиль):
@@ -1140,8 +1153,9 @@ def test_новое_фото_затирает_старое_в_сессии_и_н
     assert not старое_фото.exists()
 
 
-def test_запись_голоса_не_создаёт_клон(work, профиль, monkeypatch):
-    """Клон платный: на бесплатном шаге сохраняем только файл записи."""
+def test_запись_голоса_запускает_демо_двойника(work, профиль, monkeypatch):
+    """Фото и голос собраны — человек сразу видит СВОЁ демо, до экрана цены.
+    Клон делается здесь же (ради демо) и переиспользуется платной частью."""
     клоны = []
     monkeypatch.setattr(
         bot, "step_voice",
@@ -1156,11 +1170,53 @@ def test_запись_голоса_не_создаёт_клон(work, профи
     asyncio.run(bot.on_message(_Update(голос), None))
 
     s = bot.load_session(7)
-    assert клоны == []
-    assert "voice_id" not in s and not s.get("voices")
-    assert s["voice_pending"]["ru"] == s["voice_samples"]["ru"]
+    assert клоны == ["ru"]
+    assert s["voices"] == {"ru": "voice-новый"}
+    assert not s["voice_pending"]
+    assert s["demo"]["key"]
     assert s["step"] == bot.CHOOSING
-    assert голос.replies[-2] == bot.VOICE_SAVED
+    assert bot.VOICE_SAVED in голос.replies
+    assert bot.DEMO_BUILDING_MSG in голос.replies
+    # Само демо ушло видео с подписью «двойник готов»
+    assert [c for _, c, _ in голос.videos] == [bot.DEMO_READY_MSG]
+
+
+def test_демо_не_повторяется_на_том_же_фото_и_записи(work, профиль, monkeypatch):
+    """Тот же вход — тот же результат: повторной генерации (и трат) нет."""
+    демо = []
+    monkeypatch.setattr(
+        bot, "step_demo",
+        lambda *a: демо.append(a) or _fake_step_demo(*a),
+    )
+    bot.save_session(7, {"step": bot.WAIT_PHOTO, "language": "ru"})
+    asyncio.run(bot.on_message(_Update(_Msg(photo=[object()])), None))
+    asyncio.run(bot.on_message(_Update(_Msg(voice=object())), None))
+    assert len(демо) == 1
+
+    # Человек перезаписал голос той же записью — демо не перегенерилось.
+    msg = _Msg()
+    _press("stage:prev", msg)
+    _press("stage:edit", msg)
+    asyncio.run(bot.on_message(_Update(_Msg(voice=object())), None))
+    assert len(демо) == 1
+
+
+def test_упавшее_демо_не_останавливает_разговор(work, профиль, monkeypatch):
+    """Демо — подарок, а не ворота: HeyGen упал — идём дальше без демо."""
+    def падаем(*a):
+        raise RuntimeError("HeyGen отказал")
+
+    monkeypatch.setattr(bot, "step_demo", падаем)
+    bot.save_session(7, {"step": bot.WAIT_PHOTO, "language": "ru"})
+    asyncio.run(bot.on_message(_Update(_Msg(photo=[object()])), None))
+
+    голос = _Msg(voice=object())
+    asyncio.run(bot.on_message(_Update(голос), None))
+
+    s = bot.load_session(7)
+    assert "demo" not in s
+    assert s["step"] == bot.CHOOSING  # выбор пути открылся как обычно
+    assert голос.videos == []
 
 
 def test_клон_делается_после_оплаты_и_старый_удаляется(work, monkeypatch, tmp_path):
@@ -1196,9 +1252,16 @@ def test_клон_делается_после_оплаты_и_старый_уд�
     assert s["step"] == bot.REVIEW
 
 
-def test_запись_заново_не_трогает_прежний_клон_до_оплаты(work, профиль, monkeypatch):
+def test_упавший_клон_при_демо_не_теряет_прежний_голос(work, профиль, monkeypatch):
+    """Перезапись при готовом клоне: новый клон делается сразу (ради демо),
+    но если он упал — прежний голос остаётся рабочим, а запись pending."""
     удалённые = []
     monkeypatch.setattr(bot, "step_delete_voice", lambda vid: удалённые.append(vid))
+
+    def падаем(chat_id, path, language):
+        raise RuntimeError("ElevenLabs отказал")
+
+    monkeypatch.setattr(bot, "step_voice", падаем)
     bot.save_session(7, _паспорт(step=bot.VIEWING_STAGE, stage="voice"))
 
     msg = _Msg()
@@ -1208,7 +1271,7 @@ def test_запись_заново_не_трогает_прежний_клон_�
     s = bot.load_session(7)
     assert удалённые == []
     assert s["voices"] == {"ru": "voice-1"}  # рабочий голос остаётся рабочим
-    assert s["voice_pending"]["ru"]
+    assert s["voice_pending"]["ru"]          # клон повторится на платном пути
     assert bot.ASK_VOICE in msg.replies[-1]
 
 
@@ -1280,18 +1343,21 @@ def test_упавший_клон_не_пускает_в_генерацию(work,
 
 
 def test_полный_путь_новичка_платит_только_после_экрана_цены(work, monkeypatch):
-    """Сквозной прогон: от /start до готовности к сборке. Все платные вызовы
-    (клон голоса, Клод) обязаны случиться строго после «Поехали»."""
-    платные = []
+    """Сквозной прогон: от /start до готовности к сборке. Человек платит
+    только после экрана цены: Клод зовётся строго после «Поехали». Клон
+    голоса — наша затрата на бесплатное демо, он уходит раньше и платной
+    частью переиспользуется без повтора."""
+    вызовы = []
     monkeypatch.setattr(bot, "_download", _fake_download)
     monkeypatch.setattr(bot, "step_photo", lambda chat_id, path: "asset-новый")
     monkeypatch.setattr(
         bot, "step_voice",
-        lambda chat_id, path, language: платные.append("голос") or "voice-1",
+        lambda chat_id, path, language: вызовы.append("голос") or "voice-1",
     )
+    monkeypatch.setattr(bot, "step_demo", _fake_step_demo)
     monkeypatch.setattr(
         bot, "step_verbatim",
-        lambda chat_id, text, language: платные.append("клод") or SCENARIO,
+        lambda chat_id, text, language: вызовы.append("клод") or SCENARIO,
     )
     monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
 
@@ -1308,16 +1374,17 @@ def test_полный_путь_новичка_платит_только_посл
 
     asyncio.run(bot.on_message(_Update(_Msg(voice=object())), None))
     assert bot.load_session(7)["step"] == bot.CHOOSING
+    assert вызовы == ["голос"]     # клон ушёл на демо; Клода ещё не было
 
     _press("mode:text", msg)
     _press("material:new", msg)
     asyncio.run(bot.on_message(_Update(_Msg("Мой текст.")), None))
     assert bot.load_session(7)["step"] == bot.CONFIRM_PRICE
-    assert платные == []           # всё, что было до сих пор, — бесплатно
+    assert вызовы == ["голос"]     # до «Поехали» платных шагов человека нет
 
     _с_балансом()
     _press("pay:go", msg)
-    assert платные == ["голос", "клод"]
+    assert вызовы == ["голос", "клод"]  # клон не повторился, Клод после цены
 
     _press("ok", msg)
     s = bot.load_session(7)
@@ -1326,8 +1393,9 @@ def test_полный_путь_новичка_платит_только_посл
     # тот же прогон должен читаться воронкой без пропусков
     воронка = {r["event"]: r["count"] for r in bot._events().funnel()}
     for шаг in ("start", "stage:language", "stage:gender", "stage:photo",
-                "stage:voice", "stage:material", "price_shown",
-                "generation_started", "scenario_shown", "scenario_approved"):
+                "stage:voice", "demo_started", "demo_sent", "stage:material",
+                "price_shown", "generation_started", "scenario_shown",
+                "scenario_approved"):
         assert воронка[шаг] == 1, шаг
     assert воронка["reel_delivered"] == 0   # ролик ещё не собирали
 
