@@ -2438,10 +2438,12 @@ TOPUP_PRESETS = {
     "rub": ((1000_00, "1000 ₽"), (2500_00, "2500 ₽"), (5000_00, "5000 ₽")),
 }
 
-# Нижняя граница суммы заказа в минимальных единицах: $1 / 100 ₽. В спеке
-# машинно не задана, есть только в примере ошибки error_amount_too_small —
-# поэтому счёт на меньшую сумму магазин отклонит, а человек увидит отбой.
-MIN_ORDER_MINOR = 100
+# Нижняя граница суммы заказа в минимальных единицах, своя у каждой валюты.
+# В спеке её нет; числа сняты живыми запросами в магазин 2026-08-11: usd 100
+# проходит (200), rub 4500 и 9900 отбиваются error_amount_too_small «minimum
+# amount is 10000», rub 10000 проходит. То есть порог — примерно доллар, а не
+# общее для всех валют число, как говорит текст ошибки.
+MIN_ORDER_MINOR = {"usd": 100, "eur": 100, "rub": 10000}
 
 
 def format_minor(amount_minor: int, currency: str) -> str:
@@ -2465,7 +2467,7 @@ def exact_topup_minor(gap_micro: int, currency: str, fx: dict) -> int:
     if currency == "rub":
         # До целого рубля вверх: «218 ₽» вместо «217.63 ₽» на кнопке.
         minor = math.ceil(minor / 100) * 100
-    return max(int(minor), MIN_ORDER_MINOR)
+    return max(int(minor), MIN_ORDER_MINOR[currency])
 
 ASK_AMOUNT_MSG = "Баланс: {have}\n\nВыберите сумму для пополнения"
 ORDER_READY_MSG = (
@@ -2533,8 +2535,15 @@ def _kb_amounts(currency: str, exact_minor: int | None = None):
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     rows = []
     if exact_minor:
+        # Ролик дешевле минимального счёта — обещать «ровно на этот ролик»
+        # нельзя, человек заплатит больше и должен видеть, за что.
+        подпись = (
+            "минимальный платёж"
+            if exact_minor <= MIN_ORDER_MINOR[currency]
+            else "ровно на этот ролик"
+        )
         rows.append([InlineKeyboardButton(
-            f"{format_minor(exact_minor, currency)} — ровно на этот ролик",
+            f"{format_minor(exact_minor, currency)} — {подпись}",
             callback_data=f"topup:amt:{currency}:{exact_minor}",
         )])
     rows += [

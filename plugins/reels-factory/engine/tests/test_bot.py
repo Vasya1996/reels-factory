@@ -2794,11 +2794,37 @@ def test_кнопки_ровной_суммы_нет_когда_баланса_�
 
 
 def test_ровная_сумма_не_ниже_минимума_магазина():
-    """Счёт меньше $1 магазин отклонит (error_amount_too_small), поэтому
-    копеечную нехватку поднимаем до минимума."""
+    """Минимум у каждой валюты свой (снято живыми запросами в магазин): доллар
+    пропускает 100 единиц, рубль — только 10000. Плоская сотня роняла счёт
+    ошибкой error_amount_too_small."""
     fx = {"usd": 1.0, "rub": 0.011}
     assert bot.exact_topup_minor(20_000, "usd", fx) == 100
-    assert bot.exact_topup_minor(20_000, "rub", fx) == 200
+    assert bot.exact_topup_minor(20_000, "rub", fx) == 10000
+
+
+def test_дешёвый_ролик_показывает_минимальный_платёж(work, магазин):
+    """Ролик за $0.49 дешевле минимального счёта: обещать «ровно на этот
+    ролик» нельзя — человек заплатит больше и должен видеть, за что."""
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE,
+                                 material_mode="text", material_text="Коротко."))
+    msg = _Msg()
+
+    _press("topup:cur:rub", msg)
+    assert _labels(msg.markups[-1])[0] == "100 ₽ — минимальный платёж"
+
+    _press("topup:cur:usd", msg)
+    assert _labels(msg.markups[-1])[0] == "$1.00 — минимальный платёж"
+
+
+def test_дешёвый_ролик_создаёт_счёт_не_ниже_минимума(work, магазин):
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE,
+                                 material_mode="text", material_text="Коротко."))
+    _press("topup:amt:rub:10000", _Msg())
+
+    assert магазин["created"] == [{
+        "amount": 10000, "currency": "rub", "customerId": "7",
+        "title": "Пополнение баланса 100 ₽",
+    }]
 
 
 def test_назад_с_выбора_валюты_возвращает_прежние_кнопки(work, магазин):
