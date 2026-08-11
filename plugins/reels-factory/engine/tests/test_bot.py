@@ -288,6 +288,68 @@ def test_новый_чат_ведёт_к_выбору_языка(work):
     assert msg.replies == [bot.HELLO, bot.ASK_LANGUAGE]
 
 
+# --- откуда пришёл человек ----------------------------------------------------
+
+class _Ctx:
+    """Контекст телеграма: хвост ссылки `?start=<метка>` приезжает в args."""
+
+    def __init__(self, *args):
+        self.args = list(args)
+
+
+def test_метка_из_ссылки_запоминается(work):
+    asyncio.run(bot.cmd_start(_Update(_Msg()), _Ctx("anadeko")))
+
+    assert bot.load_session(7)["source"] == "anadeko"
+
+
+def test_первая_метка_остаётся_при_переходе_по_другой_ссылке(work):
+    asyncio.run(bot.cmd_start(_Update(_Msg()), _Ctx("bk5")))
+    asyncio.run(bot.cmd_start(_Update(_Msg()), _Ctx("reforma")))
+
+    assert bot.load_session(7)["source"] == "bk5"
+
+
+def test_метка_переживает_start_и_новый_ролик(work):
+    asyncio.run(bot.cmd_start(_Update(_Msg()), _Ctx("reforma")))
+    _press("reel_language:ru", _Msg())
+
+    asyncio.run(bot.cmd_start(_Update(_Msg()), None))
+    assert bot.load_session(7)["source"] == "reforma"
+
+    asyncio.run(bot.cmd_new(_Update(_Msg()), None))
+    assert bot.load_session(7)["source"] == "reforma"
+
+
+def test_обычный_start_без_ссылки_метку_не_ставит(work):
+    asyncio.run(bot.cmd_start(_Update(_Msg()), _Ctx()))
+
+    assert "source" not in bot.load_session(7)
+
+
+def test_метка_попадает_в_событие_start_воронки(work):
+    """Отчёт «кто и сколько пришло» режется по detail события start."""
+    asyncio.run(bot.cmd_start(_Update(_Msg()), _Ctx("anadeko")))
+
+    with bot._events()._connect() as conn:
+        rows = conn.execute(
+            "SELECT event, detail FROM events WHERE event = 'start'"
+        ).fetchall()
+    assert [(r["event"], r["detail"]) for r in rows] == [("start", "anadeko")]
+
+
+@pytest.mark.parametrize("mark,expected", [
+    ("anadeko", "anadeko"),
+    ("BK5", "bk5"),                      # ссылку могли написать в верхнем регистре
+    ("re forma", None),                  # пробел — не метка
+    ("../../etc", None),                 # чужой ввод в файл сессии не едет
+    ("a" * 40, None),
+    ("", None),
+])
+def test_метка_чистится(mark, expected):
+    assert bot.parse_source([mark]) == expected
+
+
 def test_текст_вместо_кнопки_показывает_экран_заново(work):
     """Кнопки уезжают вверх по переписке — повторить экран полезнее отписки."""
     bot.save_session(7, _паспорт(step=bot.CHOOSING))

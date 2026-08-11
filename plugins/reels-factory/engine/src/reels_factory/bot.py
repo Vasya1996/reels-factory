@@ -35,6 +35,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import time
@@ -433,6 +434,7 @@ _PROFILE_KEYS = (
     "pay_currency",      # валюта счёта: выбрана человеком, спрашиваем один раз
     "pending_order",     # неоплаченный счёт: /new не должен его терять
     "demo",              # ключ и файл показанного демо: не генерить повторно
+    "source",            # откуда пришёл: переживает и /start, и новый ролик
 )
 _LOOP_KEYS = _PROFILE_KEYS
 
@@ -1386,7 +1388,9 @@ async def _show_start(msg, chat_id: int, s: dict, session_builder=fresh_session)
         # Возврат на стартовый экран кнопкой «Назад» новым заходом не считаем.
         cycle += 1
         next_session["cycle"] = cycle
-        _track(chat_id, next_session, "start")
+        # detail = метка источника (реферальная ссылка): воронку можно резать
+        # по источникам прямо из events, не поднимая файлы сессий.
+        _track(chat_id, next_session, "start", next_session.get("source"))
     else:
         next_session["cycle"] = cycle or 1
     if not _reel_language(next_session, required=False):
@@ -2069,11 +2073,42 @@ async def _ready_for_new_reel(msg, chat_id: int) -> bool:
     return True
 
 
+#: Сколько знаков метки источника храним и что в ней допустимо. Метку ставит
+#: не пользователь, а ссылка (`t.me/бот?start=anadeko`), но прийти по ссылке
+#: может кто угодно с чем угодно — значит это чужой ввод: он едет в файл
+#: сессии, поэтому лишнее отсекаем.
+SOURCE_MAX = 32
+_SOURCE_OK = re.compile(r"^[a-z0-9_-]+$")
+
+
+def parse_source(args) -> str | None:
+    """Метка источника из ссылки `t.me/бот?start=<метка>`.
+
+    Телеграм отдаёт хвост ссылки первым аргументом команды `/start`. Регистр
+    приводим к нижнему: ссылку могут написать как угодно, а считать переходы
+    удобнее по одному написанию.
+    """
+    mark = str((args or [None])[0] or "").strip().lower()
+    if not mark or len(mark) > SOURCE_MAX or not _SOURCE_OK.match(mark):
+        # Не обрезаем длинное до годного: обрезок — уже другая метка, и в
+        # отчёте он выглядел бы настоящим источником.
+        return None
+    return mark
+
+
 async def cmd_start(update, context):
     chat_id = update.effective_chat.id
+    session = load_session(chat_id)
+    source = parse_source(getattr(context, "args", None))
+    # Первая метка и остаётся: человек мог прийти по одной ссылке, а потом
+    # нажать /start ещё раз или зайти по чужой — источник у него один.
+    if source and not session.get("source"):
+        session["source"] = source
+        save_session(chat_id, session)
+        log.info("источник перехода: chat=%s source=%s", chat_id, source)
     if not await _ready_for_new_reel(update.message, chat_id):
         return
-    await _show_start(update.message, chat_id, load_session(chat_id))
+    await _show_start(update.message, chat_id, session)
 
 
 async def cmd_new(update, context):
