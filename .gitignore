@@ -14,3 +14,6 @@ dist/
 .test-deps/
 docs/visual-director-demo/*/edit_plan.json
 node_modules/
+
+# Ассеты онбординга бота коммитятся несмотря на *.mp4
+!plugins/reels-factory/engine/assets/demo_example.mp4
