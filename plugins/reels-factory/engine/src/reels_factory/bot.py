@@ -1696,6 +1696,10 @@ async def _choose_path_stage(msg, chat_id: int, s: dict):
     if not s.get("photo") or not _has_voice_material(s, language):
         await _profile_stage(msg, chat_id, s)
         return
+    # Фото и запись могли остаться с прежнего захода, когда демо ещё не
+    # существовало, — такой человек демо не видел. Лимиты внутри
+    # _maybe_send_demo: одно демо на человека и ни одного клиентам.
+    await _maybe_send_demo(msg, chat_id, s)
     s["step"] = CHOOSING
     save_session(chat_id, s)
     await msg.reply_text(ASK_PATH, reply_markup=_kb_start())
@@ -1864,6 +1868,11 @@ async def _maybe_send_demo(msg, chat_id: int, s: dict) -> None:
     language = _reel_language(s)
     key = _demo_key(s, language)
     if key is None or (s.get("demo") or {}).get("key") == key:
+        return
+    if s.get("demo") or _job_store().latest_for_chat(chat_id) is not None:
+        # Демо — только для тех, кто сервисом ещё не пользовался: одно на
+        # человека, и ни одного тому, кто уже заказывал ролик. Клиент и так
+        # знает, как выглядит его аватар, а каждая генерация стоит денег.
         return
     await msg.reply_text(DEMO_BUILDING_MSG)
     _track(chat_id, s, "demo_started")
@@ -3149,8 +3158,8 @@ async def on_message(update, context):
         save_session(chat_id, s)
         _track(chat_id, s, "stage:photo")
         await msg.reply_text(PHOTO_SAVED)
-        # Замена фото при уже принятом голосе — вход демо изменился: новичка
-        # это не касается (голоса ещё нет), а старому покажем нового двойника.
+        # Голос мог быть принят раньше фото (правка этапа) — тогда оба входа
+        # демо собрались только сейчас. Лимиты внутри: одно демо на человека.
         await _maybe_send_demo(msg, chat_id, s)
         await _next_stage(msg, chat_id, s, STAGE_PHOTO)
         return

@@ -1263,6 +1263,64 @@ def test_демо_не_повторяется_на_том_же_фото_и_за�
     assert len(демо) == 1
 
 
+class _FakeJobs:
+    """JobStore ровно в объёме демо-лимита."""
+
+    def __init__(self, latest=None):
+        self._latest = latest
+
+    def latest_for_chat(self, chat_id):
+        return self._latest
+
+    def active_for_chat(self, chat_id):
+        return None
+
+
+def test_демо_не_генерится_тому_кто_уже_заказывал_ролик(work, профиль, monkeypatch):
+    """Клиент знает, как выглядит его аватар, — генерация только жгла бы деньги."""
+    демо = []
+    monkeypatch.setattr(
+        bot, "step_demo", lambda *a: демо.append(a) or _fake_step_demo(*a)
+    )
+    monkeypatch.setattr(bot, "_job_store", lambda: _FakeJobs(latest=object()))
+    bot.save_session(7, {"step": bot.WAIT_PHOTO, "language": "ru"})
+
+    asyncio.run(bot.on_message(_Update(_Msg(photo=[object()])), None))
+    asyncio.run(bot.on_message(_Update(_Msg(voice=object())), None))
+
+    assert демо == []
+    assert bot.load_session(7)["step"] == bot.CHOOSING
+
+
+def test_старый_лид_без_покупок_получает_демо_на_выборе_пути(
+        work, профиль, monkeypatch, tmp_path):
+    """Фото и запись остались с захода до появления демо — человек его не
+    видел. На выборе пути демо догоняет его, но только один раз."""
+    демо = []
+    monkeypatch.setattr(
+        bot, "step_demo", lambda *a: демо.append(a) or _fake_step_demo(*a)
+    )
+    запись = tmp_path / "запись.ogg"
+    запись.write_bytes(b"voice")
+    bot.save_session(7, _паспорт(
+        step=bot.VIEWING_STAGE, stage="voice",
+        voice_samples={"ru": str(запись)},
+    ))
+
+    msg = _Msg()
+    _press("stage:next", msg)
+
+    assert len(демо) == 1
+    assert bot.load_session(7)["demo"]["key"]
+    assert [c for _, c, _ in msg.videos] == [bot.DEMO_READY_MSG]
+
+    # Второй заход на тот же экран — повторной генерации нет.
+    msg2 = _Msg()
+    _press("stage:prev", msg2)
+    _press("stage:next", msg2)
+    assert len(демо) == 1
+
+
 def test_упавшее_демо_не_останавливает_разговор(work, профиль, monkeypatch):
     """Демо — подарок, а не ворота: HeyGen упал — идём дальше без демо."""
     def падаем(*a):
