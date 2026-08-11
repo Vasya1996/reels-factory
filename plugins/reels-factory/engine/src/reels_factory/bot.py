@@ -34,6 +34,7 @@ import copy
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import subprocess
@@ -2433,6 +2434,35 @@ TOPUP_PRESETS = {
     "rub": ((1000_00, "1000 ₽"), (2500_00, "2500 ₽"), (5000_00, "5000 ₽")),
 }
 
+# Нижняя граница суммы заказа в минимальных единицах: $1 / 100 ₽. В спеке
+# машинно не задана, есть только в примере ошибки error_amount_too_small —
+# поэтому счёт на меньшую сумму магазин отклонит, а человек увидит отбой.
+MIN_ORDER_MINOR = 100
+
+
+def format_minor(amount_minor: int, currency: str) -> str:
+    """Сумма заказа -> подпись кнопки. Копейки у рубля не показываем: суммы в
+    рублях мы и создаём целыми (см. exact_topup_minor)."""
+    if currency == "rub":
+        return f"{int(amount_minor) // 100} ₽"
+    return f"${int(amount_minor) / 100:.2f}"
+
+
+def exact_topup_minor(gap_micro: int, currency: str, fx: dict) -> int:
+    """Недостающая сумма в микродолларах -> сумма заказа в минимальных единицах.
+
+    Округление вверх и тем же курсом `fx`, каким вебхук зачисляет платёж
+    (tribute.credited_micro): при округлении вниз человек заплатит ровно по
+    кнопке и всё равно не доберёт копейки до оценки, а экран цены снова скажет
+    «не хватает».
+    """
+    rate = float(fx[currency])
+    minor = math.ceil(int(gap_micro) / 1_000_000 / rate * 100 - 1e-9)
+    if currency == "rub":
+        # До целого рубля вверх: «218 ₽» вместо «217.63 ₽» на кнопке.
+        minor = math.ceil(minor / 100) * 100
+    return max(int(minor), MIN_ORDER_MINOR)
+
 ASK_AMOUNT_MSG = "Баланс: {have}\n\nВыберите сумму для пополнения"
 ORDER_READY_MSG = (
     "Счёт на {amount} готов. Нажмите «Оплатить» — Tribute предложит карту или "
@@ -2492,9 +2522,18 @@ def _kb_paid_continue():
     ])
 
 
-def _kb_amounts(currency: str):
+def _kb_amounts(currency: str, exact_minor: int | None = None):
+    """Номиналы пополнения. exact_minor — сумма, которой не хватает на текущий
+    ролик: она встаёт первой, потому что за ней сюда и приходят. Меньший
+    номинал $10 отпугивал тех, чей ролик стоит втрое дешевле."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    rows = [
+    rows = []
+    if exact_minor:
+        rows.append([InlineKeyboardButton(
+            f"{format_minor(exact_minor, currency)} — ровно на этот ролик",
+            callback_data=f"topup:amt:{currency}:{exact_minor}",
+        )])
+    rows += [
         [InlineKeyboardButton(
             label, callback_data=f"topup:amt:{currency}:{minor}"
         )]
@@ -2533,12 +2572,33 @@ async def _show_currency_choice(msg, chat_id: int, s: dict) -> None:
     await _edit_or_reply(msg, text, _kb_currency())
 
 
+def _topup_gap_minor(chat_id: int, s: dict, currency: str) -> int | None:
+    """Сколько не хватает на текущий ролик, в минимальных единицах валюты.
+
+    None — считать нечего: человек открыл пополнение сам, ролика перед ним нет.
+    Оценку берём заново, а не из сохранённого price_need: пока экран
+    пополнения висел в чате, материал мог смениться.
+    """
+    if (s or {}).get("step") != CONFIRM_PRICE:
+        return None
+    billing = _billing()
+    if not billing["enabled"]:
+        return None
+    gap = estimate_material_micro(s, billing) - _ledger().balance(chat_id)
+    if gap <= 0:
+        return None
+    return exact_topup_minor(gap, currency, billing["fx"])
+
+
 async def _show_amounts(msg, chat_id: int, s: dict, currency: str) -> None:
     s["pay_currency"] = currency
     save_session(chat_id, s)
     have = format_usd(_ledger().balance(chat_id))
     await msg.reply_text(
-        ASK_AMOUNT_MSG.format(have=have), reply_markup=_kb_amounts(currency)
+        ASK_AMOUNT_MSG.format(have=have),
+        reply_markup=_kb_amounts(
+            currency, _topup_gap_minor(chat_id, s, currency)
+        ),
     )
 
 
@@ -2550,7 +2610,7 @@ async def _create_topup_order(msg, chat_id: int, s: dict, currency: str,
 
     label = dict(
         (minor, text) for minor, text in TOPUP_PRESETS.get(currency, ())
-    ).get(amount_minor, str(amount_minor))
+    ).get(amount_minor, format_minor(amount_minor, currency))
     try:
         order = await asyncio.to_thread(
             tribute_shop.create_order,
