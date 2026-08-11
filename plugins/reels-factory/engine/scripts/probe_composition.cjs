@@ -66,6 +66,11 @@ const AUDIT_SEEK = {
   fallbackToBridgeAndTimelines: true,
   animationFrameSettle: "double",
   waitForFontsMs: 500,
+  // Их значение, и трогать его нельзя. Попытка обнулить (15,6 с экономии на
+  // 130 выборках) дала ложный провал D8 на прогоне 28: слова титра читались
+  // в позиции ДО того, как их компонент применил свой трансформ — «DRAG AND
+  // DROP.» оказывались на y=362 поперёк лица и за правым краем кадра. Двойного
+  // requestAnimationFrame ниже для вложенного таймлайна компонента мало.
   settleMs: 120,
 };
 const CAPTURE_SETTLE_MS = 1500; // captureCompositionFrame.ts:8
@@ -654,7 +659,11 @@ async function main() {
   const chrome = resolveChrome(args.chrome);
 
   const server = await serveProject(projectDir, injectRuntime(rawHtml), runtime.file);
-  const puppeteer = require("puppeteer-core");
+  // Путь к пакету можно задать снаружи. В WSL клон лежит на диске Windows, за
+  // 9p: одна загрузка puppeteer-core (1537 файлов) стоит там 40 с против 0,3 с
+  // с диска Linux — это половина всего времени пробы. NODE_PATH тут не
+  // помогает: он смотрится ПОСЛЕ соседних node_modules, а они на месте.
+  const puppeteer = require(process.env.REELS_PUPPETEER_PATH || "puppeteer-core");
   let browser;
   const consoleErrors = [];
   const failedRequests = [];

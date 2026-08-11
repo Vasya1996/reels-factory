@@ -19,6 +19,7 @@ import html as _html
 import subprocess
 from pathlib import Path
 
+from reels_factory.config import cli_env
 from reels_factory.hf_fonts import fonts_css as _fonts_css
 
 HF_DIR = Path(__file__).resolve().parents[2] / "hyperframes"
@@ -565,6 +566,7 @@ def _default_runner(project_dir: Path, out_path: Path, timeout: int) -> None:
     subprocess.run(
         f'npx --yes hyperframes@{_HF_VERSION} render --output "{out_path}"',
         cwd=str(project_dir), shell=True, check=True, timeout=timeout,
+        env=cli_env(),
     )
 
 

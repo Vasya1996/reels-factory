@@ -30,6 +30,14 @@ def _board(scenes):
 @pytest.fixture
 def run(tmp_path, monkeypatch):
     (tmp_path / "public").mkdir(parents=True)
+    # Блок вспышки ставит `hyperframes add` перед сборкой; здесь его заменяет
+    # заглушка — иначе любая сборка, где вспышка встала, падала бы на его
+    # отсутствии, а не на том, что проверяет тест.
+    blocks = tmp_path / "public" / "compositions"
+    blocks.mkdir(parents=True, exist_ok=True)
+    (blocks / "editorial-flash-overlay.html").write_text(
+        '<div data-composition-id="editorial-flash-overlay" data-duration="4">'
+        "</div><script>window.__timelines = {};</script>", encoding="utf-8")
     monkeypatch.setattr(hf_compose, "write_caption_data",
                         lambda public, **kw: public / "caption-data.json")
     monkeypatch.setattr(hf_compose, "caption_snippet",
@@ -37,32 +45,46 @@ def run(tmp_path, monkeypatch):
     return tmp_path
 
 
+def _shots(first, second, kind="photo"):
+    """Серия из двух планов — единственная форма вставки."""
+    return {"shots": [first, second], "kind": kind}
+
+
+def _found(scene_id, *files):
+    return {f"{scene_id}::shot{shot}": {"file": file}
+            for shot, file in enumerate(files)}
+
+
 SCENES = [
     {"id": "s-01", "intent": "хук", "startSec": 0, "endSec": 3.033,
      "presenter": "full", "insert": None},
     {"id": "s-02", "intent": "разбор", "startSec": 3.033, "endSec": 6.0,
      "presenter": "pip-br",
-     "insert": {"query": "переговоры в офисе", "kind": "photo"}},
+     "insert": _shots("переговоры в офисе", "рука листает бумаги")},
 ]
 
-FOUND = {"s-02": {"file": ".media/images/a.jpg"}}
+FOUND = _found("s-02", ".media/images/a.jpg", ".media/images/b.jpg")
 
 
-def _build(tmp_path, scenes=None, resolved=None):
+def _build(tmp_path, scenes=None, resolved=None, face=None):
     board = _board(json.loads(json.dumps(scenes or SCENES)))
     with sdk_session() as sdk:
         build_composition(tmp_path, sdk, storyboard=board, clips=CLIPS,
                           duration=6.0, words=WORDS,
-                          resolved=FOUND if resolved is None else resolved)
+                          resolved=FOUND if resolved is None else resolved,
+                          face=face)
     return (tmp_path / "public" / "index.html").read_text(encoding="utf-8"), board
 
 
 # ---------- слои кадра ----------
 
-def test_вставка_встаёт_обычным_клипом(run):
+def test_биролл_встаёт_серией_из_двух_планов(run):
+    """Одиночной вставки не бывает: биролл входит в кадр серией."""
     html, _ = _build(run)
-    assert 'id="ins-s-02" class="ins clip"' in html
+    assert 'id="ins-s-02-0" class="ins clip"' in html
+    assert 'id="ins-s-02-1" class="ins clip"' in html
     assert 'src=".media/images/a.jpg"' in html
+    assert 'src=".media/images/b.jpg"' in html
     # обёртка несёт время, медиа внутри — только картинку: клип обязан быть
     # прямым потомком корня композиции
     assert 'data-start="3.0330"' in html
@@ -70,7 +92,7 @@ def test_вставка_встаёт_обычным_клипом(run):
 
 def test_вставка_под_ведущей_в_углу_занимает_весь_кадр(run):
     html, _ = _build(run)
-    layer = html[html.index('id="ins-s-02"'):]
+    layer = html[html.index('id="ins-s-02-0"'):]
     assert "left:0px;top:0px;width:1080px;height:1920px" in layer[:300]
 
 
@@ -78,7 +100,7 @@ def test_вставка_дополняет_ведущую_в_половине_к
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["presenter"] = "stack"
     html, _ = _build(run, scenes=scenes)
-    layer = html[html.index('id="ins-s-02"'):]
+    layer = html[html.index('id="ins-s-02-0"'):]
     assert "top:844px" in layer[:300]
 
 
@@ -101,78 +123,88 @@ def test_вставка_при_ведущей_во_весь_кадр_роняе�
 def test_ведущая_лежит_выше_вставки_в_разметке(run):
     """Порядок отрисовки держит z-index, но и порядок в DOM повторяет его."""
     html, _ = _build(run)
-    assert html.index('id="ins-s-02"') < html.index('id="video-wrap"')
+    assert html.index('id="ins-s-02-0"') < html.index('id="video-wrap"')
 
 
-def test_вставки_разложены_по_дорожкам_по_три(run):
-    """Четвёртая на одной дорожке — предупреждение `timeline_track_too_dense`,
+def test_планы_разложены_по_дорожкам_по_три(run):
+    """Четвёртый на одной дорожке — предупреждение `timeline_track_too_dense`,
     а под `--strict` предупреждение роняет сборку."""
-    scenes = []
-    for index in range(7):
-        start = round(index * 0.8, 3)
+    scenes, resolved = [], {}
+    for index in range(4):
+        start = round(index * 2.6, 3)
         scenes.append({"id": f"s-{index:02d}", "intent": "и",
-                       "startSec": start, "endSec": round(start + 0.8, 3),
+                       "startSec": start, "endSec": round(start + 2.6, 3),
                        "presenter": "pip-br",
-                       "insert": {"query": f"вставка {index}", "kind": "photo"}})
-    html, _ = _build(run, scenes=scenes,
-                     resolved={f"s-{i:02d}": {"file": ".media/images/a.jpg"}
-                               for i in range(7)})
+                       "insert": _shots(f"план {index} а", f"план {index} б")})
+        resolved.update(_found(f"s-{index:02d}", f"{index}a.jpg", f"{index}b.jpg"))
+    html, _ = _build(run, scenes=scenes, resolved=resolved)
     tracks = [html[m:m + 30] for m in range(len(html))
               if html.startswith('data-track-index="', m)]
     used = {t.split('"')[1] for t in tracks}
     assert {"3", "4", "5"} <= used
 
 
-def test_вставка_входит_скоростным_стыком(run):
-    """Самодельный наезд выброшен — это их «bad slow push». Вход вставки —
-    их cut-the-curve: fromTo с явным началом, путь 230 px, `power4.out`."""
+def test_шов_внутри_серии_а_на_краях_жёсткая_склейка(run):
+    """Правило Юли: вход в серию и выход из неё — hard cut, движение живёт
+    только на шве между двумя планами."""
     html, _ = _build(run)
-    assert "scale: 1.06" not in html
-    assert ('tl.fromTo("#ins-s-02 .ins-media", { x: 230, autoAlpha: 0.35 }'
+    # первый план приходит без анимации
+    assert 'tl.fromTo("#ins-s-02-0' not in html
+    # шов: первый уезжает, второй приезжает их cut-the-curve
+    assert 'tl.to("#ins-s-02-0 .ins-media", { x: -230' in html
+    assert ('tl.fromTo("#ins-s-02-1 .ins-media", { x: 230, autoAlpha: 0.35 }'
             in html)
     assert '"power4.out"' in html
+    # последний план серии не продлевается: выход жёсткой склейкой
+    assert 'tl.to("#ins-s-02-1 .ins-media", { x:' not in html
 
 
 def test_смена_главы_едет_вертикально(run):
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["beat"] = "turn"
     html, _ = _build(run, scenes=scenes)
-    assert 'tl.fromTo("#ins-s-02 .ins-media", { y: -230' in html
+    assert 'tl.fromTo("#ins-s-02-1 .ins-media", { y: -230' in html
 
 
-def test_выход_вставки_продлевает_её_под_входящую(run):
+def test_уходящий_план_живёт_дольше_на_время_шва(run):
     """«Outgoing scene content must be fully visible when the transition
-    starts» — уходящая картинка живёт дольше сцены на время стыка и уезжает
-    той же осью, что входит следующая."""
-    scenes = json.loads(json.dumps(SCENES))
-    scenes[0]["presenter"] = "pip-tl"
-    scenes[0]["insert"] = {"query": "первая", "kind": "photo"}
-    resolved = {"s-01": {"file": ".media/images/one.jpg"},
-                "s-02": {"file": ".media/images/a.jpg"}}
-    html, _ = _build(run, scenes=scenes, resolved=resolved)
-    # сцена s-01 идёт 0–3.033, вставка продлена на 0.3 стыка
-    assert 'data-start="0.0000" data-duration="3.3330"' in html
-    assert 'tl.to("#ins-s-01 .ins-media", { x: -230' in html
-    # соседние вставки на разных дорожках — пересечение легально
+    starts» — уходящий план живёт дольше своего куска на время шва."""
+    html, _ = _build(run)
+    # сцена 3.033–6.0, шов посередине, первый план продлён на 0.3
+    first = html[html.index('id="ins-s-02-0"'):]
+    assert 'data-start="3.0330"' in first[:400]
+    # соседние планы на разных дорожках — пересечение на шве легально
     assert 'data-track-index="3"' in html and 'data-track-index="4"' in html
 
 
 def test_кульминация_ставит_вспышку_из_их_каталога(run, monkeypatch):
     """Их накладка сабкомпозицией: копия под сцену, канвас 1920x1080 вписан
     обёрткой с transform, пик вспышки приходит на стык."""
-    (run / "public" / "compositions").mkdir(parents=True)
-    (run / "public" / "compositions" / "editorial-flash-overlay.html").write_text(
-        '<div data-composition-id="editorial-flash-overlay" data-duration="4">'
-        "</div><script>window.__timelines = {};</script>",
-        encoding="utf-8")
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["beat"] = "climax"
     html, _ = _build(run, scenes=scenes)
-    unique = "editorial-flash-overlay--s-02"
+    unique = "editorial-flash-overlay--fx0"
     assert f'data-composition-src="compositions/{unique}.html"' in html
     # стык на 3.033, пик на 58% из 4 с: старт 3.033 - 2.32 = 0.713
     assert 'data-start="0.7130"' in html
     assert (run / "public" / "compositions" / f"{unique}.html").exists()
+
+
+def test_плашка_не_заезжает_на_следующую(run):
+    """Две плашки стоят на одном месте кадра: наложение их же аудит зовёт
+    `content_overlap` (прогон 24, сцены 19,63 и 23,13 при родных 4,8 с)."""
+    (run / "public" / "compositions" / "lt-kicker-name.html").write_text(
+        '<div data-composition-id="lt-kicker-name" data-duration="2.5"'
+        ' data-width="1920" data-height="1080"></div>', encoding="utf-8")
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[0]["endSec"] = scenes[1]["startSec"] = 2.0
+    scenes[0]["overlay"] = {"block": "lt-kicker-name", "text": {}}
+    scenes[1]["overlay"] = {"block": "lt-kicker-name", "text": {}}
+    html, _ = _build(run, scenes=scenes)
+    # первая идёт 0–2.0 (до второй), а не свои 2.5
+    first = html[html.index('id="ovl-s-01"'):]
+    assert 'data-duration="2.0000"' in first[:400]
+    assert 'id="ovl-s-02"' in html
 
 
 def test_ранняя_кульминация_обходится_без_вспышки(run):
@@ -219,6 +251,31 @@ def test_сцены_на_стыке_островов_ведущую_не_тер�
     assert [name for _, name in moments] == ["full", "punch"]
 
 
+FACE = {"cx": 526, "cy": 707, "h": 269}      # замер прогона 24
+
+
+def test_кадрирование_клипа_считается_по_замеру_лица(run):
+    """От центра невысокое окно (`stack` — 1080x844) режет исходник по
+    538..1382 и срезает макушку: по этому замеру она на 438."""
+    from reels_factory.hf_compose import CROP_HEADROOM, crop_position
+
+    html, _ = _build(run, face=FACE)
+    assert "object-position: 50% 30.7%" in html
+    assert "__FIT__" not in html
+    # доля взята по самой тесной раскладке, и в её полосе макушка с запасом
+    share = float(crop_position(FACE).split()[1].rstrip("%")) / 100
+    band_top = share * (1920 - 844)                  # stack: масштаб 1:1
+    assert band_top <= FACE["cy"] - FACE["h"] * (1 + CROP_HEADROOM) + 0.5
+    # точка наезда — своя, кадрирование её не трогает
+    assert "transform-origin: 48.7% 36.8%" in html
+
+
+def test_без_замера_лица_клип_режется_от_центра(run):
+    """Ненайденное лицо — не лицо: гадать, где макушка, не по чему."""
+    html, _ = _build(run)
+    assert "object-position: 50% 50%" in html
+
+
 def test_клипы_лежат_слоем_а_не_в_потоке(run):
     """Без position:absolute второй клип уходит за нижний край обёртки —
     ведущая пропадает после первого куска, остаток ролика идёт по чёрному."""
@@ -250,12 +307,14 @@ def test_раскадровка_переписывается_округлённ�
 
 # ---------- намерения и подбор ----------
 
-def test_намерения_собираются_из_плана():
+def test_намерения_собираются_по_планам_серии():
     requests = collect_intents(_board(json.loads(json.dumps(SCENES))))
-    assert len(requests) == 1
-    assert requests[0]["key"] == "s-02"
+    assert [r["key"] for r in requests] == ["s-02::shot0", "s-02::shot1"]
     assert requests[0]["type"] == "image"
     assert requests[0]["intent"] == "переговоры в офисе"
+    assert requests[1]["intent"] == "рука листает бумаги"
+    # длину просим на план, а не на всю сцену: файл короче плана замрёт
+    assert requests[0]["seconds"] == round(2.967 / 2, 3)
     # под pip-* вставка занимает весь кадр — по этому прямоугольнику отсев
     # меряет растяжение; вставка при ведущей в кадре не обязательна
     assert requests[0]["rect"]["width"] == 1080
@@ -306,45 +365,80 @@ def test_замена_вставки_не_повторяет_соседа(monkey
     assert board["scenes"][1]["presenter"] == "punch"
 
 
-def test_вставку_для_куска_без_ведущей_занимают_у_соседа():
-    """Одна неподобранная картинка в хвосте роняла всю сборку. Повтор кадра —
-    плохо, чёрный экран — провал: занимаем ту, что не стоит рядом."""
+def test_кусок_без_ведущей_без_вставки_идёт_под_схему():
+    """Прежде такая сцена занимала вставку у соседней — в кадр вставала
+    картинка не про эту реплику, в обход сверки по содержимому. Теперь сцена
+    помечается под запасную схему, и подбор идёт по её же полю `fallback`."""
     board = _board([
         {"id": "s-01", "intent": "и", "startSec": 0.0, "endSec": 2.0,
-         "presenter": "pip-br", "insert": {"query": "стол"}},
+         "presenter": "pip-br", "insert": _shots("стол", "стол крупно")},
         {"id": "s-02", "intent": "и", "startSec": 2.0, "endSec": 4.0,
-         "presenter": "pip-tl", "insert": {"query": "окно"}},
+         "presenter": "pip-tl", "insert": _shots("окно", "окно крупно")},
         {"id": "s-03", "intent": "и", "startSec": 4.0, "endSec": 6.0,
-         "presenter": "none", "insert": {"query": "не найдётся"}}])
+         "presenter": "none", "insert": _shots("не найдётся", "тоже нет"),
+         "fallback": {"logo": "notion", "icon": "checklist icon"}}])
     short = [{"file": "clips/clip-00.mp4", "start": 0.0, "duration": 4.0}]
-    resolved = {"s-01": {"file": "a.jpg"}, "s-02": {"file": "b.jpg"}}
+    resolved = {**_found("s-01", "a.jpg", "b.jpg"),
+                **_found("s-02", "c.jpg", "d.jpg")}
     settle_inserts(board, resolved, short, 6.0)
-    # у соседней s-02 стоит b.jpg, значит занимаем другую
-    assert resolved["s-03"]["file"] == "a.jpg"
-    assert board["scenes"][2]["insert"] is not None
+    third = board["scenes"][2]
+    assert third["insert"] is None
+    assert third["needsSchema"] is True
+    assert third["presenter"] == "none"
+    # чужие файлы в кадр не переехали
+    assert "s-03::shot0" not in resolved
 
 
-def test_одна_картинка_на_две_сцены_не_ставится():
-    """`media-use` отвечает на близкие намерения одним файлом. Повтор кадра —
-    брак монтажа, и их линтер зовёт его `duplicate_media_discovery_risk`."""
-    board = _board([
-        {"id": "s-01", "intent": "и", "startSec": 0.0, "endSec": 3.0,
-         "presenter": "pip-br", "insert": {"query": "стол"}},
-        {"id": "s-02", "intent": "и", "startSec": 3.0, "endSec": 6.0,
-         "presenter": "pip-tl", "insert": {"query": "тот же стол другими словами"}}])
-    lost = settle_inserts(board, {"s-01": {"file": "a.jpg"},
-                                  "s-02": {"file": "a.jpg"}}, CLIPS, 6.0)
+def test_намерения_схемы_берутся_из_поля_сцены():
+    """Логотип идёт их каскадом и требует имени бренда отдельным полем.
+    Пустой `logo` значит «бренд в этих фразах не назван» — запроса не будет."""
+    from reels_factory.hf_compose import fallback_intents
+    scenes = [{"id": "s-03", "needsSchema": True,
+               "fallback": {"logo": "notion", "icon": "checklist icon"}},
+              {"id": "s-04", "needsSchema": True,
+               "fallback": {"logo": "", "icon": "rocket icon"}}]
+    requests = fallback_intents(scenes)
+    assert [r["key"] for r in requests] == [
+        "s-03::fallback-logo", "s-03::fallback-icon", "s-04::fallback-icon"]
+    assert requests[0]["type"] == "logo" and requests[0]["entity"] == "notion"
+    assert requests[1]["type"] == "icon" and requests[1]["entity"] is None
+
+
+def test_схема_не_подбирается_пока_вставка_на_месте():
+    """Схема — запасной путь: в обычном прогоне сток отвечает, и платить за
+    неё двумя лишними запросами на каждую серию незачем."""
+    from reels_factory.hf_compose import fallback_intents
+    assert fallback_intents([{"id": "s-02", "fallback": {"logo": "notion",
+                                                        "icon": "rocket"}}]) == []
+
+
+def test_половина_серии_не_ставится_вовсе():
+    """Один план из двух — это одиночная вставка, а её в монтаже не бывает."""
+    board = _board(json.loads(json.dumps(SCENES)))
+    lost = settle_inserts(board, _found("s-02", "a.jpg"), CLIPS, 6.0)
     assert lost == ["s-02"]
     assert board["scenes"][1]["insert"] is None
 
 
-def test_занять_не_у_кого_роняет_сборку():
+def test_один_файл_на_два_плана_не_ставится():
+    """`media-use` отвечает на близкие намерения одним файлом. Повтор кадра —
+    брак монтажа, и их линтер зовёт его `duplicate_media_discovery_risk`."""
+    board = _board(json.loads(json.dumps(SCENES)))
+    lost = settle_inserts(board, _found("s-02", "a.jpg", "a.jpg"), CLIPS, 6.0)
+    assert lost == ["s-02"]
+    assert board["scenes"][1]["insert"] is None
+
+
+def test_сцена_без_вставки_и_без_схемы_доживает_до_гейта():
+    """Сборку такая сцена больше не роняет на месте: её судит D25, и агент
+    получает причину вместе с остальными находками, а не по одной."""
     board = _board([{"id": "s-01", "intent": "и", "startSec": 0.0,
                      "endSec": 6.0, "presenter": "none",
-                     "insert": {"query": "нечто"}}])
+                     "insert": _shots("нечто", "и ещё нечто")}])
     short = [{"file": "clips/clip-00.mp4", "start": 0.0, "duration": 2.0}]
-    with pytest.raises(RuntimeError, match="занять\nкартинку не у кого|не у кого"):
-        settle_inserts(board, {}, short, 6.0)
+    settle_inserts(board, {}, short, 6.0)
+    assert board["scenes"][0]["needsSchema"] is True
+    assert board["scenes"][0]["insert"] is None
 
 
 # ---------- шапка раскадровки ----------
@@ -404,6 +498,37 @@ def test_накладка_агента_встаёт_сабкомпозицией
     assert ">Мария<" in copy and "Jordan Avery" not in copy
 
 
+def test_фактура_кроет_кадр_целиком(run, monkeypatch):
+    """Протечка света, рамка видоискателя и оформление стоп-кадра приезжают тем
+    же канвасом 1920x1080, что и плашки, но обязаны заливать кадр. Прежде их
+    считали плашкой: масштаб по ширине давал ленту 1080x608 поперёк середины."""
+    _with_lt(run)
+    monkeypatch.setattr(hf_compose, "_texture_blocks",
+                        lambda: frozenset({"lt-clean-bar"}))
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[0]["endSec"] = 2.0
+    scenes[1]["startSec"] = 2.0
+    scenes[1]["overlay"] = {"block": "lt-clean-bar", "text": {}}
+    html, _ = _build(run, scenes=scenes)
+    layer = html[html.index('<div class="ovl"'):]
+    # масштаб по высоте кадра (1920/1080), лишнее по ширине срезано поровну
+    assert "top:0" in layer[:80] and "scale(1.7778)" in layer[:400]
+    assert "left:-1167px" in layer[:80]
+
+
+def test_плашка_остаётся_над_полосой_титра(run):
+    """Всё, что не помечено фактурой, вписывается по ширине и кончается выше
+    слов титра — иначе их аудит зовёт content_overlap."""
+    _with_lt(run)
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[0]["endSec"] = 2.0
+    scenes[1]["startSec"] = 2.0
+    scenes[1]["overlay"] = {"block": "lt-clean-bar", "text": {"name": "М"}}
+    html, _ = _build(run, scenes=scenes)
+    layer = html[html.index('<div class="ovl"'):]
+    assert "left:0;top:372px" in layer[:80] and "scale(0.5625)" in layer[:400]
+
+
 def test_накладке_у_края_ролика_не_хватает_времени(run):
     """Родная длительность 4.8 с не влезает в хвост — внятная ошибка."""
     _with_lt(run)
@@ -416,10 +541,10 @@ def test_накладке_у_края_ролика_не_хватает_врем�
         _build(run, scenes=scenes)
 
 
-def test_иконка_фоновой_сцены_с_дыханием(run):
-    """Иконка — НЕ клип: timed-иконка роняла в их рендерере слой субтитров
-    целиком (прогон 21, бинарный поиск). Видимостью правит наш таймлайн —
-    их же PiP-рецепт «wrapper без data-атрибутов»."""
+def test_значок_на_подложке_со_свечением(run):
+    """Значок оформлен их приёмами: подложка, свечение за ней, вход
+    spring-pop. Клипом он не ставится — своей композиции у значка нет,
+    видимостью правит наш таймлайн (их PiP-рецепт «wrapper без data»)."""
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["presenter"] = "none"
     scenes[1]["insert"] = None
@@ -431,23 +556,100 @@ def test_иконка_фоновой_сцены_с_дыханием(run):
     icon_div = html[html.index('id="icon-s-02"'):html.index("</div>",
                                html.index('id="icon-s-02"'))]
     assert "data-start" not in icon_div and "data-track-index" not in icon_div
+    assert 'id="icon-s-02-glow" class="icon-glow"' in html
+    assert 'id="icon-s-02-plate" class="icon-plate"' in html
     assert 'src=".media/images/icon_001.png"' in html
     assert 'tl.set("#icon-s-02", { autoAlpha: 0 }, 0);' in html
-    assert 'tl.fromTo("#icon-s-02 img"' in html
-    assert "yoyo: true" in html
+    # вход плашки — spring-pop без отскока, свечение расцветает под неё
+    assert ('tl.fromTo("#icon-s-02-plate", { scale: 0, opacity: 0 }' in html
+            and 'ease: "power3.out"' in html)
+    assert 'tl.fromTo("#icon-s-02-glow", { opacity: 0, scale: 0.82 }' in html
+    # перекраска силуэта фильтром ушла вместе с костылём
+    assert "brightness(0) invert(1)" not in html
+
+
+def test_свечение_значка_дышит_конечной_фазой_а_не_петлёй(run):
+    """Их правило: дыхание свечения — конечный твин по прокси-фазе, не yoyo
+    (rules/ambient-glow-bloom.md:16)."""
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = None
+    scenes[1]["icon"] = {"query": "bookmark save icon"}
+    html, _ = _build(run, scenes=scenes,
+                     resolved={"s-02::icon": {"file": ".media/i.png"}})
+    breathe = html[html.index("const phase_s_02"):]
+    assert "yoyo" not in breathe.split("})();")[0]
+    assert 'ease: "none"' in breathe
+    assert "Math.sin(phase_s_02.p)" in breathe
+
+
+def test_значок_снимается_если_ведущая_заняла_его_место(run):
+    """Раскладка меняется уже после подбора: сцена без вставки уходит под
+    полнокадровую ведущую, и значок оказался бы у неё на лице."""
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "full"
+    scenes[1]["insert"] = None
+    scenes[1]["icon"] = {"query": "bookmark save icon"}
+    html, board = _build(run, scenes=scenes,
+                         resolved={"s-02::icon": {"file": ".media/i.png"}})
+    assert 'id="icon-s-02"' not in html
+    assert "icon" not in board["scenes"][1]
+
+
+def test_запасная_схема_закрывает_кадр_без_вставки(run):
+    """Сцена без ведущей, которой сток не дал биролла: вместо голого фона —
+    значок и знак бренда на общем свечении."""
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = None
+    scenes[1]["needsSchema"] = True
+    html, board = _build(run, scenes=scenes, resolved={
+        "s-02::fallback-icon": {"file": ".media/images/icon_001.png"},
+        "s-02::fallback-logo": {"file": ".media/images/logo_001.svg"}})
+    assert 'id="schema-s-02" class="schema-spot"' in html
+    assert 'src=".media/images/icon_001.png"' in html
+    assert 'src=".media/images/logo_001.svg"' in html
+    assert 'tl.set("#schema-s-02", { autoAlpha: 1 }, 3.033);' in html
+    # вход ступенькой: два героя не приземляются в один кадр
+    assert 'tl.fromTo("#schema-s-02-logo"' in html and ", 3.153);" in html
+    assert board["scenes"][1]["schemaShown"] is True
+
+
+def test_схема_без_единого_файла_не_рисуется(run):
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = None
+    scenes[1]["needsSchema"] = True
+    html, board = _build(run, scenes=scenes, resolved={})
+    assert 'id="schema-s-02"' not in html
+    assert "schemaShown" not in board["scenes"][1]
 
 
 def test_запрос_иконки_попадает_в_намерения():
     scenes = json.loads(json.dumps(SCENES))
-    scenes[0]["icon"] = {"query": "fire flame icon"}
+    scenes[1]["presenter"] = "none"
+    scenes[1]["icon"] = {"query": "fire flame icon"}
     requests = collect_intents(_board(scenes))
     icons = [r for r in requests if r["type"] == "icon"]
-    assert icons and icons[0]["key"] == "s-01::icon"
+    assert icons and icons[0]["key"] == "s-02::icon"
     assert icons[0]["intent"] == "fire flame icon"
+
+
+def test_значок_на_полнокадровой_ведущей_даже_не_ищется():
+    """Место значка — верхняя треть по центру, и при ведущей во весь кадр это
+    её лицо. Запрос туда не уходит вовсе: подбор стоит времени."""
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[0]["presenter"] = "full"
+    scenes[0]["icon"] = {"query": "fire flame icon"}
+    assert not [r for r in collect_intents(_board(scenes))
+                if r["type"] == "icon"]
 
 
 def test_накладка_агента_попадает_в_установку_блоков():
     from reels_factory.hf_compose import needed_blocks
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["overlay"] = {"block": "lt-soft-pill", "text": {}}
-    assert needed_blocks(_board(scenes)) == ["lt-soft-pill"]
+    # блок вспышки ставится всегда: где она вспыхнет, решает арифметика планов
+    # камеры уже во время сборки, а ставить блок тогда поздно
+    assert needed_blocks(_board(scenes)) == ["editorial-flash-overlay",
+                                             "lt-soft-pill"]

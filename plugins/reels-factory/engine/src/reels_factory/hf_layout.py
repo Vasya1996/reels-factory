@@ -84,6 +84,35 @@ INSERT_RECTS = {
 #: Позиции, при которых ведущая закрывает кадр целиком.
 FULL_FRAME_PRESENTER = {"full", "punch", "overlay"}
 
+#: Место значка в кадре — та же геометрия, что у `.icon-spot` в шаблоне
+#: (`templates/reel.html`: left 50%, translateX(-50%), 380x380, top 400).
+#: Держим её здесь, чтобы код мог спросить «влезет ли значок», не разбирая CSS.
+ICON_RECT = {"left": (OUT_W - 380) // 2, "top": 400, "width": 380,
+             "height": 380}
+
+
+def _overlap(a: dict, b: dict) -> bool:
+    return (a["left"] < b["left"] + b["width"]
+            and b["left"] < a["left"] + a["width"]
+            and a["top"] < b["top"] + b["height"]
+            and b["top"] < a["top"] + a["height"])
+
+
+def icon_fits(presenter: str) -> bool:
+    """Не сядет ли значок на ведущую при этой раскладке.
+
+    Значок стоит в верхней трети по центру. При ведущей во весь кадр (`full`,
+    `punch`) и в верхней половине (`stack`) это ровно её лицо: подложка со
+    свечением закрывает голову, и кадр читается как ошибка сборки. Гейт такого
+    не ловит — D8 судит текст на лице, а значок это `<img>`, — поэтому решает
+    геометрия здесь.
+
+    В углах (`pip-*`) окно ведущей со значком не пересекается, а при `none`
+    ведущей в кадре нет вовсе.
+    """
+    rect = VIDEO_RECTS.get(str(presenter or "none"))
+    return rect is None or not _overlap(ICON_RECT, rect)
+
 
 def insert_rect(presenter: str) -> dict | None:
     """Прямоугольник вставки под названную позицию ведущей.
@@ -175,20 +204,28 @@ def face_box(face: dict | None) -> dict | None:
             "width": 2 * margin, "height": 2 * margin}
 
 
-def moved_face(face: dict | None, video_rect: dict | None) -> dict | None:
+def moved_face(face: dict | None, video_rect: dict | None,
+               fit: tuple[float, float] = (0.5, 0.5)) -> dict | None:
     """Лицо в координатах кадра, когда раскладка подвинула окно с видео.
 
     Видео вписывается в своё окно с сохранением пропорций (object-fit: cover),
     поэтому центр лица и высота головы масштабируются одним коэффициентом.
+
+    `fit` — доли `object-position`, которыми композиция кадрирует клип
+    (`hf_compose.crop_position`). По умолчанию середина, как и у самого cover;
+    но композиция сдвигает вырез вверх, чтобы в невысоком окне не срезало
+    макушку, и лицо в кадре уезжает следом. Считать его по середине, когда
+    вырез сдвинут, значит охранять пустое место: гейт «текст не на лице» ищет
+    лицо не там, где оно нарисовано.
     """
     if not face or not video_rect:
         return face
     rw, rh = float(video_rect["width"]), float(video_rect["height"])
     # object-fit: cover — вписываем по БОЛЬШЕЙ стороне и обрезаем по краям,
-    # поэтому кадр смещён центрирующим отступом, иногда отрицательным
+    # а какую именно часть показать, решает object-position
     scale = max(rw / OUT_W, rh / OUT_H)
-    offset_x = float(video_rect["left"]) + (rw - OUT_W * scale) / 2
-    offset_y = float(video_rect["top"]) + (rh - OUT_H * scale) / 2
+    offset_x = float(video_rect["left"]) + (rw - OUT_W * scale) * fit[0]
+    offset_y = float(video_rect["top"]) + (rh - OUT_H * scale) * fit[1]
     return {"cx": offset_x + float(face["cx"]) * scale,
             "cy": offset_y + float(face["cy"]) * scale,
             "h": float(face["h"]) * scale}

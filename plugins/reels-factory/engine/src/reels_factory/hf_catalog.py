@@ -152,10 +152,49 @@ def overlay_names(catalog_dir=None) -> list[str]:
     for name in block_names(catalog_dir):
         if _OUR_BLOCK.match(name):
             continue
+        folder = root / "blocks" / name
+        item = json.loads((folder / "registry-item.json")
+                          .read_text(encoding="utf-8"))
+        if "overlay" not in (item.get("tags") or []):
+            continue
+        # Карточка блока перечисляет свои файлы, и `hyperframes add` тянет
+        # каждый: недостающий он считает провалом установки (HTTP 404) и роняет
+        # всю попытку сборки. Прогон 28 потерял так попытку на
+        # `instagram-follow`, у которого не переехал `assets/avatar.jpg`.
+        # Агент такое исправить не может — это дефект каталога, а не плана,
+        # поэтому битый блок ему просто не предлагается.
+        missing = [str(f.get("path")) for f in (item.get("files") or [])
+                   if not (folder / str(f.get("path"))).exists()]
+        if missing:
+            print(f"накладка {name} не предложена: в каталоге нет "
+                  + ", ".join(missing))
+            continue
+        found.append(name)
+    return found
+
+
+#: Метка их реестра, которой помечены накладки-фактуры: световая протечка,
+#: рамка видоискателя, оформление стоп-кадра. Метка их, не наша — она стоит в
+#: карточках блоков, перенесённых из их реестра.
+TEXTURE_TAG = "media-treatment-overlay"
+
+
+def texture_overlays(catalog_dir=None) -> set[str]:
+    """Накладки-фактуры: те, что кроют кадр целиком, а не плашкой.
+
+    Фактура — это обработка изображения, натянутая на весь кадр (протечка света
+    заливает его, рамка видоискателя обводит его края). Остальные накладки
+    каталога — плашки с текстом: у них есть верх и низ, и им место над полосой
+    титра. Разница видна только по метке, канвас у тех и других одинаковый
+    1920x1080.
+    """
+    root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
+    found = set()
+    for name in block_names(catalog_dir):
         item = json.loads((root / "blocks" / name / "registry-item.json")
                           .read_text(encoding="utf-8"))
-        if "overlay" in (item.get("tags") or []):
-            found.append(name)
+        if TEXTURE_TAG in (item.get("tags") or []):
+            found.add(name)
     return found
 
 

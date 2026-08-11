@@ -40,10 +40,12 @@ def _fakes(monkeypatch, tmp_path, storyboards):
 
     calls = []
 
-    def fake_cli(*args, cwd, log=None):
+    def fake_cli(*args, cwd, log=None, err_log=None):
         calls.append(args)
         if args[0] == "render":
             Path(args[args.index("--output") + 1]).write_bytes(b"mp4")
+        if err_log is not None:
+            Path(err_log).write_text("рендер прошёл", encoding="utf-8")
         if args[0] == "check" and log is not None:
             # их `check` кода выхода не отдаёт — вердикт читается из отчёта
             Path(log).write_text('{"ok": true}', encoding="utf-8")
@@ -87,7 +89,7 @@ def _fakes(monkeypatch, tmp_path, storyboards):
                                      "D19_static_span": "PASS"})
 
     def fake_build(rdir, sdk, *, storyboard, clips, duration, words,
-                   resolved=None, sfx_whoosh=None, theme=None):
+                   resolved=None, sfx_whoosh=None, theme=None, face=None):
         public = Path(rdir) / "public"
         (public / "media").mkdir(parents=True, exist_ok=True)
         (public / "media" / "hands.jpg").write_bytes(b"\xff\xd8\xff")
@@ -162,11 +164,25 @@ def _board(scenes):
             "scenes": scenes}
 
 
-# Сцены выстилают озвучку подряд, соседние отличаются положением ведущей:
-# смену картинки даёт сама граница между ними (гейт D21).
-GOOD = _board([{"id": f"s-{i:02d}", "intent": "зачем", "phrases": [i, i],
-                "presenter": "full" if i % 2 else "punch", "insert": None}
-               for i in range(len(_SENTENCES))])
+def _series(look):
+    return {"shots": [look, f"{look} крупно"], "kind": "video"}
+
+
+# Сцены выстилают озвучку подряд, соседние отличаются картинкой: смену даёт
+# сама граница между ними (гейт D21). Три серии бироллов по два плана стоят
+# полным кадром — так аватар виден меньше потолка в 60 % (D24) — и между
+# собой держат лицо (D23); сцены под серию длиннее, по две фразы.
+_PLAN = [([0, 0], "punch", None),
+         ([1, 2], "none", "разложить бумаги"),
+         ([3, 4], "punch", None),
+         ([5, 6], "none", "печатает на ноутбуке"),
+         ([7, 8], "full", None),
+         ([9, 10], "none", "закрывает блокнот"),
+         ([11, 11], "punch", None)]
+GOOD = _board([{"id": f"s-{index:02d}", "intent": "зачем", "phrases": span,
+                "presenter": presenter,
+                "insert": _series(look) if look else None}
+               for index, (span, presenter, look) in enumerate(_PLAN)])
 # Наше прежнее поле сверх схемы: соблюсти его и videoTrack.bounds разом нельзя.
 BAD = _board([dict(scene, **({"contentRect": {"left": 200, "top": 400,
                                               "width": 700, "height": 300}}
@@ -223,12 +239,12 @@ def test_находки_их_проверки_отправляют_на_повт
     real_cli = hf_render._cli
     checks = []
 
-    def flaky_cli(*args, cwd, log=None):
+    def flaky_cli(*args, cwd, log=None, err_log=None):
         if args[0] == "check":
             checks.append(args)
             if len(checks) == 1:
                 raise RuntimeError("hyperframes check упал (1): canvas_overflow")
-        return real_cli(*args, cwd=cwd, log=log)
+        return real_cli(*args, cwd=cwd, log=log, err_log=err_log)
 
     monkeypatch.setattr(hf_render, "_cli", flaky_cli)
 
@@ -251,7 +267,7 @@ def test_их_check_судится_по_отчёту_а_не_по_коду_вы�
     real_cli = hf_render._cli
     seen = []
 
-    def failing_check(*args, cwd, log=None):
+    def failing_check(*args, cwd, log=None, err_log=None):
         if args[0] == "check":
             seen.append(args)
             Path(log).write_text(
@@ -259,7 +275,7 @@ def test_их_check_судится_по_отчёту_а_не_по_коду_вы�
                 '{"code": "composition_file_too_large", "severity": "warning",'
                 ' "message": "684 lines"}]}}', encoding="utf-8")
             return ""
-        return real_cli(*args, cwd=cwd, log=log)
+        return real_cli(*args, cwd=cwd, log=log, err_log=err_log)
 
     monkeypatch.setattr(hf_render, "_cli", failing_check)
 
@@ -268,6 +284,61 @@ def test_их_check_судится_по_отчёту_а_не_по_коду_вы�
             tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
             master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
     assert len(seen) == 2
+
+
+def test_судья_получает_реплику_своей_сцены(tmp_path, monkeypatch):
+    """Ключ запроса — `s-02::shot0`, а не id сцены: точное сравнение не
+    совпадало ни с чем, и судья с прогона 24 судил по самому запросу."""
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [GOOD])
+    seen = []
+    monkeypatch.setattr(hf_render, "collect_intents",
+                        lambda board: [{"key": "s-01::shot0", "type": "video",
+                                        "intent": "стол", "rect": None,
+                                        "required": False, "seconds": 2.0}])
+    # свуш идёт тем же `resolve_all` и реплики не несёт — смотрим только
+    # заявки на вставки
+    monkeypatch.setattr(hf_render, "resolve_all",
+                        lambda public, requests, **kw: (
+                            seen.extend(r["speech"] for r in requests
+                                        if "speech" in r) or {}))
+
+    hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert seen and seen[0].strip(), "реплика сцены до судьи не доехала"
+
+
+def test_нерегистрированный_сабтаймлайн_роняет_рендер(tmp_path, monkeypatch):
+    """Их предупреждение о сабтаймлайнах — это mp4 без слоя субтитров.
+
+    Прогон 23: `sub_timeline_readiness_timeout`, код выхода ноль, зелёные
+    гейты — и ролик без единого титра.
+    """
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [GOOD])
+    real_cli = hf_render._cli
+
+    def whining_cli(*args, cwd, log=None, err_log=None):
+        out = real_cli(*args, cwd=cwd, log=log, err_log=err_log)
+        if args[0] == "render":
+            Path(err_log).write_text(
+                "[FrameCapture] Sub-composition timelines not registered "
+                "after 45000ms: caption-highlight. …\n"
+                "[FrameCapture:sub_timeline_readiness_timeout] …",
+                encoding="utf-8")
+        return out
+
+    monkeypatch.setattr(hf_render, "_cli", whining_cli)
+
+    with pytest.raises(RuntimeError, match="caption-highlight"):
+        hf_render.assemble_hyperframes(
+            tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+            master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+    assert not (tmp_path / ".hf-render.done").exists()
 
 
 def test_две_неудачи_подряд_роняют_сборку(tmp_path, monkeypatch):

@@ -31,7 +31,7 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from reels_factory.config import FFMPEG, FFPROBE
+from reels_factory.config import FFMPEG, FFPROBE, cli_env
 
 SKILL_DIR = Path.home() / ".claude" / "skills" / "media-use"
 RESOLVE = SKILL_DIR / "scripts" / "resolve.mjs"
@@ -75,7 +75,8 @@ _LETTERS = re.compile(r"[^\W\d_]+", re.UNICODE)
 
 
 def _node_env() -> dict:
-    return {**os.environ}
+    """Окружение их скриптов подбора: то же, что у их CLI (см. `cli_env`)."""
+    return cli_env()
 
 
 # ------------------------------------------------------------------ их поиск
@@ -297,6 +298,13 @@ _UA = {"User-Agent": "reels-factory/0.2 (b-roll fetch)"}
 #: по смыслу, а не из того, что чаще качают.
 JUDGE_CANDIDATES = 8
 
+#: Сколько кадров одного кандидата показываем судье. Один кадр — это обложка
+#: ролика, и по ней не видно, что происходит дальше: игральные карты прогона 23
+#: на обложке выглядели «руками с бумагами». Второй кадр берём из их же
+#: `video_pictures` — Pexels отдаёт раскадровку ролика в самой выдаче, лишних
+#: запросов не нужно.
+PREVIEW_FRAMES = 2
+
 
 def _pexels_key() -> str | None:
     key = os.environ.get("PEXELS_API_KEY")
@@ -384,10 +392,31 @@ def search_pexels(intent: str, *, seconds: float = 0.0,
                       "series": int(video["id"]),
                       "duration": float(video.get("duration") or 0),
                       "preview": video.get("image"),
+                      "previews": _preview_frames(video),
                       "url": best["link"],
                       "width": best.get("width"), "height": best.get("height"),
                       "is_transparent": False})
     return found
+
+
+def _preview_frames(video: dict) -> list[str]:
+    """Кадры кандидата для судьи: обложка плюс кадр из середины ролика.
+
+    `video_pictures` — их же раскадровка в ответе поиска (десяток кадров с
+    порядковым `nr`). Берём кадр примерно с середины: начало ролика часто
+    пустое, а конец уходит из плана.
+    """
+    frames = [video.get("image")]
+    shots = [s.get("picture") for s in (video.get("video_pictures") or [])
+             if s.get("picture")]
+    if shots:
+        frames.append(shots[len(shots) // 2])
+    seen, unique = set(), []
+    for url in frames:
+        if url and url not in seen:
+            seen.add(url)
+            unique.append(url)
+    return unique[:PREVIEW_FRAMES]
 
 
 def _same_series(candidate: dict, taken_series: set[int]) -> bool:
@@ -417,7 +446,8 @@ _JUDGE_PROMPT = """Ты отбираешь видео-бироллы для ве
 Чего в ролике быть не должно: {anti}
 
 Ниже сцены. У каждой — реплика диктора, которую биролл иллюстрирует, и
-превью-кадры кандидатов (файлы). Посмотри кадры инструментом Read и для
+кадры кандидатов (файлы; у кандидата их до двух — обложка и кадр из
+середины ролика, смотри оба). Посмотри кадры инструментом Read и для
 каждой сцены выбери ОДИН кандидат, который буквально показывает то, о чём
 реплика, живой и снятый камерой. Отклоняй: не про то, постановочные стоковые
 клише (рукопожатия, «бизнесмен вообще»), кадры с крупным читаемым текстом,
@@ -434,14 +464,30 @@ _JUDGE_PROMPT = """Ты отбираешь видео-бироллы для ве
 """
 
 
+#: Сколько раз зовём судью. Первая попытка падает от сети и таймаута чаще,
+#: чем от плохого запроса, — вторая обычно проходит. Третьей нет: она стоит
+#: ещё пять минут прогона, а после двух отказов дело не в удаче.
+JUDGE_ATTEMPTS = 2
+
+#: Судье дают до восьми кандидатов по два кадра на каждый — картинок много,
+#: и дешёвой сессии нужно время. Прежние пять минут прогон 23 не уложил и
+#: молча деградировал в «берём первых». Сессий теперь несколько и идут они
+#: параллельно, поэтому таймаут — на серию, а не на весь ролик.
+JUDGE_TIMEOUT_S = 600
+
+
 def judge_previews(requests: list[dict], *, domain: str = "", anti: str = "",
                    runner=None) -> dict[str, int | None]:
-    """Один суд на весь ролик: дешёвая сессия смотрит превью и выбирает.
+    """Один суд на весь ролик: дешёвая сессия смотрит кадры и выбирает.
 
-    `requests` — `[{"key", "intent", "speech", "previews": [пути]}]`.
-    Возвращает `{key: индекс выбранного | None}`. Без судьи (нет previews или
-    сессия упала) — берётся первый кандидат, как раньше: суд улучшает выбор,
-    но его отказ не должен останавливать фабрику.
+    `requests` — `[{"key", "intent", "speech", "previews": [[кадры кандидата]]}]`.
+    Возвращает `{key: индекс выбранного | None}`.
+
+    Отказ судьи — это пересдача, а не повод собирать вслепую. Прогон 23 показал
+    цену тихой деградации: судья молча не уложился в таймаут, сборка взяла
+    первых кандидатов Pexels, и в ролик про продажи приехали игральные карты.
+    Кончились попытки — поднимаем RuntimeError: пусть встанет сборка, а не
+    качество.
     """
     from reels_factory.hf_agent import HeyGenAgentRunner
 
@@ -449,44 +495,64 @@ def judge_previews(requests: list[dict], *, domain: str = "", anti: str = "",
     for request in requests:
         lines = [f'Сцена `{request["key"]}`: диктор говорит «{request.get("speech") or request["intent"]}»,'
                  f' показать: {request["intent"]}']
-        for index, preview in enumerate(request["previews"]):
-            lines.append(f"- кандидат {index}: {preview}")
+        for index, frames in enumerate(request["previews"]):
+            shots = [frames] if isinstance(frames, str) else list(frames)
+            lines.append(f"- кандидат {index}: " + ", ".join(shots))
         blocks.append("\n".join(lines))
     prompt = _JUDGE_PROMPT.format(domain=domain or "не указана",
                                   anti=anti or "не указано",
                                   scenes="\n\n".join(blocks))
 
-    if runner is None:
-        runner = HeyGenAgentRunner(timeout_s=300, model="claude-haiku-4-5")
-        # Дешёвой модели глубина рассуждения не передаётся вовсе: конструктор
-        # подхватил бы REELS_AGENT_EFFORT из окружения раннера, а флаг там про
-        # модель плана, не про судью.
-        runner.effort = None
-    try:
-        answer = runner.run(prompt)
-    except Exception as error:
-        print(f"судья бироллов не ответил ({error}) — берём первых кандидатов")
-        return {}
-    match = re.search(r"\{.*\}", answer, re.S)
-    if not match:
-        print("судья бироллов не вернул JSON — берём первых кандидатов")
-        return {}
-    try:
-        verdicts = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        print("JSON судьи не разбирается — берём первых кандидатов")
-        return {}
-    return {str(key): (int(value) if value is not None else None)
-            for key, value in verdicts.items()}
+    trouble = ""
+    for attempt in range(JUDGE_ATTEMPTS):
+        session = runner
+        if session is None:
+            session = HeyGenAgentRunner(timeout_s=JUDGE_TIMEOUT_S,
+                                        model="claude-haiku-4-5")
+            # Дешёвой модели глубина рассуждения не передаётся вовсе:
+            # конструктор подхватил бы REELS_AGENT_EFFORT из окружения раннера,
+            # а флаг там про модель плана, не про судью.
+            session.effort = None
+        try:
+            answer = session.run(prompt)
+        except Exception as error:
+            trouble = f"сессия упала: {error}"
+        else:
+            match = re.search(r"\{.*\}", answer, re.S)
+            if not match:
+                trouble = "в ответе нет JSON"
+            else:
+                try:
+                    verdicts = json.loads(match.group(0))
+                except json.JSONDecodeError as error:
+                    trouble = f"JSON не разбирается: {error}"
+                else:
+                    return {str(key): (int(value) if value is not None else None)
+                            for key, value in verdicts.items()}
+        left = JUDGE_ATTEMPTS - attempt - 1
+        print(f"судья бироллов не отработал ({trouble})"
+              + (f" — пересдача, попыток осталось {left}" if left else ""))
+    raise RuntimeError(
+        f"судья бироллов не отработал за {JUDGE_ATTEMPTS} попытки "
+        f"({trouble}). Собирать вслепую нельзя: без суда в кадр попадает "
+        "первое, что отдал сток")
 
 
 # ------------------------------------------------------------------- подбор
 
-def _resolve_one(project: Path, kind: str, intent: str) -> dict:
+def _resolve_one(project: Path, kind: str, intent: str,
+                 entity: str | None = None) -> dict:
     """Слепой подбор их `resolve` — для типов без поиска кандидатов (логотип
-    идёт каскадом svgl → simple-icons → …, там выбирать не из чего)."""
+    идёт каскадом svgl → simple-icons → …, там выбирать не из чего).
+
+    `entity` — имя бренда отдельным полем. Каскад логотипа заводится именно им:
+    их же образец вызова — `--type logo --entity linkedin --intent "LinkedIn
+    logo"` (`media-use/references/resolve.md:42`), и по нему же ищется
+    сохранённый ранее знак (`resolve.mjs:327-330`).
+    """
     result = subprocess.run(
         ["node", str(RESOLVE), "--type", kind, "--intent", intent,
+         *(["--entity", entity] if entity else []),
          "--project", str(project), "--json"],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
         timeout=TIMEOUT_S, env=_node_env())
@@ -498,6 +564,29 @@ def _resolve_one(project: Path, kind: str, intent: str) -> dict:
         return json.loads(text)
     except json.JSONDecodeError as error:
         return {"ok": False, "error": f"ответ не разбирается: {error}"}
+
+
+#: Сколько раз добирать следующего кандидата, если файл не годится. Два круга
+#: покрывают обычные отказы (не скачался, растянут, водяной знак), а дальше
+#: выдача Pexels уже не про эту реплику — там место запасной схеме.
+REPICK_ROUNDS = 3
+
+
+def _next_candidate(order: list[dict], taken: set[str],
+                    taken_series: set[int]) -> dict | None:
+    """Первый кандидат из списка, который ещё никем не занят.
+
+    Занятость считается на весь ролик: один и тот же ролик не ставится дважды,
+    и ролики одной съёмочной серии Pexels тоже — они снимались подряд и в кадре
+    неотличимы.
+    """
+    for candidate in order:
+        if candidate["id"] in taken or candidate.get("vetoed"):
+            continue
+        if _same_series(candidate, taken_series):
+            continue
+        return candidate
+    return None
 
 
 def _claim(request: dict, candidates: list[dict], taken: set[str],
@@ -553,22 +642,25 @@ def _resolve_videos(public: Path, requests: list[dict], *,
     for request in requests:
         for index, cand in enumerate(
                 (found.get(request["key"]) or [])[:JUDGE_CANDIDATES]):
-            if cand.get("preview"):
-                jobs.append((request["key"], index, cand["preview"]))
+            frames = cand.get("previews") or (
+                [cand["preview"]] if cand.get("preview") else [])
+            for shot, url in enumerate(frames[:PREVIEW_FRAMES]):
+                jobs.append((request["key"], index, shot, url))
     paths = dict(zip(
-        [(key, index) for key, index, _ in jobs],
+        [(key, index, shot) for key, index, shot, _ in jobs],
         pool.map(lambda job: _download(
-            job[2], previews_dir / f"{job[0]}-{job[1]}.jpg"), jobs)))
+            job[3], previews_dir / f"{job[0]}-{job[1]}-{job[2]}.jpg"), jobs)))
 
     # Страховка от текста в кадре ДО судьи: OCR по превью снимает кандидата
     # с крупной надписью («NEW YEAR NEW ME» прогона 17 судья пропустил).
-    for (key, index), path in list(paths.items()):
+    # Надпись хотя бы на одном кадре снимает весь ролик: в середине она
+    # держится столько же, сколько на обложке.
+    for (key, index, shot), path in list(paths.items()):
         if path is None:
             continue
         problem = text_problem(path)
         if problem:
-            print(f"кандидат {key}/{index} снят по превью: {problem}")
-            paths[(key, index)] = None
+            print(f"кандидат {key}/{index} снят по кадру {shot}: {problem}")
             candidates = found.get(key) or []
             if index < len(candidates):
                 candidates[index] = {**candidates[index], "vetoed": True}
@@ -580,20 +672,39 @@ def _resolve_videos(public: Path, requests: list[dict], *,
         candidates = found.get(request["key"]) or []
         shown, mapping = [], []
         for index in range(min(JUDGE_CANDIDATES, len(candidates))):
-            path = paths.get((request["key"], index))
-            if path:
-                shown.append(str(path))
+            if candidates[index].get("vetoed"):
+                continue
+            frames = [str(paths[(request["key"], index, shot)])
+                      for shot in range(PREVIEW_FRAMES)
+                      if paths.get((request["key"], index, shot))]
+            if frames:
+                shown.append(frames)
                 mapping.append(index)
         if shown:
             shown_maps[request["key"]] = mapping
             with_previews.append({**request, "previews": shown})
     if with_previews:
-        judged = judge_previews(with_previews, domain=domain, anti=anti,
-                                runner=judge_runner)
+        # Судим посерийно и параллельно, а не одной сессией на весь ролик.
+        # Одна сессия читает кадры по одному, и на пяти сериях по два плана
+        # это больше сотни картинок подряд — прогон 24 упёрся в неё временем.
+        # Внутри серии оба плана по-прежнему судит один судья: два одинаковых
+        # кадра подряд — как раз то, что он обязан развести. Повтор между
+        # РАЗНЫМИ сериями держит код: один ролик дважды не ставится, и ролики
+        # одной съёмочной серии Pexels тоже (`taken`, `_same_series`).
+        batches: dict[str, list[dict]] = {}
+        for request in with_previews:
+            batches.setdefault(str(request["key"]).split("::")[0],
+                               []).append(request)
+        for verdicts in pool.map(
+                lambda batch: judge_previews(batch, domain=domain, anti=anti,
+                                             runner=judge_runner),
+                list(batches.values())):
+            judged.update(verdicts)
 
     taken: set[str] = set()
     taken_series: set[int] = set()
     chosen: dict[str, dict] = {}
+    orders: dict[str, list[dict]] = {}
     for request in requests:
         candidates = found.get(request["key"]) or []
         if not candidates:
@@ -606,6 +717,14 @@ def _resolve_videos(public: Path, requests: list[dict], *,
                 "error": "судья забраковал всех кандидатов: "
                          f"«{request['intent']}»"}
             continue
+        if raw == "unjudged":
+            # Ни одного кадра судье не досталось (кадры не скачались) либо он
+            # пропустил сцену в ответе. Брать первого из выдачи Pexels нельзя:
+            # это и есть та слепая сборка, из-за которой в прогон 23 приехали
+            # игральные карты. Сцену закроет ведущая (settle_inserts).
+            resolved[request["key"]] = {
+                "error": f"сцену не судили: «{request['intent']}»"}
+            continue
         order = candidates
         # Номер судьи — это номер в списке ПОКАЗАННЫХ превью; в номера
         # кандидатов его переводит карта (превью могло не скачаться или
@@ -616,12 +735,8 @@ def _resolve_videos(public: Path, requests: list[dict], *,
             order = [candidates[best]] + [c for i, c in enumerate(candidates)
                                           if i != best]
 
-        def eligible(candidate: dict) -> bool:
-            return (candidate["id"] not in taken
-                    and not candidate.get("vetoed")
-                    and not _same_series(candidate, taken_series))
-
-        pick = next((c for c in order if eligible(c)), None)
+        orders[request["key"]] = order
+        pick = _next_candidate(order, taken, taken_series)
         if pick is None:
             resolved[request["key"]] = {
                 "error": "все кандидаты заняты, из одной серии с занятыми "
@@ -643,17 +758,47 @@ def _resolve_videos(public: Path, requests: list[dict], *,
             return key, {"error": answer.get("error") or "заморозка не удалась"}
         return key, {"file": answer["path"], "intent": ""}
 
-    for key, answer in pool.map(freeze, list(chosen.items())):
-        answer["intent"] = next(r["intent"] for r in requests
-                                if r["key"] == key)
-        resolved[key] = answer
-        if "file" in answer:
+    def settle(batch: dict[str, dict]) -> list[str]:
+        """Заморозить выбранных и вернуть ключи, у которых файл не годится."""
+        failed = []
+        for key, answer in pool.map(freeze, list(batch.items())):
+            answer["intent"] = next(r["intent"] for r in requests
+                                    if r["key"] == key)
+            resolved[key] = answer
+            if "file" not in answer:
+                failed.append(key)
+                continue
             problem = insert_problem(public / answer["file"],
                                      next(r.get("rect") for r in requests
                                           if r["key"] == key))
             if problem:
                 print(f"биролл «{answer['intent']}» отклонён: {problem}")
                 resolved[key] = {"error": problem}
+                failed.append(key)
+        return failed
+
+    # Добор: негодный файл заменяется СЛЕДУЮЩИМ кандидатом того же запроса —
+    # у сцены их скачано и отсужено с запасом. Прежде такую сцену закрывала
+    # копия вставки соседней (`settle_inserts`), то есть кадр не про эту
+    # реплику. Кругов немного: каждый стоит скачивания, а хвост выдачи Pexels
+    # тем временем дешевеет по смыслу.
+    batch = dict(chosen)
+    for _ in range(REPICK_ROUNDS):
+        failed = settle(batch)
+        if not failed:
+            break
+        batch = {}
+        for key in failed:
+            pick = _next_candidate(orders.get(key) or [], taken, taken_series)
+            if pick is None:
+                continue
+            taken.add(pick["id"])
+            if pick.get("series") is not None:
+                taken_series.add(pick["series"])
+            batch[key] = pick
+            print(f"добор кандидата для {key}: {pick.get('url', '')[:60]}")
+        if not batch:
+            break
     return resolved
 
 
@@ -699,8 +844,8 @@ def resolve_all(public, requests: list[dict], *, context: dict | None = None,
             pool.map(lambda r: search_assets(r["intent"]), searchable)))
         for request, answer in zip(
                 blind,
-                pool.map(lambda r: _resolve_one(public, r["type"],
-                                                r["intent"]), blind)):
+                pool.map(lambda r: _resolve_one(public, r["type"], r["intent"],
+                                                r.get("entity")), blind)):
             if not answer.get("ok") or not answer.get("path"):
                 resolved[request["key"]] = {
                     "error": answer.get("error") or "подбор не дал файла"}

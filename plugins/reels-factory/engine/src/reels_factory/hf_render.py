@@ -10,13 +10,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
 
 from reels_factory import hf_captions
 from reels_factory.compose import VENC
-from reels_factory.config import FFMPEG, FPS, LUFS_TARGET, OUT_H, OUT_W, TP_TARGET
+from reels_factory.config import (
+    FFMPEG, FPS, LUFS_TARGET, OUT_H, OUT_W, TP_TARGET, cli_env,
+)
 from reels_factory.face_detect import face_box_for, load_face
 from reels_factory.hf_agent import plan_with_agent
 from reels_factory.hf_assets import vendor_gsap
@@ -27,7 +30,7 @@ from reels_factory.hf_catalog import (
 )
 from reels_factory.hf_compose import (
     build_composition, clear_generated, collect_intents, complete_storyboard,
-    needed_blocks, settle_inserts,
+    fallback_intents, needed_blocks, settle_inserts,
 )
 from reels_factory.hf_fonts import inject_fonts
 from reels_factory.hf_frame import read_frame
@@ -36,12 +39,14 @@ from reels_factory.hf_gates import (
 )
 from reels_factory.hf_layout import quantize
 from reels_factory.hf_media import resolve_all
+from reels_factory.hf_montage import check_shots, drop_series, pick_series
 from reels_factory.hf_phrases import (
     lay_out_scenes, phrase_timeline, speech_between,
 )
 from reels_factory.hf_probe import probe_gates
 from reels_factory.hf_rhythm import rhythm_gates
 from reels_factory.hf_sdk import sdk_session
+from reels_factory.hf_zoom import read_camera, zoom_gates
 from reels_factory.hyperframes_blocks import _HF_VERSION
 
 #: Качество финального рендера остаётся прежним. Черновой прогон включается
@@ -54,6 +59,14 @@ RENDER_QUALITY = os.environ.get("REELS_RENDER_QUALITY", "standard")
 #: чистовом в восемь рабочих. Число переопределяется переменной окружения —
 #: на сервере ядер и памяти другое количество.
 RENDER_WORKERS = os.environ.get("REELS_RENDER_WORKERS", "8")
+
+#: Безопасный профиль рендера. Их рендер включает его сам, когда памяти машины
+#: 8 ГБ или меньше (`render.ts:317-324`), и тогда захват кадра идёт скриншотом:
+#: в прогоне 26 при восьми рабочих `captureMode: "screenshot"` и 319 с из 363 с
+#: ушли ровно на захват. Мы его выключаем: 12 ядер тянут параллельный захват, а
+#: памяти рабочему нужно порядка 256 МБ (`rendering.mdx:209`). Значения:
+#: `off` — выключить (по умолчанию), `on` — включить, `auto` — отдать им.
+RENDER_LOW_MEMORY = os.environ.get("REELS_RENDER_LOW_MEMORY", "off")
 
 STEPS = ("prepare", "plan", "compose", "gates", "shots", "render", "loudness")
 MAX_COMPOSE_ATTEMPTS = 2
@@ -92,27 +105,67 @@ def run_step(rdir, step: str, fn):
     return result
 
 
-def _cli(*args: str, cwd, log: Path | None = None) -> str:
+def _cli(*args: str, cwd, log: Path | None = None,
+         err_log: Path | None = None) -> str:
     """Вызов CLI движка. На Windows npx резолвится только через shell.
 
     Кавычим КАЖДЫЙ аргумент: пути содержат пробелы, а значения флагов —
     разделители, которые cmd.exe и батник npx.cmd разберут по-своему.
+
+    `err_log` — отдельный файл под stderr. Смешивать его с `log` нельзя:
+    `check --json` читают как JSON, и строка предупреждения его ломает —
+    поэтому предупреждения у них и уходят в stderr.
     """
     quoted = " ".join(f'"{a}"' for a in args)
     command = f'npx --yes hyperframes@{_HF_VERSION} {quoted}'
     result = subprocess.run(command, cwd=str(cwd), capture_output=True,
                             text=True, encoding="utf-8", errors="replace",
-                            shell=True)
+                            shell=True, env=cli_env())
     output = result.stdout or ""
     if log is not None:
         # Их отчёт нужен целиком и после успеха тоже: предупреждения он не
         # считает провалом, а судить монтаж по ним всё равно приходится.
         Path(log).write_text(output or (result.stderr or ""), encoding="utf-8")
+    if err_log is not None:
+        Path(err_log).write_text(f"{output}\n{result.stderr or ''}",
+                                 encoding="utf-8")
     if result.returncode != 0:
         raise RuntimeError(
             f"hyperframes {args[0]} упал ({result.returncode}): "
             f"{(result.stderr or output)[:500]}")
     return output
+
+
+#: Их предупреждения рендера, после которых готовому mp4 верить нельзя. Оба
+#: означают одно: какой-то `[data-composition-id]` не зарегистрировал свой
+#: `window.__timelines[id]`, их ожидание истекло и `__hfForceTimelineRebind`
+#: не позвался (packages/engine/src/services/frameCapture.ts:1523,1556) — а без
+#: него НИ ОДИН дочерний таймлайн не вложен в корневой и не перематывается.
+#: Практика прогона 23: пропал весь слой субтитров, при живых нижних слоях и
+#: зелёных гейтах. Их рендер считает это предупреждением и отдаёт код 0; нам
+#: это провал сборки.
+RENDER_FATAL_WARNINGS = ("sub_timeline_readiness_timeout",
+                         "sub_timeline_script_failure")
+
+
+def _render_or_die(rdir: Path, raw: Path) -> None:
+    """Рендер и разбор его предупреждений. Тихая деградация запрещена."""
+    log = rdir / "render.log"
+    safe_mode = {"off": ["--no-low-memory-mode"],
+                 "on": ["--low-memory-mode"]}.get(RENDER_LOW_MEMORY, [])
+    _cli("render", "public", "--output", str(raw), "--fps", str(FPS),
+         "--quality", RENDER_QUALITY, "--workers", RENDER_WORKERS,
+         *safe_mode, cwd=rdir, err_log=log)
+    text = log.read_text(encoding="utf-8", errors="replace")
+    hit = [code for code in RENDER_FATAL_WARNINGS if code in text]
+    if hit:
+        missing = re.findall(r"timelines not registered after \d+ms: ([^.]+)",
+                             text)
+        raise RuntimeError(
+            "рендер отдал mp4 с неотыгранными таймлайнами "
+            f"({', '.join(hit)}); без регистрации остались: "
+            f"{'; '.join(missing) or 'см. render.log'}. Такой файл показывать "
+            "нельзя: слой субтитров в нём мёртв")
 
 
 def _normalize_words(words: list[dict]) -> list[dict]:
@@ -504,6 +557,24 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                 continue
             board = complete_storyboard(board, clips=saved_clips,
                                         duration=duration)
+            # Отбор серий — ДО подбора медиа: искать и судить кандидатов на
+            # сцены, которые в кадр не попадут, значит платить временем и
+            # квотой стока за выброшенное. Агент называет моментов больше,
+            # чем войдёт; сколько их останется, считает арифметика.
+            try:
+                check_shots(board["scenes"])
+            except RuntimeError as error:
+                reason = str(error)
+                if attempt == MAX_COMPOSE_ATTEMPTS - 1:
+                    raise
+                continue
+            kept, series = pick_series(board["scenes"], saved_clips, duration)
+            drop_series(board["scenes"], kept, clips=saved_clips,
+                        duration=duration)
+            print(f'серий бироллов {series["series"]}, доля аватара '
+                  f'{series["avatar_share"] * 100:.0f}%'
+                  + (("; выброшены — " + "; ".join(series["dropped"]))
+                     if series["dropped"] else ""))
 
             def compose() -> dict:
                 clear_generated(public)
@@ -524,10 +595,16 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     whoosh = (found_sfx.get("sfx-whoosh") or {}).get("file")
                 # Судье вставок нужна реплика диктора под каждой сценой и
                 # тема ролика — без них он судил бы картинку без смысла.
+                #
+                # Сцену ищем по началу ключа, а не по всему ключу: с переходом
+                # на серии ключ стал `s-02::shot0`, точное сравнение перестало
+                # совпадать хоть с чем-нибудь, и реплика молча уходила пустой —
+                # судья с прогона 24 судил по самому запросу.
                 requests = collect_intents(board)
                 for request in requests:
+                    owner = str(request["key"]).split("::")[0]
                     scene = next((s for s in board.get("scenes") or []
-                                  if str(s.get("id")) == request["key"]), {})
+                                  if str(s.get("id")) == owner), {})
                     request["speech"] = speech_between(
                         phrases, float(scene.get("startSec", 0)),
                         float(scene.get("endSec", 0)))
@@ -539,11 +616,18 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     if lost:
                         print(f"вставка не нашлась у сцен: {', '.join(lost)} — "
                               "ведущая там встала во весь кадр")
+                    # Запасную схему подбираем вторым заходом и только для тех
+                    # сцен, которым она реально понадобилась: в обычном прогоне
+                    # сток отвечает, и этих запросов не будет вовсе.
+                    schema = fallback_intents(board.get("scenes") or [])
+                    if schema:
+                        found.update(resolve_all(public, schema))
                     build_composition(rdir, sdk, storyboard=board,
                                       clips=saved_clips, duration=duration,
                                       words=words, resolved=found,
                                       sfx_whoosh=whoosh,
-                                      theme=read_frame(rdir))
+                                      theme=read_frame(rdir),
+                                      face=load_face(rdir))
                 # Шрифты врезаем до проверок: и наши гейты, и их `check` меряют
                 # переполнение и перекрытие по отрисованному тексту, а без наших
                 # @font-face кириллица считалась бы по подменному шрифту.
@@ -627,10 +711,7 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
     run_step(rdir, "shots", lambda: _capture_shots(rdir, board, duration))
 
     raw = rdir / "reel.raw.mp4"
-    run_step(rdir, "render",
-             lambda: _cli("render", "public", "--output", str(raw),
-                          "--fps", str(FPS), "--quality", RENDER_QUALITY,
-                          "--workers", RENDER_WORKERS, cwd=rdir))
+    run_step(rdir, "render", lambda: _render_or_die(rdir, raw))
 
     final = Path(out_mp4) if out_mp4 else rdir / "reel.mp4"
     run_step(rdir, "loudness", lambda: _normalize_loudness(raw, final))
@@ -640,6 +721,10 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
     if gate_result is None:
         gate_result = json.loads((rdir / "gates.json").read_text(encoding="utf-8"))
     gate_result.update(rhythm_gates(final))
+    # Наезды и вспышки меряются числами по готовому файлу, а не глазами: на
+    # стоп-кадре наклон говорящей к камере читается как наезд, которого в
+    # файле нет (грабля Юли, стоила двух сданных версий с мёртвым зумом).
+    gate_result.update(zoom_gates(final, read_camera(rdir)))
     (rdir / "gates.json").write_text(
         json.dumps(gate_result, ensure_ascii=False), encoding="utf-8")
 

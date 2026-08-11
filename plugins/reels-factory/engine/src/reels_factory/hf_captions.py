@@ -32,7 +32,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from reels_factory.config import OUT_H, OUT_W
+from reels_factory.config import OUT_H, OUT_W, cli_env
 from reels_factory.hyperframes_blocks import _HF_VERSION
 
 COMPONENT = "caption-highlight"
@@ -45,8 +45,39 @@ COMPONENT_REL = Path("compositions") / "components" / f"{COMPONENT}.html"
 _THEIR_FONT = "Montserrat"
 _OUR_FONT = "Unbounded"
 
+#: Знаки, которые снимаются с КРАЁВ слова титра. Распознавание отдаёт слова
+#: вместе с пунктуацией предложения («вопросов,», «всё.», «Кому?»), а титр
+#: рисует по одному слову — точка или кавычка висит в кадре отдельным хвостом,
+#: и на плашке активного слова это видно сразу. В списке только то, что речь
+#: разделяет, а не то, что входит в само слово:
+#: — по краям снимаем дефис и апостроф, внутри они остаются, поэтому целы
+#:   «по-русски» и «д'Артаньян» (край режем, середину не трогаем);
+#: — по той же причине цела запятая дробного «2,5» — она внутри слова;
+#: — процента, валют и прочих знаков при числе тут нет: «38%» должно остаться
+#:   числом, а не превратиться в «38».
+_TRIM_CHARS = "".join((
+    ".,;:!?…",        # конец фразы и паузы внутри неё
+    "\"'«»„“”‘’`´",   # кавычки всех начертаний и апостроф, прилипший к краю
+    "()[]{}",         # скобки, которыми расшифровка обрамляет вставки
+    "-–—‑",           # дефис и тире, когда они стоят отдельно от слова
+    "*_/\\|~",        # разметочный мусор, доезжающий из выравнивания
+))
+
 _HEAD_STYLE = re.compile(r"<style>(.*?)</style>", re.S)
 _SCRIPT = re.compile(r"<script>\s*\(function \(\).*?</script>", re.S)
+
+#: Крючок, за который титр берёт наши слова: движок компонента читает данные из
+#: `window.__HF_CAPTION__`, а мы кладём их туда первой строкой `captions.js`.
+DATA_HOOK = "__HF_CAPTION__"
+
+#: Проверенная копия компонента. Реестр они отдают из ветки `main`
+#: (`packages/cli/src/registry/remote.ts:26-27`), кеш живёт сутки — то есть
+#: компонент меняется под нами без предупреждения. 11.08.2026 `add` привёз
+#: версию, где движок заменён демонстрацией: свои `WORDS` в коде, `__HF_CAPTION__`
+#: не читается вовсе. В кадр поехал их демо-текст («DRAG AND DROP», «JUST CODE»),
+#: а страница упала на `appendChild` of null. Копия снята с прогона 26, где титр
+#: проверен кадрами.
+VETTED = Path(__file__).resolve().parents[2] / "assets" / f"{COMPONENT}.html"
 
 
 def install(rdir) -> Path:
@@ -55,6 +86,9 @@ def install(rdir) -> Path:
     Ставим в отдельную папку без `hyperframes.json`: в папке прогона конфиг
     указывает на наш каталог блоков, а компонент субтитров живёт в общем
     реестре. Без конфига CLI берёт реестр по умолчанию.
+
+    Если привезённая версия не читает наши данные, берём проверенную копию:
+    молча показать вместо реплик диктора их демо-текст — худший из исходов.
     """
     rdir = Path(rdir)
     staging = rdir / ".hf-captions"
@@ -65,11 +99,20 @@ def install(rdir) -> Path:
     result = subprocess.run(
         f'npx --yes hyperframes@{_HF_VERSION} add {COMPONENT} --no-clipboard',
         cwd=str(staging), shell=True, capture_output=True, text=True,
-        encoding="utf-8", errors="replace")
+        encoding="utf-8", errors="replace", env=cli_env())
     if not target.exists():
         raise RuntimeError(
             f"компонент субтитров {COMPONENT} не поставился "
             f"({result.returncode}): {(result.stderr or result.stdout)[:400]}")
+    if DATA_HOOK not in target.read_text(encoding="utf-8"):
+        if not VETTED.exists():
+            raise RuntimeError(
+                f"их {COMPONENT} больше не читает {DATA_HOOK}, а проверенной "
+                f"копии нет в {VETTED} — титр показал бы их демо-текст")
+        print(f"компонент {COMPONENT} из их реестра не читает {DATA_HOOK} — "
+              "беру проверенную копию движка")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(VETTED, target)
     return target
 
 
@@ -128,6 +171,12 @@ def caption_snippet(sdk, public, *, track_index: int, duration: float) -> str:
     root = root.replace('data-composition-id="caption-highlight"',
                         f'data-composition-id="caption-highlight"'
                         f' data-track-index="{track_index}"')
+    if DATA_HOOK not in script:
+        raise RuntimeError(
+            f"движок титра не читает {DATA_HOOK}: в кадр поедет его "
+            "собственный демо-текст вместо реплик диктора. Проверь "
+            f"{COMPONENT} — их реестр отдаёт его из ветки main и меняет без "
+            "предупреждения")
     data = (public / "caption-data.json").read_text(encoding="utf-8")
     body = script.replace(_THEIR_FONT, _OUR_FONT)
     # Тело `<script>…</script>` кладём в файл без обёртки-тега.
@@ -148,6 +197,10 @@ def write_caption_data(public, *, words: list[dict], duration: float,
     это `content_overlap` и `text_occluded` их же линтера. В слоёном кадре
     своего текста нет ни у вставки, ни у ведущей, а эталонные рилсы держат титр
     непрерывно — «текста в кадре нет ни секунды без».
+
+    Пунктуацию, с которой слова приходят из распознавания, снимаем с краёв
+    (`_TRIM_CHARS`): титр показывает слово по одному, и запятая с точкой висят
+    в кадре хвостом.
     """
     kept = [{"text": word["text"], "start": round(float(word["start"]), 3),
              "end": round(float(word["end"]), 3)} for word in words]
@@ -161,12 +214,26 @@ def write_caption_data(public, *, words: list[dict], duration: float,
     if current:
         segments.append(current)
 
+    # Чистим уже после деления: границу сегмента задаёт пауза между словами, а
+    # времена от чистки не меняются. Делай мы наоборот — выброшенное слово-тире
+    # склеило бы соседние паузы в одну и переставило границу.
+    clean = []
+    for segment in segments:
+        # Слово из одной пунктуации после чистки пустое: его не рисуют, но
+        # соседям времена не пересчитываем — они звучат тогда же, когда и
+        # звучали, и подсветка остаётся на своих местах.
+        left = [dict(word, text=word["text"].strip(_TRIM_CHARS))
+                for word in segment]
+        left = [word for word in left if word["text"]]
+        if left:
+            clean.append(left)
+
     payload = {
         "version": 1,
         "resolution": {"width": OUT_W, "height": OUT_H},
         "segments": [{"start": segment[0]["start"],
                       "text": " ".join(word["text"] for word in segment),
-                      "words": segment} for segment in segments],
+                      "words": segment} for segment in clean],
     }
     # Цвета титра — контракт компонента: brand.primaryColor уходит в
     # --hf-caption-primary (цвет слова), brand.accentColor — в плашку

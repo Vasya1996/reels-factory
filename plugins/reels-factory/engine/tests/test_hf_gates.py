@@ -23,7 +23,8 @@ def _scene(index: int, start: float, end: float, **over):
 
 
 def _photo(look: str) -> dict:
-    return {"query": look, "kind": "photo"}
+    """Серия из двух планов — единственная форма вставки."""
+    return {"shots": [look, f"{look} крупно"], "kind": "photo"}
 
 
 def _board(scenes, **over):
@@ -42,27 +43,37 @@ def _board(scenes, **over):
     return board
 
 
-def _plausible_scenes():
-    """Двадцать две сцены встык: ролик выстлан целиком, соседние различимы.
+#: Раскадровка по монтажному стандарту: серии по два плана, между сериями
+#: лицо ≥2,5 с, аватар в кадре не дольше 60 %. Куски без аватара (11.72–12.22 и
+#: 34.62–41.5) закрыты сценами `none` — там серия обязательна независимо от
+#: доли, иначе чёрный кадр. Остальные серии стоят полным кадром: аватар поверх
+#: биролла оставлен только на одной сцене, иначе он виден дольше потолка.
+_LAYOUT = [
+    (0.0, 2.0, "full", None),
+    (2.0, 4.6, "pip-br", "разложить бумаги"),
+    (4.6, 8.2, "full", None),
+    (8.2, 11.72, "punch", None),
+    (11.72, 12.22, "none", "рука на столе"),
+    (12.22, 15.8, "full", None),
+    (15.8, 18.4, "none", "печатает на ноутбуке"),
+    (18.4, 22.0, "punch", None),
+    (22.0, 25.6, "none", "перелистывает страницы"),
+    (25.6, 29.2, "full", None),
+    (29.2, 32.8, "none", "ставит чашку на стол"),
+    (32.8, 34.62, "punch", None),
+    (34.62, 37.2, "none", "закрывает блокнот"),
+    (37.2, 39.4, "none", "телефон в руке"),
+    (39.4, DURATION, "none", "ставит чашку"),
+]
 
-    Куски без ведущей — 11.72–12.22 и 34.62–41.5 — закрыты сценами, где ведущей
-    нет вовсе и стоит полноэкранная вставка.
-    """
-    edges = [quantize(value) for value in
-             (0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 11.72, 12.22, 14.0, 16.0, 18.0,
-              20.0, 22.0, 23.14, 25.0, 27.0, 29.0, 31.0, 33.0, 34.62, 37.0,
-              39.0, DURATION)]
-    faceless = {6, 19, 20, 21}          # индексы сцен внутри пропусков
+
+def _plausible_scenes():
+    """Ролик выстлан целиком, соседние сцены различимы, монтаж по стандарту."""
     scenes = []
-    for index, (start, end) in enumerate(zip(edges, edges[1:])):
-        if index in faceless:
-            scenes.append(_scene(index, start, end, presenter="none",
-                                 insert=_photo(f"вставка {index}")))
-        elif index % 2:
-            scenes.append(_scene(index, start, end, presenter="pip-br",
-                                 insert=_photo(f"вставка {index}")))
-        else:
-            scenes.append(_scene(index, start, end))
+    for index, (start, end, presenter, look) in enumerate(_LAYOUT):
+        scenes.append(_scene(index, quantize(start), quantize(end),
+                             presenter=presenter,
+                             insert=_photo(look) if look else None))
     return scenes
 
 
@@ -72,7 +83,10 @@ def _check(scenes, **over):
 
 
 def test_чистая_раскадровка_проходит():
-    assert set(_check(_plausible_scenes()).values()) == {"PASS"}
+    verdicts = _check(_plausible_scenes())
+    assert not [name for name, value in verdicts.items()
+                if value.startswith("FAIL")]
+    assert verdicts["D24_avatar_share"] == "PASS: аватар в кадре 59% хронометража"
 
 
 # ---------- схема ----------
@@ -82,10 +96,6 @@ def test_наши_прежние_поля_больше_не_принимаютс
     scenes = _plausible_scenes()
     scenes[0]["zone"] = "fullscreen"
     assert _check(scenes)["D11_schema"].startswith("FAIL")
-
-
-def test_чужая_версия_схемы_валится():
-    assert _check(_plausible_scenes(), schemaVersion=2)["D11_schema"].startswith("FAIL")
 
 
 def test_сцена_без_смысла_валится():
@@ -107,19 +117,17 @@ def test_вставка_без_описания_валится():
     assert _check(scenes)["D11_schema"].startswith("FAIL")
 
 
-def test_геометрия_ведущей_обязана_быть_задана():
+def test_шапку_раскадровки_гейт_больше_не_проверяет():
+    """Её пишет наш же `complete_storyboard` перед сборкой, а гейт читает файл
+    уже после него: проверять там нечего, кроме собственного кода."""
     board = _board(_plausible_scenes())
     board["videoTrack"].pop("bounds")
+    board["schemaVersion"] = 2
     assert check_storyboard(board, clips=CLIPS,
-                            duration=DURATION)["D11_schema"].startswith("FAIL")
+                            duration=DURATION)["D11_schema"] == "PASS"
 
 
 # ---------- плотность ----------
-
-def test_пустая_раскадровка_валится():
-    """Прошлый гейт перебирал сцены циклом — пустой список проходил всё."""
-    assert _check([])["D13_density"].startswith("FAIL")
-
 
 @pytest.mark.parametrize("duration,expected", [
     (41.5, 6),      # ceil(41,5 / 8): пол только против дыр длиннее D19
@@ -134,33 +142,14 @@ def test_пол_сцен_только_против_дыр(duration, expected):
     assert min_scenes(duration) == expected
 
 
-def test_пяти_сцен_на_сорок_секунд_мало():
-    """При пяти сценах на 41,5 с найдётся кусок длиннее восьми секунд."""
-    step = DURATION / 5
-    scenes = [_scene(i, round(i * step, 3), round((i + 1) * step, 3))
-              for i in range(5)]
-    assert _check(scenes)["D13_density"].startswith("FAIL")
-
-
-def test_потолка_плотности_нет():
-    edges = [round(i * DURATION / 40, 3) for i in range(41)]
-    scenes = [_scene(i, start, end, presenter="pip-br" if i % 2 else "full",
-                     insert=_photo(f"в{i}") if i % 2 else None)
-              for i, (start, end) in enumerate(zip(edges, edges[1:]))]
-    assert _check(scenes)["D13_density"] == "PASS"
-
-
-# ---------- сетка ----------
-
-def test_время_вне_сетки_кадров_валится():
-    scenes = _plausible_scenes()
-    scenes[0]["endSec"] = 2.017
-    scenes[1]["startSec"] = 2.017
-    assert _check(scenes)["D9_frame_grid"].startswith("FAIL")
-
-
-def test_гейта_зоны_больше_нет():
-    assert "D10_zone" not in _check(_plausible_scenes())
+def test_снятые_гейты_не_возвращаются():
+    """D9 (сетка кадров) и D13 (плотность) сняты как тавтологии: и то и другое
+    гарантирует `lay_out_scenes` до всякой сборки. D23 снят следом — число
+    планов роняет `check_shots`, длину серии держит отбор. D10 (зона карточки)
+    ушёл вместе с зонами."""
+    gates = _check(_plausible_scenes())
+    for name in ("D9_frame_grid", "D13_density", "D23_series", "D10_zone"):
+        assert name not in gates
 
 
 # ---------- D12: кусок без ведущей ----------
@@ -169,7 +158,7 @@ def test_кусок_без_ведущей_без_вставки_это_фоно�
     """С фирменным фоном из frame.md чёрного кадра больше нет: сцена без
     вставки на куске без аватара — законная фоновая сцена."""
     scenes = _plausible_scenes()
-    scenes[19]["insert"] = None
+    scenes[12]["insert"] = None
     assert _check(scenes)["D12_faceless_cover"] == "PASS"
 
 
@@ -177,8 +166,56 @@ def test_ведущая_на_куске_где_её_нет_валится():
     """План может назначить ей угол там, где аватар не заказан: окно будет
     пустым, а кадр — чёрным."""
     scenes = _plausible_scenes()
-    scenes[19]["presenter"] = "pip-br"
+    scenes[12]["presenter"] = "pip-br"
     assert _check(scenes)["D12_faceless_cover"].startswith("FAIL")
+
+
+# ---------- D25: кадр, который так и остался пустым ----------
+
+def test_сцена_без_ведущей_и_без_вставки_валится():
+    """Сцена, потерявшая серию при подборе, показывала голый фон с титром —
+    и это проезжало молча. Теперь она обязана нести хоть что-то."""
+    scenes = _plausible_scenes()
+    scenes[12]["insert"] = None
+    assert _check(scenes)["D25_empty_frame"].startswith("FAIL")
+
+
+@pytest.mark.parametrize("filler", [
+    {"icon": {"query": "bookmark icon"}},
+    {"overlay": {"block": "lt-soft-pill", "text": {"name": "Итог"}}},
+    {"schemaShown": True},
+])
+def test_чем_можно_закрыть_кадр_без_ведущей(filler):
+    scenes = _plausible_scenes()
+    scenes[12]["insert"] = None
+    scenes[12].update(filler)
+    assert _check(scenes)["D25_empty_frame"] == "PASS"
+
+
+# ---------- D24: сколько аватара в кадре ----------
+
+def test_аватар_в_уголке_считается_аватаром_в_кадре():
+    """Прежний счёт относил `pip-*` к бироллу и показывал долю, которой
+    зритель не видел: аватар в уголке из кадра никуда не девается, и его
+    секунды заказаны у HeyGen наравне с полным кадром."""
+    from reels_factory.hf_gates import check_montage
+
+    scenes = [_scene(0, 0.0, 30.0, presenter="pip-br", insert=_photo("стол")),
+              _scene(1, 30.0, DURATION, presenter="none",
+                     insert=_photo("руки"))]
+    verdict = check_montage(_board(scenes), clips=[], duration=DURATION)
+    assert verdict["D24_avatar_share"].startswith("FAIL")
+    assert "72%" in verdict["D24_avatar_share"]
+    assert "60%" in verdict["D24_avatar_share"]
+
+
+def test_биролл_во_весь_кадр_снимает_аватар_со_счёта():
+    from reels_factory.hf_gates import check_montage
+
+    scenes = [_scene(0, 0.0, 20.0, presenter="none", insert=_photo("стол")),
+              _scene(1, 20.0, DURATION, presenter="full")]
+    verdict = check_montage(_board(scenes), clips=[], duration=DURATION)
+    assert verdict["D24_avatar_share"] == "PASS: аватар в кадре 52% хронометража"
 
 
 # ---------- D20: пустого кадра не бывает ----------
@@ -230,6 +267,30 @@ def test_разная_вставка_при_том_же_положении_ра�
     scenes[0]["presenter"] = "pip-br"
     scenes[0]["insert"] = _photo("совсем другая картинка")
     assert _check(scenes)["D21_scene_contrast"] == "PASS"
+
+
+def test_две_разные_схемы_подряд_это_два_плана():
+    """Прогон 27: две сцены подряд потеряли биролл и обе закрылись схемой.
+    Вставки нет ни у той, ни у другой, и гейт считал их одним планом — хотя
+    значок и знак бренда в них разные, и зритель видит смену."""
+    scenes = _plausible_scenes()
+    for index, plan in ((13, {"logo": "notion", "icon": "documents icon"}),
+                        (14, {"logo": "", "icon": "calculator icon"})):
+        scenes[index]["insert"] = None
+        scenes[index]["presenter"] = "none"
+        scenes[index]["needsSchema"] = True
+        scenes[index]["fallback"] = plan
+    assert _check(scenes)["D21_scene_contrast"] == "PASS"
+
+
+def test_две_одинаковые_схемы_подряд_остаются_одним_планом():
+    scenes = _plausible_scenes()
+    for index in (13, 14):
+        scenes[index]["insert"] = None
+        scenes[index]["presenter"] = "none"
+        scenes[index]["needsSchema"] = True
+        scenes[index]["fallback"] = {"logo": "", "icon": "calculator icon"}
+    assert _check(scenes)["D21_scene_contrast"].startswith("FAIL")
 
 
 # ---------- вставки ----------

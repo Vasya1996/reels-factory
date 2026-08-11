@@ -236,12 +236,66 @@ def test_null_судьи_оставляет_сцену_без_вставки(mon
 def test_один_ролик_не_ставится_в_две_сцены(monkeypatch, tmp_path):
     with _wire_video(monkeypatch,
                      {"стол": [_vcand("общий"), _vcand("другой")],
-                      "стол крупно": [_vcand("общий"), _vcand("третий")]}) as pool:
+                      "стол крупно": [_vcand("общий"), _vcand("третий")]},
+                     verdicts={"s-01": 0, "s-02": 0}) as pool:
         found = hf_media._resolve_videos(
             tmp_path, [_vreq("s-01", "стол"), _vreq("s-02", "стол крупно")],
             pool=pool)
     assert found["s-01"]["file"].endswith("общий.mp4")
     assert found["s-02"]["file"].endswith("третий.mp4")
+
+
+def test_негодный_ролик_заменяется_следующим_кандидатом_той_же_сцены(
+        monkeypatch, tmp_path):
+    """Прежде такую сцену закрывала копия вставки соседней — картинка не про
+    эту реплику. У сцены свои кандидаты скачаны и отсужены: берём следующего."""
+    with _wire_video(monkeypatch,
+                     {"стол": [_vcand("мутный"), _vcand("годный")]},
+                     verdicts={"s-01": 0}) as pool:
+        monkeypatch.setattr(
+            hf_media, "insert_problem",
+            lambda path, rect=None: ("растянут" if "мутный" in str(path)
+                                     else None))
+        found = hf_media._resolve_videos(tmp_path, [_vreq("s-01", "стол")],
+                                         pool=pool)
+    assert found["s-01"]["file"].endswith("годный.mp4")
+
+
+def test_добор_не_берёт_ролик_занятый_другой_сценой(monkeypatch, tmp_path):
+    with _wire_video(monkeypatch,
+                     {"стол": [_vcand("общий")],
+                      "рука": [_vcand("мутный"), _vcand("общий")]},
+                     verdicts={"s-01": 0, "s-02": 0}) as pool:
+        monkeypatch.setattr(
+            hf_media, "insert_problem",
+            lambda path, rect=None: ("растянут" if "мутный" in str(path)
+                                     else None))
+        found = hf_media._resolve_videos(
+            tmp_path, [_vreq("s-01", "стол"), _vreq("s-02", "рука")], pool=pool)
+    assert found["s-01"]["file"].endswith("общий.mp4")
+    assert "error" in found["s-02"]
+
+
+def test_телеметрия_подбора_выключена():
+    """Их подбор шлёт события наружу и связывает их с почтой владельца ключей.
+    Выключатель их же, и им они глушат телеметрию в собственном CI."""
+    assert hf_media._node_env()["HYPERFRAMES_NO_TELEMETRY"] == "1"
+
+
+def test_логотип_ищется_с_именем_бренда(monkeypatch, tmp_path):
+    """Каскад логотипа заводится полем `--entity`, а не общей фразой."""
+    seen = {}
+
+    def fake_run(command, **kw):
+        seen["command"] = command
+        return type("R", (), {"returncode": 0, "stdout": '{"ok":true,'
+                              '"path":".media/images/logo_001.svg"}',
+                              "stderr": ""})()
+
+    monkeypatch.setattr(hf_media.subprocess, "run", fake_run)
+    hf_media._resolve_one(tmp_path, "logo", "notion logo", "notion")
+    assert "--entity" in seen["command"]
+    assert seen["command"][seen["command"].index("--entity") + 1] == "notion"
 
 
 def test_ролики_одной_серии_не_ставятся_в_разные_сцены(monkeypatch, tmp_path):
@@ -251,9 +305,49 @@ def test_ролики_одной_серии_не_ставятся_в_разны�
     twin_b = {**_vcand("pexels-36633851"), "series": 36633851}
     other = {**_vcand("pexels-7010308"), "series": 7010308}
     with _wire_video(monkeypatch, {"блокнот": [twin_a],
-                                   "рука пишет": [twin_b, other]}) as pool:
+                                   "рука пишет": [twin_b, other]},
+                     verdicts={"s-01": 0, "s-02": 0}) as pool:
         found = hf_media._resolve_videos(
             tmp_path, [_vreq("s-01", "блокнот"), _vreq("s-02", "рука пишет")],
             pool=pool)
     assert found["s-01"]["file"].endswith("pexels-36633828.mp4")
     assert found["s-02"]["file"].endswith("pexels-7010308.mp4")
+
+
+def test_несудённая_сцена_остаётся_без_вставки(monkeypatch, tmp_path):
+    """Судья пропустил сцену — берём НЕ первого из выдачи Pexels.
+
+    Прогон 23: судья молча не ответил, сборка взяла первых кандидатов, и в
+    ролик про продажи приехали игральные карты.
+    """
+    with _wire_video(monkeypatch, {"стол": [_vcand("первый")]},
+                     verdicts={"s-02": 0}) as pool:
+        found = hf_media._resolve_videos(tmp_path, [_vreq("s-01", "стол")],
+                                         pool=pool)
+    assert "не судили" in found["s-01"]["error"]
+
+
+def test_судья_не_ответил_дважды_роняет_подбор(monkeypatch):
+    """Отказ судьи — пересдача, а потом остановка, а не сборка вслепую."""
+    calls = []
+
+    class _Мёртвый:
+        def run(self, prompt, cwd=None):
+            calls.append(prompt)
+            raise TimeoutError("не уложился")
+
+    with pytest.raises(RuntimeError, match="судья бироллов"):
+        hf_media.judge_previews(
+            [{"key": "s-01", "intent": "стол", "speech": "речь",
+              "previews": [["/tmp/a-0.jpg", "/tmp/a-1.jpg"]]}],
+            runner=_Мёртвый())
+    assert len(calls) == hf_media.JUDGE_ATTEMPTS
+
+
+def test_кадры_кандидата_обложка_и_середина():
+    """Второй кадр берём из их же раскадровки, без лишних запросов."""
+    video = {"image": "https://p/cover.jpg",
+             "video_pictures": [{"picture": f"https://p/{i}.jpg"}
+                                for i in range(5)]}
+    assert hf_media._preview_frames(video) == ["https://p/cover.jpg",
+                                               "https://p/2.jpg"]

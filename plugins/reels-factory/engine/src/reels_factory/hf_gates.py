@@ -19,7 +19,11 @@ from pathlib import Path
 
 from reels_factory.hf_compose import BEATS
 from reels_factory.hf_layout import (
-    PRESENTER_POSITIONS, avatar_gaps, fills_frame, in_avatar_gap, quantize,
+    PRESENTER_POSITIONS, avatar_gaps, fills_frame, in_avatar_gap,
+)
+from reels_factory.hf_montage import (
+    AVATAR_ON_SCREEN_MAX, SERIES_SHOTS, insert_of, on_screen_seconds,
+    shot_queries,
 )
 from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 
@@ -54,19 +58,9 @@ def _schema_problems(storyboard: dict) -> list[str]:
     чтобы решения были явными, а разбирает его только наш код.
     """
     problems = []
-    if storyboard.get("schemaVersion") != 3:
-        problems.append(
-            f'schemaVersion={storyboard.get("schemaVersion")!r}, ожидается 3')
-    for field in ("composition", "videoTrack", "subtitles", "scenes"):
-        if field not in storyboard:
-            problems.append(f"нет поля {field}")
-    composition = storyboard.get("composition") or {}
-    if not isinstance(composition, dict) or "durationSeconds" not in composition:
-        problems.append("composition.durationSeconds не задан")
-    video = storyboard.get("videoTrack") or {}
-    if not isinstance(video, dict) or not video.get("bounds"):
-        problems.append("videoTrack.bounds не задан — геометрия ведущей живёт там")
-
+    # Шапку раскадровки (`schemaVersion`, `composition`, `videoTrack`,
+    # `subtitles`) проверять больше нечего: её целиком пишет наш же
+    # `complete_storyboard` перед сборкой, а гейт читает файл уже после него.
     for scene in storyboard.get("scenes") or []:
         scene_id = scene.get("id", "?")
         if "intent" not in scene:
@@ -79,9 +73,11 @@ def _schema_problems(storyboard: dict) -> list[str]:
         insert = scene.get("insert")
         if insert is not None and not isinstance(insert, dict):
             problems.append(f"{scene_id}: `insert` должен быть объектом или null")
-        elif isinstance(insert, dict) and not str(insert.get("query") or "").strip():
+        elif isinstance(insert, dict) and len(shot_queries(scene)) != SERIES_SHOTS:
             problems.append(
-                f"{scene_id}: у вставки нет поля `query` — это английский запрос стокового видео, по нему её и ищут")
+                f"{scene_id}: биролл ставится серией — `insert.shots` это "
+                f"список из {SERIES_SHOTS} английских запросов стокового "
+                "видео, по ним планы серии и ищут")
         beat = scene.get("beat")
         if beat is not None and beat not in BEATS:
             problems.append(f"{scene_id}: бит {beat!r} неизвестен, есть "
@@ -213,8 +209,37 @@ def check_placeholders(rdir) -> dict:
 
 
 def _has_insert(scene: dict) -> bool:
-    insert = scene.get("insert")
-    return isinstance(insert, dict) and bool(str(insert.get("query") or "").strip())
+    return insert_of(scene) is not None
+
+
+def check_montage(storyboard: dict, *, clips: list[dict] | None = None,
+                  duration: float = 0.0) -> dict:
+    """Сколько аватара осталось в кадре после подбора.
+
+    Грамматика серий (два плана, длина серии, лицо между сериями) отсюда снята:
+    число планов роняет `check_shots` ещё до подбора, а длину и зазор
+    конструктивно держит отбор `pick_series`. Доля аватара — другое дело: она
+    меняется уже ПОСЛЕ отбора, когда `settle_inserts` переводит сцену без
+    вставки на полнокадровую ведущую, и ловить этот дрейф больше некому.
+    """
+    scenes = storyboard.get("scenes") or []
+
+    # Сколько аватар виден зрителю. Считается по полю `presenter`: всё, что не
+    # `none`, — аватар в кадре, включая уголок `pip-*` и половину `stack`.
+    # Секунды, где аватар не заказан вовсе, в счёт не попадают сами: там
+    # `presenter` обязан быть `none`, и за это отвечает D12.
+    share = on_screen_seconds(scenes) / duration if duration else 1.0
+    if share > AVATAR_ON_SCREEN_MAX + 0.005:
+        share_gate = (
+            f"FAIL: аватар в кадре {share * 100:.0f}% хронометража при потолке "
+            f"{AVATAR_ON_SCREEN_MAX * 100:.0f}% — каждая лишняя секунда это "
+            "заказанная секунда генерации. Переведи самые длинные сцены с "
+            'бироллом в `presenter: "none"` либо назови больше моментов под '
+            "биролл")
+    else:
+        share_gate = f"PASS: аватар в кадре {share * 100:.0f}% хронометража"
+
+    return {"D24_avatar_share": share_gate}
 
 
 def check_frame_filled(storyboard: dict) -> dict:
@@ -232,6 +257,10 @@ def check_frame_filled(storyboard: dict) -> dict:
     problems = []
     for scene in storyboard.get("scenes") or []:
         position = str(scene.get("presenter") or "full")
+        # Запасная схема закрывает кадр наравне со вставкой: она стоит в
+        # верхней трети, и нижний уголок ведущей с ней не спорит.
+        if scene.get("schemaShown"):
+            continue
         if not fills_frame(position, _has_insert(scene)):
             problems.append(
                 f'{scene.get("id", "?")}: ведущая {position!r} без вставки не '
@@ -240,44 +269,62 @@ def check_frame_filled(storyboard: dict) -> dict:
             else "FAIL: " + "; ".join(problems)}
 
 
+def _empty_frame_problems(scenes: list[dict]) -> list[str]:
+    """Сцена без ведущей, которой в кадр так ничего и не встало.
+
+    `check_frame_filled` судит план: там `presenter: "none"` без вставки — это
+    законная фоновая сцена, фон и крупный титр. Здесь судится результат: сцена
+    осталась без ведущей ПОСЛЕ подбора, и закрыть кадр обязано хоть что-то —
+    вставка, значок, накладка или запасная схема. Фоновая сцена с одним титром
+    в середине ролика читается обрывом, и раньше это проезжало молча: сцена,
+    потерявшая серию, просто показывала фон.
+    """
+    problems = []
+    for scene in scenes:
+        if str(scene.get("presenter") or "none") != "none":
+            continue
+        if _has_insert(scene):
+            continue
+        if scene.get("icon") or scene.get("overlay") or scene.get("schemaShown"):
+            continue
+        problems.append(
+            f'{scene.get("id", "?")}: ведущей нет, вставка не встала, и закрыть '
+            "кадр нечем. У сцены с бироллом заполняй `fallback` — из него код "
+            "соберёт схему; либо назови `icon` или `overlay`")
+    return problems
+
+
 def check_storyboard(storyboard: dict, *, clips: list[dict] | None = None,
                      duration: float = 0.0) -> dict:
     """Гейты раскадровки. PASS либо FAIL с перечислением сцен."""
     scenes = storyboard.get("scenes") or []
-    grid_bad = []
-
-    for scene in scenes:
-        scene_id = scene.get("id", "?")
-        for field in ("startSec", "endSec"):
-            if field not in scene:
-                grid_bad.append(f"{scene_id}: нет поля {field}")
-                continue
-            value = float(scene[field])
-            if abs(value - quantize(value)) > 0.0005:
-                grid_bad.append(f"{scene_id}: {field}={value} вне сетки кадров")
-
-    # Плотность. Пол только против дыр (см. min_scenes), верхней границы нет:
-    # плотность выбирает агент под смысл.
-    density_bad = []
-    low = min_scenes(duration)
-    if duration > 0 and len(scenes) < low:
-        density_bad.append(
-            f"сцен {len(scenes)}, при {duration:g} с нужно хотя бы {low}: иначе "
-            f"найдётся кусок длиннее {MAX_STATIC_SPAN:g} с без смены картинки")
 
     def gate(problems: list[str]) -> str:
         return "PASS" if not problems else "FAIL: " + "; ".join(problems)
 
-    # D10 (зона карточки из списка пяти) снят. Список зон — таблица
-    # `talking-head-recut/SKILL.md:180-188`, у `/general-video` таблицы зон нет
-    # вовсе, а самих зон после перехода на слои не осталось.
-    result = {"D9_frame_grid": gate(grid_bad),
-              "D11_schema": gate(_schema_problems(storyboard)),
+    # Сняты как тавтологии — проверяли то, что код гарантирует сам, и провалиться
+    # не могли ни при каком плане агента:
+    #
+    # D9 (сетка кадров) — времена сцен квантует `lay_out_scenes`
+    #   (hf_phrases.py:204-205), а перед записью раскадровки ещё раз квантует
+    #   `build_composition` (hf_compose.py). Гейт читал этот же файл.
+    # D13 (плотность) — пол `ceil(duration / MAX_STATIC_SPAN)` следует из того,
+    #   что сцены обязаны выстилать ролик без дыр и ни одна не длиннее
+    #   MAX_STATIC_SPAN; и то и другое роняет `lay_out_scenes` раньше гейтов.
+    #   Сама `min_scenes` жива — её число идёт агенту в задание.
+    # D23 (грамматика серий) — число планов роняет `check_shots` до подбора,
+    #   а длину серии и лицо между сериями обеспечивает отбор `pick_series`.
+    #   D24 (доля аватара) остаётся: она ловит дрейф ПОСЛЕ отбора, когда
+    #   `settle_inserts` переводит сцену без вставки на полнокадровую ведущую.
+    #
+    # D10 (зона карточки из списка пяти) снят раньше: зон в слоёном кадре нет.
+    result = {"D11_schema": gate(_schema_problems(storyboard)),
               "D12_faceless_cover": gate(
                   _faceless_problems(scenes, clips or [], duration)),
-              "D13_density": gate(density_bad),
-              "D21_scene_contrast": gate(_sameness_problems(scenes))}
+              "D21_scene_contrast": gate(_sameness_problems(scenes)),
+              "D25_empty_frame": gate(_empty_frame_problems(scenes))}
     result.update(check_frame_filled(storyboard))
+    result.update(check_montage(storyboard, clips=clips, duration=duration))
     return result
 
 
@@ -308,6 +355,28 @@ def _faceless_problems(scenes: list[dict], clips: list[dict],
     return problems
 
 
+def _scene_look(scene: dict) -> str:
+    """Чем сцена занимает кадр — словами, по которым её видно.
+
+    Раньше сравнивались только запросы вставки, и две сцены подряд с запасной
+    схемой считались одним планом: вставки нет ни у той, ни у другой. Схемы
+    разные — разный значок, разный знак бренда, — и зритель видит смену.
+    """
+    shots = " ".join(shot_queries(scene))
+    if shots:
+        return shots
+    icon = str((scene.get("icon") or {}).get("query") or "").strip()
+    if icon:
+        return f"значок {icon}"
+    plan = scene.get("fallback") or {}
+    schema = " ".join(str(plan.get(kind) or "").strip()
+                      for kind in ("logo", "icon")).strip()
+    if scene.get("needsSchema") and schema:
+        return f"схема {schema}"
+    block = str((scene.get("overlay") or {}).get("block") or "").strip()
+    return f"накладка {block}" if block else ""
+
+
 def _sameness_problems(scenes: list[dict]) -> list[str]:
     """Соседние сцены отличаются картинкой.
 
@@ -323,9 +392,7 @@ def _sameness_problems(scenes: list[dict]) -> list[str]:
     for left, right in zip(ordered, ordered[1:]):
         same_presenter = (left.get("presenter") or "full") == (
             right.get("presenter") or "full")
-        left_look = ((left.get("insert") or {}).get("query") or "").strip()
-        right_look = ((right.get("insert") or {}).get("query") or "").strip()
-        if same_presenter and left_look == right_look:
+        if same_presenter and _scene_look(left) == _scene_look(right):
             problems.append(
                 f'{left.get("id", "?")} и {right.get("id", "?")} идут подряд с '
                 "одинаковой картинкой — зритель увидит один план, а не два. "

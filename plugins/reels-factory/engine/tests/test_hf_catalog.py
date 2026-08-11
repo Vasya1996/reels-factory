@@ -1,7 +1,9 @@
 """Наш каталог блоков, отданный агенту их способом — через поле registry."""
 import json
 
-from reels_factory.hf_catalog import serve_catalog, write_project_config
+from reels_factory.hf_catalog import (
+    overlay_names, serve_catalog, texture_overlays, write_project_config,
+)
 
 REGISTRY = {"$schema": "https://hyperframes.heygen.com/schema/registry.json",
             "name": "golden", "items": [{"name": "g01", "type": "hyperframes:block"}]}
@@ -12,6 +14,48 @@ def _catalog(tmp_path):
     root.mkdir(parents=True)
     (root / "registry.json").write_text(json.dumps(REGISTRY), encoding="utf-8")
     return tmp_path
+
+
+def _block(root, name, *, tags, files=()):
+    folder = root / "registry" / "blocks" / name
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{name}.html").write_text("<div></div>", encoding="utf-8")
+    listed = [{"path": f"{name}.html"}] + [{"path": p} for p in files]
+    (folder / "registry-item.json").write_text(
+        json.dumps({"name": name, "tags": list(tags), "files": listed}),
+        encoding="utf-8")
+    return folder
+
+
+def _with_blocks(tmp_path, names):
+    root = tmp_path / "registry"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "registry.json").write_text(json.dumps(
+        {"name": "golden",
+         "items": [{"name": n, "type": "hyperframes:block"} for n in names]}),
+        encoding="utf-8")
+    return tmp_path
+
+
+def test_накладка_с_недостающим_файлом_агенту_не_предлагается(tmp_path, capsys):
+    """`hyperframes add` тянет каждый файл из карточки блока и на 404 роняет
+    всю попытку сборки. Прогон 28 потерял так попытку на `instagram-follow`:
+    в каталог не переехал его `assets/avatar.jpg`. Исправить это агент не
+    может — дефект каталога, а не плана."""
+    _with_blocks(tmp_path, ["ок-блок", "битый-блок"])
+    _block(tmp_path, "ок-блок", tags=["overlay"])
+    _block(tmp_path, "битый-блок", tags=["overlay"], files=["assets/avatar.jpg"])
+    assert overlay_names(tmp_path) == ["ок-блок"]
+    assert "битый-блок" in capsys.readouterr().out
+
+
+def test_фактуры_отличаются_меткой_их_реестра(tmp_path):
+    """Канвас у фактуры и плашки один — 1920x1080; кроет кадр целиком только
+    фактура, и различает их метка, которую блоки принесли из их реестра."""
+    _with_blocks(tmp_path, ["протечка", "плашка"])
+    _block(tmp_path, "протечка", tags=["overlay", "media-treatment-overlay"])
+    _block(tmp_path, "плашка", tags=["overlay", "lower-third"])
+    assert texture_overlays(tmp_path) == {"протечка"}
 
 
 def test_конфиг_ложится_в_обе_папки(tmp_path):

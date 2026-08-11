@@ -17,7 +17,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from reels_factory.config import OUT_H, OUT_W
+from reels_factory.config import OUT_H, OUT_W, cli_env
+from reels_factory.hf_compose import crop_fractions
 from reels_factory.hf_layout import moved_face, violations
 
 #: Скрипт пробы лежит рядом с движком; при editable-установке путь живой.
@@ -59,7 +60,7 @@ def chrome_path(hf_version: str) -> str | None:
     result = subprocess.run(
         f'npx --yes hyperframes@{hf_version} browser path',
         shell=True, capture_output=True, text=True, encoding="utf-8",
-        errors="replace")
+        errors="replace", env=cli_env())
     for line in reversed((result.stdout or "").splitlines()):
         candidate = line.strip()
         if candidate and Path(candidate).exists():
@@ -91,7 +92,7 @@ def run_probe(rdir, *, interval: float = DEFAULT_INTERVAL,
     if chrome:
         command += ["--chrome", chrome]
     result = subprocess.run(command, capture_output=True, text=True,
-                            encoding="utf-8", errors="replace")
+                            encoding="utf-8", errors="replace", env=cli_env())
     if result.returncode != 0:
         raise RuntimeError(
             "проба живой композиции не состоялась: "
@@ -120,13 +121,17 @@ def _distinct_positions(rects: list[dict]) -> list[dict]:
 def _gate_face(samples: list[dict], face: dict | None) -> str:
     if not face:
         return "PASS: лица нет в face.json — перекрывать нечего"
+    # Композиция режет клип не от середины: вырез сдвинут вверх, чтобы в
+    # невысоком окне не срезало макушку (`hf_compose.crop_position`). Лицо в
+    # кадре уезжает следом, и без этой доли гейт искал бы его на пустом месте.
+    fit = crop_fractions(face)
     problems = []
     for sample in samples:
         video = sample.get("videoRect")
         if not video or not video.get("visible"):
             # ведущей на экране нет: аватар на этот кусок не заказан
             continue
-        here = moved_face(face, video)
+        here = moved_face(face, video, fit)
         for text in sample.get("texts") or []:
             if violations(text["rect"], here):
                 label = (text.get("text") or text.get("selector") or "?")[:40]
