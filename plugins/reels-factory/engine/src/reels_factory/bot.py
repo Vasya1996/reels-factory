@@ -1392,9 +1392,13 @@ async def _show_start(msg, chat_id: int, s: dict, session_builder=fresh_session)
     if not _reel_language(next_session, required=False):
         next_session["step"] = CHOOSING_LANGUAGE
         save_session(chat_id, next_session)
-        if not next_session.get("photo"):
-            # Приветствие с примером готового ролика: новичок сначала ВИДИТ
+        if session_builder is fresh_session or not next_session.get("photo"):
+            # Приветствие с примером готового ролика: человек сначала ВИДИТ
             # продукт и честные условия, а уже потом отдаёт фото и голос.
+            # Уходит на каждый /start, включая повторные (команда — явный
+            # «покажи сначала»), и любому совсем новому чату. А вот кнопка
+            # «Новый ролик» (loop_session) промо не повторяет: клиент между
+            # роликами и так всё видел.
             if not await _reply_media_asset(
                 msg, "video", DEMO_EXAMPLE_MP4, HELLO
             ):
