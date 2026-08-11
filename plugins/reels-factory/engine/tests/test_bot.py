@@ -2634,7 +2634,81 @@ def test_пополнение_меняет_кнопки_в_том_же_сооб�
 
     assert bot.load_session(7)["pay_currency"] == "rub"
     assert "Выберите сумму для пополнения" in msg.replies[-1]
-    assert _labels(msg.markups[-1]) == ["1000 ₽", "2500 ₽", "5000 ₽", "← Назад"]
+    assert _labels(msg.markups[-1])[1:] == ["1000 ₽", "2500 ₽", "5000 ₽", "← Назад"]
+
+
+def test_кнопка_ровно_на_ролик_стоит_первой(work, магазин):
+    """Первый номинал $10 отпугивал тех, чей ролик стоит втрое дешевле: сумма,
+    которой не хватает именно на этот ролик, стоит выше готовых номиналов."""
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE,
+                                 material_mode="text", material_text="а" * 700))
+    _пополнить(7, 2_000_000)     # ролик стоит $5.24, на балансе $2
+    msg = _Msg()
+
+    _press("topup:cur:usd", msg)
+
+    assert _labels(msg.markups[-1]) == [
+        "$3.24 — ровно на этот ролик", "$10", "$25", "$50", "← Назад"
+    ]
+
+
+def test_кнопка_ровно_на_ролик_в_рублях_целым_числом(work, магазин):
+    """Рубли считаются тем же курсом, каким вебхук зачисляет платёж, и вверх —
+    иначе человек заплатит по кнопке и всё равно не доберёт до оценки."""
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE,
+                                 material_mode="text", material_text="а" * 700))
+    _пополнить(7, 2_000_000)
+    msg = _Msg()
+
+    _press("topup:cur:rub", msg)
+
+    assert _labels(msg.markups[-1])[0] == "295 ₽ — ровно на этот ролик"
+    курс = bot._billing()["fx"]["rub"]
+    assert 295_00 / 100 * курс >= 3.24
+
+
+def test_кнопка_ровно_на_ролик_создаёт_счёт_на_свою_сумму(work, магазин):
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE,
+                                 material_mode="text", material_text="а" * 700))
+    _пополнить(7, 2_000_000)
+    msg = _Msg()
+
+    _press("topup:amt:usd:324", msg)
+
+    assert магазин["created"] == [{
+        "amount": 324, "currency": "usd", "customerId": "7",
+        "title": "Пополнение баланса $3.24",
+    }]
+
+
+def test_без_ролика_кнопки_ровной_суммы_нет(work, магазин):
+    """/balance и гейт при минусе открывают тот же экран, но ролика перед
+    человеком нет — считать нечего, остаются одни номиналы."""
+    bot.save_session(7, _паспорт(step=bot.WAIT_TEXT))
+    msg = _Msg()
+
+    _press("topup:cur:usd", msg)
+
+    assert _labels(msg.markups[-1]) == ["$10", "$25", "$50", "← Назад"]
+
+
+def test_кнопки_ровной_суммы_нет_когда_баланса_хватает(work, магазин):
+    bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE,
+                                 material_mode="text", material_text="а" * 700))
+    _пополнить(7, 10_000_000)
+    msg = _Msg()
+
+    _press("topup:cur:usd", msg)
+
+    assert _labels(msg.markups[-1]) == ["$10", "$25", "$50", "← Назад"]
+
+
+def test_ровная_сумма_не_ниже_минимума_магазина():
+    """Счёт меньше $1 магазин отклонит (error_amount_too_small), поэтому
+    копеечную нехватку поднимаем до минимума."""
+    fx = {"usd": 1.0, "rub": 0.011}
+    assert bot.exact_topup_minor(20_000, "usd", fx) == 100
+    assert bot.exact_topup_minor(20_000, "rub", fx) == 200
 
 
 def test_назад_с_выбора_валюты_возвращает_прежние_кнопки(work, магазин):
