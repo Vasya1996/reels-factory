@@ -48,6 +48,39 @@ def _clean_hex(value, fallback: str) -> str:
     return value.lower() if _HEX.match(value) else fallback
 
 
+def luminance(color: str) -> float:
+    """Относительная яркость цвета по WCAG, 0 (чёрный) … 1 (белый).
+
+    Та же формула, которой их проверка контраста судит текст
+    (`packages/cli/src/commands/contrast-bg.ts:24-45`): сначала канал
+    линеаризуется, потом складывается с весами глаза. Считать «тёмный ли фон»
+    по одной сумме каналов нельзя — жёлтый и синий одной суммы читаются
+    по-разному.
+    """
+    value = _clean_hex(color, "#000000").lstrip("#")
+    channels = []
+    for part in (value[0:2], value[2:4], value[4:6]):
+        c = int(part, 16) / 255
+        channels.append(c / 12.92 if c <= 0.04045
+                        else ((c + 0.055) / 1.055) ** 2.4)
+    red, green, blue = channels
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+#: Граница «тёмный/светлый фон». 0,18 — середина между чёрным и белым по
+#: восприятию (яркость 50% серого), а не по числу: линейная середина 0,5
+#: считала бы светлыми почти все насыщенные цвета.
+DARK_BG_MAX = 0.18
+
+
+def dark_frame(theme: dict | None) -> bool:
+    """Тёмная ли палитра ролика. По ней выбирается начертание знака бренда,
+    цвет значка и цвет карточки: на светлом ролике белый знак пропадёт ровно
+    так же, как чёрный на тёмном."""
+    colors = (theme or {}).get("colors") or DEFAULTS["colors"]
+    return luminance(colors.get("bg") or DEFAULTS["colors"]["bg"]) <= DARK_BG_MAX
+
+
 def read_frame(rdir) -> dict:
     """Тема ролика из `frame.md`. Нет файла или он бит — дефолты.
 

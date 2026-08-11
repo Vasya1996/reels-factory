@@ -30,7 +30,7 @@ from reels_factory.hf_catalog import (
 )
 from reels_factory.hf_compose import (
     build_composition, clear_generated, collect_intents, complete_storyboard,
-    fallback_intents, needed_blocks, settle_inserts,
+    needed_blocks, schema_intents, settle_inserts,
 )
 from reels_factory.hf_fonts import inject_fonts
 from reels_factory.hf_frame import read_frame
@@ -39,7 +39,9 @@ from reels_factory.hf_gates import (
 )
 from reels_factory.hf_layout import quantize
 from reels_factory.hf_media import resolve_all
-from reels_factory.hf_montage import check_shots, drop_series, pick_series
+from reels_factory.hf_montage import (
+    check_shots, drop_series, merge_adjacent_series, pick_series,
+)
 from reels_factory.hf_phrases import (
     lay_out_scenes, phrase_timeline, speech_between,
 )
@@ -568,6 +570,9 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                 if attempt == MAX_COMPOSE_ATTEMPTS - 1:
                     raise
                 continue
+            # Соседние бироллы — одна серия из двух планов, а не две сцены,
+            # разведённые правилом «между сериями держим лицо».
+            merge_adjacent_series(board["scenes"])
             kept, series = pick_series(board["scenes"], saved_clips, duration)
             drop_series(board["scenes"], kept, clips=saved_clips,
                         duration=duration)
@@ -619,14 +624,15 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     # Запасную схему подбираем вторым заходом и только для тех
                     # сцен, которым она реально понадобилась: в обычном прогоне
                     # сток отвечает, и этих запросов не будет вовсе.
-                    schema = fallback_intents(board.get("scenes") or [])
+                    theme = read_frame(rdir)
+                    schema = schema_intents(board.get("scenes") or [],
+                                            theme=theme)
                     if schema:
                         found.update(resolve_all(public, schema))
                     build_composition(rdir, sdk, storyboard=board,
                                       clips=saved_clips, duration=duration,
                                       words=words, resolved=found,
-                                      sfx_whoosh=whoosh,
-                                      theme=read_frame(rdir),
+                                      sfx_whoosh=whoosh, theme=theme,
                                       face=load_face(rdir))
                 # Шрифты врезаем до проверок: и наши гейты, и их `check` меряют
                 # переполнение и перекрытие по отрисованному тексту, а без наших

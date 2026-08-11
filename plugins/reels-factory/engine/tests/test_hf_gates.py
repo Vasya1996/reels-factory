@@ -270,12 +270,13 @@ def test_разная_вставка_при_том_же_положении_ра�
 
 
 def test_две_разные_схемы_подряд_это_два_плана():
-    """Прогон 27: две сцены подряд потеряли биролл и обе закрылись схемой.
-    Вставки нет ни у той, ни у другой, и гейт считал их одним планом — хотя
-    значок и знак бренда в них разные, и зритель видит смену."""
+    """Прогоны 27 и 30: две сцены подряд потеряли биролл и обе закрылись
+    схемой. Вставки нет ни у той, ни у другой, и гейт считал их одним планом —
+    хотя слова в схемах разные, и зритель видит смену."""
     scenes = _plausible_scenes()
-    for index, plan in ((13, {"logo": "notion", "icon": "documents icon"}),
-                        (14, {"logo": "", "icon": "calculator icon"})):
+    for index, plan in ((13, {"form": "list", "items": ["раз", "два"]}),
+                        (14, {"form": "stat", "value": "87%",
+                              "label": "дошли"})):
         scenes[index]["insert"] = None
         scenes[index]["presenter"] = "none"
         scenes[index]["needsSchema"] = True
@@ -289,8 +290,19 @@ def test_две_одинаковые_схемы_подряд_остаются_о
         scenes[index]["insert"] = None
         scenes[index]["presenter"] = "none"
         scenes[index]["needsSchema"] = True
-        scenes[index]["fallback"] = {"logo": "", "icon": "calculator icon"}
+        scenes[index]["fallback"] = {"form": "list", "items": ["раз", "два"]}
     assert _check(scenes)["D21_scene_contrast"].startswith("FAIL")
+
+
+def test_схема_агента_различима_так_же_как_запасная():
+    scenes = _plausible_scenes()
+    scenes[13]["insert"] = None
+    scenes[13]["presenter"] = "none"
+    scenes[13]["schema"] = {"form": "brand", "brands": ["notion"]}
+    scenes[14]["insert"] = None
+    scenes[14]["presenter"] = "none"
+    scenes[14]["schema"] = {"form": "brand", "brands": ["telegram"]}
+    assert _check(scenes)["D21_scene_contrast"] == "PASS"
 
 
 # ---------- вставки ----------

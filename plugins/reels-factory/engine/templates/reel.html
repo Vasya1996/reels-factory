@@ -87,6 +87,14 @@
          ведущей и скрима, под титром. */
       .ovl { position: absolute; right: 0; width: 100%; height: 100%;
         z-index: 28; overflow: visible; pointer-events: none; }
+      /* Слой читаемости под накладкой без своей подложки. Градиент их —
+         talking-head-recut/references/layouts/overlay.html:52-62, и их же
+         предупреждение: «стекло без него — катастрофа белым по белому на
+         светлом видео, ставьте их в паре». */
+      .ovl-scrim { position: absolute; inset: 0; z-index: 27;
+        pointer-events: none;
+        background: linear-gradient(180deg, rgba(0,0,0,.55) 0%,
+          transparent 22%, transparent 50%, rgba(0,0,0,.72) 100%); }
       /* Значок фоновой сцены. Готового блока-значка в их реестре нет (146
          позиций, ни одной иконки), поэтому оформление собрано их приёмами
          движения: подложка со свечением позади и вход spring-pop

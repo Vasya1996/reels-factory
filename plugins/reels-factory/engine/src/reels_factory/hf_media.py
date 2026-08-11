@@ -28,6 +28,8 @@ import os
 import re
 import shutil
 import subprocess
+import urllib.parse
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -566,6 +568,50 @@ def _resolve_one(project: Path, kind: str, intent: str,
         return {"ok": False, "error": f"ответ не разбирается: {error}"}
 
 
+#: Их же источник фирменных знаков — первая ступень каскада логотипа
+#: (`media-use/scripts/lib/logo-provider.mjs:28`).
+SVGL_API = "https://api.svgl.app"
+
+
+def svgl_route(entity: str, *, dark: bool) -> str | None:
+    """Ссылка на нужное начертание знака бренда у их первого поставщика.
+
+    Их подбор всегда берёт светлое начертание — `hit.route?.light`
+    (`logo-provider.mjs:130`), то есть тёмный знак под светлый фон, и выбора
+    флагом нет. На тёмной палитре такой знак тонет, поэтому спрашиваем сам
+    источник: у части брендов лежит пара `{light, dark}`, у полноцветных —
+    одна ссылка строкой, и она годится на любом фоне.
+
+    Возвращает `None`, когда бренда там нет или парного начертания у него нет:
+    тогда работает их обычный каскад svgl → simple-icons → GitHub → фавикон.
+    """
+    query = str(entity or "").strip().lower()
+    if not query:
+        return None
+    # Без заголовка агента источник отвечает 403: их скрипты ходят туда через
+    # `fetch` браузерного профиля, у python-запроса такого заголовка нет.
+    request = urllib.request.Request(
+        f"{SVGL_API}?search={urllib.parse.quote(query)}",
+        headers={"User-Agent": "reels-factory/1.0", "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            items = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(items, list):
+        return None
+    for item in items:
+        title = str(item.get("title") or "").strip().lower()
+        if title != query and query not in title:
+            continue
+        route = item.get("route")
+        if isinstance(route, str):
+            return route          # полноцветный знак, начертание одно
+        if isinstance(route, dict):
+            return route.get("dark" if dark else "light") or route.get("light")
+    return None
+
+
 #: Сколько раз добирать следующего кандидата, если файл не годится. Два круга
 #: покрывают обычные отказы (не скачался, растянут, водяной знак), а дальше
 #: выдача Pexels уже не про эту реплику — там место запасной схеме.
@@ -842,10 +888,20 @@ def resolve_all(public, requests: list[dict], *, context: dict | None = None,
         found = dict(zip(
             [r["key"] for r in searchable],
             pool.map(lambda r: search_assets(r["intent"]), searchable)))
-        for request, answer in zip(
-                blind,
-                pool.map(lambda r: _resolve_one(public, r["type"], r["intent"],
-                                                r.get("entity")), blind)):
+        def blind_one(request: dict) -> dict:
+            """Знак бренда — начертанием под палитру ролика, остальное их
+            каскадом как есть."""
+            if request["type"] == "logo" and request.get("entity"):
+                route = svgl_route(request["entity"],
+                                   dark=bool(request.get("dark_frame")))
+                if route:
+                    frozen = ingest(public, route, kind="logo")
+                    if frozen.get("ok") and frozen.get("path"):
+                        return frozen
+            return _resolve_one(public, request["type"], request["intent"],
+                                request.get("entity"))
+
+        for request, answer in zip(blind, pool.map(blind_one, blind)):
             if not answer.get("ok") or not answer.get("path"):
                 resolved[request["key"]] = {
                     "error": answer.get("error") or "подбор не дал файла"}

@@ -389,27 +389,27 @@ def test_кусок_без_ведущей_без_вставки_идёт_под_
     assert "s-03::shot0" not in resolved
 
 
-def test_намерения_схемы_берутся_из_поля_сцены():
-    """Логотип идёт их каскадом и требует имени бренда отдельным полем.
-    Пустой `logo` значит «бренд в этих фразах не назван» — запроса не будет."""
-    from reels_factory.hf_compose import fallback_intents
-    scenes = [{"id": "s-03", "needsSchema": True,
-               "fallback": {"logo": "notion", "icon": "checklist icon"}},
-              {"id": "s-04", "needsSchema": True,
-               "fallback": {"logo": "", "icon": "rocket icon"}}]
-    requests = fallback_intents(scenes)
-    assert [r["key"] for r in requests] == [
-        "s-03::fallback-logo", "s-03::fallback-icon", "s-04::fallback-icon"]
+def test_знаки_брендов_ищутся_для_схемы():
+    """Из четырёх форм схемы искать нужно только знаки бренда: цифру, список
+    и связь агент называет словами."""
+    from reels_factory.hf_compose import schema_intents
+    scenes = [{"id": "s-03", "schema": {"form": "brand",
+                                        "brands": ["notion", "telegram"]}},
+              {"id": "s-04", "schema": {"form": "list", "items": ["раз"]}}]
+    requests = schema_intents(scenes)
+    assert [r["key"] for r in requests] == ["s-03::brand0", "s-03::brand1"]
     assert requests[0]["type"] == "logo" and requests[0]["entity"] == "notion"
-    assert requests[1]["type"] == "icon" and requests[1]["entity"] is None
 
 
-def test_схема_не_подбирается_пока_вставка_на_месте():
-    """Схема — запасной путь: в обычном прогоне сток отвечает, и платить за
-    неё двумя лишними запросами на каждую серию незачем."""
-    from reels_factory.hf_compose import fallback_intents
-    assert fallback_intents([{"id": "s-02", "fallback": {"logo": "notion",
-                                                        "icon": "rocket"}}]) == []
+def test_запасная_схема_ищется_только_когда_биролл_не_встал():
+    """Схема, выбранная агентом, работает всегда; запасная — только там, где
+    сток не ответил, и платить за неё в обычном прогоне незачем."""
+    from reels_factory.hf_compose import schema_intents
+    dormant = [{"id": "s-02", "fallback": {"form": "brand",
+                                           "brands": ["notion"]}}]
+    assert schema_intents(dormant) == []
+    awake = [{**dormant[0], "needsSchema": True}]
+    assert [r["key"] for r in schema_intents(awake)] == ["s-02::brand0"]
 
 
 def test_половина_серии_не_ставится_вовсе():
@@ -596,30 +596,62 @@ def test_значок_снимается_если_ведущая_заняла_е
     assert "icon" not in board["scenes"][1]
 
 
-def test_запасная_схема_закрывает_кадр_без_вставки(run):
-    """Сцена без ведущей, которой сток не дал биролла: вместо голого фона —
-    значок и знак бренда на общем свечении."""
+def _with_schema_block(run, form="list"):
+    """Блок схемы в проекте: его ставит `hyperframes add` перед сборкой."""
+    from reels_factory.hf_schema import FORMS
+    compositions = run / "public" / "compositions"
+    compositions.mkdir(parents=True, exist_ok=True)
+    block = FORMS[form]
+    (compositions / f"{block}.html").write_text(
+        f'<!doctype html><html><head><style>#mk-sl-root{{width:1920px;'
+        f'height:1080px}}</style></head><body>'
+        f'<div id="mk-sl-root" data-composition-id="{block}"'
+        f' data-duration="8" data-width="1920" data-height="1080"></div>'
+        f'<script>(function(){{ var CONFIG = {{ rows: [] }};'
+        f' var DUR = 8; }})();</script>'
+        f'<script>window.__timelines = window.__timelines || {{}};</script>'
+        f"</body></html>", encoding="utf-8")
+    return run
+
+
+def test_схема_закрывает_кадр_их_блоком(run):
+    """Прежде тут стоял одинокий значок на белом кружке — в кадре он читался
+    эмблемой. Теперь форму собирает их же блок, вписанный в вертикаль."""
+    _with_schema_block(run)
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["presenter"] = "none"
     scenes[1]["insert"] = None
-    scenes[1]["needsSchema"] = True
-    html, board = _build(run, scenes=scenes, resolved={
-        "s-02::fallback-icon": {"file": ".media/images/icon_001.png"},
-        "s-02::fallback-logo": {"file": ".media/images/logo_001.svg"}})
-    assert 'id="schema-s-02" class="schema-spot"' in html
-    assert 'src=".media/images/icon_001.png"' in html
-    assert 'src=".media/images/logo_001.svg"' in html
-    assert 'tl.set("#schema-s-02", { autoAlpha: 1 }, 3.033);' in html
-    # вход ступенькой: два героя не приземляются в один кадр
-    assert 'tl.fromTo("#schema-s-02-logo"' in html and ", 3.153);" in html
+    scenes[1]["schema"] = {"form": "list", "items": ["раз", "два"]}
+    html, board = _build(run, scenes=scenes, resolved={})
+    assert 'id="schema-s-02" class="clip"' in html
+    assert 'data-composition-src="compositions/mk-specs-list--s-02.html"' in html
     assert board["scenes"][1]["schemaShown"] is True
+    copy = (run / "public" / "compositions" / "mk-specs-list--s-02.html")
+    text = copy.read_text(encoding="utf-8")
+    assert "Object.assign(CONFIG," in text and "1080px" in text
 
 
-def test_схема_без_единого_файла_не_рисуется(run):
+def test_схема_короче_своей_анимации_не_ставится(run):
+    """Форме нужно время, чтобы досказать вход: сцена короче — блок покажет
+    себя недорисованным, а это хуже, чем не показать вовсе."""
+    _with_schema_block(run)
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["presenter"] = "none"
     scenes[1]["insert"] = None
-    scenes[1]["needsSchema"] = True
+    scenes[1]["startSec"], scenes[1]["endSec"] = 5.4, 6.0
+    scenes[0]["endSec"] = 5.4
+    scenes[1]["schema"] = {"form": "list", "items": ["раз", "два"]}
+    html, board = _build(run, scenes=scenes, resolved={})
+    assert 'id="schema-s-02"' not in html
+    assert "schemaShown" not in board["scenes"][1]
+
+
+def test_схема_бренда_без_знака_не_рисуется(run):
+    _with_schema_block(run, form="brand")
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = None
+    scenes[1]["schema"] = {"form": "brand", "brands": ["notion"]}
     html, board = _build(run, scenes=scenes, resolved={})
     assert 'id="schema-s-02"' not in html
     assert "schemaShown" not in board["scenes"][1]

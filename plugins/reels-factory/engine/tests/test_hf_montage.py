@@ -2,7 +2,7 @@
 import pytest
 
 from reels_factory.hf_montage import (
-    AVATAR_ON_SCREEN_MAX, FACE_GAP, MIN_STEP, PLAN_MAX, PLAN_MIN, PUSH_TO,
+    AVATAR_ON_SCREEN_MAX, MIN_STEP, PLAN_MAX, PLAN_MIN, PUSH_TO,
     check_shots, cut_into_plans, flash_moments, on_screen_seconds, pick_series,
     shots_for, split_series, zoom_ladder,
 )
@@ -253,9 +253,52 @@ def test_без_запасной_схемы_уголок_уходит_под_п�
     assert not scenes[1].get("needsSchema")
 
 
-def test_зазор_взят_у_неё():
-    """Число не наше: оно из её стандарта, и менять его молча нельзя."""
-    assert FACE_GAP == 2.5
+def test_зазор_взят_у_неё_но_считается_долей():
+    """Планка её — «между сериями лицо ≥2,5 с», и снята она с эталонов длиной
+    41,5 с. Секундой её держать нельзя: на 30-секундном ролике те же 2,5 с
+    съедают вдвое большую долю и выбрасывают половину бироллов."""
+    from reels_factory.hf_montage import face_gap
+
+    assert round(face_gap(41.5), 2) == 2.5      # на эталоне — ровно её число
+    assert face_gap(30.0) < 2.5                 # короткий ролик дышит чаще
+    assert face_gap(120.0) == 3.5               # длинный не превращается в клип
+    assert face_gap(0.0) == 1.5                 # вырожденный случай не роняет
+
+
+def test_соседние_бироллы_склеиваются_в_одну_серию():
+    """Агент ставит моменты подряд там, где подряд идёт мысль, а отбор разводил
+    такие пары силой — вторая теряла биролл. Пара становится одной серией."""
+    from reels_factory.hf_montage import merge_adjacent_series, shot_queries
+
+    scenes = [_scene(0, 0.0, 2.0, "full", None),
+              _scene(1, 2.0, 4.4, "none"),
+              _scene(2, 4.4, 6.8, "none"),
+              _scene(3, 6.8, 9.0, "full", None)]
+    scenes[1]["insert"] = {"shots": ["hands typing", "hands typing closeup"],
+                           "kind": "video"}
+    scenes[2]["insert"] = {"shots": ["phone in hand", "phone closeup"],
+                           "kind": "video"}
+    scenes[1]["phrases"], scenes[2]["phrases"] = [1, 1], [2, 2]
+
+    merged = merge_adjacent_series(scenes)
+
+    assert merged == ["s-02"]
+    assert len(scenes) == 3
+    assert scenes[1]["endSec"] == 6.8
+    assert scenes[1]["phrases"] == [1, 2]
+    assert shot_queries(scenes[1]) == ["hands typing", "phone in hand"]
+
+
+def test_слишком_длинная_пара_не_склеивается():
+    """Больше SERIES_MAX — это два стоячих плана, а не монтаж."""
+    from reels_factory.hf_montage import merge_adjacent_series
+
+    scenes = [_scene(0, 0.0, 4.0, "none"), _scene(1, 4.0, 8.0, "none")]
+    scenes[0]["insert"] = {"shots": ["a", "a2"], "kind": "video"}
+    scenes[1]["insert"] = {"shots": ["b", "b2"], "kind": "video"}
+
+    assert merge_adjacent_series(scenes) == []
+    assert len(scenes) == 2
 
 
 def test_потолок_аватара_шестьдесят_процентов():

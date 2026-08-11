@@ -282,6 +282,49 @@ def test_телеметрия_подбора_выключена():
     assert hf_media._node_env()["HYPERFRAMES_NO_TELEMETRY"] == "1"
 
 
+def test_начертание_знака_выбирается_по_палитре(monkeypatch):
+    """Их подбор всегда берёт светлое начертание (`logo-provider.mjs:130`) —
+    тёмный знак под светлый фон. На тёмном ролике он тонет, поэтому пару
+    начертаний спрашиваем у самого источника."""
+    import json as _json
+
+    pair = [{"title": "OpenAI", "route": {"light": "openai.svg",
+                                          "dark": "openai_dark.svg"}}]
+
+    class _Answer:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return _json.dumps(pair).encode("utf-8")
+
+    monkeypatch.setattr(hf_media.urllib.request, "urlopen",
+                        lambda *a, **kw: _Answer())
+    assert hf_media.svgl_route("openai", dark=True) == "openai_dark.svg"
+    assert hf_media.svgl_route("openai", dark=False) == "openai.svg"
+
+
+def test_полноцветный_знак_один_на_любой_фон(monkeypatch):
+    import json as _json
+
+    single = [{"title": "Telegram", "route": "telegram.svg"}]
+
+    class _Answer:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return _json.dumps(single).encode("utf-8")
+
+    monkeypatch.setattr(hf_media.urllib.request, "urlopen",
+                        lambda *a, **kw: _Answer())
+    assert hf_media.svgl_route("telegram", dark=True) == "telegram.svg"
+
+
+def test_бренда_нет_у_источника_и_работает_их_каскад(monkeypatch):
+    def boom(*a, **kw):
+        raise OSError("нет сети")
+
+    monkeypatch.setattr(hf_media.urllib.request, "urlopen", boom)
+    assert hf_media.svgl_route("zzqqwoop", dark=True) is None
+
+
 def test_логотип_ищется_с_именем_бренда(monkeypatch, tmp_path):
     """Каскад логотипа заводится полем `--entity`, а не общей фразой."""
     seen = {}

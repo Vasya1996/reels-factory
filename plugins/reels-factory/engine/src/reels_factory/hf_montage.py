@@ -41,10 +41,26 @@ SERIES_SHOTS = 2
 SERIES_MIN = SHOT_MIN * SERIES_SHOTS
 SERIES_MAX = SHOT_MAX * SERIES_SHOTS
 
-#: Между сериями зритель обязан снова увидеть лицо, и не мельком. Число её:
+#: Между сериями зритель обязан снова увидеть лицо, и не мельком. Планка её:
 #: «между сериями лицо держится ≥2.5с» (HANDOFF-BROLL-ZOOM-V6.md, критерии
-#: приёмки).
-FACE_GAP = 2.5
+#: приёмки), и снята она с эталонных рилсов длиной 41,5 с — то есть 6 %
+#: хронометража. Секундой её держать нельзя: на 30-секундном ролике те же
+#: 2,5 с съедают вдвое большую долю и выбрасывают половину бироллов, а на
+#: минутном, наоборот, разрешают их впритык. Поэтому доля, а не число.
+#:
+#: Пол и потолок — чтобы правило не выродилось: ниже 1,5 с лицо мелькает и
+#: перестаёт быть передышкой, выше 3,5 с ролик превращается в говорящую голову
+#: с редкими вставками.
+FACE_GAP_SHARE = 2.5 / 41.5
+FACE_GAP_MIN = 1.5
+FACE_GAP_MAX = 3.5
+
+
+def face_gap(duration: float) -> float:
+    """Сколько лица держится между сериями на ролике такой длины."""
+    if duration <= 0:
+        return FACE_GAP_MIN
+    return min(FACE_GAP_MAX, max(FACE_GAP_MIN, FACE_GAP_SHARE * float(duration)))
 
 #: Потолок времени, когда аватар виден в кадре. Требование заказчика
 #: 10.08.2026: каждая секунда аватара в кадре — это заказанная секунда
@@ -104,6 +120,51 @@ def check_shots(scenes: list[dict]) -> None:
                 f"списком из {SERIES_SHOTS} непустых запросов, а пришло "
                 f"{len(queries)}. Один план — это одиночная вставка, её в "
                 "монтаже не бывает")
+
+
+def merge_adjacent_series(scenes: list[dict]) -> list[str]:
+    """Соседние сцены с бироллом — это одна серия, а не две.
+
+    Агент называет моменты по смыслу и ставит их подряд там, где подряд идёт
+    мысль. Отбор такие пары разводил силой: между сериями положено держать
+    лицо, значит вторая сцена пары теряла биролл и уходила под ведущую —
+    прогон 29 потерял так три вставки из пяти.
+
+    Правильнее не разгонять, а склеить: два запроса соседей становятся двумя
+    планами ОДНОЙ серии, и это ровно та же грамматика — «биролл не ходит в
+    одиночку, он входит парой планов». Ролик от этого не теряет ни вставки,
+    ни лица: пара занимает столько же места, сколько занимала одна сцена.
+
+    Склеиваем только пару, влезающую в серию по длине (`SERIES_MAX`): более
+    длинная пара — это два стоячих плана, а не монтаж. Возвращает id сцен,
+    которые исчезли, слившись с предыдущей.
+    """
+    merged: list[str] = []
+    index = 0
+    while index < len(scenes) - 1:
+        left, right = scenes[index], scenes[index + 1]
+        if not (insert_of(left) and insert_of(right)):
+            index += 1
+            continue
+        size = float(right["endSec"]) - float(left["startSec"])
+        if size > SERIES_MAX + 0.001:
+            index += 1
+            continue
+        left["endSec"] = right["endSec"]
+        left["phrases"] = [left.get("phrases", [0, 0])[0],
+                           right.get("phrases", [0, 0])[-1]]
+        left["insert"] = {
+            **(left.get("insert") or {}),
+            "shots": [shot_queries(left)[0], shot_queries(right)[0]],
+        }
+        # Кадр держит биролл — ведущей в нём места нет; плашка второй сцены
+        # уезжает вместе с самой сценой.
+        left["presenter"] = "none"
+        merged.append(right["id"])
+        scenes.pop(index + 1)
+    if merged:
+        print("соседние бироллы склеены в одну серию: " + ", ".join(merged))
+    return merged
 
 
 def drop_series(scenes: list[dict], kept: list[str], *,
@@ -291,8 +352,10 @@ def pick_series(scenes: list[dict], clips: list[dict],
                 seconds += length(scene)
         return seconds
 
+    gap = face_gap(duration)
+
     def spaced(chosen: list[dict], stripped: frozenset = frozenset()) -> bool:
-        """Между выбранными сериями лицо держится FACE_GAP.
+        """Между выбранными сериями лицо держится `face_gap(duration)`.
 
         Считаем только те серии, на которых лицо действительно уходит из
         кадра: при `stack` ведущая занимает половину кадра и никуда не
@@ -306,7 +369,7 @@ def pick_series(scenes: list[dict], clips: list[dict],
         ordered = sorted((s for s in chosen
                           if hides_face(s, stripped) and not faceless(s)),
                          key=lambda s: float(s["startSec"]))
-        return all(face_between(left, right, stripped) >= FACE_GAP
+        return all(face_between(left, right, stripped) >= gap
                    for left, right in zip(ordered, ordered[1:]))
 
     candidates = [s for s in scenes if insert_of(s)]

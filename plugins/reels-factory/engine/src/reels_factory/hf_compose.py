@@ -73,6 +73,10 @@ from reels_factory.hf_montage import (
     cut_into_plans, flash_moments, insert_of, refill_scene, shot_queries,
     shots_for, split_series, zoom_ladder,
 )
+from reels_factory.hf_schema import (
+    FORMS, build as schema_build, min_seconds as schema_min_seconds,
+    port_block,
+)
 
 #: Дорожки времени. На одной дорожке клипы не пересекаются — это единственное,
 #: что `data-track-index` значит на самом деле.
@@ -137,6 +141,14 @@ TRACK_SFX = 98
 #: ротация по двум дорожкам это разводит.
 TRACK_OVERLAY = 40
 
+#: Дорожка схем. Отдельная от накладок: схема занимает кадр целиком и с
+#: плашкой в одной сцене не встречается, а на одной дорожке клипы пересекаться
+#: не могут — их линтер зовёт это `overlapping_clips_same_track`.
+TRACK_SCHEMA = 30
+
+#: Дорожка слоя читаемости под накладкой без своей подложки.
+TRACK_SCRIM = 38
+
 #: Значок: длительность входа и потолок свечения. Обе цифры их —
 #: `POP_DUR 0.4–0.7s` (rules/spring-pop-entrance.md:90) и «peak opacity stays
 #: restrained (≤ 0.45 hard ceiling)» (rules/ambient-glow-bloom.md:19).
@@ -170,6 +182,29 @@ def _texture_blocks() -> frozenset:
         return frozenset(texture_overlays())
     except (OSError, ValueError):
         return frozenset()
+
+
+@functools.lru_cache(maxsize=1)
+def _skipped_blocks() -> dict:
+    """Блоки, которые ставить нельзя, и причина. План мог назвать такой блок
+    раньше, чем он попал в этот список, — тогда снимаем его на сборке, а не
+    роняем прогон: агент этого не исправит."""
+    from reels_factory.hf_catalog import skipped_blocks
+    try:
+        return dict(skipped_blocks())
+    except (OSError, ValueError):
+        return {}
+
+
+@functools.lru_cache(maxsize=1)
+def _block_backing() -> dict:
+    """Есть ли у накладки своя подложка под текстом. Каталога может не быть —
+    тогда скрим не кладём: лишний тёмный слой хуже, чем его отсутствие."""
+    from reels_factory.hf_catalog import block_backing
+    try:
+        return dict(block_backing())
+    except (OSError, ValueError):
+        return {}
 
 #: Растровые картинки. Слот может получить и mp4 (например через
 #: `media-use --from`), и тогда тег другой.
@@ -246,37 +281,50 @@ def collect_intents(storyboard: dict) -> list[dict]:
     return requests
 
 
-#: Ключи запасной схемы сцены: логотип бренда и значок предмета.
-FALLBACK_KINDS = ("logo", "icon")
+def schema_plan(scene: dict) -> dict | None:
+    """Схема этой сцены: названная агентом либо запасная.
 
-
-def fallback_key(scene_id: str, kind: str) -> str:
-    return f"{scene_id}::fallback-{kind}"
-
-
-def fallback_intents(scenes: list[dict]) -> list[dict]:
-    """Намерения запасной схемы — для сцен, оставшихся без вставки.
-
-    Отдельным заходом после `settle_inserts`, а не вместе с бироллами: в
-    обычном прогоне сток отвечает, схема не нужна, и платить за неё двумя
-    лишними запросами на каждую серию незачем.
-
-    Логотип идёт их каскадом `resolve --type logo` (svgl → simple-icons →
-    GitHub → фавикон), и ему нужно имя бренда отдельным полем: общая фраза
-    намерения этот каскад не заводит.
+    Агент выбирает схему по смыслу реплики (`schema`), и это его решение.
+    Запасная (`fallback`) включается только тогда, когда сток не дал биролла и
+    закрыть кадр больше нечем: она не подменяет выбор, а спасает сцену.
     """
+    plan = scene.get("schema")
+    if isinstance(plan, dict) and plan.get("form") in FORMS:
+        return plan
+    if scene.get("needsSchema"):
+        plan = scene.get("fallback")
+        if isinstance(plan, dict) and plan.get("form") in FORMS:
+            return plan
+    return None
+
+
+def schema_key(scene_id: str, index: int) -> str:
+    return f"{scene_id}::brand{index}"
+
+
+def schema_intents(scenes: list[dict], *,
+                   theme: dict | None = None) -> list[dict]:
+    """Знаки брендов для схем формы `brand` — единственное, что схеме нужно
+    искать: цифру, список и связь агент называет словами.
+
+    Начертание знака выбирается по палитре ролика: на тёмной нужен светлый
+    знак, на светлой тёмный — иначе он тонет в фоне, который выбрал агент.
+    """
+    from reels_factory.hf_frame import dark_frame
+
+    dark = dark_frame(theme)
     requests = []
     for scene in scenes:
-        plan = scene.get("fallback")
-        if not scene.get("needsSchema") or not isinstance(plan, dict):
+        plan = schema_plan(scene)
+        if not plan or plan.get("form") != "brand":
             continue
-        for kind in FALLBACK_KINDS:
-            intent = str(plan.get(kind) or "").strip()
-            if not intent:
+        for index, brand in enumerate(plan.get("brands") or []):
+            entity = str(brand or "").strip()
+            if not entity:
                 continue
-            requests.append({"key": fallback_key(scene["id"], kind),
-                             "type": kind, "intent": intent,
-                             "entity": intent if kind == "logo" else None,
+            requests.append({"key": schema_key(scene["id"], index),
+                             "type": "logo", "intent": f"{entity} logo",
+                             "entity": entity, "dark_frame": dark,
                              "rect": None, "required": False, "seconds": 0})
     return requests
 
@@ -369,6 +417,20 @@ def _exit(target: str, next_beat: str, at: float) -> list[str]:
 
 _CDN_GSAP = re.compile(r'src="https://cdn\.jsdelivr\.net/npm/gsap[^"]*"')
 
+#: Внешние шрифты блока. Их линтер зовёт это `google_fonts_import`, под
+#: `--strict` предупреждение роняет сборку, и он прав: композиция обязана быть
+#: самодостаточной. Кириллицу всё равно врезаем мы — `hf_fonts.inject_fonts`.
+_CDN_FONTS = re.compile(
+    r'<link[^>]+fonts\.(?:googleapis|gstatic)\.com[^>]*>'
+    r'|@import\s+url\([^)]*fonts\.googleapis\.com[^)]*\);?')
+
+#: Гарнитура блока. Своих шрифтов их блоки не возят: имя ссылается на внешний
+#: источник, а он композиции запрещён. Убрав ссылку, надо и имя заменить —
+#: иначе их же линтер даёт `font_family_without_font_face`, а кириллица уходит
+#: в подменный шрифт. Наши Manrope и Unbounded врезает `hf_fonts`.
+_FONT_FAMILY = re.compile(r"font-family:\s*[^;}]+")
+_OUR_STACK = "font-family: 'Manrope', sans-serif"
+
 _CANVAS = re.compile(
     r'data-composition-id="[^"]+"[^>]*data-width="(\d+)"[^>]*'
     r'data-height="(\d+)"', re.S)
@@ -377,7 +439,8 @@ _NATIVE = re.compile(
 
 
 def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
-                   text: dict | None = None) -> tuple[str, float, tuple]:
+                   text: dict | None = None,
+                   port: dict | None = None) -> tuple[str, float, tuple]:
     """Копия накладки под сцену. Возвращает (имя, родная длительность, канвас).
 
     Копия, а не общий файл: ключ таймлайна сабкомпозиции один на
@@ -419,8 +482,18 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
         if not vendored.exists() and original.exists():
             shutil.copyfile(original, vendored)
     html = _CDN_GSAP.sub('src="gsap-vendor.min.js"', html)
+    html = _CDN_FONTS.sub("", html)
+    html = _FONT_FAMILY.sub(_OUR_STACK, html)
     if text:
         html = prune_timeline(html)
+    # Блок схемы приезжает нарисованным под ландшафт и с их содержимым: канвас,
+    # длительность, содержимое и палитру подставляем здесь же, до записи копии.
+    # Порядок важен — `prune_timeline` вырезает строки с шестнадцатеричным
+    # кодом, приняв их за мёртвый селектор, а палитра идёт правилом CSS.
+    if port:
+        html = port_block(html, duration=port["duration"],
+                          config=port["config"], css=port.get("css", ""),
+                          patches=tuple(port.get("patches") or ()))
     target.write_text(html, encoding="utf-8")
 
     canvas_match = _CANVAS.search(html)
@@ -442,8 +515,17 @@ def needed_blocks(storyboard: dict) -> list[str]:
     for scene in storyboard.get("scenes") or []:
         block = (scene.get("overlay") or {}).get("block") \
             if isinstance(scene.get("overlay"), dict) else None
-        if block and block not in found:
+        if block and block not in found and str(block) not in _skipped_blocks():
             found.append(str(block))
+        # Блоки схем ставим по любой названной форме — и выбранной агентом, и
+        # запасной: какая из них понадобится, выяснится уже после подбора, а
+        # реестр к тому времени опущен.
+        for field in ("schema", "fallback"):
+            plan = scene.get(field)
+            form = plan.get("form") if isinstance(plan, dict) else None
+            block = FORMS.get(form)
+            if block and block not in found:
+                found.append(block)
     return found
 
 
@@ -851,9 +933,18 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # по минимуму — вторую не ставим вовсе: полплашки хуже её отсутствия.
     from reels_factory.hf_slots import min_card_seconds
 
-    marked = [scene for scene in scenes
-              if isinstance(scene.get("overlay"), dict)
-              and (scene["overlay"] or {}).get("block")]
+    marked = []
+    for scene in scenes:
+        overlay = scene.get("overlay")
+        block = overlay.get("block") if isinstance(overlay, dict) else None
+        if not block:
+            continue
+        reason = _skipped_blocks().get(str(block))
+        if reason:
+            print(f'{scene["id"]}: накладка {block} снята — {reason}')
+            scene.pop("overlay", None)
+            continue
+        marked.append(scene)
     staged_overlays = 0
     for position, scene in enumerate(marked):
         overlay = scene["overlay"]
@@ -888,6 +979,18 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         else:
             scale = OUT_W / canvas[0]
             box = "left:0;top:0"
+        # Накладке без своей подложки нужен слой читаемости: их проверка
+        # контраста меряет пиксели под буквами, а `text-shadow` не
+        # засчитывает — на светлом биролле белый текст проваливается. Градиент
+        # их же: «Glass without legibility gradient = white-on-white
+        # catastrophe over bright video. Always pair them»
+        # (talking-head-recut/references/layouts/overlay.html:52-68).
+        if _block_backing().get(str(overlay["block"])) == "none" \
+                and insert_of(scene):
+            body.append(
+                f'    <div class="ovl-scrim" id="scrim-{scene["id"]}"'
+                f' data-start="{start:.4f}" data-duration="{length:.4f}"'
+                f' data-track-index="{TRACK_SCRIM}"></div>')
         body.append(
             f'    <div class="ovl" style="{box}">'
             f'<div data-layout-allow-overflow="true" style="position:absolute;'
@@ -969,51 +1072,47 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 f'{phase}_el.style.transform = `scale(${{1 + s * 0.05}})`; }} '
                 f'}}, {round(start + bloom, 4)});']
 
-    # ── запасная схема ────────────────────────────────────────────────────
-    # Сцена без ведущей, которой сток не дал вставки. Пустой фон с одним титром
-    # читается обрывом, поэтому кадр закрывает схема из её же поля `fallback`:
-    # значок предмета на подложке и логотип бренда под ним. Оба файла — из их
-    # подбора (`--type icon`, `--type logo` каскадом), оформление и движение те
-    # же, что у значка фоновой сцены, чтобы приём в ролике был один.
+    # ── схема ─────────────────────────────────────────────────────────────
+    # То, что нельзя снять камерой: цифра, список шагов, связь двух понятий и
+    # знак бренда. Каждую форму собирает их же блок, вписанный в вертикаль
+    # (`hf_schema`); прежде здесь стоял одинокий значок на белом кружке, и в
+    # кадре он читался эмблемой, а не сценой.
     for scene in scenes:
-        if not scene.get("needsSchema"):
-            continue
-        icon = (resolved.get(fallback_key(scene["id"], "icon")) or {}).get("file")
-        logo = (resolved.get(fallback_key(scene["id"], "logo")) or {}).get("file")
-        if not (icon or logo):
+        plan = schema_plan(scene)
+        if not plan:
             continue
         start, end = _q(scene["startSec"]), _q(scene["endSec"])
-        name = f'schema-{scene["id"]}'
-        parts = [f'<div id="{name}-glow" class="schema-glow"></div>']
-        if icon:
-            parts.append(f'<div id="{name}-icon" class="schema-icon">'
-                         f'<img src="{icon}" alt=""></div>')
-        if logo:
-            parts.append(f'<div id="{name}-logo" class="schema-logo">'
-                         f'<img src="{logo}" alt=""></div>')
-        body.append(f'    <div id="{name}" class="schema-spot">'
-                    + "".join(parts) + "</div>")
+        content = dict(plan)
+        if plan["form"] == "brand":
+            files = [(resolved.get(schema_key(scene["id"], index)) or {}).get("file")
+                     for index in range(len(plan.get("brands") or []))]
+            content["files"] = [f for f in files if f]
+            if not content["files"]:
+                print(f'{scene["id"]}: схема бренда снята — знак не подобрался')
+                continue
+        block, config, css, patches = schema_build(
+            plan["form"], content, duration=end - start, colors=colors)
+        need = schema_min_seconds(plan["form"],
+                                  len(content.get("files")
+                                      or content.get("items")
+                                      or content.get("nodes") or [1]))
+        if end - start < need - 0.05:
+            print(f'{scene["id"]}: схема «{plan["form"]}» снята — сцене '
+                  f"{end - start:.1f} с, а форме нужно {need:.1f}")
+            continue
+        unique, _, _ = _stage_overlay(
+            public, block, scene["id"], sdk=None,
+            port={"duration": end - start, "config": config, "css": css,
+                  "patches": patches})
+        body.append(
+            f'    <div class="ovl">'
+            f'<div id="schema-{scene["id"]}" class="clip"'
+            f' data-composition-id="{unique}"'
+            f' data-composition-src="compositions/{unique}.html"'
+            f' data-start="{start:.4f}" data-duration="{end - start:.4f}"'
+            f' data-track-index="{TRACK_SCHEMA}"'
+            f' data-width="{OUT_W}" data-height="{OUT_H}"></div></div>')
         scene["schemaShown"] = True
-        spot, glow = _js(f"#{name}"), _js(f"#{name}-glow")
-        bloom = round(min(ICON_BLOOM, max(0.0, end - start)), 4)
-        timeline += [
-            f'tl.set({spot}, {{ autoAlpha: 0 }}, 0);',
-            f'tl.set({spot}, {{ autoAlpha: 1 }}, {start});',
-            f'tl.fromTo({glow}, {{ opacity: 0, scale: 0.82 }}, '
-            f'{{ opacity: {ICON_GLOW_PEAK}, scale: 1, duration: {bloom}, '
-            f'ease: "power2.out" }}, {start});',
-            f'tl.set({spot}, {{ autoAlpha: 0 }}, {end});']
-        # Значок и логотип приходят по очереди, а не разом: их же рецепт входа
-        # группы — тот же `fromTo` на каждом элементе со сдвигом `i * STAGGER`,
-        # «capped so the group reads as one arriving beat»
-        # (rules/spring-pop-entrance.md:16, пример :54-62).
-        for order, part in enumerate(p for p in ("icon", "logo")
-                                     if (icon if p == "icon" else logo)):
-            at = round(start + order * 0.12, 4)
-            timeline.append(
-                f'tl.fromTo({_js(f"#{name}-{part}")}, '
-                f'{{ scale: 0, opacity: 0 }}, {{ scale: 1, opacity: 1, '
-                f'duration: {bloom}, ease: "power3.out" }}, {at});')
 
     # ── ведущая ───────────────────────────────────────────────────────────
     # `class="clip"` на `<video>` их линтер не требует — теги `video`/`audio` он

@@ -368,11 +368,16 @@ def _scene_look(scene: dict) -> str:
     icon = str((scene.get("icon") or {}).get("query") or "").strip()
     if icon:
         return f"значок {icon}"
-    plan = scene.get("fallback") or {}
-    schema = " ".join(str(plan.get(kind) or "").strip()
-                      for kind in ("logo", "icon")).strip()
-    if scene.get("needsSchema") and schema:
-        return f"схема {schema}"
+    plan = scene.get("schema")
+    if not (isinstance(plan, dict) and plan.get("form")):
+        plan = scene.get("fallback") if scene.get("needsSchema") else None
+    if isinstance(plan, dict) and plan.get("form"):
+        # Форма и её содержимое: две схемы одной формы, но с разными словами —
+        # это две разные картинки, а не один план.
+        words = plan.get("items") or plan.get("nodes") or plan.get("brands") \
+            or [plan.get("value"), plan.get("label")]
+        return f'схема {plan["form"]} ' + " ".join(
+            str(word) for word in words if word)
     block = str((scene.get("overlay") or {}).get("block") or "").strip()
     return f"накладка {block}" if block else ""
 

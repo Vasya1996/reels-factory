@@ -157,6 +157,13 @@ def overlay_names(catalog_dir=None) -> list[str]:
                           .read_text(encoding="utf-8"))
         if "overlay" not in (item.get("tags") or []):
             continue
+        # Причина отказа записана в карточке: например у `lower-third-bild`
+        # текст приходит из переменных композиции, наши слоты его не видят, и
+        # в кадр уехал бы немецкий дефолт «BILD EXKLUSIV».
+        skip = (item.get("reels") or {}).get("skip")
+        if skip:
+            print(f"накладка {name} не предложена: {skip}")
+            continue
         # Карточка блока перечисляет свои файлы, и `hyperframes add` тянет
         # каждый: недостающий он считает провалом установки (HTTP 404) и роняет
         # всю попытку сборки. Прогон 28 потерял так попытку на
@@ -177,6 +184,48 @@ def overlay_names(catalog_dir=None) -> list[str]:
 #: рамка видоискателя, оформление стоп-кадра. Метка их, не наша — она стоит в
 #: карточках блоков, перенесённых из их реестра.
 TEXTURE_TAG = "media-treatment-overlay"
+
+
+def skipped_blocks(catalog_dir=None) -> dict[str, str]:
+    """Блоки, которые нельзя ставить, и причина у каждого.
+
+    Причина записана в карточке нашего каталога: например их же проверка под
+    `--strict` валит блок, чей CSS адресуется по собственному
+    `data-composition-id`, — исправить это может только автор блока.
+    """
+    root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
+    found = {}
+    for name in block_names(catalog_dir):
+        card = root / "blocks" / name / "registry-item.json"
+        if not card.exists():
+            continue
+        item = json.loads(card.read_text(encoding="utf-8"))
+        reason = (item.get("reels") or {}).get("skip")
+        if reason:
+            found[name] = str(reason)
+    return found
+
+
+def block_backing(catalog_dir=None) -> dict[str, str]:
+    """Есть ли у накладки своя подложка под текстом: `own`, `none`, `textless`.
+
+    Их проверка контраста меряет реальные пиксели под буквами и `text-shadow`
+    не засчитывает (`packages/cli/src/commands/contrast-audit.browser.js`),
+    поэтому накладка без подложки на светлом биролле валит сборку. Признак
+    размечен в карточках нашего каталога — по нему код решает, подкладывать ли
+    скрим, а не выбрасывает накладку.
+    """
+    root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
+    found = {}
+    for name in block_names(catalog_dir):
+        card = root / "blocks" / name / "registry-item.json"
+        if not card.exists():
+            continue
+        item = json.loads(card.read_text(encoding="utf-8"))
+        backing = (item.get("reels") or {}).get("backing")
+        if backing:
+            found[name] = str(backing)
+    return found
 
 
 def texture_overlays(catalog_dir=None) -> set[str]:
