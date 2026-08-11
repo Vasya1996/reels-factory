@@ -218,12 +218,14 @@ ASK_VOICE = (
 # фиксированная фраза. Фраза не настраивается пользователем, чтобы демо
 # нельзя было использовать как бесплатный генератор роликов.
 DEMO_PHRASES = {
-    "ru": "Это я. Твой аватар!",
-    "kk": "Бұл мен. Сенің аватарың!",
+    "ru": "Привет! Это я! Твой аватар.",
+    "kk": "Сәлем! Бұл мен! Сенің аватарың.",
 }
-# По гайду HeyGen: один жест плюс выражение лица, максимум два такта.
+# По гайду HeyGen: один жест плюс характер, коротко. Уверенный оратор, без
+# махания руками и дежурной улыбки — как в полном ролике.
 DEMO_MOTION_PROMPT = (
-    "Avatar raises one hand in a friendly wave, then nods with a warm smile."
+    "Looks straight at the camera with subtle natural hand gestures, "
+    "confident and composed."
 )
 DEMO_EXPRESSIVENESS = "medium"
 DEMO_BUILDING_MSG = (
