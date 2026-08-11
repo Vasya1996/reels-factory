@@ -1515,8 +1515,14 @@ async def _reply_media_asset(msg, kind: str, path: Path, caption: str,
     Первый раз файл заливается с диска, дальше летит мгновенный file_id.
     False — ассета нет и отправить нечем: экран уходит просто текстом,
     разговор из-за картинки не падает.
+
+    Ключ кэша включает отпечаток содержимого: замена файла тем же именем
+    (обновили пример ролика) сразу инвалидирует старый file_id.
     """
-    key = f"{kind}:{path.name}"
+    if not path.exists():
+        return False
+    digest = hashlib.sha1(path.read_bytes()).hexdigest()[:12]
+    key = f"{kind}:{path.name}:{digest}"
     send = getattr(msg, "reply_video" if kind == "video" else "reply_photo",
                    None)
     if send is None:
@@ -1531,8 +1537,6 @@ async def _reply_media_asset(msg, kind: str, path: Path, caption: str,
         except Exception as e:
             # file_id живёт в рамках токена бота: сменили бота — перезальём.
             log.warning("ассет %s не ушёл по file_id: %s", key, e)
-    if not path.exists():
-        return False
     try:
         with path.open("rb") as fh:
             sent = await send(fh, caption=caption, reply_markup=markup)
