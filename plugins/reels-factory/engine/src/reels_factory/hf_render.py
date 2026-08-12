@@ -470,7 +470,8 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
 def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                          avatar_mp4s: list, master_audio, alignment_words: list,
                          avatar_render_plan: dict | None = None,
-                         out_mp4=None, agent_runner=None) -> dict:
+                         out_mp4=None, agent_runner=None,
+                         wishes: dict | None = None) -> dict:
     """Материал -> план агента -> сборка кодом -> гейты -> рендер -> громкость."""
     rdir = Path(rdir).resolve()
     public = rdir / "public"
@@ -509,7 +510,7 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         hf_captions.stage(rdir)
         write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
                     duration=duration, clips=clips, phrases=phrases,
-                    overlay_passports=_passports())
+                    overlay_passports=_passports(), wishes=wishes)
         (rdir / "phrases.json").write_text(
             json.dumps(phrases, ensure_ascii=False, indent=1), encoding="utf-8")
         (rdir / "clips.json").write_text(
@@ -537,7 +538,7 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                 write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
                             duration=duration, clips=saved_clips,
                             retry_reason=reason, phrases=phrases,
-                            overlay_passports=_passports())
+                            overlay_passports=_passports(), wishes=wishes)
 
             board = run_step(rdir, "plan",
                              lambda: plan_with_agent(rdir, runner=agent_runner))

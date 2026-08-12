@@ -85,17 +85,56 @@ def _positions_block() -> str:
                      in POSITIONS)
 
 
+#: Поля, которые заказчик может назвать сам. Имена и смысл — их контракта брифа
+#: (`hyperframes-core/references/brief-contract.md`, раздел «Shared fields»);
+#: `notes` — свободная строка, их же «Capture answers verbatim… under `## Notes`»
+#: (`hyperframes/references/intent-interview.md`, шаг 7).
+WISHES = {
+    "message": "главная мысль ролика",
+    "audience": "кто это смотрит",
+    "angle": "форма рассказа",
+    "destination": "где ролик будет играть",
+    "notes": "пожелания к оформлению и всё, что ещё сказал заказчик",
+}
+
+
+def _wishes_block(wishes: dict | None) -> str:
+    """Сказанное заказчиком — отдельной секцией, дословно.
+
+    Их правило: спрашивают один раз, ответ уходит в бриф и больше не
+    выводится заново, а сказанное и выведенное живут порознь. Незаполненное
+    поле — не пустая строка в кадре, а разрешение вывести его самому: «Values
+    inferred or derived by policy are stated in the brief, not asked».
+    """
+    said = {key: str((wishes or {}).get(key) or "").strip() for key in WISHES}
+    said = {key: value for key, value in said.items() if value}
+    if not said:
+        return ""
+    lines = "\n".join(f"- **{key}** ({WISHES[key]}): {value}"
+                      for key, value in said.items())
+    rest = [key for key in WISHES if key not in said and key != "notes"]
+    tail = (f"\nОстальное ({', '.join(rest)}) выведи сам." if rest else "")
+    return ("\n### Это сказал заказчик — бери как есть\n\n"
+            f"{lines}\n{tail}\n")
+
+
 def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
                 clips: list[dict] | None = None, language: str = "ru",
                 retry_reason: str | None = None,
                 phrases: list[dict] | None = None,
                 overlay_passports: str = "",
+                wishes: dict | None = None,
                 avatar_ordered: bool = True) -> Path:
     """Записать BRIEF.md рядом с материалом. Возвращает путь.
 
     `avatar_ordered=False` — план до заказа аватара (работа 9): клипов ещё
     нет, дыры не навязаны, агент сам решает `avatarNeeded`, и по его решению
     острова закажут.
+
+    `wishes` — то, что заказчик назвал сам. Шага «пожелания» у нас не было
+    вовсе: агент выводил всё из материала, и указать ему «ролик про этот сайт,
+    в таком-то тоне» было негде. Пропущенный шаг ничего не ломает — поля без
+    ответа агент выводит, как выводил.
     """
     rdir = Path(rdir)
     rdir.mkdir(parents=True, exist_ok=True)
@@ -147,6 +186,7 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     # Значки перечисления — закрытый список из кода: агент выбирает из него, а
     # не придумывает имя, иначе карточка осталась бы без рисунка.
     icon_names = ", ".join(f"`{name}`" for name in ICONS)
+    wishes_block = _wishes_block(wishes)
 
     retry_block = (
         f"\n## Повторная сборка\n\nПрошлая версия не прошла проверку:\n\n"
@@ -634,8 +674,10 @@ colors:
 контракт брифа: «Infer when clear», «Derive and echo one sentence», «Recommend
 one route-defined option» (hyperframes-core/references/brief-contract.md:71-73).
 Главная мысль нужна не для отчёта: без неё нечем сверять, та ли картинка встала
-в сцену.
-
+в сцену. Что заказчик сказал сам — не выводи заново: их правило держит сказанное
+и выведенное порознь, «what the user answered and what was inferred or defaulted
+as two visibly separate groups» (hyperframes/references/intent-interview.md:8).
+{wishes_block}
 ## Что делает код после тебя
 
 Это не запреты, а разделение работы: перечисленное уже сделано, повторять не
