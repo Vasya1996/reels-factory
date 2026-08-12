@@ -576,3 +576,30 @@ def test_validator_detects_duplicate_visible_phrase():
     report = validate_avatar_render_plan(plan, edit_plan)
     assert report["all_pass"] is False
     assert any("ровно один раз" in error for error in report["errors"])
+
+
+def test_решение_агента_перекрывает_эвристику_покрытия():
+    """Работа 9: вход островов — avatarNeeded из плана агента; нарезка
+    прежним кодом."""
+    from reels_factory.avatar_islands import apply_agent_coverage
+
+    plan = {"phrases": [
+        {"id": "p0", "coverage": "broll",
+         "final_timing": {"start": 0.0, "end": 2.0}},
+        {"id": "p1", "coverage": "avatar",
+         "final_timing": {"start": 2.0, "end": 4.0}},
+        {"id": "p2", "coverage": "avatar",
+         "final_timing": {"start": 4.0, "end": 6.0}},
+    ]}
+    scenes = [
+        {"id": "s-01", "startSec": 0.0, "endSec": 2.0, "avatarNeeded": True},
+        {"id": "s-02", "startSec": 2.0, "endSec": 4.0, "avatarNeeded": False},
+        {"id": "s-03", "startSec": 4.0, "endSec": 6.0},
+    ]
+    out = apply_agent_coverage(plan, scenes)
+    got = {p["id"]: p["coverage"] for p in out["phrases"]}
+    assert got["p0"] == "avatar"      # агент попросил ведущую
+    assert got["p1"] == "broll"       # агент отказался — экономия HeyGen
+    assert got["p2"] == "avatar"      # решения нет — эвристика не тронута
+    # исходный план не изменён
+    assert plan["phrases"][0]["coverage"] == "broll"

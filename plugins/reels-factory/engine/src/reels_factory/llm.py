@@ -48,6 +48,13 @@ class SkillRunner(Protocol):
 # чистой комнате, без личных CLAUDE.md, хуков, плагинов и памяти разработчика.
 SKILL_PROFILE_DIR = Path.home() / ".reels-factory" / "claude"
 
+#: Права скилла: только чтение. Скиллы сценария держат свои правила в
+#: справочниках рядом с SKILL.md и читают их по ходу; в чистой комнате
+#: разрешений нет ни одного, и первый же `Read` возвращает «нужно
+#: подтверждение» — сессия отвечает этой фразой вместо JSON, и путь «из сырья»
+#: встаёт целиком. Писать им нечего: ответ уходит текстом.
+SKILL_TOOLS = ("Read", "Glob", "Grep")
+
 
 class ClaudeSkillRunner:
     """Вызов скилла плагина: claude -p "/reels-factory:<skill> <payload>".
@@ -114,6 +121,7 @@ class ClaudeSkillRunner:
         p = subprocess.run(
             [self.exe, "-p", "--output-format", "json",
              "--plugin-dir", self.plugin_dir,
+             "--allowedTools", *SKILL_TOOLS,
              "--setting-sources", "", "--strict-mcp-config"],
             input=prompt, capture_output=True, text=True, encoding="utf-8",
             timeout=self.timeout_s, env=self._env(),

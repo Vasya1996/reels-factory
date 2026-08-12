@@ -34,6 +34,20 @@ def _resolve(exe: str) -> str:
 FFMPEG = _resolve("ffmpeg")
 FFPROBE = _resolve("ffprobe")
 
+
+def cli_env() -> dict:
+    """Окружение для их CLI и их скриптов подбора.
+
+    Телеметрию гасим их же выключателем: и CLI, и `resolve` шлют события в
+    PostHog, а после входа в HeyGen события связываются с почтой аккаунта, чьи
+    ключи стоят у пользователя. Переменная — их канон, ей же они глушат
+    телеметрию в своём CI (`.github/workflows/ci.yml:10`, документирована в
+    `docs/guides/feedback.mdx:209` и `hyperframes-cli/references/
+    upgrade-info-misc.md:60`). Значение из окружения уважаем: включить обратно
+    можно осознанно, поставив `HYPERFRAMES_NO_TELEMETRY=0`.
+    """
+    return {"HYPERFRAMES_NO_TELEMETRY": "1", **os.environ}
+
 # Рабочая папка проекта пользователя (cwd), НЕ каталог пакета.
 WORK_ROOT = Path.cwd() / "work"
 # Пользовательская память фабрики (markdown/yaml, в git проекта пользователя).

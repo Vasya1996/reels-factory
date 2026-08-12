@@ -258,6 +258,37 @@ def _request_timing(
     return _timing(start, end)
 
 
+def apply_agent_coverage(edit_plan: dict, scenes: list[dict]) -> dict:
+    """Вход островов — решение агента, а не эвристика (работа 9).
+
+    Агент-планировщик ставит каждой сцене `avatarNeeded`; фраза наследует
+    решение сцены, в которую попадает её середина. Дальше нарезка на острова
+    идёт прежним кодом (`_islands_from_phrases`) — меняется только вход, как
+    и было задумано. Внутри заказанного острова платятся все секунды, поэтому
+    `avatarNeeded: false` — это прямая экономия HeyGen.
+
+    Возвращает копию плана; сцены без поля не меняют фразу — эвристика
+    остаётся запасным мнением там, где агент решения не назвал.
+    """
+    plan = copy.deepcopy(edit_plan)
+    ordered = sorted(scenes or [],
+                     key=lambda scene: float(scene.get("startSec", 0)))
+    for phrase in plan.get("phrases") or []:
+        timing = phrase.get("final_timing") or {}
+        middle = (float(timing.get("start", 0))
+                  + float(timing.get("end", 0))) / 2
+        for scene in ordered:
+            if (float(scene.get("startSec", 0)) - 0.001 <= middle
+                    < float(scene.get("endSec", 0))):
+                needed = scene.get("avatarNeeded")
+                if needed is False:
+                    phrase["coverage"] = "broll"
+                elif needed is True:
+                    phrase["coverage"] = "avatar"
+                break
+    return plan
+
+
 def _islands_from_phrases(phrases: list[dict]) -> list[list[dict]]:
     islands: list[list[dict]] = []
     current: list[dict] = []

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "lower-third-bild",
+  "type": "hyperframes:block",
+  "title": "Lower Third — BILD Style",
+  "description": "News-style lower third with tight-fit text boxes: white headline bar with red drop-shadow, red sub-line with white drop-shadow.",
+  "dimensions": {
+    "width": 1920,
+    "height": 1080
+  },
+  "duration": 8.0,
+  "tags": [
+    "broadcast",
+    "lower-third",
+    "news",
+    "overlay"
+  ],
+  "files": [
+    {
+      "path": "lower-third-bild.html",
+      "target": "compositions/lower-third-bild.html",
+      "type": "hyperframes:composition"
+    },
+    {
+      "path": "assets/fonts/BarlowCondensed-Bold.woff2",
+      "target": "compositions/assets/fonts/BarlowCondensed-Bold.woff2",
+      "type": "hyperframes:asset"
+    },
+    {
+      "path": "assets/fonts/BarlowCondensed-ExtraBold.woff2",
+      "target": "compositions/assets/fonts/BarlowCondensed-ExtraBold.woff2",
+      "type": "hyperframes:asset"
+    }
+  ],
+  "reels": {
+    "backing": "own",
+    "skip": "текст приходит из data-composition-variables, наши слоты его не видят — в кадр уедет немецкий дефолт BILD EXKLUSIV"
+  }
+}

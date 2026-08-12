@@ -298,6 +298,8 @@ def test_kazakh_edit_plan_берёт_казахский_cta_и_before_after():
         == "before_after"
         for window in plan["windows"]
     )
+    # before_after window should skip avatar for development block
+    assert plan["blocks"][1]["avatar_required"] is False
 
 
 def _three_questions_scenario():
@@ -1143,3 +1145,106 @@ def test_performance_recommendations_отклоняют_неподдержива
 
     with pytest.raises(ValueError, match="неподдерживаемым объектом"):
         apply_performance_recommendations(draft, recommendations)
+
+
+def _timed_two_blocks():
+    return {"total": 20.0, "blocks": [
+        {"role": "hook", "start": 0.0, "end": 6.0,
+         "speech": "первый вопрос кому продаём и кто наш клиент"},
+        {"role": "cta", "start": 6.0, "end": 20.0, "speech": "сохрани это видео"},
+    ]}
+
+
+def test_у_каждого_окна_есть_разрешённая_зона():
+    from reels_factory.editplan import build_edit_plan
+    from reels_factory.hf_layout import ALLOWED_ZONES
+
+    plan = build_edit_plan(_timed_two_blocks(), {}, index={}, require_asset_files=False)
+    assert plan["windows"], "план без окон — тест бессмыслен"
+    for window in plan["windows"]:
+        assert window["zone"] in ALLOWED_ZONES
+
+
+def test_аватарное_окно_поверх_видео():
+    from reels_factory.editplan import build_edit_plan
+
+    plan = build_edit_plan(_timed_two_blocks(), {}, index={}, require_asset_files=False)
+    for window in plan["windows"]:
+        if window["coverage"] in {"avatar", "mixed"}:
+            assert window["zone"] == "video-overlay"
+
+
+def test_поле_камеры_не_потеряно():
+    from reels_factory.editplan import build_edit_plan
+
+    plan = build_edit_plan(_timed_two_blocks(), {}, index={}, require_asset_files=False)
+    assert all("camera" in w for w in plan["windows"])
+
+
+def test_даунгрейд_возвращает_зону_с_ведущим():
+    from reels_factory.editplan import _downgrade_window
+
+    window = {"id": "w", "phrase_ids": [], "role": "development",
+              "coverage": "hyperframes", "zone": "fullscreen"}
+    _downgrade_window({"phrases": []}, window, "нет ассета")
+    assert window["zone"] == "video-overlay"
+
+
+def test_полноэкранная_графика_разрешает_пропуск_аватара():
+    from reels_factory.editplan import validate_edit_plan
+
+    plan = {
+        "format_version": 1, "status": "draft",
+        "script": {"language": "ru"},
+        "timeline": {"final_duration_seconds": 6.0},
+        "blocks": [], "log": [],
+        "phrases": [{"id": "p1", "text": "три вопроса", "block_index": 0,
+                     "coverage": "hyperframes", "window_id": "w1"}],
+        "windows": [{"id": "w1", "phrase_ids": ["p1"], "block_index": 0,
+                     "coverage": "hyperframes", "zone": "fullscreen",
+                     "safe_to_skip_avatar": True,
+                     "effect": {"type": "chart_bars",
+                                "hyperframes": {"block": "task_list"}}}],
+    }
+    report = validate_edit_plan(plan, require_final=False, require_asset_files=False)
+    assert not any("HeyGen skip" in e for e in report["errors"])
+
+
+def test_блок_без_ведущего_помечается_как_не_требующий_аватара():
+    from reels_factory.editplan import _refresh_blocks_and_summary
+
+    plan = {
+        "blocks": [{"index": 0, "role": "development", "start": 0.0, "end": 6.0}],
+        "phrases": [{"id": "p1", "block_index": 0, "coverage": "hyperframes",
+                     "window_id": "w1"}],
+        "windows": [{"id": "w1", "phrase_ids": ["p1"], "block_index": 0,
+                     "coverage": "hyperframes", "zone": "fullscreen",
+                     "effect": {"type": "chart_bars"},
+                     "safe_to_skip_avatar": True}],
+        "summary": {},
+    }
+    _refresh_blocks_and_summary(plan)
+    assert plan["blocks"][0]["avatar_required"] is False
+
+
+def test_названный_сайт_даёт_запрос_снимка():
+    from reels_factory.editplan import material_for_phrase
+
+    material = material_for_phrase("зайди на elevenlabs точка ай о и попробуй")
+    assert material["kind"] == "site"
+    assert "elevenlabs" in material["url"]
+
+
+def test_последовательность_действий_даёт_маршрут():
+    from reels_factory.editplan import material_for_phrase
+
+    material = material_for_phrase(
+        "открываешь гугл вводишь запрос выбираешь первую ссылку и листаешь")
+    assert material["kind"] == "route"
+    assert material["steps"][0]["type"] == "goto"
+
+
+def test_без_предмета_материал_не_нужен():
+    from reels_factory.editplan import material_for_phrase
+
+    assert material_for_phrase("порядок этих вопросов решает всё") is None

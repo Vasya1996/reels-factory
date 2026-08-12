@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>G05 · progressive_text_card</title>
+<link rel="stylesheet" href="../../tokens.css">
+<style>
+  #scene{justify-content:center}
+  #stackk{display:flex;flex-direction:column;gap:38px;margin-top:70px}
+  .ln{font-family:MontserratX,sans-serif;font-weight:900;font-size:150px;line-height:1.02;
+    letter-spacing:-.03em;text-transform:uppercase;color:var(--ink);opacity:0;transform:translateY(30px)}
+  .ln.in{opacity:1;transform:none;transition:opacity .3s var(--ease-pop),transform .4s var(--ease-pop)}
+  .ln .bgw{padding:0 24px}
+  .footnote{margin-top:100px;font-family:CaveatX,cursive;font-size:60px;color:var(--red);
+    transform:rotate(-2deg);opacity:0}
+  .footnote.in{opacity:1;transition:opacity .34s var(--ease)}
+</style>
+</head>
+<body>
+<div id="fit"><div id="scene">
+  <div class="tech" data-t="0"><span class="dash"></span><span class="lbl">Автоматизация · Суть</span></div>
+  <div id="stackk">
+    <div class="ln" data-t="500">ОДИН РАЗ</div>
+    <div class="ln" data-t="1300"><span class="bgw" style="background:var(--yellow)">НАСТРОИЛ</span></div>
+    <div class="ln" data-t="2100">И <span class="bgw" style="background:var(--mint)">ЗАБЫЛ</span></div>
+  </div>
+  <div class="footnote" data-t="3100">каждая новая строка — новый кадр смысла</div>
+  <div class="spacer"></div>
+</div></div>
+<script src="../../shared.js"></script>
+</body>
+</html>

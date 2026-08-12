@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>G04 · broll_fullscreen</title>
+<link rel="stylesheet" href="../../tokens.css">
+<style>
+  #scene{padding:0}
+  /* fullscreen b-roll: в проде — видео с parallax-zoom */
+  #broll{position:absolute;inset:0;overflow:hidden}
+  #broll .img{position:absolute;inset:-8%;
+    background:
+      linear-gradient(160deg, rgba(168,220,203,.4), transparent 60%),
+      linear-gradient(20deg, rgba(255,216,77,.35), transparent 50%),
+      var(--paper);
+    display:flex;align-items:center;justify-content:center;
+    animation:pz 9s var(--ease) infinite alternate}
+  @keyframes pz{from{transform:scale(1) translateY(0)}to{transform:scale(1.09) translateY(-26px)}}
+  #broll span{font-family:JBMonoX,monospace;font-size:26px;letter-spacing:.14em;color:rgba(27,27,24,.4);text-transform:uppercase}
+  #broll .grid{position:absolute;inset:0;background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:67px 67px}
+  .attr{position:absolute;top:120px;left:60px;font-family:JBMonoX,monospace;font-size:24px;letter-spacing:.12em;
+    color:var(--ink);background:rgba(252,251,246,.85);border:4px solid var(--ink);padding:10px 20px;transform:rotate(-1deg);opacity:0}
+  .attr.in{opacity:1;transition:opacity .3s var(--ease)}
+  .cap{position:absolute;left:50%;bottom:170px;transform:translateX(-50%);white-space:nowrap;
+    font-family:MontserratX,sans-serif;font-weight:900;font-size:56px;text-transform:uppercase;color:var(--ink);
+    background:var(--card);border:5px solid var(--ink);padding:22px 40px;box-shadow:6px 8px 0 rgba(27,27,24,.16);border-radius:22px}
+</style>
+</head>
+<body>
+<div id="fit"><div id="scene">
+  <div id="broll"><div class="img"><span>b-roll видео · parallax zoom<br>(placeholder)</span></div><div class="grid"></div></div>
+  <div class="attr" data-t="400">источник: клиентский проект</div>
+  <div class="cap"><span class="w" data-t="900">ВОТ</span> <span class="w" data-t="1120">КАК</span> <span class="w" data-t="1340">ЭТО</span> <span class="w hl" data-t="1560"><i></i>РАБОТАЕТ</span></div>
+</div></div>
+<script src="../../shared.js"></script>
+</body>
+</html>

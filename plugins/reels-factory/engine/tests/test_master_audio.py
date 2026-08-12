@@ -341,11 +341,18 @@ def test_build_master_audio_упавший_meter_не_роняет_уже_опл
 
 def test_master_audio_feature_flag_safe_default(monkeypatch):
     monkeypatch.delenv("RF_MASTER_AUDIO_ENABLED", raising=False)
-    assert master_audio_enabled({}) is False
+    assert master_audio_enabled({}) is True
     assert master_audio_enabled({"master_audio": {"enabled": True}}) is True
     monkeypatch.setenv("RF_MASTER_AUDIO_ENABLED", "0")
     assert master_audio_enabled({"master_audio": {"enabled": True}}) is False
     monkeypatch.setenv("RF_MASTER_AUDIO_ENABLED", "true")
+    assert master_audio_enabled({}) is True
+
+
+def test_мастер_звук_включён_по_умолчанию(monkeypatch):
+    from reels_factory.master_audio import master_audio_enabled
+
+    monkeypatch.delenv("RF_MASTER_AUDIO_ENABLED", raising=False)
     assert master_audio_enabled({}) is True
 
 

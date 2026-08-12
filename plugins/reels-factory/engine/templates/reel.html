@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <!-- GSAP ДО всего: их компонент субтитров строит таймлайн в
+         `document.fonts.ready.then()` и зовёт голый `gsap` (caption-highlight
+         .html:405), сам подключая библиотеку в <head> (там же:13). Тег после
+         сниппета проигрывал гонку — подробности в hf_compose. -->
+    <script src="vendor/gsap.min.js"></script>
+    <style>
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0; padding: 0; width: 100%; height: 100%;
+        overflow: hidden; background: __BG__;
+        font-family: 'Manrope', 'Unbounded', sans-serif;
+      }
+      /* Свой фон у сцены, а не только у body: врезанная сабкомпозиция —
+         отдельная страница со своим `html,body{background:…}`, и это правило
+         красит весь кадр. Цвет — из frame.md (их спека оформления). */
+      #stage { position: relative; width: 100%; height: 100%; overflow: hidden;
+        background: __BG__; }
+      /* Фоновый слой по их рецепту (house-style.md:33-47): радиальные глоу в
+         тон акцента с медленным «дыханием» — статичные декоративы «мертвы».
+         Радиальный, не линейный: полноэкранный линейный градиент на тёмном
+         бандит в H.264 (video-composition.md:31). Прозрачность видео-уровня
+         12–25%, веб-уровень 3–8% в кадре невидим (video-composition.md:43). */
+      #bg-decor { position: absolute; inset: 0; z-index: 5;
+        pointer-events: none; }
+      #bg-glow { position: absolute; left: -30%; top: -12%;
+        width: 160%; height: 62%; will-change: transform;
+        background: radial-gradient(ellipse 50% 50% at 50% 50%,
+          __ACCENT__33 0%, __ACCENT__00 68%); }
+      #bg-glow-low { position: absolute; right: -40%; bottom: -18%;
+        width: 130%; height: 52%; will-change: transform;
+        background: radial-gradient(ellipse 50% 50% at 50% 50%,
+          __ACCENT__1f 0%, __ACCENT__00 64%); }
+      /* Порядок слоёв держит z-index, а не `data-track-index`: тот у них
+         «display-only; render never reads it»
+         (packages/core/src/runtime/timeline.ts:599). Снизу вверх:
+         вставка -> ведущая -> титр. */
+      .ins { position: absolute; overflow: hidden; z-index: 10; }
+      .ins .ins-media { position: absolute; inset: 0;
+        width: 100%; height: 100%; will-change: transform; }
+      #video-wrap { position: absolute; left: 0; top: 0;
+        width: __W__px; height: __H__px; overflow: hidden; z-index: 20; }
+      /* Клипы лежат слоем друг на друге, а не в потоке. Без `position:
+         absolute` второй клип встаёт под первым, то есть за нижним краем
+         обёртки с `overflow:hidden`, и весь остаток ролика идёт по чёрному:
+         ведущая пропадает после первого куска. Проверено кадрами прогона
+         03.08 — там, где это работало, стояло ровно это правило. */
+      /* Ступени наезда живут на самом видео, а не на обёртке: обёртке
+         геометрию назначает раскладка. `object-fit: cover` делает из scale
+         настоящее перекадрирование, а не растяжение; точка отсчёта — лицо по
+         замеру face.json, иначе наезд уводит голову за верхний край.
+         `object-position` — про другое: это точка КАДРИРОВАНИЯ клипа в окне.
+         По умолчанию cover режет от центра, и в невысоком окне (`stack` —
+         1080x844) у говорящего срезана макушка; долю считает
+         hf_compose.crop_position по тому же замеру. */
+      #video-wrap video { position: absolute; inset: 0;
+        width: 100%; height: 100%; object-fit: cover;
+        object-position: __FIT__;
+        transform-origin: __ORIGIN__; will-change: transform; }
+      #video-wrap.pip-pill, #video-wrap[class~="pip-pill"] { border-radius: 18px;
+        box-shadow: 0 24px 60px -20px rgba(0,0,0,.45),
+                    0 0 0 5px rgba(255,255,255,.85); }
+      /* Скрим под полосой титра — их же канон, а не времянка: компонент
+         субтитров прозрачен, и их дока прямо велит «add a contrast layer
+         (e.g. a semi-transparent dark div) in the host composition beneath
+         the caption sub-composition, not inside the component»
+         (media-use/audio/references/captions/authoring.md:145). Без него
+         белое слово на светлом видео — 2:1, и их аудит контраста под
+         --strict роняет сборку (contrast_aa_failure, прогон 16). Градиент
+         частичный, не полноэкранный — правило о бандинге
+         (video-composition.md:31) говорит о полноэкранных линейных. */
+      #caption-scrim { position: absolute; left: 0; right: 0; bottom: 0;
+        height: 920px; z-index: 25; pointer-events: none;
+        background: linear-gradient(180deg, rgba(0,0,0,0) 0%,
+          rgba(0,0,0,0.55) 32%, rgba(0,0,0,0.65) 100%); }
+      /* Компонент субтитров рассчитан на отдельную страницу и держит себя
+         `position: relative`; внутри нашей сцены он обязан лечь слоем. */
+      #highlight { position: absolute; left: 0; top: 0; z-index: 30; }
+      /* Накладки-эффекты (вспышка на кульминации) светят поверх всего,
+         включая титр: так ведёт себя настоящая засветка кадра. */
+      .fx { position: absolute; inset: 0; z-index: 40; overflow: hidden;
+        pointer-events: none; }
+      /* Накладки агента — их блоки из каталога: плашки, карточки. Поверх
+         ведущей и скрима, под титром. */
+      .ovl { position: absolute; right: 0; width: 100%; height: 100%;
+        z-index: 28; overflow: visible; pointer-events: none; }
+      /* Слой читаемости под накладкой без своей подложки. Градиент их —
+         talking-head-recut/references/layouts/overlay.html:52-62, и их же
+         предупреждение: «стекло без него — катастрофа белым по белому на
+         светлом видео, ставьте их в паре». */
+      .ovl-scrim { position: absolute; inset: 0; z-index: 27;
+        pointer-events: none;
+        background: linear-gradient(180deg, rgba(0,0,0,.55) 0%,
+          transparent 22%, transparent 50%, rgba(0,0,0,.72) 100%); }
+      /* Значок фоновой сцены. Готового блока-значка в их реестре нет (146
+         позиций, ни одной иконки), поэтому оформление собрано их приёмами
+         движения: подложка со свечением позади и вход spring-pop
+         (hyperframes-animation/rules/{ambient-glow-bloom,spring-pop-entrance}.md).
+         Перекраска силуэта CSS-фильтром убрана: белый контур на почти
+         чёрном кадре — это не оформление, а костыль. */
+      .icon-spot { position: absolute; left: 50%; top: 400px;
+        transform: translateX(-50%); width: 380px; height: 380px;
+        z-index: 12; }
+      /* Свечение ЗА подложкой: их правило требует цвет темнее и насыщеннее
+         того, что подсвечивается, — фирменный акцент под светлой плашкой
+         (ambient-glow-bloom.md:19), потолок непрозрачности 0,45 (там же:19).
+         z-index ниже плашки: свечение впереди её бы перекрыло (там же:14). */
+      .icon-glow { position: absolute; inset: -26%; z-index: 1; opacity: 0;
+        will-change: transform, opacity; pointer-events: none;
+        background: radial-gradient(circle at 50% 50%,
+          __ACCENT__cc 0%, __ACCENT__55 42%, __ACCENT__00 72%); }
+      /* Подложка: их подбор отдаёт значок чёрным контуром на прозрачном
+         фоне, и на светлой плашке он читается сам, без перекраски. Кант в
+         фирменном акценте держит связь с оформлением ролика. */
+      .icon-plate { position: absolute; inset: 0; z-index: 2;
+        border-radius: 50%; background: __INK__;
+        box-shadow: 0 0 0 7px __ACCENT__, 0 26px 60px -18px rgba(0,0,0,.55);
+        display: flex; align-items: center; justify-content: center;
+        transform-origin: 50% 50%; will-change: transform; }
+      .icon-plate img { width: 54%; height: 54%; object-fit: contain; }
+      /* Запасная схема: сцена без ведущей, которой сток не дал вставки.
+         Значок предмета и знак бренда столбиком по центру кадра, на общем
+         свечении. Ставится выше полосы титра (её верх — 1000 px) и ниже
+         верхнего края, чтобы читаться как решение, а не как заплатка. */
+      .schema-spot { position: absolute; left: 50%; top: 470px;
+        transform: translateX(-50%); width: 560px; height: 470px;
+        z-index: 12; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 44px; }
+      .schema-glow { position: absolute; inset: -18%; z-index: 1; opacity: 0;
+        will-change: transform, opacity; pointer-events: none;
+        background: radial-gradient(circle at 50% 45%,
+          __ACCENT__cc 0%, __ACCENT__55 44%, __ACCENT__00 74%); }
+      .schema-icon { position: relative; z-index: 2; width: 300px;
+        height: 300px; border-radius: 50%; background: __INK__;
+        box-shadow: 0 0 0 7px __ACCENT__, 0 26px 60px -18px rgba(0,0,0,.55);
+        display: flex; align-items: center; justify-content: center;
+        transform-origin: 50% 50%; will-change: transform; }
+      .schema-icon img { width: 54%; height: 54%; object-fit: contain; }
+      /* Знак бренда — на своей плашке: подбор отдаёт и тёмные силуэты, и
+         цветные знаки, и на тёмном фоне первые пропадали бы. */
+      .schema-logo { position: relative; z-index: 2; padding: 18px 30px;
+        border-radius: 26px; background: __INK__;
+        box-shadow: 0 18px 44px -16px rgba(0,0,0,.55);
+        display: flex; align-items: center; justify-content: center;
+        transform-origin: 50% 50%; will-change: transform; }
+      .schema-logo img { max-width: 320px; max-height: 96px;
+        object-fit: contain; }
+      /* Титр компонент сажает на 140px от низа и масштабирует по высоте кадра
+         — в портрете это 249px, слишком низко: там платформа рисует свой
+         интерфейс. Их же справочник по рельсу титров велит для 9:16 держать
+         600–700px от низа (embedded-captions/references/rail.md:20-21).
+         Отступ компонент проставляет строкой стиля на группе, поэтому
+         перекрыть его можно только так. */
+      #highlight .hl-group { bottom: __CAPTION_BOTTOM__px !important; }
+    </style>
+  </head>
+  <body>
+    <div id="stage" data-composition-id="reel" data-root="true" data-start="0"
+         data-duration="__DURATION__" data-fps="__FPS__"
+         data-width="__W__" data-height="__H__">
+      <div id="bg-decor"><div id="bg-glow"></div>
+        <div id="bg-glow-low"></div></div>
+__BODY__
+      <div id="caption-scrim"></div>
+      <script>
+        (function () {
+          const tl = window.gsap.timeline({ paused: true });
+__TIMELINE__
+          tl.set({}, {}, __DURATION__);
+          window.__timelines = window.__timelines || {};
+          window.__timelines["reel"] = tl;
+        })();
+      </script>
+    </div>
+  </body>
+</html>

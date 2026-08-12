@@ -2623,11 +2623,17 @@ def test_islands_без_master_audio_даёт_полную_оценку(work, tm
     islands включёнными, но master_audio выключенным, не может пойти по
     island-пути, значит оценка не должна притворяться, что может: тот же
     баланс, которого не хватает без островов вообще, не должен хватать и
-    здесь."""
+    здесь.
+    master_audio теперь включён по умолчанию (Задача 11) — здесь он должен
+    быть выключен явно, иначе профиль перестаёт представлять сценарий
+    "islands без master_audio", который тест и проверяет."""
     monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
     monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
     clients_mod.register_client(
-        "3", _client_base_cfg(avatar_islands={"enabled": True}),
+        "3", _client_base_cfg(
+            avatar_islands={"enabled": True},
+            master_audio={"enabled": False},
+        ),
         voice_id="voice-1", asset_id="asset-1",
     )
     баланс = 350_000  # хватает только на урезанную (islands) оценку, не на полную

@@ -12,6 +12,10 @@ dependencies = [
     "yt-dlp",
     "faster-whisper",
     "pyyaml",
+    # Детектор лица. Ниже 5: в 5.x нет cv2.CascadeClassifier, и без него
+    # detect_face_anchor молча отдаёт запасной якорь — гейт «текст не на лице»
+    # начинает охранять пустое место.
+    "opencv-python-headless<5",
 ]
 
 [project.optional-dependencies]

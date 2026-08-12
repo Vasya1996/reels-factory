@@ -1,0 +1,32 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "macos-notification",
+  "type": "hyperframes:block",
+  "title": "macOS Notification",
+  "description": "Animated macOS-style notification banner with app icon and message",
+  "tags": [
+    "social",
+    "overlay",
+    "notification"
+  ],
+  "dimensions": {
+    "width": 1920,
+    "height": 1080
+  },
+  "duration": 5.0,
+  "files": [
+    {
+      "path": "macos-notification.html",
+      "target": "compositions/macos-notification.html",
+      "type": "hyperframes:composition"
+    }
+  ],
+  "preview": {
+    "video": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/macos-notification.mp4",
+    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/macos-notification.png"
+  },
+  "reels": {
+    "backing": "own",
+    "skip": "их же проверка валит блок под --strict: CSS адресуется по собственному data-composition-id и течёт на соседние копии"
+  }
+}

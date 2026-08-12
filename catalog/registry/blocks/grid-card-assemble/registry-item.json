@@ -1,0 +1,31 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "grid-card-assemble",
+  "type": "hyperframes:block",
+  "title": "Grid Card Assemble",
+  "description": "N capability cards (thin-line icon that draws on, mono label, optional muted body) stagger-assemble into a grid or vertical list with a fade plus short slide into slot, then hold perfectly still.",
+  "tags": [
+    "motion-primitive",
+    "layout",
+    "grid",
+    "list",
+    "stagger",
+    "assemble",
+    "feature-tour"
+  ],
+  "dimensions": {
+    "width": 1080,
+    "height": 1920
+  },
+  "duration": 4.5,
+  "reels": {
+    "form": "items"
+  },
+  "files": [
+    {
+      "type": "hyperframes:composition",
+      "path": "grid-card-assemble.html",
+      "target": "compositions/grid-card-assemble.html"
+    }
+  ]
+}

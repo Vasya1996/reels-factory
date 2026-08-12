@@ -1,0 +1,28 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "g13-complexity-cloud",
+  "type": "hyperframes:block",
+  "title": "Облако сложности вокруг ведущей",
+  "description": "Шесть плашек-терминов налетают вокруг ведущей и схлопываются в одну красную плашку-вывод. Слот под видео ведущей пустой — #g13-presenter-slot.",
+  "tags": [
+    "scenes",
+    "presenter",
+    "video-slot",
+    "cloud",
+    "payoff",
+    "ru"
+  ],
+  "license": "MIT",
+  "dimensions": {
+    "width": 1080,
+    "height": 1920
+  },
+  "duration": 7,
+  "files": [
+    {
+      "path": "g13-complexity-cloud.html",
+      "target": "compositions/g13-complexity-cloud.html",
+      "type": "hyperframes:composition"
+    }
+  ]
+}

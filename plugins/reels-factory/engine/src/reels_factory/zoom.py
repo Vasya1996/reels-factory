@@ -51,6 +51,12 @@ ZOOM_OUT = "zoom_out"  # старт крупно, плавный отъезд к
 # пауза: без «широких» фраз всё превращается в непрерывное приближение.
 KIND_CYCLE = (PUSH, HOLD, PUNCH, PULSE)
 
+#: Якорь, когда лицо не нашлось: чуть выше центра — у головы должен быть
+#: headroom. Для наездов такой запасной вариант годится, а вот для гейта
+#: «текст не на лице» — нет: там выдуманное лицо хуже, чем никакого, поэтому
+#: face_detect.face_box_for отличает его от найденного.
+DEFAULT_ANCHOR = (0.5, 0.42)
+
 
 def detect_face_anchor(src, *, sample_fps: float = 2.0, run_probe=None,
                        detect=None) -> tuple:
@@ -70,7 +76,7 @@ def detect_face_anchor(src, *, sample_fps: float = 2.0, run_probe=None,
             # нет OpenCV / не читается файл — дефолтный якорь лучше, чем падение
             centers = []
     if not centers:
-        return (0.5, 0.42)
+        return DEFAULT_ANCHOR
     xs = sorted(c[0] for c in centers)
     ys = sorted(c[1] for c in centers)
     return (_median(xs), _median(ys))

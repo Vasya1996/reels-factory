@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>G06 · sequence_flow</title>
+<link rel="stylesheet" href="../../tokens.css">
+<style>
+  #flow{display:flex;flex-direction:column;align-items:center;gap:16px;margin-top:120px}
+  .step{display:flex;align-items:center;gap:40px;width:100%}
+  .box{flex:1;background:var(--card);border:6px solid var(--ink);padding:52px 40px;text-align:center;
+    box-shadow:var(--shadow-card);font-family:MontserratX,sans-serif;font-weight:900;font-size:88px;
+    text-transform:uppercase;color:var(--ink);opacity:0;transform:rotate(var(--rot,0deg)) scale(.85)}
+  .box.in{opacity:1;transform:rotate(var(--rot,0deg)) scale(1);transition:opacity .26s var(--ease-pop),transform .38s var(--ease-pop)}
+  .box small{display:block;font-family:ManropeX,sans-serif;font-weight:600;font-size:34px;text-transform:none;
+    letter-spacing:0;color:rgba(27,27,24,.55);margin-top:12px}
+  .arr{font-family:CaveatX,cursive;font-size:110px;line-height:.7;color:var(--red);opacity:0;transform:translateY(-12px)}
+  .arr.in{opacity:1;transform:none;transition:opacity .22s var(--ease),transform .26s var(--ease)}
+  .order{margin-top:90px;font-family:CaveatX,cursive;font-size:58px;color:var(--red);transform:rotate(-1.5deg);opacity:0}
+  .order.in{opacity:1;transition:opacity .3s}
+  .order u{text-decoration:none;border-bottom:5px solid var(--red)}
+</style>
+</head>
+<body>
+<div id="fit"><div id="scene">
+  <div class="tech" data-t="0"><span class="dash"></span><span class="lbl">Порядок · Три вопроса</span></div>
+  <h1 style="font-size:92px"><span class="w" data-t="300">СТРОГО</span> <span class="w hl" data-t="550"><i></i>ПО ПОРЯДКУ</span></h1>
+  <div id="flow">
+    <div class="step"><div class="box r1" style="--rot:-.6deg" data-t="1400">КТО<small>кому продаём</small></div></div>
+    <div class="arr" data-t="2200">↓</div>
+    <div class="step"><div class="box r2" style="--rot:.5deg" data-t="2600">ЧТО<small>что на самом деле покупают</small></div></div>
+    <div class="arr" data-t="3400">↓</div>
+    <div class="step"><div class="box r3" style="--rot:-.4deg" data-t="3800">КАК<small>где и какими словами</small></div></div>
+  </div>
+  <div class="order" data-t="5000">поменяешь местами — <u>не работает</u></div>
+  <div class="spacer"></div>
+</div></div>
+<script src="../../shared.js"></script>
+</body>
+</html>
