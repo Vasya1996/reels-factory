@@ -1,0 +1,28 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "g02-avatar-fullscreen-hook",
+  "type": "hyperframes:block",
+  "title": "Ведущая во весь кадр + хук",
+  "description": "Хук первых секунд: видео ведущей во весь кадр, сверху тех-лейбл и стикер, снизу крупный заголовок и вотермарк. Слот под видео пустой — #g02-presenter-slot.",
+  "tags": [
+    "scenes",
+    "presenter",
+    "video-slot",
+    "hook",
+    "fullscreen",
+    "ru"
+  ],
+  "license": "MIT",
+  "dimensions": {
+    "width": 1080,
+    "height": 1920
+  },
+  "duration": 4,
+  "files": [
+    {
+      "path": "g02-avatar-fullscreen-hook.html",
+      "target": "compositions/g02-avatar-fullscreen-hook.html",
+      "type": "hyperframes:composition"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>G02 · avatar_fullscreen_hook</title>
+<link rel="stylesheet" href="../../tokens.css">
+<style>
+  #scene{padding:0}
+  /* fullscreen аватар: в проде — HeyGen-видео */
+  #av{position:absolute;inset:0;border:none;background:
+    radial-gradient(circle at 50% 32%, rgba(187,148,87,.25), transparent 55%),var(--paper);
+    display:flex;align-items:center;justify-content:center}
+  #av .ph{width:640px;height:1120px;border:6px dashed rgba(27,27,24,.35);
+    border-radius:320px 320px 240px 240px / 420px 420px 200px 200px;
+    display:flex;align-items:flex-end;justify-content:center;padding-bottom:60px}
+  #av span{font-family:JBMonoX,monospace;font-size:24px;letter-spacing:.12em;color:rgba(27,27,24,.45);text-transform:uppercase;text-align:center}
+  #av .grid{position:absolute;inset:0;background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:67px 67px;pointer-events:none}
+  .top{position:absolute;top:110px;left:64px}
+  #hook{position:absolute;left:64px;right:64px;bottom:190px;
+    font-family:MontserratX,sans-serif;font-weight:900;font-size:110px;line-height:1.1;text-transform:uppercase;color:var(--ink)}
+  .wm{position:absolute;right:56px;bottom:80px;font-family:JBMonoX,monospace;font-weight:700;font-size:26px;
+    letter-spacing:.1em;color:var(--card);background:var(--ink);padding:10px 22px;border-radius:12px;
+    transform:rotate(-1deg);opacity:0}
+  .wm.in{opacity:1;transition:opacity .4s var(--ease)}
+</style>
+</head>
+<body>
+<div id="fit"><div id="scene">
+  <div id="av"><div class="grid"></div><div class="ph"><span>fullscreen аватар<br>(placeholder)</span></div></div>
+  <div class="top">
+    <div class="tech" data-t="0" style="margin-bottom:22px"><span class="dash"></span><span class="lbl">Хук · 0–3 секунды</span></div>
+    <div class="sticker" data-t="250" style="font-size:58px;padding:8px 24px">СТОП-СКРОЛЛ</div>
+  </div>
+  <div id="hook">
+    <span class="w" data-t="700">ОДНО</span> <span class="w" data-t="920">ФОТО.</span><br>
+    <span class="w hl" data-t="1250"><i></i>ГОТОВЫЙ РИЛС.</span>
+  </div>
+  <div class="wm" data-t="2200">@julia.agents</div>
+</div></div>
+<script src="../../shared.js"></script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "g04-broll-fullscreen",
+  "type": "hyperframes:block",
+  "title": "B-roll во весь кадр с параллакс-зумом",
+  "description": "Перебивка: b-roll во весь кадр медленно наезжает, сверху плашка-источник, снизу пословная подпись в рамке. Слот под видео или фото пустой — #g04-broll-slot.",
+  "tags": [
+    "scenes",
+    "media-slot",
+    "broll",
+    "fullscreen",
+    "caption",
+    "ru"
+  ],
+  "license": "MIT",
+  "dimensions": {
+    "width": 1080,
+    "height": 1920
+  },
+  "duration": 5,
+  "files": [
+    {
+      "path": "g04-broll-fullscreen.html",
+      "target": "compositions/g04-broll-fullscreen.html",
+      "type": "hyperframes:composition"
+    }
+  ]
+}

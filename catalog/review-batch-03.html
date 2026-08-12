@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Приёмка · Партия 3 golden-блоков</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,sans-serif;background:#efece4;color:#111;padding:24px}
+  h1{font-size:20px;margin-bottom:4px}
+  .sub{color:#666;font-size:13px;margin-bottom:24px}
+  .grid{display:flex;gap:20px;flex-wrap:wrap}
+  .cell{width:330px}
+  .cell .name{font-weight:700;font-size:14px;margin:10px 0 2px}
+  .cell .what{font-size:12px;color:#666;line-height:1.4;min-height:3em}
+  .ph{width:324px;height:576px;border-radius:12px;overflow:hidden;background:#000;box-shadow:0 10px 30px rgba(0,0,0,.2)}
+  .ph iframe{width:1080px;height:1920px;transform:scale(.3);transform-origin:0 0;border:0}
+  .btns{display:flex;gap:8px;margin-top:8px}
+  .btns a{flex:1;text-align:center;font-size:12px;font-weight:700;padding:8px 0;border:1.5px solid #111;border-radius:6px;color:#111;text-decoration:none}
+</style>
+</head>
+<body>
+<h1>Партия 3 — приёмка (пересборка базовых блоков)</h1>
+<div class="sub">Последняя партия: базовые блоки из свайпа «да», теперь в «Скетчбуке». Ответ: «G01 да / правка …»</div>
+<div class="grid" id="g"></div>
+<script>
+const B=[
+ {id:'g01-avatar-editorial-bubble', name:'G01 · avatar_editorial_bubble', what:'Аватар в рамке-пузыре со стикером «это ты», глава + пункты слева'},
+ {id:'g02-avatar-fullscreen-hook', name:'G02 · avatar_fullscreen_hook', what:'Fullscreen аватар + стикер СТОП-СКРОЛЛ + крупный хук-текст + watermark'},
+ {id:'g03-archival-collage', name:'G03 · broll_archival_collage', what:'Полароиды со скотчем падают на доску, красный бейдж «3 ИСТОЧНИКА»'},
+ {id:'g04-broll-fullscreen', name:'G04 · broll_fullscreen', what:'Fullscreen b-roll с parallax-zoom, плашка-атрибуция, caption-карточка'},
+ {id:'g05-progressive-text', name:'G05 · progressive_text_card', what:'Крупная типографика построчно: ОДИН РАЗ / НАСТРОИЛ / И ЗАБЫЛ'},
+ {id:'g06-sequence-flow', name:'G06 · sequence_flow', what:'КТО → ЧТО → КАК с рукописными стрелками и пометкой про порядок'},
+ {id:'g07-stat-number', name:'G07 · stat_number', what:'Гигантская цифра-стикер штампуется + подпись word-by-word'},
+ {id:'g08-task-list', name:'G08 · task_list', what:'Эталонный тасклист (принят ранее), перенесён в каталог'},
+ {id:'g09-instagram-follow', name:'G09 · instagram_follow', what:'Карточка профиля, кнопка «Подписаться» нажимается курсором'},
+];
+document.getElementById('g').innerHTML=B.map(b=>`
+ <div class="cell">
+  <div class="ph"><iframe src="blocks/${b.id}/index.html" scrolling="no"></iframe></div>
+  <div class="name">${b.name}</div>
+  <div class="what">${b.what}</div>
+  <div class="btns"><a href="blocks/${b.id}/index.html" target="_blank">Открыть</a>
+  <a href="#" onclick="const f=this.closest('.cell').querySelector('iframe');f.src=f.src;return false">↻ Повтор</a></div>
+ </div>`).join('');
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "g24-photo-strike-list",
+  "type": "hyperframes:block",
+  "title": "Список, который зачёркивается",
+  "description": "Фото в рамке слева, окно-арка ведущей справа, заголовок в две строки и три строки списка: каждая въезжает, перечёркивается красным и гаснет; в конце поверх фото ложится красный росчерк отмены. Слоты: #g24-media-slot и #g24-presenter-slot.",
+  "tags": [
+    "scenes",
+    "list",
+    "strike",
+    "negation",
+    "media-slot",
+    "presenter",
+    "video-slot",
+    "ru"
+  ],
+  "license": "MIT",
+  "dimensions": {
+    "width": 1080,
+    "height": 1920
+  },
+  "duration": 6,
+  "files": [
+    {
+      "path": "g24-photo-strike-list.html",
+      "target": "compositions/g24-photo-strike-list.html",
+      "type": "hyperframes:composition"
+    }
+  ]
+}

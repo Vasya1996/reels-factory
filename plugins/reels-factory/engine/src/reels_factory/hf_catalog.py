@@ -25,10 +25,12 @@ import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
 
-#: Где лежит наш каталог. Переопределяется переменной окружения — на сервере и
-#: в WSL путь другой, а зашивать в код чужую машину нельзя.
+#: Где лежит наш каталог. Он в репозитории: сборка без него не работает вовсе,
+#: а разметка форм в карточках — наша, и восстановить её неоткуда. Раньше он
+#: жил отдельной папкой на одной машине и под гитом не был.
+#: Переменная окружения перекрывает — на сервере и в WSL путь другой.
 CATALOG_DIR = Path(os.environ.get("REELS_CATALOG_DIR")
-                   or Path.home() / "projects" / "golden-catalog")
+                   or Path(__file__).resolve().parents[5] / "catalog")
 
 #: Подпапка каталога, разложенная по их схеме реестра:
 #: registry.json + blocks/<имя>/{registry-item.json,<имя>.html}.

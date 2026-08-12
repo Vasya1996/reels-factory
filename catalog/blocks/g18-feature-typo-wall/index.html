@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>G18 · feature_typo_wall</title>
+<link rel="stylesheet" href="../../tokens.css">
+<style>
+  #wall{display:flex;flex-direction:column;gap:26px;margin-top:90px}
+  .row{font-family:MontserratX,sans-serif;font-weight:900;text-transform:uppercase;color:var(--ink);
+    font-size:96px;line-height:1.04;letter-spacing:-.02em;opacity:0;transform:translateY(22px)}
+  .row.in{opacity:1;transform:none;transition:opacity .26s var(--ease),transform .3s var(--ease)}
+  .row .tagbg{padding:0 20px}
+  .row.dim{color:rgba(27,27,24,.28)}
+  .row .num{font-family:CaveatX,cursive;font-weight:700;font-size:58px;color:var(--red);margin-right:22px;vertical-align:24px}
+</style>
+</head>
+<body>
+<div id="fit"><div id="scene">
+  <div class="tech" data-t="0"><span class="dash"></span><span class="lbl">Пайплайн · Из чего собран</span></div>
+  <div class="sticker" data-t="300" style="font-size:56px;padding:10px 26px">7 ШАГОВ</div>
+  <div id="wall">
+    <div class="row"      data-t="1100"><span class="num">1</span>СЦЕНАРИЙ</div>
+    <div class="row"      data-t="1800"><span class="num">2</span>ОЗВУЧКА</div>
+    <div class="row"      data-t="2500"><span class="num">3</span>АВАТАР</div>
+    <div class="row"      data-t="3200"><span class="num">4</span><span class="tagbg" style="background:var(--mint)">МОНТАЖ</span></div>
+    <div class="row dim"  data-t="3900"><span class="num">5</span>СУБТИТРЫ</div>
+    <div class="row dim"  data-t="4400"><span class="num">6</span>SFX</div>
+    <div class="row"      data-t="5000"><span class="num">7</span><span class="tagbg" style="background:var(--yellow)">ПУБЛИКАЦИЯ</span></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="cta" data-t="6200"><span>Один запуск — всё сразу</span><span>→</span></div>
+</div></div>
+<script src="../../shared.js"></script>
+</body>
+</html>

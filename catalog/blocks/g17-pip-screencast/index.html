@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>G17 · pip_screencast</title>
+<link rel="stylesheet" href="../../tokens.css">
+<style>
+  /* «браузер» со скринкастом: в проде — реальный скринкаст с медленным зумом */
+  #browser{margin-top:60px;background:var(--card);border:6px solid var(--ink);border-radius:34px;
+    box-shadow:var(--shadow-card);overflow:hidden;transform:rotate(-.5deg) translateY(30px);opacity:0;flex:none}
+  #browser.in{opacity:1;transform:rotate(-.5deg) translateY(0);transition:opacity .34s var(--ease),transform .44s var(--ease)}
+  .chrome{display:flex;gap:14px;align-items:center;padding:22px 30px;border-bottom:5px solid var(--ink)}
+  .chrome b{width:22px;height:22px;border-radius:50%;border:4px solid var(--ink)}
+  .chrome .url{flex:1;font-family:JBMonoX,monospace;font-size:24px;color:rgba(27,27,24,.55);border:4px solid rgba(27,27,24,.25);border-radius:14px;padding:8px 20px}
+  #cast{position:relative;height:840px;overflow:hidden}
+  #cast .content{position:absolute;inset:24px;animation:drift 8s linear infinite alternate}
+  @keyframes drift{from{transform:translateY(0) scale(1)}to{transform:translateY(-60px) scale(1.05)}}
+  .line{height:34px;border-radius:10px;background:rgba(27,27,24,.14);margin:22px 30px}
+  .line.w60{width:60%}.line.w80{width:80%}.line.w45{width:45%}
+  .block{height:150px;border:4px solid rgba(27,27,24,.3);border-radius:16px;margin:26px 30px;background:rgba(168,220,203,.25)}
+  /* рукописная обводка-акцент */
+  #ring{position:absolute;left:52%;top:34%;width:420px;height:220px;border:8px solid var(--red);
+    border-radius:52% 48% 55% 45% / 60% 55% 45% 50%;transform:rotate(-4deg) scale(.5);opacity:0}
+  #ring.in{opacity:1;transform:rotate(-4deg) scale(1);transition:opacity .22s var(--ease-pop),transform .34s var(--ease-pop)}
+  /* PiP-аватар снизу */
+  #pip{position:absolute;left:64px;bottom:84px;width:340px;height:460px;background:rgba(252,251,246,.5);
+    border:6px dashed rgba(27,27,24,.45);border-radius:28px;box-shadow:var(--shadow-card);
+    display:flex;align-items:center;justify-content:center;opacity:0;transform:translateY(30px) rotate(-1deg)}
+  #pip.in{opacity:1;transform:translateY(0) rotate(-1deg);transition:opacity .3s var(--ease-pop),transform .4s var(--ease-pop)}
+  #pip span{font-family:JBMonoX,monospace;font-size:22px;letter-spacing:.12em;color:rgba(27,27,24,.5);text-transform:uppercase;text-align:center}
+  .cap{position:absolute;left:50%;bottom:120px;transform:translateX(-50%);white-space:nowrap;
+    font-family:MontserratX,sans-serif;font-weight:900;font-size:50px;text-transform:uppercase;color:var(--ink);
+    background:var(--card);border:5px solid var(--ink);padding:18px 34px;box-shadow:6px 8px 0 rgba(27,27,24,.16);border-radius:20px}
+</style>
+</head>
+<body>
+<div id="fit"><div id="scene">
+  <div class="tech" data-t="0"><span class="dash"></span><span class="lbl">Продукт · Скринкаст</span></div>
+  <div id="browser" data-t="350">
+    <div class="chrome"><b></b><b></b><b></b><div class="url">app.reels-factory.ai</div></div>
+    <div id="cast">
+      <div class="content">
+        <div class="line w60"></div><div class="line w80"></div><div class="block"></div>
+        <div class="line w45"></div><div class="line w80"></div><div class="block"></div><div class="line w60"></div>
+      </div>
+      <div id="ring" data-t="2400"></div>
+    </div>
+  </div>
+  <div id="pip" data-t="1200"><span>аватар PiP<br>(placeholder)</span></div>
+  <div class="cap"><span class="w" data-t="3100">ВСЁ</span> <span class="w" data-t="3320">СОБИРАЕТСЯ</span> <span class="w hl" data-t="3560"><i></i>САМО</span></div>
+  <div class="spacer"></div>
+</div></div>
+<script src="../../shared.js"></script>
+</body>
+</html>

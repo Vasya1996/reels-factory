@@ -1,0 +1,27 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "g05-progressive-text",
+  "type": "hyperframes:block",
+  "title": "Нарастающий текст в три строки",
+  "description": "Чистая типографика: три строки-плаката появляются по одной, две из них на цветной плашке, снизу рукописная ремарка.",
+  "tags": [
+    "scenes",
+    "text-effect",
+    "typography",
+    "portrait",
+    "ru"
+  ],
+  "license": "MIT",
+  "dimensions": {
+    "width": 1080,
+    "height": 1920
+  },
+  "duration": 4.5,
+  "files": [
+    {
+      "path": "g05-progressive-text.html",
+      "target": "compositions/g05-progressive-text.html",
+      "type": "hyperframes:composition"
+    }
+  ]
+}

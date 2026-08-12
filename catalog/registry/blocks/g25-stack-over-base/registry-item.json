@@ -1,0 +1,31 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "g25-stack-over-base",
+  "type": "hyperframes:block",
+  "title": "Надстройка над основанием",
+  "description": "Заголовок и фото слева, окно-арка ведущей справа, стопка из четырёх узких плашек собирается снизу вверх, под ней три опорные пилюли и рамка с выводом. Слоты: #g25-media-slot и #g25-presenter-slot.",
+  "tags": [
+    "scenes",
+    "stack",
+    "hierarchy",
+    "foundation",
+    "summary",
+    "media-slot",
+    "presenter",
+    "video-slot",
+    "ru"
+  ],
+  "license": "MIT",
+  "dimensions": {
+    "width": 1080,
+    "height": 1920
+  },
+  "duration": 6,
+  "files": [
+    {
+      "path": "g25-stack-over-base.html",
+      "target": "compositions/g25-stack-over-base.html",
+      "type": "hyperframes:composition"
+    }
+  ]
+}

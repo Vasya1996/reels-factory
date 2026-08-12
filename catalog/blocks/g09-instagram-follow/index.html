@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>G09 · instagram_follow</title>
+<link rel="stylesheet" href="../../tokens.css">
+<style>
+  #scene{align-items:center;justify-content:center;text-align:center}
+  .tech{align-self:center}
+  #cardf{margin-top:70px;width:760px;background:var(--card);border:6px solid var(--ink);border-radius:44px;
+    box-shadow:var(--shadow-card);padding:70px 60px;display:flex;flex-direction:column;align-items:center;gap:34px;
+    transform:rotate(-.8deg) translateY(30px);opacity:0}
+  #cardf.in{opacity:1;transform:rotate(-.8deg) translateY(0);transition:opacity .34s var(--ease),transform .44s var(--ease)}
+  .ava{width:230px;height:230px;border-radius:50%;border:6px solid var(--ink);
+    background:conic-gradient(var(--yellow),var(--mint),var(--yellow));display:flex;align-items:center;justify-content:center}
+  .ava span{font-family:JBMonoX,monospace;font-size:20px;color:rgba(27,27,24,.55);text-transform:uppercase}
+  .hnd{font-family:MontserratX,sans-serif;font-weight:900;font-size:56px;color:var(--ink)}
+  .bio{font-size:34px;font-weight:600;color:rgba(27,27,24,.6);line-height:1.5}
+  #btn{background:var(--red);color:var(--card);border:6px solid var(--ink);border-radius:24px;
+    font-family:MontserratX,sans-serif;font-weight:900;font-size:44px;text-transform:uppercase;
+    padding:30px 74px;box-shadow:8px 10px 0 var(--ink);opacity:0;transform:scale(.7)}
+  #btn.in{opacity:1;transform:scale(1);transition:opacity .22s var(--ease-pop),transform .36s var(--ease-pop)}
+  #btn.pressed{animation:press .5s var(--ease) forwards}
+  @keyframes press{30%{transform:scale(.93);box-shadow:3px 4px 0 var(--ink)}100%{transform:scale(1);box-shadow:8px 10px 0 var(--ink)}}
+  #cursor{position:absolute;font-family:CaveatX,cursive;font-size:120px;color:var(--ink);
+    right:180px;bottom:490px;opacity:0;transform:translate(60px,60px) rotate(-12deg)}
+  #cursor.in{opacity:1;transform:translate(0,0) rotate(-12deg);transition:opacity .3s var(--ease),transform .55s var(--ease)}
+  .note{margin-top:70px;font-family:CaveatX,cursive;font-size:54px;color:var(--red);transform:rotate(-1.5deg);opacity:0}
+  .note.in{opacity:1;transition:opacity .3s var(--ease)}
+</style>
+</head>
+<body>
+<div id="fit"><div id="scene">
+  <div class="tech" data-t="0"><span class="dash"></span><span class="lbl">Финал · Подписка</span></div>
+  <h1 style="font-size:88px"><span class="w" data-t="300">ДАЛЬШЕ</span> <span class="w hl" data-t="550"><i></i>БОЛЬШЕ</span></h1>
+  <div id="cardf" data-t="1100">
+    <div class="ava"><span>фото</span></div>
+    <div class="hnd">@julia.agents</div>
+    <div class="bio">ИИ-агенты и автоматизация<br>контента без команды</div>
+    <div id="btn" data-t="2000">Подписаться</div>
+  </div>
+  <div id="cursor" data-t="2500">☞</div>
+  <div class="note" data-t="3400">это бесплатно :)</div>
+</div></div>
+<script src="../../shared.js"></script>
+<script>
+addEventListener('DOMContentLoaded',()=>{
+  const btn=document.getElementById('btn');
+  const orig=SKB.play; let t=[];
+  function playF(){
+    t.forEach(clearTimeout); t=[]; btn.classList.remove('pressed'); orig();
+    t.push(setTimeout(()=>btn.classList.add('pressed'),3050));
+  }
+  document.getElementById('replay').onclick=playF;
+  playF();
+});
+</script>
+</body>
+</html>

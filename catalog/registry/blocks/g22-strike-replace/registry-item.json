@@ -1,0 +1,30 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "g22-strike-replace",
+  "type": "hyperframes:block",
+  "title": "Замена смысла: зачёркнуто и заменено",
+  "description": "Крупный номер главы, заголовок, фото в рамке, строка перечёркивается красным, и на её место встаёт мятная плашка с заменой. Слоты: #g22-media-slot и #g22-presenter-slot.",
+  "tags": [
+    "scenes",
+    "strike",
+    "replace",
+    "negation",
+    "media-slot",
+    "presenter",
+    "video-slot",
+    "ru"
+  ],
+  "license": "MIT",
+  "dimensions": {
+    "width": 1080,
+    "height": 1920
+  },
+  "duration": 4,
+  "files": [
+    {
+      "path": "g22-strike-replace.html",
+      "target": "compositions/g22-strike-replace.html",
+      "type": "hyperframes:composition"
+    }
+  ]
+}

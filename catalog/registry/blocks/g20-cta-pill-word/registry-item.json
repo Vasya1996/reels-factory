@@ -1,0 +1,27 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "g20-cta-pill-word",
+  "type": "hyperframes:block",
+  "title": "Финальный CTA со словом в пилюле",
+  "description": "Финал: заголовок-призыв, ключевое слово на жёлтой пилюле с лёгкой пульсацией, рукописная стрелка, подпись и ник в плашке.",
+  "tags": [
+    "social",
+    "outro",
+    "cta",
+    "portrait",
+    "ru"
+  ],
+  "license": "MIT",
+  "dimensions": {
+    "width": 1080,
+    "height": 1920
+  },
+  "duration": 5,
+  "files": [
+    {
+      "path": "g20-cta-pill-word.html",
+      "target": "compositions/g20-cta-pill-word.html",
+      "type": "hyperframes:composition"
+    }
+  ]
+}

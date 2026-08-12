@@ -1,0 +1,27 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "g12-before-after",
+  "type": "hyperframes:block",
+  "title": "Было — стало",
+  "description": "Сравнение двух состояний: верхняя карточка гасится и перечёркивается крестом, стрелка ведёт к мятной карточке результата, внизу CTA.",
+  "tags": [
+    "scenes",
+    "before-after",
+    "comparison",
+    "cta",
+    "ru"
+  ],
+  "license": "MIT",
+  "dimensions": {
+    "width": 1080,
+    "height": 1920
+  },
+  "duration": 6.5,
+  "files": [
+    {
+      "path": "g12-before-after.html",
+      "target": "compositions/g12-before-after.html",
+      "type": "hyperframes:composition"
+    }
+  ]
+}

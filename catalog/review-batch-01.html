@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Приёмка · Партия 1 golden-блоков</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,sans-serif;background:#efece4;color:#111;padding:24px}
+  h1{font-size:20px;margin-bottom:4px}
+  .sub{color:#666;font-size:13px;margin-bottom:24px}
+  .grid{display:flex;gap:20px;flex-wrap:wrap}
+  .cell{width:330px}
+  .cell .name{font-weight:700;font-size:14px;margin:10px 0 2px}
+  .cell .what{font-size:12px;color:#666;line-height:1.4;min-height:3em}
+  .ph{width:324px;height:576px;border-radius:12px;overflow:hidden;background:#000;box-shadow:0 10px 30px rgba(0,0,0,.2)}
+  .ph iframe{width:1080px;height:1920px;transform:scale(.3);transform-origin:0 0;border:0}
+  .btns{display:flex;gap:8px;margin-top:8px}
+  .btns a{flex:1;text-align:center;font-size:12px;font-weight:700;padding:8px 0;border:1.5px solid #111;border-radius:6px;color:#111;text-decoration:none}
+</style>
+</head>
+<body>
+<h1>Партия 1 — приёмка</h1>
+<div class="sub">Анимация в мини-превью играет сразу; «Открыть» — полный размер с кнопкой повтора. Ответ в чат по каждому: «G10 да / правка …»</div>
+<div class="grid" id="g"></div>
+<script>
+const B=[
+ {id:'g10-phone-case', name:'G10 · phone_case_overlay', what:'Телефон без аватара, реальный кейс: переписка с клиентом, сообщения-стикеры'},
+ {id:'g11-checklist-strike', name:'G11 · checklist_strike v2', what:'Пункты шлёпаются и зачёркиваются красным, финал — жёлтый стикер-резолюция'},
+ {id:'g12-before-after', name:'G12 · before_after v2', what:'БЫЛО гасится крестом → СТАЛО шлёпается мятной карточкой + CTA'},
+ {id:'g13-complexity-cloud', name:'G13 · complexity_cloud v2', what:'Слова-стикеры всплывают вокруг аватара (тут плейсхолдер), потом схлопываются в payoff'},
+];
+document.getElementById('g').innerHTML=B.map(b=>`
+ <div class="cell">
+  <div class="ph"><iframe src="blocks/${b.id}/index.html" scrolling="no"></iframe></div>
+  <div class="name">${b.name}</div>
+  <div class="what">${b.what}</div>
+  <div class="btns"><a href="blocks/${b.id}/index.html" target="_blank">Открыть</a>
+  <a href="#" onclick="const f=this.closest('.cell').querySelector('iframe');f.src=f.src;return false">↻ Повтор</a></div>
+ </div>`).join('');
+</script>
+</body>
+</html>
