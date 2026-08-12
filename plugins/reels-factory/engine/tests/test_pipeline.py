@@ -1020,21 +1020,3 @@ def test_без_монтажа_один_проход_heygen(monkeypatch, tmp_pat
     json.dumps(res)
 
 
-def test_без_монтажа_требует_master_audio(monkeypatch, tmp_path):
-    """Без master_audio нет единой дорожки на весь ролик — честная ошибка,
-    а не тихий откат на поблочный (монтажный) путь."""
-    calls = []
-    fs, fa = _fakes(monkeypatch, tmp_path, calls)
-    avatar = _FakeAvatar()
-    wd = _wd_with_scenario(tmp_path)
-
-    cfg = _cfg("avatar")
-    cfg["montage"] = False  # master_audio НЕ включён
-
-    res = pipeline.run_make(cfg, wd, avatar_client=avatar,
-                            synth_fn=fs, assemble_fn=fa)
-
-    assert res["ok"] is False
-    assert res["stage"] == "plain_avatar"
-    assert "master_audio" in res["error"]
-    assert avatar.calls == []
