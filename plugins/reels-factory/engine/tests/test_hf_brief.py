@@ -318,17 +318,39 @@ def test_выбор_между_бироллом_и_схемой_дан_приз�
     assert "У сцены\nровно одно средство" in text
     assert "когда мысль снимается камерой" in text
     assert "когда мысль камерой не снимается" in text
-    for mark in ("цифра, процент", "перечисление", "названный инструмент",
-                 "связь или процесс"):
-        assert mark in text
+    assert "У сцены ровно одна форма" in text
+    assert "Форма идёт от **типа высказывания**" in text
+
+
+def test_у_каждой_формы_названо_и_назначение_и_граница(tmp_path):
+    """Канон описания инструмента: что делает, когда брать, **когда не
+    брать** и чего не выражает — иначе форму применяют не по адресу.
+    Проверено на нас: метрика с полосой прогресса стояла под «три вопроса»."""
+    text = _text(tmp_path)
+    section = text.split("<forms>")[1].split("</forms>")[0]
+    for form in ("metric", "items", "pairs", "steps", "brand"):
+        assert f'<form name="{form}">' in section
+    assert section.count("Бери") >= 5
+    assert section.count("Не бери") >= 4
+    assert "Не бери под счёт названных вещей" in section
+    assert "три из ста" in section
+
+
+def test_разбор_идёт_до_выбора_формы(tmp_path):
+    """Их же приём из руководства по классификации: сначала рассуждение,
+    потом метка. У нас рассуждение — строка `why` в самой схеме."""
+    text = _text(tmp_path)
+    assert "напиши в поле `why` одну строку разбора" in text
+    assert "Разбор идёт до выбора, а не после" in text
+    assert '"why"' in text
 
 
 def test_спор_решается_названным_приоритетом(tmp_path):
     """Приём из их же руководства по классификации: когда подходят два
     признака, сказать вслух, какой весит больше, и почему."""
     text = _text(tmp_path)
-    assert "если в одной фразе есть и чувство, и число" in text
-    assert "чувство уже звучит в голосе ведущей" in text
+    assert "есть и чувство, и величина" in text
+    assert "чувство уже\nзвучит в голосе ведущей" in text
 
 
 def test_формы_схемы_даны_закрытым_списком_с_примерами(tmp_path):
@@ -336,11 +358,11 @@ def test_формы_схемы_даны_закрытым_списком_с_пр�
     спорный с объяснением выбора."""
     text = _text(tmp_path)
     assert "<fillings>" in text
-    for form in ("stat", "list", "link", "brand"):
+    for form in ("metric", "items", "pairs", "steps", "brand"):
         assert f'"form": "{form}"' in text
     section = text.split("## Чем занять кадр")[1].split("### Паспорта")[0]
     assert 3 <= section.count("<example>") <= 5
-    assert "число сильнее" in section
+    assert "Метрика запрещена" in section
 
 
 def test_запасная_схема_той_же_формы(tmp_path):
@@ -380,3 +402,17 @@ def test_бриф_до_заказа_аватара_отдаёт_решение_�
     assert "не заказан" in text and "avatarNeeded: true" in text
     assert "дешевле" in text
     assert "ведущей тут нет" not in text
+
+
+def test_схема_не_берёт_чужую_реплику_и_не_повторяет_титр(tmp_path):
+    """Обе находки веера из шести сценариев: агент дорисовывал перечисление
+    указателю («Первый: кому продаём»), взяв пункты из следующей фразы, и
+    ставил на карточку два слова подряд из самой реплики — титр печатает их в
+    тот же момент. Правило их же: «never a sentence from the narration… the
+    root caption track already shows the spoken words»."""
+    text = _text(tmp_path)
+    assert "Объявлен набор целиком" in text
+    assert "Названа одна позиция" in text
+    assert "Слова схемы говорят своё" in text
+    assert "Проверь каждую подпись, и" in text
+    assert "живёт по тем же правилам" in text

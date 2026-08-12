@@ -74,7 +74,8 @@ from reels_factory.hf_montage import (
     shots_for, split_series, zoom_ladder,
 )
 from reels_factory.hf_schema import (
-    FORMS, build as schema_build, min_seconds as schema_min_seconds,
+    FORMS, SAFE_BOTTOM as SCHEMA_SAFE_BOTTOM, build as schema_build,
+    is_elastic as schema_is_elastic, min_seconds as schema_min_seconds,
     port_block,
 )
 
@@ -470,6 +471,13 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     html = html.replace(f'data-composition-id="{block}"',
                         f'data-composition-id="{unique}"')
     html = html.replace(f'__timelines["{block}"]', f'__timelines["{unique}"]')
+    # Ключ таймлайна не всегда стоит в самой скобке: их компоненты кладут его в
+    # переменную (`var compositionId = "grid-card-assemble"`), и без этой
+    # замены обе копии регистрировались под одним именем — вторая затирала
+    # первую, первая не рисовалась вовсе, а рендер ждал по 45 с на каждого
+    # рабочего и отдавал `sub_timeline_readiness_timeout`. Проверено кадром:
+    # убери второй хост — первый оживает.
+    html = html.replace(f'= "{block}"', f'= "{unique}"')
     # GSAP блока — плоским именем и ДВУМЯ копиями: их резолверы расходятся
     # (рендер идёт от файла блока, живая проверка — от корня проекта,
     # invalid_parent_traversal_in_asset_path это прямо говорит), а путь через
@@ -492,6 +500,8 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     # кодом, приняв их за мёртвый селектор, а палитра идёт правилом CSS.
     if port:
         html = port_block(html, duration=port["duration"],
+                          elastic=port.get("elastic", False),
+                          height=port.get("height"),
                           config=port["config"], css=port.get("css", ""),
                           patches=tuple(port.get("patches") or ()))
     target.write_text(html, encoding="utf-8")
@@ -1095,15 +1105,32 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         need = schema_min_seconds(plan["form"],
                                   len(content.get("files")
                                       or content.get("items")
+                                      or content.get("rows")
                                       or content.get("nodes") or [1]))
         if end - start < need - 0.05:
             print(f'{scene["id"]}: схема «{plan["form"]}» снята — сцене '
                   f"{end - start:.1f} с, а форме нужно {need:.1f}")
             continue
+        elastic = schema_is_elastic(block)
+        # Упругий блок раскладывается по коробке, а не по числам внутри себя:
+        # во весь кадр он ставил третью карточку прямо под слова титра (их
+        # `content_overlap` на `div.gca-label`, замер 1260..1292 при пороге
+        # 980). Коробку обрезаем по той же черте, что держат остальные формы, —
+        # и обрезаем её НА КОРНЕ БЛОКА: их загрузчик читает `data-height`
+        # оттуда и ею же переписывает высоту хоста
+        # (`compositionLoader.ts:516-524`), поэтому обрезанный хост сам по себе
+        # распрямлялся обратно во весь кадр.
+        height = SCHEMA_SAFE_BOTTOM if elastic else OUT_H
         unique, _, _ = _stage_overlay(
             public, block, scene["id"], sdk=None,
-            port={"duration": end - start, "config": config, "css": css,
-                  "patches": patches})
+            port={"duration": end - start, "css": css, "patches": patches,
+                  "elastic": elastic, "height": height,
+                  "config": {} if elastic else config})
+        # У упругого блока содержимое идёт штатным каналом на хост, а не
+        # довеском к литералу: он читает `getVariables()`.
+        values = (" data-variable-values='"
+                  + json.dumps(config, ensure_ascii=False).replace("'", "&#39;")
+                  + "'") if elastic else ""
         body.append(
             f'    <div class="ovl">'
             f'<div id="schema-{scene["id"]}" class="clip"'
@@ -1111,7 +1138,9 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             f' data-composition-src="compositions/{unique}.html"'
             f' data-start="{start:.4f}" data-duration="{end - start:.4f}"'
             f' data-track-index="{TRACK_SCHEMA}"'
-            f' data-width="{OUT_W}" data-height="{OUT_H}"></div></div>')
+            f' data-width="{OUT_W}" data-height="{height}"'
+            f' style="position:absolute;left:0;top:0;'
+            f'width:{OUT_W}px;height:{height}px"{values}></div></div>')
         scene["schemaShown"] = True
 
     # ── ведущая ───────────────────────────────────────────────────────────
@@ -1121,9 +1150,19 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # Но их же справочник ставит его в примере (variables-and-media.md:74), а у
     # нас без него клип в кадре не появлялся вовсе: окно на месте, внутри пусто.
     # Оставляем — проверено кадрами.
+    #
+    # `data-layout-allow-overflow` — про наезд камеры. Клип масштабируется
+    # внутри `#video-wrap` с `overflow:hidden`, то есть выезд за окно и есть
+    # наезд: лишнее срезает обёртка. Их аудит раскладки видит это как
+    # `container_overflow` и сам подсказывает выход — «mark intentional
+    # overflow with data-layout-allow-overflow». Одиночную выборку он считает
+    # `info`, но две похожие сливает в одну находку и поднимает до `warning`, а
+    # `check --strict` роняет сборку на любом предупреждении: прогоны 37 и 38
+    # встали именно так, при том что на 30 и 31 та же геометрия прошла как
+    # `info`. Тем же атрибутом здесь же помечена вспышка (ниже по файлу).
     videos = "\n".join(
         f'      <video class="clip" id="clip-{index:02d}" src="{clip["file"]}"'
-        f' muted playsinline'
+        f' muted playsinline data-layout-allow-overflow="true"'
         f' data-start="{_q(clip["start"]):.4f}"'
         f' data-duration="{_q(clip["duration"]):.4f}"'
         f' data-track-index="{TRACK_VIDEO}"></video>'

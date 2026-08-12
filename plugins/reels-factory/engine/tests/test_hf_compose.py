@@ -596,7 +596,7 @@ def test_значок_снимается_если_ведущая_заняла_е
     assert "icon" not in board["scenes"][1]
 
 
-def _with_schema_block(run, form="list"):
+def _with_schema_block(run, form="pairs"):
     """Блок схемы в проекте: его ставит `hyperframes add` перед сборкой."""
     from reels_factory.hf_schema import FORMS
     compositions = run / "public" / "compositions"
@@ -608,7 +608,11 @@ def _with_schema_block(run, form="list"):
         f'<div id="mk-sl-root" data-composition-id="{block}"'
         f' data-duration="8" data-width="1920" data-height="1080"></div>'
         f'<script>(function(){{ var CONFIG = {{ rows: [] }};'
-        f' var DUR = 8; }})();</script>'
+        f' var DUR = 8;'
+        # Их список центрирует колонку по высоте канваса — по этой строке
+        # перенос сажает её в безопасную высоту, выше полосы титра.
+        f' col.style.top = Math.round((1080 - colH) / 2) + "px";'
+        f' }})();</script>'
         f'<script>window.__timelines = window.__timelines || {{}};</script>'
         f"</body></html>", encoding="utf-8")
     return run
@@ -621,7 +625,9 @@ def test_схема_закрывает_кадр_их_блоком(run):
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["presenter"] = "none"
     scenes[1]["insert"] = None
-    scenes[1]["schema"] = {"form": "list", "items": ["раз", "два"]}
+    scenes[1]["schema"] = {"form": "pairs", "why": "у пунктов свои значения",
+                           "rows": [{"label": "раз", "value": "первое"},
+                                    {"label": "два", "value": "второе"}]}
     html, board = _build(run, scenes=scenes, resolved={})
     assert 'id="schema-s-02" class="clip"' in html
     assert 'data-composition-src="compositions/mk-specs-list--s-02.html"' in html
@@ -629,6 +635,42 @@ def test_схема_закрывает_кадр_их_блоком(run):
     copy = (run / "public" / "compositions" / "mk-specs-list--s-02.html")
     text = copy.read_text(encoding="utf-8")
     assert "Object.assign(CONFIG," in text and "1080px" in text
+
+
+def test_перечисление_получает_содержимое_штатным_каналом(run):
+    """Их упругий компонент читает `getVariables()`, поэтому содержимое идёт
+    атрибутом на хост, а не довеском к литералу: канваса и `CONFIG` у него
+    нет вовсе (`grid-card-assemble.html:207-210`)."""
+    compositions = run / "public" / "compositions"
+    compositions.mkdir(parents=True, exist_ok=True)
+    (compositions / "grid-card-assemble.html").write_text(
+        '<!doctype html><html data-composition-duration="4.5"><head><style>'
+        '#root{width:100cqw}</style></head><body>'
+        '<div id="root" data-composition-id="grid-card-assemble"'
+        ' data-duration="4.5" data-width="1080" data-height="1920">'
+        '<div class="gca-stage" data-slot="items" role="list"></div></div>'
+        "<script>var textW = 1, maxChars = 1;"
+        " var labelCqw = textW / (maxChars * 0.75);</script>"
+        "<script>window.__timelines = window.__timelines || {};</script>"
+        "</body></html>", encoding="utf-8")
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = None
+    scenes[1]["schema"] = {
+        "form": "items", "why": "перечисление",
+        "items": [{"label": "кто", "icon": "человек"},
+                  {"label": "что", "icon": "документ"},
+                  {"label": "как", "icon": "поиск"}]}
+    html, board = _build(run, scenes=scenes, resolved={})
+    assert "data-variable-values=" in html
+    assert "КТО,ЧТО,КАК" in html
+    copy = (compositions / "grid-card-assemble--s-02.html").read_text(
+        encoding="utf-8")
+    # Слот заполнен нашими карточками, и подписи в нём совпадают с переменной
+    # знак в знак: кегль считается по переменной, и разошедшиеся строки режутся.
+    assert copy.count('class="gca-card"') == 3
+    assert "Object.assign(CONFIG," not in copy
+    assert "1920px" not in copy
 
 
 def test_схема_короче_своей_анимации_не_ставится(run):
@@ -640,7 +682,9 @@ def test_схема_короче_своей_анимации_не_ставитс
     scenes[1]["insert"] = None
     scenes[1]["startSec"], scenes[1]["endSec"] = 5.4, 6.0
     scenes[0]["endSec"] = 5.4
-    scenes[1]["schema"] = {"form": "list", "items": ["раз", "два"]}
+    scenes[1]["schema"] = {"form": "pairs", "why": "у пунктов свои значения",
+                           "rows": [{"label": "раз", "value": "первое"},
+                                    {"label": "два", "value": "второе"}]}
     html, board = _build(run, scenes=scenes, resolved={})
     assert 'id="schema-s-02"' not in html
     assert "schemaShown" not in board["scenes"][1]

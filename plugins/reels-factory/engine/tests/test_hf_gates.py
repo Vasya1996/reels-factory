@@ -384,3 +384,64 @@ def test_заполненная_копия_блока_проходит(tmp_path)
 
 def test_прогон_без_блоков_проходит_гейт_заглушек(tmp_path):
     assert check_placeholders(tmp_path)["D22_placeholders"] == "PASS"
+
+
+# ---------- форма схемы заполнена так, как её блок умеет показать ----------
+
+def _form(plan):
+    from reels_factory.hf_gates import _form_problems
+    return _form_problems("s-01", "schema", plan)
+
+
+def test_величина_без_цифры_названа_ошибкой():
+    """Их счётчик печатает `Math.round(значение) + суффикс`
+    (`mk-progress-stat.html:168`): «десятки» молча становились нулём в кадре."""
+    assert not _form({"form": "metric", "why": "величина", "value": "87%"})
+    assert any("не с цифры" in p for p in
+               _form({"form": "metric", "why": "x", "value": "десятки"}))
+
+
+def test_перечисление_из_одной_карточки_названо_ошибкой():
+    """В вертикали одна карточка — плашка в пустом кадре: 691x288 при 1080x1920,
+    и кегль подписи упирается в потолок их же подгонки."""
+    one = {"form": "items", "why": "x",
+           "items": [{"label": "кто", "icon": "человек"}]}
+    assert any("не сцена" in p for p in _form(one))
+
+
+def test_значок_только_из_нарисованных():
+    plan = {"form": "items", "why": "x",
+            "items": [{"label": "кто", "icon": "нетакого"},
+                      {"label": "что", "icon": "документ"},
+                      {"label": "как", "icon": "поиск"}]}
+    assert any("не нарисован" in p for p in _form(plan))
+
+
+def test_строка_пары_без_значения_названа_ошибкой():
+    plan = {"form": "pairs", "why": "x",
+            "rows": [{"label": "скрипты", "value": ""}]}
+    assert any("без значения" in p for p in _form(plan))
+
+
+def test_разбор_why_обязателен():
+    """Рассуждение до метки — приём из их руководства по классификации: без
+    него выбор формы не на чем проверить ни агенту, ни человеку."""
+    plan = {"form": "brand", "brands": ["notion"]}
+    assert any("`why`" in p for p in _form(plan))
+
+
+def test_заголовок_страницы_не_считается_заглушкой(tmp_path):
+    """У их компонентов в `<head>` всегда стоит `<title>`, а в кадре его нет:
+    это имя вкладки. Без этой оговорки гейт ловил «Grid Card Assemble» в каждой
+    копии блока."""
+    from reels_factory.hf_gates import check_placeholders
+
+    comp = tmp_path / "public" / "compositions"
+    comp.mkdir(parents=True)
+    page = ('<html><head><title>Grid Card Assemble</title></head><body>'
+            '<div class="gca-label">{}</div></body></html>')
+    (comp / "grid-card-assemble.html").write_text(page.format(""),
+                                                  encoding="utf-8")
+    (comp / "grid-card-assemble--s-01.html").write_text(page.format("КТО"),
+                                                        encoding="utf-8")
+    assert check_placeholders(tmp_path)["D22_placeholders"] == "PASS"

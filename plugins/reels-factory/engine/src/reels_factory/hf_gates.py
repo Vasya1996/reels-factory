@@ -48,6 +48,92 @@ def min_scenes(duration: float) -> int:
     return max(1, math.ceil(float(duration) / MAX_STATIC_SPAN))
 
 
+def _form_problems(scene_id: str, field: str, plan) -> list[str]:
+    """Форма схемы заполнена так, как её блок умеет показать.
+
+    Проверяем не вкус, а то, что иначе молча уедет в кадр мусором: величина без
+    цифры печатается нулём (их счётчик выводит `Math.round(значение) + суффикс`,
+    `mk-progress-stat.html:168`), строка без правой половины рисует пустую
+    линию, значок не из списка оставляет карточку без рисунка. Выбор формы —
+    решение агента, и гейт в него не лезет.
+    """
+    from reels_factory.hf_schema import FORMS, ICONS, LIMITS, MINIMUM
+
+    if plan is None:
+        return []
+    if not isinstance(plan, dict):
+        return [f"{scene_id}: `{field}` — объект с полем `form`"]
+    form = plan.get("form")
+    if form is None:
+        return []
+    if form not in FORMS:
+        return [f"{scene_id}: форма {form!r} неизвестна, есть "
+                f"{', '.join(FORMS)}"]
+
+    problems = []
+    where = f"{scene_id}.{field}"
+    if not str(plan.get("why") or "").strip():
+        problems.append(f"{where}: нет разбора `why` — одной строкой, тип "
+                        "высказывания и почему эта форма")
+
+    if form == "metric":
+        value = str(plan.get("value") or "").strip()
+        if not re.match(r"\d", value):
+            problems.append(
+                f"{where}: величина {value!r} начинается не с цифры — их "
+                "счётчик печатает округлённое число и хвост при нём")
+        base = plan.get("base")
+        if base not in (None, "") and not str(base).strip().isdigit():
+            problems.append(f"{where}: база {base!r} — целое число или null")
+    elif form == "items":
+        items = plan.get("items")
+        if not isinstance(items, list) or not items:
+            problems.append(f"{where}: `items` — список карточек")
+            items = []
+        if items and len(items) < MINIMUM["items"]:
+            problems.append(
+                f"{where}: карточек {len(items)} — в вертикали это не сцена, а "
+                f'плашка в пустом кадре; их нужно {MINIMUM["items"]}–'
+                f'{LIMITS["items"]}')
+        if len(items) > LIMITS["items"]:
+            problems.append(f"{where}: карточек {len(items)}, а помещается "
+                            f'{LIMITS["items"]} — дальше уходит под титр')
+        for item in items:
+            if not isinstance(item, dict):
+                problems.append(f"{where}: карточка — объект `label` и `icon`")
+                continue
+            if not str(item.get("label") or "").strip():
+                problems.append(f"{where}: карточка без подписи")
+            if item.get("icon") not in ICONS:
+                problems.append(
+                    f'{where}: значок {item.get("icon")!r} не нарисован, '
+                    f"есть {', '.join(ICONS)}")
+    elif form == "pairs":
+        rows = plan.get("rows")
+        if not isinstance(rows, list) or not rows:
+            problems.append(f"{where}: `rows` — список пар «свойство → "
+                            "значение»")
+            rows = []
+        for row in rows:
+            if not isinstance(row, dict) or not str(row.get("value")
+                                                    or "").strip():
+                problems.append(
+                    f"{where}: строка без значения — их список рисует пару, и "
+                    "половина пары оставляет в кадре пустую линию")
+                break
+    elif form == "steps":
+        nodes = [n for n in (plan.get("nodes") or []) if str(n or "").strip()]
+        if not MINIMUM["steps"] <= len(nodes) <= LIMITS["steps"]:
+            problems.append(
+                f"{where}: узлов {len(nodes)}, а цепочка держит от "
+                f'{MINIMUM["steps"]} до {LIMITS["steps"]}')
+    elif form == "brand":
+        brands = [b for b in (plan.get("brands") or []) if str(b or "").strip()]
+        if not brands:
+            problems.append(f"{where}: `brands` — имена брендов")
+    return problems
+
+
 def _schema_problems(storyboard: dict) -> list[str]:
     """Расхождения с их схемой v3 (SKILL.md:130-165, 610-616).
 
@@ -92,6 +178,8 @@ def _schema_problems(storyboard: dict) -> list[str]:
             elif not isinstance(overlay.get("text") or {}, dict):
                 problems.append(f"{scene_id}: `overlay.text` — объект "
                                 "«имя слота → строка»")
+        for field in ("schema", "fallback"):
+            problems += _form_problems(scene_id, field, scene.get(field))
         icon = scene.get("icon")
         if icon is not None and (
                 not isinstance(icon, dict)
@@ -165,7 +253,10 @@ def check_media(rdir) -> dict:
             else "FAIL: " + "; ".join(problems)}
 
 
-_MARKUP_NOISE = re.compile(r"<(script|style)\b.*?</\1>", re.S | re.I)
+#: Заголовок страницы в кадре не виден: это имя вкладки, а не текст сцены. У их
+#: компонентов он есть всегда («Grid Card Assemble»), и без этой строчки гейт
+#: заглушек ловил его в каждой копии.
+_MARKUP_NOISE = re.compile(r"<(script|style|title)\b.*?</\1>", re.S | re.I)
 _TEXT_FRAG = re.compile(r">([^<>]+)<")
 _HAS_LETTER = re.compile(r"[^\W\d_]", re.UNICODE)
 
@@ -373,8 +464,13 @@ def _scene_look(scene: dict) -> str:
         plan = scene.get("fallback") if scene.get("needsSchema") else None
     if isinstance(plan, dict) and plan.get("form"):
         # Форма и её содержимое: две схемы одной формы, но с разными словами —
-        # это две разные картинки, а не один план.
+        # это две разные картинки, а не один план. `rows` в этот список
+        # попали не сразу, и без них две сцены подряд с разными парами
+        # («кажется → товар» и «звонок → голосом») читались одной картинкой:
+        # содержимое `pairs` живёт только в `rows`, и гейт его не видел.
         words = plan.get("items") or plan.get("nodes") or plan.get("brands") \
+            or [f'{row.get("label")} {row.get("value")}'
+                for row in (plan.get("rows") or []) if isinstance(row, dict)] \
             or [plan.get("value"), plan.get("label")]
         return f'схема {plan["form"]} ' + " ".join(
             str(word) for word in words if word)

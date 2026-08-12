@@ -5,7 +5,8 @@ import re
 import pytest
 
 from reels_factory.hf_schema import (
-    FORMS, LIMITS, build, min_seconds, palette_css, port_block,
+    FORMS, ICONS, LIMITS, SAFE_BOTTOM, build, min_seconds, palette_css,
+    port_block,
 )
 
 #: Скелет их блока — ровно те места, которые правит перенос: канвас в CSS и в
@@ -96,16 +97,38 @@ def test_правка_текста_блока_обязана_найти_своё
 # ---------- формы ----------
 
 def test_у_каждой_формы_есть_блок():
-    assert set(FORMS) == {"stat", "list", "link", "brand"}
-    assert FORMS["link"] == "hw-pipeline"
+    assert set(FORMS) == {"metric", "items", "pairs", "steps", "brand"}
+    assert FORMS["steps"] == "hw-pipeline"
+    assert FORMS["items"] == "grid-card-assemble"
 
 
 def test_цифра_разбирается_на_число_и_суффикс():
-    block, config, _, _ = build("stat", {"value": "87%", "label": "дошли"},
+    block, config, _, _ = build("metric", {"value": "87%", "label": "дошли"},
                                 duration=4.0, colors={})
     assert block == "mk-progress-stat"
     assert config["value"] == 87 and config["suffix"] == "%"
-    assert config["max"] == 87        # полоса заполнена целиком
+
+
+def test_величина_без_базы_рисуется_без_полосы():
+    """Полоса наливается value/max и читается «столько из стольких». Когда
+    базы нет, залитая доверху полоса обещает долю, которой не существует, —
+    ровно так «три вопроса» превращались в «три из ста»."""
+    _, _, css, _ = build("metric", {"value": "250000", "label": "выручка"},
+                         duration=4.0, colors={})
+    assert "#mk-ps-track { display: none; }" in css
+    _, config, css, _ = build("metric", {"value": "8", "base": 10,
+                                         "label": "бросают"},
+                              duration=4.0, colors={})
+    assert config["max"] == 10
+    assert "#mk-ps-track { display: none; }" not in css
+
+
+def test_величина_без_цифры_не_превращается_в_ноль():
+    """Их счётчик печатает `Math.round(значение) + суффикс`: «десятки» прежде
+    молча становились нулём в кадре."""
+    with pytest.raises(ValueError, match="не начинается с цифры"):
+        build("metric", {"value": "десятки", "label": "клиентов"},
+              duration=4.0, colors={})
 
 
 def test_длинная_подпись_режется_по_словам():
@@ -113,22 +136,64 @@ def test_длинная_подпись_режется_по_словам():
     переносится, а уезжает за край кадра, и ни один их гейт этого не видит —
     он меряет рамку элемента, а не текст внутри."""
     _, config, _, _ = build(
-        "list", {"items": ["Claude — длинные документы, таблицы и ещё немного"]},
+        "pairs", {"rows": [{"label": "Claude и длинные документы с таблицами",
+                            "value": "берёт целиком"}]},
         duration=4.0, colors={})
-    assert len(config["rows"][0]["label"]) <= 30
+    assert len(config["rows"][0]["label"]) <= 22
     assert config["rows"][0]["label"].split()[0] == "Claude"
 
 
-def test_список_не_длиннее_предела():
-    _, config, _, _ = build("list", {"items": list("абвгде")},
-                            duration=4.0, colors={})
-    assert len(config["rows"]) == LIMITS["list"]
+def test_строка_без_значения_не_рисует_пустую_линию():
+    """Их блок — «specs checklist», строка это пара «свойство → значение».
+    Половина пары оставляла в кадре незаполненную анкету."""
+    with pytest.raises(ValueError, match="без значения"):
+        build("pairs", {"rows": [{"label": "скрипты", "value": ""}]},
+              duration=4.0, colors={})
+
+
+def test_перечисление_несёт_свои_значки():
+    """Их шесть заготовок крутятся по номеру карточки и смысла не несут
+    (`grid-card-assemble.html:256`), а их же контракт разрешает положить свои
+    карточки в слот (`:45-51`)."""
+    block, variables, _, patches = build(
+        "items", {"items": [{"label": "три вопроса", "icon": "вопрос"}]},
+        duration=4.0, colors={})
+    assert block == "grid-card-assemble"
+    assert variables["layout"] == "list"
+    assert variables["items"] == "ТРИ ВОПРОСА"
+    slot = dict(patches)['<div class="gca-stage" data-slot="items" role="list"></div>']
+    assert ICONS["вопрос"][0] in slot and "gca-icon" in slot
+
+
+def test_упругому_блоку_высоту_режут_на_его_корне():
+    """Их загрузчик читает `data-height` у корня блока и ею же переписывает и
+    атрибут, и инлайновую высоту хоста
+    (`packages/core/src/runtime/compositionLoader.ts:516-524`). Пока корень
+    говорил 1920, обрезанный до 980 хост распрямлялся обратно во весь кадр, и
+    третья карточка ложилась на слова титра (их `content_overlap` на
+    `div.gca-label`, рамка 1260..1292 при пороге 980)."""
+    elastic = ('<div id="root" data-composition-id="grid-card-assemble"'
+               ' data-duration="4.5" data-width="1080" data-height="1920">'
+               "</div>")
+    html = port_block(elastic, duration=3.0, config={}, elastic=True,
+                      height=SAFE_BOTTOM)
+    assert f'data-height="{SAFE_BOTTOM}"' in html
+    assert 'data-height="1920"' not in html
+    # канвас упругому не подменяют: ширину и прочие числа не трогаем
+    assert 'data-width="1080"' in html
+
+
+def test_перечисление_не_длиннее_предела():
+    _, variables, _, _ = build(
+        "items", {"items": [{"label": c, "icon": "цель"} for c in "абвгде"]},
+        duration=4.0, colors={})
+    assert len(variables["items"].split(",")) == LIMITS["items"]
 
 
 def test_узлы_связи_влезают_в_кадр():
     """Их раскладка считает ширину ряда как n·boxW + (n−1)·gap: на их числах
     три узла дают 1340 px при кадре 1080."""
-    _, config, _, _ = build("link", {"nodes": ["заявка", "звонок", "сделка"]},
+    _, config, _, _ = build("steps", {"nodes": ["заявка", "звонок", "сделка"]},
                             duration=5.0, colors={})
     total = 3 * config["boxW"] + 2 * config["gap"]
     assert total <= 1080 - 80
@@ -147,5 +212,36 @@ def test_знак_бренда_один_ставится_одной_ячейко
 
 def test_форме_нужна_своя_длина():
     """Числа сняты с их таймлайнов: три узла въезжают по 1,2 с каждый."""
-    assert min_seconds("link", 3) > min_seconds("link", 2)
-    assert min_seconds("stat", 1) == 2.6
+    assert min_seconds("steps", 3) > min_seconds("steps", 2)
+    assert min_seconds("metric", 1) == 2.6
+
+
+def test_ни_одна_форма_не_заезжает_на_полосу_титра():
+    """Ниже 980 идут слова титра. Их проверка перекрытия ловит это через раз
+    (на `brand` не поймала вовсе — белая плашка легла на первую строку), значит
+    держим черту сами."""
+    from reels_factory.hf_schema import SAFE_BOTTOM
+
+    _, config, _, _ = build("metric", {"value": "87%", "label": "дошли"},
+                            duration=4.0, colors={})
+    assert config["y"] < SAFE_BOTTOM
+    _, config, _, _ = build("steps", {"nodes": ["раз", "два"]},
+                            duration=5.0, colors={})
+    assert config["y"] + config["boxH"] <= SAFE_BOTTOM
+    _, _, css, patches = build("brand", {"files": [".media/a.svg"]},
+                               duration=3.0, colors={})
+    top = int(css.split("top: ")[1].split("px")[0])
+    height = int(css.split("height: ")[1].split("px")[0])
+    assert top + height <= SAFE_BOTTOM
+    assert f"({SAFE_BOTTOM} - colH)" in dict(
+        build("pairs", {"rows": [{"label": "раз", "value": "два"}]},
+              duration=4.0, colors={})[3])[
+        f"Math.round((1920 - colH) / 2)"]
+
+
+def test_плитка_знака_не_белая():
+    """`--mk-paper` — заливка плитки, а не цвет букв: с цветом чернил знак
+    ехал на белой плашке во весь свой прямоугольник."""
+    _, _, css, _ = build("brand", {"files": [".media/a.svg"]}, duration=3.0,
+                         colors={"bg": "#101018", "ink": "#ffffff"})
+    assert "--mk-paper: #101018" in css
