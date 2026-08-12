@@ -36,7 +36,8 @@ niche_keywords:
 
 # Активный язык текущего CLI-конфига/job snapshot. В Telegram язык выбирается
 # заново после каждого /start и /new. Поддерживаемые кнопками языки: ru, kk.
-# Передаётся Eleven v3 как language_code и локальной транскрибации медиа.
+# Используется сценарием и локальной транскрибацией медиа. Eleven
+# Multilingual v2 определяет язык по тексту, поэтому language_code ему не шлём.
 language: ru
 
 # Формат сборки. [обязательно] split | fullscreen | avatar
@@ -184,12 +185,14 @@ avatar_islands:
 
 # ElevenLabs Text-to-Speech with Timestamps.
 tts:
-  # Самая выразительная модель; 70+ языков, максимум 5000 символов/request.
-  model_id: eleven_v3
+  # Основная production-модель: максимальная похожесть русского клона.
+  model_id: eleven_multilingual_v2
 
-  # Главный quality setting v3: 0 = Creative, 0.5 = Natural, 1 = Robust.
-  # Natural сохраняет узнаваемость IVC и остаётся отзывчивым к audio tags.
-  stability: 0.5
+  speed: 1.1
+  stability: 0.2
+  similarity_boost: 0.55
+  style: 0.5
+  use_speaker_boost: false
 
   # Best-effort повторяемость. Одинаковый seed не гарантирует идентичный звук.
   # seed: 42
@@ -200,16 +203,12 @@ tts:
   # Provider MP3 без требования Pro-тарифа; затем локально -> PCM 48 kHz stereo.
   output_format: mp3_44100_128
 
-  # До трёх словарей ElevenLabs. Для v3 phoneme entries могут использовать IPA
-  # и для неанглийских языков.
+  # До трёх словарей ElevenLabs.
   pronunciation_dictionary_locators: []
   #  - pronunciation_dictionary_id: "..."
   #    version_id: "..."
 
-# Для v3 НЕ добавлять speed, similarity_boost и use_speaker_boost: модель их
-# не поддерживает. Style exaggeration держать 0/не передавать. Подачу задают
-# пунктуация и одобренные пользователем теги [curious], [excited], [whispers],
-# [laughs], [sighs]. SSML <break> в v3 не поддерживается.
+# В speech не добавлять v3 audio tags: Multilingual v2 их не поддерживает.
 
 # Видеоряд (broll) для вставок поверх аватара (см. format: avatar выше).
 # Вставки берутся из локальной библиотеки клипов — это поле движком не

@@ -5,9 +5,14 @@ import pytest
 
 from reels_factory.master_audio import (
     MasterAudioArtifacts,
+    _tts_cache_key,
     alignment_to_words,
+    approve_master_audio,
     build_canonical_script,
     build_master_audio,
+    build_user_master_audio,
+    load_approved_master_audio,
+    load_master_audio,
     master_audio_enabled,
     validate_character_alignment,
 )
@@ -117,8 +122,12 @@ def test_build_master_audio_один_provider_request_и_полный_contract(t
         "language": "ru",
         "voice_id": "private-voice-id",
         "tts": {
-            "model_id": "eleven_v3",
-            "stability": 0.5,
+            "model_id": "eleven_multilingual_v2",
+            "speed": 1.1,
+            "stability": 0.2,
+            "similarity_boost": 0.55,
+            "style": 0.5,
+            "use_speaker_boost": False,
             "seed": 7,
             "apply_text_normalization": "auto",
         },
@@ -131,8 +140,12 @@ def test_build_master_audio_один_provider_request_и_полный_contract(t
     assert isinstance(result, MasterAudioArtifacts)
     assert len(calls) == 1
     assert calls[0][0] == fixture["text"]
-    assert calls[0][1]["model_id"] == "eleven_v3"
-    assert calls[0][1]["stability"] == 0.5
+    assert calls[0][1]["model_id"] == "eleven_multilingual_v2"
+    assert calls[0][1]["speed"] == 1.1
+    assert calls[0][1]["stability"] == 0.2
+    assert calls[0][1]["similarity_boost"] == 0.55
+    assert calls[0][1]["style"] == 0.5
+    assert calls[0][1]["use_speaker_boost"] is False
     assert calls[0][1]["seed"] == 7
     assert result.mp3.read_bytes() == b"fake-mp3"
     assert result.wav.exists()
@@ -163,11 +176,65 @@ def test_build_master_audio_один_provider_request_и_полный_contract(t
 
     manifest_text = (tmp_path / "audio_manifest.json").read_text(encoding="utf-8")
     manifest = json.loads(manifest_text)
-    assert manifest["model_id"] == "eleven_v3"
+    assert manifest["model_id"] == "eleven_multilingual_v2"
+    assert len(manifest["cache_key"]) == 64
     assert manifest["provider_request"]["request_id"] == "req_fixture_master"
-    assert manifest["settings"]["stability"] == 0.5
+    assert manifest["settings"]["speed"] == 1.1
+    assert manifest["settings"]["stability"] == 0.2
+    assert manifest["settings"]["similarity_boost"] == 0.55
+    assert manifest["settings"]["style"] == 0.5
+    assert manifest["settings"]["use_speaker_boost"] is False
     assert "private-voice-id" not in manifest_text
     assert "api_key" not in manifest_text.lower()
+
+
+def test_tts_cache_key_учитывает_модель_голос_текст_и_все_settings():
+    options = {
+        "model_id": "eleven_multilingual_v2",
+        "speed": 1.1,
+        "stability": 0.2,
+        "similarity_boost": 0.55,
+        "style": 0.5,
+        "use_speaker_boost": False,
+        "seed": None,
+        "language_code": "ru",
+        "apply_text_normalization": "auto",
+        "pronunciation_dictionary_locators": [],
+        "output_format": "mp3_44100_128",
+    }
+    baseline = _tts_cache_key(
+        voice_id="private-voice-id",
+        input_sha256="text-hash",
+        options=options,
+    )
+    assert baseline == _tts_cache_key(
+        voice_id="private-voice-id",
+        input_sha256="text-hash",
+        options=dict(options),
+    )
+    for changed_options in (
+        {**options, "model_id": "eleven_v3"},
+        {**options, "speed": 1.0},
+        {**options, "stability": 0.3},
+        {**options, "similarity_boost": 0.6},
+        {**options, "style": 0.4},
+        {**options, "use_speaker_boost": True},
+    ):
+        assert baseline != _tts_cache_key(
+            voice_id="private-voice-id",
+            input_sha256="text-hash",
+            options=changed_options,
+        )
+    assert baseline != _tts_cache_key(
+        voice_id="another-voice",
+        input_sha256="text-hash",
+        options=options,
+    )
+    assert baseline != _tts_cache_key(
+        voice_id="private-voice-id",
+        input_sha256="another-text",
+        options=options,
+    )
 
 
 def test_build_master_audio_meter_считает_canonical_text_один_раз(tmp_path):
@@ -287,3 +354,168 @@ def test_мастер_звук_включён_по_умолчанию(monkeypatc
 
     monkeypatch.delenv("RF_MASTER_AUDIO_ENABLED", raising=False)
     assert master_audio_enabled({}) is True
+
+
+def test_tts_audio_approval_фиксирует_hash_и_загружается_без_provider_request(
+        tmp_path):
+    fixture = _fixture()["response"]
+
+    class Provider:
+        def convert_with_timestamps(self, text, **kwargs):
+            return TimestampedSpeech(
+                audio=b"approved-preview",
+                alignment=fixture["alignment"],
+                normalized_alignment=fixture["normalized_alignment"],
+                request_id="preview-request",
+            )
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"generated-" + Path(cmd[-1]).name.encode())
+
+    config = {"language": "ru", "voice_id": "v1"}
+    artifact_dir = tmp_path / "audio" / "tts"
+    original = build_master_audio(
+        _scenario(), config, artifact_dir,
+        provider=Provider(), run_cmd=fake_run, duration_fn=lambda _: 1.3,
+    )
+    approval = approve_master_audio(
+        tmp_path, artifact_dir, source="elevenlabs_approved"
+    )
+
+    loaded = load_approved_master_audio(_scenario(), config, tmp_path)
+
+    assert approval["artifact_dir"] == "audio/tts"
+    assert loaded.wav.read_bytes() == original.wav.read_bytes()
+    assert loaded.mp3.read_bytes() == b"approved-preview"
+    assert loaded.manifest["provider"] == "elevenlabs"
+
+
+def test_approved_audio_hash_не_даёт_подменить_дорожку_перед_рендером(tmp_path):
+    fixture = _fixture()["response"]
+
+    class Provider:
+        def convert_with_timestamps(self, text, **kwargs):
+            return TimestampedSpeech(
+                audio=b"preview",
+                alignment=fixture["alignment"],
+                normalized_alignment=None,
+                request_id="req",
+            )
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"generated")
+
+    config = {"language": "ru", "voice_id": "v1"}
+    artifact_dir = tmp_path / "audio" / "tts"
+    build_master_audio(
+        _scenario(), config, artifact_dir,
+        provider=Provider(), run_cmd=fake_run, duration_fn=lambda _: 1.3,
+    )
+    approve_master_audio(tmp_path, artifact_dir, source="elevenlabs_approved")
+    (artifact_dir / "voice_master.wav").write_bytes(b"changed")
+
+    with pytest.raises(ValueError, match="изменился"):
+        load_approved_master_audio(_scenario(), config, tmp_path)
+
+
+def test_telegram_voice_становится_master_без_генеративной_обработки(tmp_path):
+    source = tmp_path / "input.ogg"
+    source.write_bytes(b"telegram-opus")
+    scenario = _scenario()
+    config = {"language": "ru", "voice_id": "unused-for-user-audio"}
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"pcm-" + Path(cmd[-1]).name.encode())
+
+    def fake_transcribe(src, workdir, language):
+        out = Path(workdir) / "words.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"words": [
+            {"id": 0, "start": 0.1, "end": 0.4, "text": "Кофе", "prob": 0.9},
+            {"id": 1, "start": 0.4, "end": 0.8, "text": "вкусный.", "prob": 0.9},
+            {"id": 2, "start": 1.0, "end": 1.3, "text": "Кофе", "prob": 0.9},
+            {"id": 3, "start": 1.3, "end": 1.8, "text": "бодрит!", "prob": 0.9},
+        ]}, ensure_ascii=False), encoding="utf-8")
+        return {"out": str(out)}
+
+    artifact_dir = tmp_path / "audio" / "user"
+    built = build_user_master_audio(
+        scenario,
+        config,
+        artifact_dir,
+        source,
+        transcribe_fn=fake_transcribe,
+        run_cmd=fake_run,
+        duration_fn=lambda _: 2.0,
+    )
+    approve_master_audio(
+        tmp_path, artifact_dir, source="telegram_user_audio"
+    )
+    loaded = load_approved_master_audio(scenario, config, tmp_path)
+
+    assert built.manifest["provider"] == "telegram_user_audio"
+    assert built.manifest["processing"]["content_edits"] is False
+    assert built.manifest["processing"]["denoise"] is False
+    assert built.mp3.read_bytes() == b"telegram-opus"
+    assert len(loaded.block_wavs) == 2
+    assert [word["block_index"] for word in loaded.words] == [0, 0, 1, 1]
+
+
+def test_telegram_voice_с_большим_пропуском_сценария_отклоняется(tmp_path):
+    source = tmp_path / "input.ogg"
+    source.write_bytes(b"short")
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"pcm")
+
+    def fake_transcribe(src, workdir, language):
+        out = Path(workdir) / "words.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"words": [
+            {"id": 0, "start": 0.1, "end": 0.4, "text": "Совсем другое"},
+        ]}, ensure_ascii=False), encoding="utf-8")
+        return {"out": str(out)}
+
+    with pytest.raises(ValueError, match="отличается|не целиком"):
+        build_user_master_audio(
+            _scenario(),
+            {"language": "ru"},
+            tmp_path / "audio" / "user",
+            source,
+            transcribe_fn=fake_transcribe,
+            run_cmd=fake_run,
+            duration_fn=lambda _: 1.0,
+        )
+
+
+def test_build_master_audio_v3_дефолтная_stability_дискретна(tmp_path):
+    # kk-ролик идёт на eleven_v3; без явной stability в конфиге провайдер
+    # должен получить v3-безопасное значение 0.5, а не production-дефолт v2 0.2.
+    fixture = _fixture()
+    response = fixture["response"]
+    calls = []
+
+    class Provider:
+        def convert_with_timestamps(self, text, **kwargs):
+            calls.append((text, kwargs))
+            return TimestampedSpeech(
+                audio=b"fake-mp3",
+                alignment=response["alignment"],
+                normalized_alignment=response["normalized_alignment"],
+                request_id=response["request_id"],
+            )
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"generated")
+
+    config = {
+        "language": "kk",
+        "voice_id": "kk-voice-id",
+        "tts": {"model_id": "eleven_v3", "language_code": "kk"},
+    }
+    build_master_audio(
+        _scenario(), config, tmp_path, provider=Provider(),
+        run_cmd=fake_run, duration_fn=lambda _: 1.3,
+    )
+    assert calls[0][1]["model_id"] == "eleven_v3"
+    assert calls[0][1]["stability"] == 0.5

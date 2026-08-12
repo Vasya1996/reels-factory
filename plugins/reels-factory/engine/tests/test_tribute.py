@@ -163,7 +163,141 @@ def test_сервер_принимает_подписанный_вебхук(sto
         srv.shutdown()
 
 
-def test_сервер_отвергает_плохую_подпись(store):
+def shop_body(name="shop_order", **over) -> bytes:
+    payload = {
+        "uuid": "ord-1", "shopId": 133, "amount": 1000, "currency": "usd",
+        "fee": 100, "status": "paid", "customerId": "777", "isRecurrent": False,
+    }
+    payload.update(over)
+    return json.dumps({"name": name, "payload": payload}).encode()
+
+
+def test_оплаченный_счёт_магазина_зачисляется_по_customer_id(store):
+    raw = shop_body()
+
+    res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
+
+    assert res["credited"] is True
+    assert store.balance(777) == 10_000_000
+
+
+def test_промежуточное_событие_оплаты_не_зачисляется(store):
+    """Их спека прямо говорит: shopOrderPaymentReceived — сигнал до зачисления
+    денег продавцу, «не выдавайте товар». Финальное событие — shop_order."""
+    raw = shop_body(name="shopOrderPaymentReceived")
+
+    res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
+
+    assert res["credited"] is False
+    assert store.balance(777) == 0
+
+
+def test_счёт_без_customer_id_не_зачисляется(store):
+    # Счёт, выставленный руками в дашборде: чей он — неизвестно.
+    raw = shop_body(customerId=None)
+
+    res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
+
+    assert res["credited"] is False
+    assert res["reason"] == "no_customer_id"
+
+
+def test_пробный_период_не_даёт_денег(store):
+    raw = shop_body(isTrial=True)
+
+    res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
+
+    assert res["credited"] is False
+    assert res["reason"] == "trial_activation"
+    assert store.balance(777) == 0
+
+
+def test_повторная_доставка_счёта_не_зачисляет_дважды(store):
+    raw = shop_body()
+    handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
+
+    res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
+
+    assert res["credited"] is False and res["reason"] == "duplicate"
+    assert store.balance(777) == 10_000_000
+
+
+def test_рублёвый_счёт_пересчитывается_в_доллары(store):
+    raw = shop_body(amount=100_000, currency="rub", uuid="ord-rub")
+
+    handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
+
+    assert store.balance(777) == 11_000_000  # 1000 ₽ по курсу 0.011
+
+
+def test_возврат_снимает_зачисленное(store):
+    paid = shop_body()
+    handle_webhook(store, paid, sign(paid), api_key=KEY, fx=FX)
+    refund = json.dumps({"name": "shop_order_refunded", "payload": {
+        "uuid": "ord-1", "shopId": 133, "transactionId": 55, "amount": 1000,
+        "currency": "usd", "status": "completed", "customerId": "777",
+    }}).encode()
+
+    res = handle_webhook(store, refund, sign(refund), api_key=KEY, fx=FX)
+
+    assert res["reason"] == "refunded"
+    assert store.balance(777) == 0
+
+
+def test_инициированный_возврат_баланс_не_трогает(store):
+    paid = shop_body()
+    handle_webhook(store, paid, sign(paid), api_key=KEY, fx=FX)
+    refund = json.dumps({"name": "shop_order_refunded", "payload": {
+        "uuid": "ord-1", "transactionId": 55, "amount": 1000, "currency": "usd",
+        "status": "initiated", "customerId": "777",
+    }}).encode()
+
+    handle_webhook(store, refund, sign(refund), api_key=KEY, fx=FX)
+
+    assert store.balance(777) == 10_000_000
+
+
+def test_событие_camelCase_тоже_зачисляется(store):
+    """В доке Tribute событие названо newDigitalProduct, в примере payload —
+    new_digital_product. Промах по написанию = потерянный платёж."""
+    raw = json.dumps({
+        "name": "newDigitalProduct",
+        "payload": {"amount": 100, "currency": "usd",
+                    "telegram_user_id": 777, "purchase_id": "pur_camel"},
+    }).encode()
+
+    res = handle_webhook(store, raw, sign(raw), api_key=KEY, fx=FX)
+
+    assert res["credited"] is True
+    assert store.balance(777) == 1_000_000
+
+
+def test_незачисленное_событие_печатается_целиком(store, capsys):
+    """Чужой формат разбирается по логу: «unknown_currency» без payload —
+    гадание, а деньги у человека уже списаны."""
+    from reels_factory.tribute import start_webhook_server
+
+    srv = start_webhook_server(store, api_key=KEY, fx=FX, port=0)
+    try:
+        port = srv.server_address[1]
+        raw = body(currency="xtr", amount=7700)
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/tribute",
+            data=raw, method="POST",
+            headers={"trbt-signature": sign(raw)},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            assert resp.status == 200
+    finally:
+        srv.shutdown()
+
+    out = capsys.readouterr().out
+    assert "unknown_currency" in out
+    assert "xtr" in out and "7700" in out
+    assert store.balance(777) == 0
+
+
+def test_сервер_отвергает_плохую_подпись(store, capsys):
     from reels_factory.tribute import start_webhook_server
 
     srv = start_webhook_server(store, api_key=KEY, fx=FX, port=0)
@@ -180,6 +314,9 @@ def test_сервер_отвергает_плохую_подпись(store):
         assert store.balance(777) == 0
     finally:
         srv.shutdown()
+
+    # Перевыпущенный в дашборде ключ иначе выглядит как полная тишина
+    assert "подпись не совпала" in capsys.readouterr().out
 
 
 def test_сервер_отвечает_400_на_битый_content_length(store):

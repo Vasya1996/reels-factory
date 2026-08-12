@@ -4,12 +4,21 @@ from pathlib import Path
 import pytest
 
 from reels_factory.tts import (
+    DEFAULT_SIMILARITY_BOOST,
+    DEFAULT_SPEED,
+    DEFAULT_STABILITY,
+    DEFAULT_STABILITY_V3,
+    DEFAULT_STYLE,
+    DEFAULT_USE_SPEAKER_BOOST,
     MODEL_ID,
+    MULTILINGUAL_V2_MAX_CHARACTERS,
     V3_MAX_CHARACTERS,
+    V3_MODEL_ID,
     ElevenLabsClient,
     create_voice_clone,
     delete_voice,
     synth_voice,
+    tts_model_for_language,
 )
 
 
@@ -42,8 +51,15 @@ def test_synth_voice_шлёт_текст_дефолтную_модель_и_го
     url, body, headers = http.posts[0]
     assert "v1" in url
     assert body["text"] == "Привет"
-    assert body["model_id"] == MODEL_ID == "eleven_v3"
-    assert body["voice_settings"] == {"stability": 0.5}
+    assert body["model_id"] == MODEL_ID == "eleven_multilingual_v2"
+    assert body["voice_settings"] == {
+        "stability": DEFAULT_STABILITY,
+        "speed": DEFAULT_SPEED,
+        "similarity_boost": DEFAULT_SIMILARITY_BOOST,
+        "style": DEFAULT_STYLE,
+        "use_speaker_boost": DEFAULT_USE_SPEAKER_BOOST,
+    }
+    assert body["apply_text_normalization"] == "auto"
     assert headers["xi-api-key"] == "k"
 
 
@@ -56,9 +72,10 @@ def test_модель_переопределяется_через_env(tmp_path, 
                 run_cmd=lambda cmd: Path(cmd[-1]).write_bytes(b"wav"))
 
     assert http.posts[0][1]["model_id"] == "eleven_v3"
+    assert http.posts[0][1]["voice_settings"] == {"stability": 0.5}
 
 
-def test_timestamped_v3_передаёт_только_поддерживаемые_quality_settings(monkeypatch):
+def test_timestamped_v2_передаёт_зафиксированные_quality_settings(monkeypatch):
     captured = {}
 
     class Resp:
@@ -86,7 +103,11 @@ def test_timestamped_v3_передаёт_только_поддерживаемы
     result = client.convert_with_timestamps(
         "П",
         voice_id="voice-1",
-        stability=0.5,
+        stability=0.2,
+        speed=1.1,
+        similarity_boost=0.55,
+        style=0.5,
+        use_speaker_boost=False,
         seed=42,
         language_code="ru",
         apply_text_normalization="on",
@@ -98,19 +119,21 @@ def test_timestamped_v3_передаёт_только_поддерживаемы
     assert captured["url"].endswith("/voice-1/with-timestamps")
     assert captured["params"] == {"output_format": "mp3_44100_128"}
     body = captured["json"]
-    assert body["model_id"] == "eleven_v3"
-    assert body["voice_settings"] == {"stability": 0.5}
+    assert body["model_id"] == "eleven_multilingual_v2"
+    assert body["voice_settings"] == {
+        "stability": 0.2,
+        "speed": 1.1,
+        "similarity_boost": 0.55,
+        "style": 0.5,
+        "use_speaker_boost": False,
+    }
     assert body["seed"] == 42
-    assert body["language_code"] == "ru"
+    assert "language_code" not in body
     assert body["apply_text_normalization"] == "on"
     assert body["pronunciation_dictionary_locators"] == [{
         "pronunciation_dictionary_id": "dict-1",
         "version_id": "v1",
     }]
-    assert "speed" not in body["voice_settings"]
-    assert "similarity_boost" not in body["voice_settings"]
-    assert "style" not in body["voice_settings"]
-    assert "use_speaker_boost" not in body["voice_settings"]
     assert captured["headers"]["xi-api-key"] == "secret"
     assert result.audio == b"mp3" and result.request_id == "req-1"
 
@@ -123,7 +146,21 @@ def test_v3_граница_5000_символов_проверяется_до_htt
     client = ElevenLabsClient(api_key="k", http=NoHttp())
     with pytest.raises(ValueError, match="5000"):
         client.convert_with_timestamps(
-            "я" * (V3_MAX_CHARACTERS + 1), voice_id="v1"
+            "я" * (V3_MAX_CHARACTERS + 1),
+            voice_id="v1",
+            model_id="eleven_v3",
+        )
+
+
+def test_multilingual_v2_граница_10000_символов_проверяется_до_http():
+    class NoHttp:
+        def post(self, *args, **kwargs):
+            raise AssertionError("HTTP не должен вызываться")
+
+    client = ElevenLabsClient(api_key="k", http=NoHttp())
+    with pytest.raises(ValueError, match="10000"):
+        client.convert_with_timestamps(
+            "я" * (MULTILINGUAL_V2_MAX_CHARACTERS + 1), voice_id="v1"
         )
 
 
@@ -231,3 +268,28 @@ def test_synth_voice_без_meter_работает_как_раньше(tmp_path,
     out = synth_voice("текст", tmp_path / "g.wav", voice_id="v1",
                       http=_FakeHttp(), run_cmd=lambda *a, **kw: None)
     assert out == tmp_path / "g.wav"
+
+
+def test_tts_model_for_language_ru_v2_kk_v3():
+    assert tts_model_for_language("ru") == MODEL_ID == "eleven_multilingual_v2"
+    assert tts_model_for_language("kk") == V3_MODEL_ID == "eleven_v3"
+    # регистр/пробелы не должны влиять
+    assert tts_model_for_language("  KK ") == V3_MODEL_ID
+    # неизвестный/пустой язык — безопасный production-дефолт v2
+    assert tts_model_for_language(None) == MODEL_ID
+    assert tts_model_for_language("de") == MODEL_ID
+
+
+def test_synth_voice_v3_дефолтная_stability_дискретна(tmp_path, monkeypatch):
+    # v3 отклоняет непрерывную stability; без явного значения берём 0.5.
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "k")
+    monkeypatch.delenv("ELEVENLABS_STABILITY", raising=False)
+    http = _FakeHttp()
+    synth_voice("текст", tmp_path / "g.wav", voice_id="v1",
+                model_id=V3_MODEL_ID, http=http, run_cmd=lambda *a, **kw: None)
+    body = http.posts[0][1]
+    assert body["model_id"] == V3_MODEL_ID
+    assert body["voice_settings"]["stability"] == DEFAULT_STABILITY_V3
+    # v2-only настройки для v3 не отправляются
+    assert "speed" not in body["voice_settings"]
+    assert "similarity_boost" not in body["voice_settings"]

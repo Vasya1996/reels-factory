@@ -277,6 +277,33 @@ def test_master_audio_одна_озвучка_вместо_block_tts(monkeypatch
     )
 
 
+def test_bot_job_не_запускает_render_пока_master_audio_не_утверждено(
+        monkeypatch, tmp_path):
+    calls = []
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+    master_calls = []
+
+    cfg = _cfg("avatar")
+    cfg["master_audio"] = {"enabled": True, "review_required": True}
+    result = pipeline.run_make(
+        cfg,
+        wd,
+        avatar_client=avatar,
+        synth_fn=fs,
+        assemble_fn=fa,
+        master_audio_fn=lambda *args, **kwargs: master_calls.append(1),
+    )
+
+    assert result["ok"] is False
+    assert result["stage"] == "voice"
+    assert "не утверждено" in result["error"]
+    assert master_calls == []
+    assert avatar.calls == []
+    assert not any(call[0] == "assemble" for call in calls)
+
+
 def test_master_audio_не_разрешает_jump_cuts_ломать_timeline(monkeypatch, tmp_path):
     calls = []
     fs, fa = _fakes(monkeypatch, tmp_path, calls)
@@ -951,3 +978,63 @@ def test_master_audio_с_meter_тарифицирует_единственный
     assert res["ok"] is True, res.get("error")
     assert len(meter.eleven_calls) == 1
     assert meter.eleven_calls[0] == sum(len(b["speech"]) for b in _scenario()["blocks"])
+
+
+def test_без_монтажа_один_проход_heygen(monkeypatch, tmp_path):
+    """montage=False: единая master-дорожка -> один вызов HeyGen, без edit_plan,
+    assemble, verify и поблочной озвучки."""
+    calls = []
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+
+    master_wav = wd / "voice_master.wav"
+    master_wav.write_bytes(b"")
+
+    def fake_master(scenario, config, workdir, *, voice_id=None, meter=None):
+        calls.append(("master_audio", voice_id))
+        return SimpleNamespace(wav=master_wav)
+
+    cfg = _cfg("avatar")
+    cfg["montage"] = False
+    cfg["master_audio"] = {"enabled": True}
+
+    res = pipeline.run_make(cfg, wd, avatar_client=avatar,
+                            synth_fn=fs, assemble_fn=fa,
+                            master_audio_fn=fake_master)
+
+    assert res["ok"] is True and res["qa_pass"] is True and res["montage"] is False
+    # ровно один проход HeyGen по единой дорожке
+    assert len(avatar.calls) == 1
+    assert avatar.calls[0][1] == str(master_wav)
+    # монтажный слой не задействован вовсе
+    stages = [c[0] for c in calls]
+    assert "assemble" not in stages
+    assert "verify" not in stages
+    assert "synth" not in stages
+    assert ("master_audio", "v1") in calls
+    assert Path(res["mp4"]).name == "reel.mp4"
+    # результат уходит через json.dumps в _cmd_make — он обязан быть
+    # сериализуемым (mp4 = str, не Path)
+    assert isinstance(res["mp4"], str)
+    json.dumps(res)
+
+
+def test_без_монтажа_требует_master_audio(monkeypatch, tmp_path):
+    """Без master_audio нет единой дорожки на весь ролик — честная ошибка,
+    а не тихий откат на поблочный (монтажный) путь."""
+    calls = []
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    wd = _wd_with_scenario(tmp_path)
+
+    cfg = _cfg("avatar")
+    cfg["montage"] = False  # master_audio НЕ включён
+
+    res = pipeline.run_make(cfg, wd, avatar_client=avatar,
+                            synth_fn=fs, assemble_fn=fa)
+
+    assert res["ok"] is False
+    assert res["stage"] == "plain_avatar"
+    assert "master_audio" in res["error"]
+    assert avatar.calls == []

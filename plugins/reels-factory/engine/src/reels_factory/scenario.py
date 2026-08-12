@@ -24,13 +24,17 @@ ROLES_5 = ["hook", "context", "development", "payoff", "cta"]
 
 HOOK_TYPES = "fail_first, clutch_save, number_shock, question_hook, before_after, insight_reveal"
 
-# Eleven v3 audio tags в квадратных скобках ([laughs], [sighs]...) — не слова
+# Legacy-сценарии могли содержать служебные пометки в квадратных скобках;
+# при оценке длины они не считаются словами.
 _TAG_RE = re.compile(r"\[[^\]\n]*\]")
 
 WORD_LIMIT_HARD = 70   # валидатор: жёсткий предел (иначе ролик не влезет)
 WORD_LIMIT_SOFT = 60   # промпт: целевой предел
 WORDS_PER_SECOND_TARGET = 2.5
 MAX_SUPPORTED_DURATION_S = 90
+# Верхняя граница ролика, когда target_duration_s не задан. Бот берёт её как
+# длину ещё не написанного сценария: до генерации считать больше не из чего.
+DEFAULT_MAX_DURATION_S = 40.0
 
 STYLE_GUIDE_PATH = FACTORY_DIR / "style-guide.md"
 
@@ -96,7 +100,7 @@ def _duration_contract(hypothesis: dict | None) -> dict:
         return {
             "target": 25.0,
             "minimum": 14.0,
-            "maximum": 40.0,
+            "maximum": DEFAULT_MAX_DURATION_S,
             "words_soft": WORD_LIMIT_SOFT,
             "words_hard": WORD_LIMIT_HARD,
             "explicit": False,
@@ -186,11 +190,9 @@ def build_prompt(hypothesis: dict) -> str:
         "нужна пауза 0.4-0.6 (дать фразе повиснуть), в остальных местах — по "
         "смыслу или совсем без неё.\n"
         "В сложных словах можно ставить ударение акутом (символ U+0301 сразу "
-        "после ударной гласной). В speech допустимы редкие Eleven v3 audio tags "
-        "на английском, например [curious], [excited], [whispers], [laughs], "
-        "[sighs]. Используй их только когда тег естественен для персонажа; они "
-        "не считаются словами при подсчёте лимита речи. SSML <break> не используй: "
-        "Eleven v3 его не поддерживает; паузы задавай пунктуацией и многоточием.\n"
+        "после ударной гласной). Не добавляй в speech метакоманды и аудиотеги "
+        "в квадратных скобках: модель Eleven Multilingual v2 их не поддерживает. "
+        "Живую подачу создавай естественными разговорными формулировками.\n"
         f"ЛИМИТ РЕЧИ (критично, иначе ролик не влезет): цель — около "
         f"{duration['words_soft']} слов, жёсткий максимум "
         f"{duration['words_hard']} слов суммарно; каждое предложение — не более "
@@ -510,8 +512,14 @@ def _pick_variant2(attempts: list, best_scenario: dict):
     return None
 
 
-def run_generated_path(workdir, idea: dict, skill_runner, language: str) -> dict:
+def run_generated_path(workdir, idea: dict, skill_runner, language: str,
+                       gender: str | None = None) -> dict:
     """Путь «из сырья»: скилл-генерация -> полировка+судья -> scenario.json.
+
+    `gender` — пол ведущего, «male» или «female». Без него модель не знает, в
+    каком роде рассказчик говорит о себе, и мужчине достаётся «сделала».
+    Значение идёт во все три скилла пути (генерация, полировка, судья): текст
+    правит каждый из них, и знать род должен каждый.
 
     При браке (verdict.pass=False) вместо претензий судьи пользователю
     предлагается второй вариант реплик (scenario.variant2.json), если он
@@ -526,6 +534,8 @@ def run_generated_path(workdir, idea: dict, skill_runner, language: str) -> dict
             "length_s": idea.get("length_s"),
             "quotes": idea.get("quotes") or [],
             "persona": idea.get("persona")}
+    if gender:
+        task["gender"] = str(gender).strip().lower()
     payload = workdir / "idea.json"
     payload.write_text(json.dumps(task, ensure_ascii=False, indent=1),
                        encoding="utf-8")
@@ -535,10 +545,12 @@ def run_generated_path(workdir, idea: dict, skill_runner, language: str) -> dict
     if errs:
         raise ScenarioError(f"черновик генерации: {errs}")
 
+    carried = ["idea", "length_s", "quotes"] + (["gender"] if gender else [])
     final, verdict = refine_loop(skill_runner, workdir, draft,
-                                 {k: task[k] for k in ("idea", "length_s", "quotes")},
-                                 language)
+                                 {k: task[k] for k in carried}, language)
     final["language"] = str(language).strip().lower()
+    if gender:
+        final["gender"] = task["gender"]
     final.setdefault("mode", "generated")
     errs = validate_integrity(final)
     if errs:
