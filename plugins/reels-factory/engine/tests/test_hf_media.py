@@ -394,3 +394,34 @@ def test_кадры_кандидата_обложка_и_середина():
                                 for i in range(5)]}
     assert hf_media._preview_frames(video) == ["https://p/cover.jpg",
                                                "https://p/2.jpg"]
+
+
+# ---------- окружение их CLI ----------
+
+def test_путь_к_их_cli_дописывается_сам(tmp_path, monkeypatch):
+    """`heygen` их установщик кладёт в `~/.local/bin`, а systemd даёт службе
+    голый PATH без него. Мы зовём CLI по имени и ловим только ненулевой код
+    возврата — отсутствие бинарника летит исключением и роняет первый же
+    подбор картинки. На сервере это блокер, локально невидим."""
+    import os
+    from reels_factory import config
+
+    home = tmp_path / "home"
+    (home / ".local" / "bin").mkdir(parents=True)
+    monkeypatch.setattr(config.Path, "home", staticmethod(lambda: home))
+    monkeypatch.setenv("PATH", os.pathsep.join(["/usr/bin", "/bin"]))
+
+    env = config.cli_env()
+    assert env["PATH"].split(os.pathsep)[0] == str(home / ".local" / "bin")
+    # второй раз путь не дублируется
+    monkeypatch.setenv("PATH", env["PATH"])
+    assert config.cli_env()["PATH"] == env["PATH"]
+
+
+def test_без_папки_путь_не_трогаем(tmp_path, monkeypatch):
+    import os
+    from reels_factory import config
+
+    monkeypatch.setattr(config.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setenv("PATH", "/usr/bin")
+    assert config.cli_env()["PATH"] == "/usr/bin"

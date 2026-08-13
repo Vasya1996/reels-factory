@@ -45,8 +45,20 @@ def cli_env() -> dict:
     `docs/guides/feedback.mdx:209` и `hyperframes-cli/references/
     upgrade-info-misc.md:60`). Значение из окружения уважаем: включить обратно
     можно осознанно, поставив `HYPERFRAMES_NO_TELEMETRY=0`.
+
+    `~/.local/bin` дописываем в `PATH` сами: их установщик кладёт `heygen`
+    именно туда, а systemd даёт службе голый путь без него. Мы зовём CLI по
+    имени и ловим только ненулевой код возврата — отсутствие бинарника летит
+    исключением, и первый же подбор картинки роняет сборку. В консоли и в WSL
+    этого не видно: там путь в `PATH` есть, и разница вылезала бы только на
+    сервере.
     """
-    return {"HYPERFRAMES_NO_TELEMETRY": "1", **os.environ}
+    env = {"HYPERFRAMES_NO_TELEMETRY": "1", **os.environ}
+    local_bin = Path.home() / ".local" / "bin"
+    parts = env.get("PATH", "").split(os.pathsep)
+    if local_bin.is_dir() and str(local_bin) not in parts:
+        env["PATH"] = os.pathsep.join([str(local_bin), *parts])
+    return env
 
 # Рабочая папка проекта пользователя (cwd), НЕ каталог пакета.
 WORK_ROOT = Path.cwd() / "work"
