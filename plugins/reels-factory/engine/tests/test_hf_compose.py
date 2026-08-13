@@ -498,6 +498,21 @@ def test_накладка_агента_встаёт_сабкомпозицией
     assert ">Мария<" in copy and "Jordan Avery" not in copy
 
 
+def test_накладка_не_из_каталога_снимается_а_не_роняет_прогон(run, monkeypatch):
+    """Паспорта накладок лежат в OVERLAYS.md, и агент открывает файл сам. Не
+    открыл — назовёт имя по памяти, реестр такого блока не отдаст, и сборка
+    упала бы целиком. Накладка того не стоит: снимаем, как запрещённые."""
+    _with_lt(run)
+    monkeypatch.setattr(hf_compose, "_known_overlays",
+                        lambda: frozenset({"lt-clean-bar"}))
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[0]["endSec"] = 2.0
+    scenes[1]["startSec"] = 2.0
+    scenes[1]["overlay"] = {"block": "lower-third-fancy", "text": {"name": "М"}}
+    html, _ = _build(run, scenes=scenes)
+    assert "lower-third-fancy" not in html
+
+
 def test_фактура_кроет_кадр_целиком(run, monkeypatch):
     """Протечка света, рамка видоискателя и оформление стоп-кадра приезжают тем
     же канвасом 1920x1080, что и плашки, но обязаны заливать кадр. Прежде их

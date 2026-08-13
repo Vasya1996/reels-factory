@@ -199,6 +199,25 @@ def _skipped_blocks() -> dict:
 
 
 @functools.lru_cache(maxsize=1)
+def _known_overlays() -> frozenset:
+    """Имена накладок, которые каталог действительно отдаёт.
+
+    Паспорта лежат в `OVERLAYS.md` рядом с заданием, и агент открывает файл
+    сам. Не открыл — назовёт имя по памяти, а такого блока в реестре нет:
+    `hyperframes add` его не поставит, и `_stage_overlay` уронит попытку
+    целиком. Накладка того не стоит — снимаем её, как снимаем запрещённые.
+
+    Каталог недоступен — возвращаем пустое множество, и проверка не
+    применяется: обвинять план в том, что не поднялся наш же реестр, незачем.
+    """
+    from reels_factory.hf_catalog import overlay_names
+    try:
+        return frozenset(overlay_names())
+    except (OSError, ValueError):
+        return frozenset()
+
+
+@functools.lru_cache(maxsize=1)
 def _block_backing() -> dict:
     """Есть ли у накладки своя подложка под текстом. Каталога может не быть —
     тогда скрим не кладём: лишний тёмный слой хуже, чем его отсутствие."""
@@ -951,6 +970,10 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         if not block:
             continue
         reason = _skipped_blocks().get(str(block))
+        known = _known_overlays()
+        if not reason and known and str(block) not in known:
+            reason = ("такого блока в каталоге нет — паспорта лежат в "
+                      "OVERLAYS.md рядом с заданием")
         if reason:
             print(f'{scene["id"]}: накладка {block} снята — {reason}')
             scene.pop("overlay", None)
