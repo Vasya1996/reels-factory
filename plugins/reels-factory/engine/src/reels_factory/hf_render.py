@@ -744,11 +744,15 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                 # ловит содержимое, заехавшее в полосу титра, второй — медиа,
                 # вылезшее за кадр. Полоса у нас начинается на
                 # `CAPTION_BAND_TOP` из 1920, то есть с доли 0,52.
-                band = CAPTION_BAND_TOP / OUT_H
+                #
+                # Долю пишем без ведущего нуля: их парсер принимает `.52` и
+                # отвергает `0.52` — «Invalid --caption-zone; use
+                # "x0=0;y0=.82;..."» (проверено на 0.7.84).
+                band = f"{CAPTION_BAND_TOP / OUT_H:.2f}".lstrip("0")
                 _cli("check", "public", "--json", "--strict",
                      "--frame-check",
                      "--caption-zone",
-                     f"x0=0;y0={band:.3f};x1=1;y1=1;severity=error",
+                     f"x0=0;y0={band};x1=1;y1=1;severity=error",
                      "--at", ",".join(f"{time:g}" for time in
                                       _scene_midpoints(board)),
                      cwd=rdir, log=rdir / "check.json")
