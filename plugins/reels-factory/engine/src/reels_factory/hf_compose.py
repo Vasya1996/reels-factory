@@ -986,9 +986,19 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         room = duration - start
         if position + 1 < len(marked):
             room = min(room, _q(marked[position + 1]["startSec"]) - start)
-        unique, native, canvas = _stage_overlay(
-            public, str(overlay["block"]), scene["id"], sdk=sdk,
-            text={k: str(v) for k, v in (overlay.get("text") or {}).items()})
+        try:
+            unique, native, canvas = _stage_overlay(
+                public, str(overlay["block"]), scene["id"], sdk=sdk,
+                text={k: str(v)
+                      for k, v in (overlay.get("text") or {}).items()})
+        except RuntimeError as error:
+            # Слот назван не тем именем либо не назван вовсе: заполнение
+            # падает, и раньше вместе с ним падала вся попытка. Паспорта
+            # лежат в OVERLAYS.md, агент открывает их сам — цена ошибки
+            # должна быть равна цене плашки, а не цене прогона.
+            print(f'{scene["id"]}: накладка {overlay["block"]} снята — {error}')
+            scene.pop("overlay", None)
+            continue
         length = round(min(native, room), 4)
         if length < min_card_seconds(native):
             if position + 1 < len(marked) and room < duration - start:
@@ -997,10 +1007,15 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                       f"{min_card_seconds(native):g}")
                 scene.pop("overlay", None)
                 continue
-            raise RuntimeError(
-                f'{scene["id"]}: накладке {overlay["block"]} нужно '
-                f"{min_card_seconds(native):g} с, а до конца ролика "
-                f"{duration - start:.2f} — поставь её раньше или возьми короче")
+            # До конца ролика места не хватило. Раньше это роняло попытку
+            # целиком — из-за плашки, без которой ролик прекрасно живёт;
+            # задание при этом само предлагало ставить её «на призыве в
+            # финале», где места нет никогда.
+            print(f'{scene["id"]}: накладка {overlay["block"]} снята — до '
+                  f"конца ролика {duration - start:.2f} с, а ей нужно "
+                  f"{min_card_seconds(native):g}")
+            scene.pop("overlay", None)
+            continue
         # Фактура кроет кадр целиком, плашка стоит полосой над титром. Обе
         # приезжают канвасом 1920x1080, и различить их можно только по метке
         # каталога — той же, которой помечены их собственные обработки кадра.

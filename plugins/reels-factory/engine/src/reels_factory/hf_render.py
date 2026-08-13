@@ -29,8 +29,8 @@ from reels_factory.hf_catalog import (
     write_project_config,
 )
 from reels_factory.hf_compose import (
-    build_composition, clear_generated, collect_intents, complete_storyboard,
-    needed_blocks, schema_intents, settle_inserts,
+    CAPTION_BAND_TOP, build_composition, clear_generated, collect_intents,
+    complete_storyboard, needed_blocks, schema_intents, settle_inserts,
 )
 from reels_factory.hf_fonts import inject_fonts
 from reels_factory.hf_frame import read_frame
@@ -149,6 +149,38 @@ def _cli(*args: str, cwd, log: Path | None = None,
 #: это провал сборки.
 RENDER_FATAL_WARNINGS = ("sub_timeline_readiness_timeout",
                          "sub_timeline_script_failure")
+
+
+def _write_motion_sidecar(public: Path, board: dict, duration: float) -> None:
+    """Намерение движения — их сайдкаром, а не нашей отдельной пробой.
+
+    `check` читает `*.motion.json` рядом с композицией сам, без флага, и
+    сверяет намерение с той же перемотанной шкалой, по которой идёт рендер:
+    «the closest automated proxy for "render the MP4 and watch it"»
+    (hyperframes-cli/references/lint-validate-inspect.md). Нам это закрывает
+    два вопроса разом: вставка действительно въехала в кадр к своей секунде и
+    не уехала за его край.
+
+    Селектор, который ничего не нашёл, они считают провалом
+    (`motion_selector_missing`), поэтому перечисляем только те вставки, что
+    реально попали в разметку.
+    """
+    inserts = sorted(
+        f'#ins-{scene["id"]}-{shot}'
+        for scene in board.get("scenes") or []
+        for shot in range(2)
+        if (public / "index.html").exists()
+        and f'id="ins-{scene["id"]}-{shot}"'
+        in (public / "index.html").read_text(encoding="utf-8"))
+    if not inserts:
+        return
+    assertions = [{"kind": "staysInFrame", "selector": selector}
+                  for selector in inserts]
+    (public / "index.motion.json").write_text(
+        json.dumps({"duration": round(float(duration), 3),
+                    "assertions": assertions},
+                   ensure_ascii=False, indent=1),
+        encoding="utf-8")
 
 
 def _render_or_die(rdir: Path, raw: Path) -> None:
@@ -650,6 +682,7 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                                       words=words, resolved=found,
                                       sfx_whoosh=whoosh, theme=theme,
                                       face=load_face(rdir))
+                _write_motion_sidecar(public, board, duration)
                 # Шрифты врезаем до проверок: и наши гейты, и их `check` меряют
                 # переполнение и перекрытие по отрисованному тексту, а без наших
                 # @font-face кириллица считалась бы по подменному шрифту.
@@ -704,7 +737,18 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             # _cli бросает RuntimeError: ветка except читает находки из того же
             # отчёта, оба пути сходятся.
             try:
+                # `--caption-zone` и `--frame-check` — их собственные гейты
+                # конвейера, выключенные по умолчанию («Opt-in pipeline gates
+                # (used by orchestrators; off by default)»,
+                # hyperframes-cli/references/lint-validate-inspect.md). Первый
+                # ловит содержимое, заехавшее в полосу титра, второй — медиа,
+                # вылезшее за кадр. Полоса у нас начинается на
+                # `CAPTION_BAND_TOP` из 1920, то есть с доли 0,52.
+                band = CAPTION_BAND_TOP / OUT_H
                 _cli("check", "public", "--json", "--strict",
+                     "--frame-check",
+                     "--caption-zone",
+                     f"x0=0;y0={band:.3f};x1=1;y1=1;severity=error",
                      "--at", ",".join(f"{time:g}" for time in
                                       _scene_midpoints(board)),
                      cwd=rdir, log=rdir / "check.json")

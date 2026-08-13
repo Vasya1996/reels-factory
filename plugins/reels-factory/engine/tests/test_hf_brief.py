@@ -528,3 +528,38 @@ def test_образец_плана_проходит_наши_же_проверк
     failed = [f"{name}: {value}" for name, value in verdicts.items()
               if value.startswith("FAIL")]
     assert not failed, failed
+
+
+def test_правило_не_живёт_в_двух_местах(tmp_path):
+    """Одно правило — одно место. Их канон: «Choose one term and use it
+    throughout the Skill» и «the minimal set of information that fully outlines
+    your expected behavior». Разбор задания находил по четыре редакции одного и
+    того же — «верни два файла», «разметку не пиши», «сложи длительности».
+
+    Проверяем механически: ключевые темы не должны встречаться и в задании, и
+    в скиле, а внутри каждого файла — дважды.
+    """
+    brief = _text(tmp_path)
+    skill = _skill(tmp_path)
+    # (тема, где ей место, как её узнать)
+    topics = [
+        ("контракт ответа", brief, skill, "storyboard.json` и `frame.md`"),
+        ("серия из двух планов", skill, brief, "серией из двух планов"),
+        ("формы схемы", skill, brief, "<forms>"),
+        ("положения ведущей", skill, brief, "Выбор положения:"),
+        ("биты рассказа", skill, brief, "`hook` — первая сцена"),
+    ]
+    for name, home, foreign, mark in topics:
+        assert mark in home, f"{name}: правило пропало из своего файла"
+        assert mark not in foreign, f"{name}: правило сказано дважды"
+
+
+def test_в_задании_нет_требований_к_чужому_результату(tmp_path):
+    """Требовать от агента исход, который после него правит код, — источник
+    провала 462a1c62. Пять функций переписывают `presenter`, пару близнецов
+    разводит `dedupe_neighbours`, вставки снимает `pick_series`."""
+    text = _text(tmp_path) + _skill(tmp_path)
+    for banned in ("Проверка считает", "проверка заворачивает",
+                   "сборка не пройдёт проверку", "детектор их не разделит",
+                   "каждое роняет сборку"):
+        assert banned not in text, f"обещание за код: {banned}"

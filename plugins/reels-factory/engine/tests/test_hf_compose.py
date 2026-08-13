@@ -545,15 +545,31 @@ def test_плашка_остаётся_над_полосой_титра(run):
 
 
 def test_накладке_у_края_ролика_не_хватает_времени(run):
-    """Родная длительность 4.8 с не влезает в хвост — внятная ошибка."""
+    """Родная длительность 4.8 с не влезает в хвост — накладка снимается.
+
+    Прежде это роняло сборку целиком, и роняло закономерно: задание само
+    предлагало ставить плашку «на призыве в финале», где места нет никогда.
+    Ролик без плашки живёт, попытка сборки стоит дороже."""
     _with_lt(run)
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["startSec"] = 4.0
     scenes[0]["endSec"] = 4.0
+    scenes[1]["overlay"] = {"block": "lt-clean-bar", "text": {"name": "М"}}
+    html, _ = _build(run, scenes=scenes)
+    assert "lt-clean-bar--s-02" not in html
+
+
+def test_накладка_с_чужим_слотом_снимается(run):
+    """Имя слота названо не из паспорта: заполнение падает, но цена ошибки
+    должна равняться цене плашки, а не цене всей попытки."""
+    _with_lt(run)
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[0]["endSec"] = 2.0
+    scenes[1]["startSec"] = 2.0
     scenes[1]["overlay"] = {"block": "lt-clean-bar",
-                            "text": {"name": "М", "role": "п"}}
-    with pytest.raises(RuntimeError, match="накладке"):
-        _build(run, scenes=scenes)
+                            "text": {"такого-слота-нет": "М"}}
+    html, _ = _build(run, scenes=scenes)
+    assert "lt-clean-bar--s-02" not in html
 
 
 def test_значок_на_подложке_со_свечением(run):
