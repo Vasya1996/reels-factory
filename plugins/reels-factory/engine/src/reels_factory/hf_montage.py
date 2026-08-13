@@ -128,6 +128,32 @@ def check_shots(scenes: list[dict]) -> None:
                 "монтаже не бывает")
 
 
+#: Сколько моментов под вставку план обязан назвать. Задание просит от пяти до
+#: восьми и объясняет зачем: часть снимет отбор. Требование стало проверяемым
+#: после пересборки 462a1c62 — там план назвал четыре, до кадра дошли две, и
+#: ролик встал одним планом на 8,1 с при пределе 8 (D19), недобрав одну смену
+#: картинки до планки эталонов (D18). Проверка стоит до подбора и до рендера:
+#: их же паттерн «валидатор → починка → повтор» (agent-skills/best-practices).
+INSERTS_WANTED = 5
+
+
+def check_inserts(scenes: list[dict]) -> None:
+    """План назвал достаточно моментов под вставку.
+
+    Пол считается от числа сцен: на коротком ролике пяти сцен со вставкой
+    просто не бывает, и требовать их — требовать невозможного.
+    """
+    wanted = min(INSERTS_WANTED, max(2, len(scenes) // 2))
+    have = sum(1 for scene in scenes if insert_of(scene))
+    if have >= wanted:
+        return
+    raise RuntimeError(
+        f"вставок в плане {have}, а нужно хотя бы {wanted}: часть из них "
+        "снимет отбор серий (две подряд он не ставит), и на оставшихся ролик "
+        "встаёт одним планом. Добавь моменты под вставку там, где реплика "
+        "описывает действие или предмет")
+
+
 def ordered_gaps(clips: list[dict] | None,
                  duration: float) -> list[tuple[float, float]]:
     """Куски, на которых ведущей нет физически.
@@ -399,6 +425,78 @@ def drop_schema(scenes: list[dict], scene: dict) -> None:
     if str(scene.get("presenter") or "full") == "none" or insert_of(scene):
         return
     scene["presenter"] = pick_position(scenes, scenes.index(scene))
+
+
+def settle_schemas(scenes: list[dict]) -> list[str]:
+    """Схема, которой не хватит секунд, разбирается ДО сборки.
+
+    Пол формы известен заранее — он считается по числу её элементов
+    (`hf_schema.min_seconds`), а длительности сцен посчитаны раньше. Раньше
+    несоответствие всплывало в `build_composition`: схема снималась на месте, и
+    сцена без ведущей оставалась с одним фоном — обрыв рассказа, который ловит
+    D25 уже после сборки. Прогон пересборки 462a1c62 встал ровно на этом:
+    `steps` из двух узлов на сцене 2,1 с при поле 2,8 с.
+
+    Сначала пробуем отдать короткую сцену соседке — секунды никуда не
+    деваются, а кадр держит то, что у соседки уже есть. Не вышло — снимаем
+    схему и закрываем кадр ведущей.
+    """
+    from reels_factory.hf_schema import min_seconds
+
+    settled: list[str] = []
+    for scene in list(scenes):
+        plan = scene.get("schema")
+        if not (isinstance(plan, dict) and plan.get("form")):
+            continue
+        count = len(plan.get("items") or plan.get("rows")
+                    or plan.get("nodes") or plan.get("brands") or [1])
+        need = min_seconds(str(plan["form"]), count)
+        length = float(scene["endSec"]) - float(scene["startSec"])
+        if length >= need - 0.05:
+            continue
+        if absorb_scene(scenes, scene):
+            settled.append(f'{scene["id"]} → соседке')
+            continue
+        drop_schema(scenes, scene)
+        settled.append(f'{scene["id"]}: схема снята')
+    if settled:
+        print("схемы, которым не хватало секунд: " + ", ".join(settled))
+    return settled
+
+
+def absorb_scene(scenes: list[dict], scene: dict) -> bool:
+    """Отдать секунды сцены соседке, которой есть чем занять кадр.
+
+    Берём предыдущую, а при её отсутствии — следующую: у предыдущей уже
+    сыгран вход, и продление читается спокойнее, чем ранний старт следующей.
+    Слияние не должно рождать кусок длиннее `MAX_STATIC_SPAN` — иначе ролик
+    встанет одним планом, и это поймает D19 уже на готовом файле.
+    """
+    from reels_factory.hf_rhythm import MAX_STATIC_SPAN
+
+    index = scenes.index(scene)
+    start, end = float(scene["startSec"]), float(scene["endSec"])
+    for neighbour in ([scenes[index - 1]] if index else []) + (
+            [scenes[index + 1]] if index + 1 < len(scenes) else []):
+        if str(neighbour.get("presenter") or "full") == "none" \
+                and not insert_of(neighbour) and not _schema_scene(neighbour):
+            continue
+        length = float(neighbour["endSec"]) - float(neighbour["startSec"])
+        if length + (end - start) > MAX_STATIC_SPAN + 0.001:
+            continue
+        if float(neighbour["startSec"]) < start:
+            neighbour["endSec"] = end
+        else:
+            neighbour["startSec"] = start
+        neighbour["phrases"] = [
+            min(neighbour.get("phrases", [0])[0], scene.get("phrases", [0])[0]),
+            max(neighbour.get("phrases", [0])[-1],
+                scene.get("phrases", [0])[-1])]
+        scenes.remove(scene)
+        print(f'{scene["id"]}: сцена отдана соседке {neighbour["id"]} — '
+              "закрыть её кадр было нечем")
+        return True
+    return False
 
 
 def dedupe_neighbours(scenes: list[dict], *, clips: list[dict] | None = None,

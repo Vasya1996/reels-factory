@@ -392,3 +392,65 @@ def test_потолок_аватара_шестьдесят_процентов()
     from reels_factory.hf_montage import AVATAR_ON_SCREEN_MAX
 
     assert AVATAR_ON_SCREEN_MAX == 0.60
+
+
+def test_короткая_схема_отдаёт_сцену_соседке():
+    """Пересборка 462a1c62: `steps` из двух узлов встал на сцену 2,1 с при поле
+    2,8 с. Схема снималась уже в кадре, и сцена без ведущей оставалась с одним
+    фоном — обрыв рассказа, который ловит D25 после сборки."""
+    from reels_factory.hf_montage import settle_schemas
+
+    scenes = [{"id": "s-01", "startSec": 0.0, "endSec": 3.0,
+               "presenter": "full", "phrases": [0, 1], "insert": None},
+              {"id": "s-02", "startSec": 3.0, "endSec": 5.1,
+               "presenter": "none", "phrases": [2, 2], "insert": None,
+               "schema": {"form": "steps", "why": "порядок",
+                          "nodes": ["кто", "что"]}}]
+    settled = settle_schemas(scenes)
+
+    assert settled == ["s-02 → соседке"]
+    assert [scene["id"] for scene in scenes] == ["s-01"]
+    assert scenes[0]["endSec"] == 5.1
+    assert scenes[0]["phrases"] == [0, 2]
+
+
+def test_схема_снимается_когда_соседки_нет():
+    """Слить не с кем — тогда схему снимаем, а кадр закрывает ведущая."""
+    from reels_factory.hf_montage import settle_schemas
+
+    scenes = [{"id": "s-01", "startSec": 0.0, "endSec": 2.0,
+               "presenter": "pip-br", "phrases": [0, 0], "insert": None,
+               "schema": {"form": "items", "why": "набор",
+                          "items": [{"label": "а", "icon": "поиск"}] * 3}}]
+    settle_schemas(scenes)
+
+    assert "schema" not in scenes[0]
+    assert scenes[0]["presenter"] in ("full", "punch")
+
+
+def test_план_с_четырьмя_вставками_возвращается_на_доработку():
+    """Пересборка 462a1c62: план назвал четыре момента вместо пяти, до кадра
+    дошли две вставки, и ролик встал одним планом на 8,1 с при пределе 8.
+    Проверка стоит до подбора и до рендера — цена ошибки одна попытка плана, а
+    не полный прогон."""
+    from reels_factory.hf_montage import check_inserts
+
+    scenes = [_scene(index, index * 3.0, index * 3.0 + 3.0,
+                     "pip-tr" if index < 4 else "full",
+                     "рука" if index < 4 else None)
+              for index in range(10)]
+    with pytest.raises(RuntimeError, match="вставок в плане 4"):
+        check_inserts(scenes)
+
+    scenes[4]["insert"] = {"shots": ["стол", "стол крупно"], "kind": "video"}
+    check_inserts(scenes)
+
+
+def test_на_коротком_ролике_пяти_вставок_не_требуют():
+    """Пол считается от числа сцен: четырёх сцен со вставкой в трёх сценах не
+    бывает, и требовать их — требовать невозможного."""
+    from reels_factory.hf_montage import check_inserts
+
+    check_inserts([_scene(0, 0.0, 3.0, "pip-tr", "рука"),
+                   _scene(1, 3.0, 6.0, "pip-tl", "стол"),
+                   _scene(2, 6.0, 9.0, "full", None)])

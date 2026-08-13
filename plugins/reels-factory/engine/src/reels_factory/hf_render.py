@@ -40,8 +40,8 @@ from reels_factory.hf_gates import (
 from reels_factory.hf_layout import quantize
 from reels_factory.hf_media import resolve_all
 from reels_factory.hf_montage import (
-    check_shots, dedupe_neighbours, drop_series, merge_adjacent_series,
-    pick_series, show_ordered_avatar,
+    check_inserts, check_shots, dedupe_neighbours, drop_series,
+    merge_adjacent_series, pick_series, settle_schemas, show_ordered_avatar,
 )
 from reels_factory.hf_phrases import (
     lay_out_scenes, phrase_timeline, speech_between,
@@ -161,21 +161,33 @@ def _write_motion_sidecar(public: Path, board: dict, duration: float) -> None:
     два вопроса разом: вставка действительно въехала в кадр к своей секунде и
     не уехала за его край.
 
+    Проверяем `appearsBy` — что вставка въехала в кадр к своей секунде.
+    `staysInFrame` здесь не годится: наши вставки едут наездом, и их бокс
+    законно выходит за канвас на десятки пикселей — прогон пересборки
+    462a1c62 поймал ровно это (`motion_off_frame` на 14,61 с при вылете 30 px).
+
     Селектор, который ничего не нашёл, они считают провалом
     (`motion_selector_missing`), поэтому перечисляем только те вставки, что
     реально попали в разметку.
     """
-    inserts = sorted(
-        f'#ins-{scene["id"]}-{shot}'
-        for scene in board.get("scenes") or []
-        for shot in range(2)
-        if (public / "index.html").exists()
-        and f'id="ins-{scene["id"]}-{shot}"'
-        in (public / "index.html").read_text(encoding="utf-8"))
-    if not inserts:
+    if not (public / "index.html").exists():
         return
-    assertions = [{"kind": "staysInFrame", "selector": selector}
-                  for selector in inserts]
+    markup = (public / "index.html").read_text(encoding="utf-8")
+    assertions = []
+    for scene in board.get("scenes") or []:
+        for shot in range(2):
+            name = f'ins-{scene["id"]}-{shot}'
+            if f'id="{name}"' not in markup:
+                continue
+            # Момент, к которому вставка обязана быть видна: её собственное
+            # начало плюс полсекунды на вход.
+            start = float(scene.get("startSec", 0)) + (
+                shot * (float(scene.get("endSec", 0))
+                        - float(scene.get("startSec", 0))) / 2)
+            assertions.append({"kind": "appearsBy", "selector": f"#{name}",
+                               "bySec": round(start + 0.5, 2)})
+    if not assertions:
+        return
     (public / "index.motion.json").write_text(
         json.dumps({"duration": round(float(duration), 3),
                     "assertions": assertions},
@@ -599,6 +611,7 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             # чем войдёт; сколько их останется, считает арифметика.
             try:
                 check_shots(board["scenes"])
+                check_inserts(board["scenes"])
             except RuntimeError as error:
                 reason = str(error)
                 if attempt == MAX_COMPOSE_ATTEMPTS - 1:
@@ -620,6 +633,10 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             # месте уже написан кодом, агенту чинить нечего.
             dedupe_neighbours(board["scenes"], clips=saved_clips,
                               duration=duration)
+            # Схема, которой не хватит секунд, разбирается здесь, до сборки:
+            # иначе она снималась уже в кадре, и сцена без ведущей оставалась
+            # с одним фоном.
+            settle_schemas(board["scenes"])
             print(f'серий бироллов {series["series"]}, доля аватара '
                   f'{series["avatar_share"] * 100:.0f}%'
                   + (("; выброшены — " + "; ".join(series["dropped"]))
