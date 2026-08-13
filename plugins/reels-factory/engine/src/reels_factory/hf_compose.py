@@ -70,7 +70,8 @@ from reels_factory.hf_layout import (
 )
 from reels_factory.hf_media import insert_problem
 from reels_factory.hf_montage import (
-    cut_into_plans, flash_moments, insert_of, refill_scene, shot_queries,
+    cut_into_plans, drop_schema, flash_moments, insert_of, refill_scene,
+    shot_queries,
     shots_for, split_series, zoom_ladder,
 )
 from reels_factory.hf_schema import (
@@ -1099,6 +1100,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             content["files"] = [f for f in files if f]
             if not content["files"]:
                 print(f'{scene["id"]}: схема бренда снята — знак не подобрался')
+                drop_schema(scenes, scene)
                 continue
         block, config, css, patches = schema_build(
             plan["form"], content, duration=end - start, colors=colors)
@@ -1110,6 +1112,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         if end - start < need - 0.05:
             print(f'{scene["id"]}: схема «{plan["form"]}» снята — сцене '
                   f"{end - start:.1f} с, а форме нужно {need:.1f}")
+            drop_schema(scenes, scene)
             continue
         elastic = schema_is_elastic(block)
         # Упругий блок раскладывается по коробке, а не по числам внутри себя:

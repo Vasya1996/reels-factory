@@ -2285,10 +2285,18 @@ def test_сбой_сборки_сообщается_человеческим_т�
 
     asyncio.run(bot._process_job(
         api, job, build_fn=lambda chat_id, workdir:
-        {"ok": False, "stage": "voice", "error": "HeyGen 500"}
+        {"ok": False, "stage": "voice", "error":
+         "D21_scene_contrast: FAIL: s-05 и s-06 идут подряд — смени положение "
+         "ведущей или объедини их в одну сцену"}
     ))
 
-    assert "HeyGen 500" in api.messages[-1][1]
+    # Внутренняя причина написана агенту-сборщику: заказчику она бессмысленна,
+    # чинить сцены ему нечем. Разбор остаётся в job, человеку — человеческое.
+    assert "D21" not in api.messages[-1][1]
+    assert "смени положение" not in api.messages[-1][1]
+    assert bot.BUILD_FAILED_MSG in api.messages[-1][1]
+    assert job.job_id[:8] in api.messages[-1][1]
+    assert "D21" in bot._job_store().get(job.job_id).error
     assert not api.videos
     assert bot._job_store().get(job.job_id).status == "failed"
     assert bot.load_session(7)["step"] == bot.BUILD_FAILED
@@ -2306,7 +2314,9 @@ def test_исключение_при_сборке_не_роняет_бота(wor
 
     asyncio.run(bot._process_job(api, job, build_fn=падаем))
 
-    assert "subprocess не поднялся" in api.messages[-1][1]
+    assert bot.BUILD_FAILED_MSG in api.messages[-1][1]
+    assert "subprocess" not in api.messages[-1][1]
+    assert "subprocess не поднялся" in bot._job_store().get(job.job_id).error
     assert bot._job_store().get(job.job_id).status == "failed"
 
 

@@ -40,7 +40,8 @@ from reels_factory.hf_gates import (
 from reels_factory.hf_layout import quantize
 from reels_factory.hf_media import resolve_all
 from reels_factory.hf_montage import (
-    check_shots, drop_series, merge_adjacent_series, pick_series,
+    check_shots, dedupe_neighbours, drop_series, merge_adjacent_series,
+    pick_series, show_ordered_avatar,
 )
 from reels_factory.hf_phrases import (
     lay_out_scenes, phrase_timeline, speech_between,
@@ -571,12 +572,22 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                 if attempt == MAX_COMPOSE_ATTEMPTS - 1:
                     raise
                 continue
+            # Ведущая, за которую уже заплачено, обязана быть в кадре: клипы
+            # куплены до плана, и `presenter: "none"` на купленной секунде
+            # выбрасывает деньги, а не бережёт их.
+            show_ordered_avatar(board["scenes"], saved_clips, duration)
             # Соседние бироллы — одна серия из двух планов, а не две сцены,
             # разведённые правилом «между сериями держим лицо».
-            merge_adjacent_series(board["scenes"])
+            merge_adjacent_series(board["scenes"], clips=saved_clips,
+                                  duration=duration)
             kept, series = pick_series(board["scenes"], saved_clips, duration)
             drop_series(board["scenes"], kept, clips=saved_clips,
                         duration=duration)
+            # Снятая серия оставляет на своём месте ведущую — и сцена может
+            # стать копией соседа. Разводим здесь, а не гейтом: план на этом
+            # месте уже написан кодом, агенту чинить нечего.
+            dedupe_neighbours(board["scenes"], clips=saved_clips,
+                              duration=duration)
             print(f'серий бироллов {series["series"]}, доля аватара '
                   f'{series["avatar_share"] * 100:.0f}%'
                   + (("; выброшены — " + "; ".join(series["dropped"]))
@@ -622,6 +633,10 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     if lost:
                         print(f"вставка не нашлась у сцен: {', '.join(lost)} — "
                               "ведущая там встала во весь кадр")
+                    # Потеря вставки перекраивает кадр так же, как снятая
+                    # серия, — и так же плодит пары одинаковых кусков.
+                    dedupe_neighbours(board.get("scenes") or [],
+                                      clips=saved_clips, duration=duration)
                     # Запасную схему подбираем вторым заходом и только для тех
                     # сцен, которым она реально понадобилась: в обычном прогоне
                     # сток отвечает, и этих запросов не будет вовсе.

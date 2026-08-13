@@ -500,6 +500,22 @@ def build_avatar_render_plan(
             "max_shot_count": max_shots,
         },
     }
+    # Потолок аватарного времени меряется здесь — на заказе. Показом его
+    # мерить бессмысленно: клипы покупаются раньше плана, и спрятанная в
+    # монтаже ведущая денег не возвращает (hf_montage.AVATAR_ON_SCREEN_MAX).
+    # Сам заказ не режем: какие куски отдать бироллу, решает разметка
+    # `coverage` по смыслу реплик, и урезать её вслепую значит менять
+    # режиссуру ролика ради круглого числа.
+    from reels_factory.hf_montage import AVATAR_ON_SCREEN_MAX
+
+    if total > 0 and requested_seconds / total > AVATAR_ON_SCREEN_MAX + 0.005:
+        print(
+            f"аватара заказано {requested_seconds / total * 100:.0f}% "
+            f"хронометража при ориентире {AVATAR_ON_SCREEN_MAX * 100:.0f}% — "
+            f'{plan["summary"]["estimated_cost_usd"]:.2f} $ за генерацию; '
+            "меньше платят там, где кадр отдают бироллу",
+            file=sys.stderr,
+        )
     report = validate_avatar_render_plan(plan, edit_plan)
     plan["validation"] = report
     if not report["all_pass"]:

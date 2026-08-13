@@ -376,6 +376,21 @@ QA_FAIL_MSG = (
     "Ролик собран, но проверка качества не пройдена. Я не отправляю брак "
     "автоматически; результат сохранён для диагностики."
 )
+#: Что видит человек, когда сборка не дошла до конца. Раньше сюда дословно
+#: подставлялся текст упавшего гейта — а он написан агенту-сборщику: «смени
+#: положение ведущей», «объедини сцены». Человек, заказавший ролик, ни сцен, ни
+#: положений не видит и починить их не может; полный текст остаётся в логе и в
+#: `job.result`, где ему и место.
+BUILD_FAILED_MSG = (
+    "Не получилось собрать ролик: он не прошёл нашу проверку качества, и я не "
+    "отправляю брак. Разберусь руками и вернусь к вам."
+)
+AUDIO_FAILED_MSG = (
+    "Не получилось создать озвучку. Разберусь руками и вернусь к вам."
+)
+ENQUEUE_FAILED_MSG = (
+    "Не получилось поставить ролик в очередь. Попробуйте ещё раз через минуту."
+)
 MISSING_FILE_MSG = "Сборка отчиталась об успехе, но файла ролика не нашлось — гляньте руками."
 INTERRUPTED_MSG = (
     "Сборка была остановлена перезапуском сервиса. Автоматически повторять её "
@@ -2808,7 +2823,8 @@ async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
         await _show_topup(msg, chat_id, need=exc.need, have=exc.have)
         return None
     except Exception as e:
-        await msg.reply_text(f"Не удалось поставить ролик в очередь: {str(e)[:200]}")
+        log.exception("не удалось поставить ролик в очередь для чата %s", chat_id)
+        await msg.reply_text(ENQUEUE_FAILED_MSG)
         return None
 
     s["step"] = AUDIO_PREPARING
@@ -2889,10 +2905,11 @@ async def _process_audio_job(bot_api, job: BuildJob, preview_fn=None) -> None:
             error=error,
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        log.error("job %s: озвучка не создалась: %s", job.job_id, error)
         await _safe_job_message(
             bot_api,
             job.chat_id,
-            f"Не получилось создать озвучку: {error}\nID: {job.job_id[:8]}",
+            f"{AUDIO_FAILED_MSG}\nID: {job.job_id[:8]}",
         )
         return
 
@@ -3003,10 +3020,15 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
             error=error,
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        # Причина — внутренняя: её пишут гейты, обращаясь к агенту-сборщику.
+        # Человеку уходит человеческое, разбор остаётся здесь и в job.result.
+        log.error("job %s не собралась (%s): %s", job.job_id,
+                  result.get("stage") or "build", error)
         await _safe_job_message(
             bot_api,
             job.chat_id,
-            f"Не получилось собрать ролик: {error}\nID: {job.job_id[:8]}",
+            f"{BUILD_FAILED_MSG}\nID: {job.job_id[:8]}"
+            f"{_charged_but_undelivered_notice(job.job_id)}",
         )
         return
 
