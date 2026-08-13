@@ -2195,29 +2195,38 @@ def test_кнопка_без_монтажа_пишет_montage_false_в_snapshot
     assert bot.load_session(7)["montage"] is False
 
 
-def test_кнопка_с_монтажом_ничего_не_собирает_а_спрашивает_пожелание(work, клиент):
-    """Монтаж ещё не сделан: платная сборка по этой кнопке не запускается."""
+def test_кнопка_с_монтажом_ставит_сборку_с_монтажом(work, клиент):
+    """Кнопка перестала быть заглушкой: она ставит в очередь полный путь."""
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
     msg = _Msg()
 
     _press("build:montage", msg)
 
-    assert bot._job_store().latest_for_chat(7) is None
-    assert msg.replies[-1] == bot.MONTAGE_WIP_MSG
-    assert _labels(msg.markups[-1]) == ["Пропустить"]
-    assert bot.load_session(7)["step"] == bot.WAIT_WISH
+    job = bot._job_store().latest_for_chat(7)
+    assert job is not None
+    assert bot.load_session(7)["montage"] is True
 
 
-def test_старая_кнопка_build_тоже_ведёт_в_заглушку_монтажа(work, клиент):
-    """Инлайн-кнопки живут в чате вечно, а «build» — это монтажный режим."""
+def test_кнопка_без_монтажа_ставит_быструю_сборку(work, клиент):
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+
+    _press("build:plain", _Msg())
+
+    assert bot._job_store().latest_for_chat(7) is not None
+    assert bot.load_session(7)["montage"] is False
+
+
+def test_старая_кнопка_build_ведёт_в_монтаж(work, клиент):
+    """Инлайн-кнопки живут в чате вечно, а «build» всегда означал монтаж."""
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
 
     _press("build", _Msg())
 
-    assert bot._job_store().latest_for_chat(7) is None
-    assert bot.load_session(7)["step"] == bot.WAIT_WISH
+    assert bot._job_store().latest_for_chat(7) is not None
+    assert bot.load_session(7)["montage"] is True
 
 
 def test_пожелание_к_монтажу_попадает_в_базу(work, клиент):

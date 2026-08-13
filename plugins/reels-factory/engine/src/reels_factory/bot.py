@@ -319,14 +319,15 @@ PRICE_SHORT_MSG = (
 )
 PRICE_STILL_SHORT_MSG = "Баланс: {have}. Не хватает {gap}"
 PAID_ENOUGH_MSG = "✅ Оплата получена. Баланс: {have}"
-READY_MSG = "Всё на месте: сценарий, фото и голос. Жмите «Создать ролик», когда готовы."
-MONTAGE_WIP_MSG = (
-    "Монтаж пока в разработке — ролик с ним я собрать ещё не могу.\n\n"
-    "Расскажите, чего вы от него ждёте: какие вставки, темп, титры, примеры "
-    "роликов. Постараюсь сделать именно это — напишите одним сообщением.\n\n"
-    "А собрать ролик прямо сейчас можно кнопкой «Без монтажа»."
+READY_MSG = (
+    "Всё на месте: сценарий, фото и голос.\n\n"
+    "«С монтажом» — полноценный ролик: перебивки, схемы в кадре, титры, "
+    "музыкальные акценты. Собирается дольше и стоит дороже: ведущего заказываю "
+    "только там, где она нужна в кадре.\n\n"
+    "«Быстро, без монтажа» — один говорящий ведущий во весь кадр, без вставок "
+    "и титров."
 )
-WISH_THANKS = "Записал, спасибо. Учту, когда буду доделывать монтаж."
+WISH_THANKS = "Записал, спасибо. Учту в работе."
 WISH_SKIPPED = "Хорошо, без пожеланий."
 WISH_EMPTY = "Жду пожелание текстом — одним сообщением."
 MONTAGE_TOPIC = "montage"
@@ -1318,14 +1319,15 @@ def _kb_review():
 
 
 def _kb_ready():
-    """Монтаж пока заглушка: кнопка есть, но она собирает пожелания, а не ролик."""
+    """Два пути сборки. Монтаж стоит первым: он и есть продукт, а одинокий
+    говорящий аватар — быстрый и дешёвый запасной вариант."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
-            "🎥 Создать ролик (аватар без монтажа)", callback_data="build:plain"
+            "🎬 Создать ролик с монтажом", callback_data="build:montage"
         )],
         [InlineKeyboardButton(
-            "🎬 С монтажом — в разработке", callback_data="build:montage"
+            "🎥 Быстро, без монтажа", callback_data="build:plain"
         )],
         [InlineKeyboardButton("← Назад", callback_data="back")],
     ])
@@ -2400,12 +2402,10 @@ async def on_button(update, context):
         if _job_store().active_for_chat(chat_id):
             await q.message.reply_text(BUSY_MSG)
             return
-        if not data.endswith(":plain"):
-            # Монтаж ещё не сделан. Старый callback "build" тоже монтажный,
-            # поэтому и он ведёт сюда, а не в платную сборку.
-            await _ask_wish(q.message, chat_id, s, MONTAGE_TOPIC, MONTAGE_WIP_MSG)
-            return
-        s["montage"] = False
+        # Путь выбирает кнопка, а не догадка по состоянию: старый callback
+        # `build` живёт в истории чатов вечно и означал монтаж, поэтому и он
+        # ведёт в монтаж.
+        s["montage"] = not data.endswith(":plain")
         save_session(chat_id, s)
         try:
             save_client_profile(chat_id, s)
