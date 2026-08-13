@@ -750,11 +750,15 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                 # "x0=0;y0=.82;..."» (проверено на 0.7.84).
                 band = f"{CAPTION_BAND_TOP / OUT_H:.2f}".lstrip("0")
                 _cli("check", "public", "--json", "--strict",
-                     "--frame-check",
                      "--caption-zone",
                      f"x0=0;y0={band};x1=1;y1=1;severity=error",
                      "--at", ",".join(f"{time:g}" for time in
                                       _scene_midpoints(board)),
+                     # `--frame-check` — последним: поставленный перед
+                     # `--caption-zone`, он съедает его значение, и разбор
+                     # падает «Invalid --caption-zone» (0.7.84, проверено
+                     # вручную обоими порядками).
+                     "--frame-check",
                      cwd=rdir, log=rdir / "check.json")
                 result["D0_check"] = _check_verdict(rdir / "check.json")
             except RuntimeError as error:
