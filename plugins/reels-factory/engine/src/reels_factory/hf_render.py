@@ -179,13 +179,14 @@ def _write_motion_sidecar(public: Path, board: dict, duration: float) -> None:
             name = f'ins-{scene["id"]}-{shot}'
             if f'id="{name}"' not in markup:
                 continue
-            # Момент, к которому вставка обязана быть видна: её собственное
-            # начало плюс полсекунды на вход.
-            start = float(scene.get("startSec", 0)) + (
-                shot * (float(scene.get("endSec", 0))
-                        - float(scene.get("startSec", 0))) / 2)
-            assertions.append({"kind": "appearsBy", "selector": f"#{name}",
-                               "bySec": round(start + 0.5, 2)})
+            # Срок — конец сцены: шов между планами серии код ставит по
+            # сильнейшей паузе речи, а не посередине (`split_series`), и
+            # вычислять его здесь второй раз значит держать два разных
+            # ответа на один вопрос. Проверка при этом делает своё: вставка,
+            # которая не появилась вовсе, ловится.
+            assertions.append({
+                "kind": "appearsBy", "selector": f"#{name}",
+                "bySec": round(float(scene.get("endSec", 0)) - 0.05, 2)})
     if not assertions:
         return
     (public / "index.motion.json").write_text(
