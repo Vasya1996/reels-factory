@@ -29,8 +29,8 @@ from reels_factory.hf_catalog import (
     write_project_config,
 )
 from reels_factory.hf_compose import (
-    build_composition, clear_generated, collect_intents, complete_storyboard,
-    needed_blocks, schema_intents, settle_inserts,
+    CAPTION_BAND_TOP, build_composition, clear_generated, collect_intents,
+    complete_storyboard, needed_blocks, schema_intents, settle_inserts,
 )
 from reels_factory.hf_fonts import inject_fonts
 from reels_factory.hf_frame import read_frame
@@ -40,7 +40,8 @@ from reels_factory.hf_gates import (
 from reels_factory.hf_layout import quantize
 from reels_factory.hf_media import resolve_all
 from reels_factory.hf_montage import (
-    check_shots, drop_series, merge_adjacent_series, pick_series,
+    check_inserts, check_shots, dedupe_neighbours, drop_series,
+    merge_adjacent_series, pick_series, settle_schemas, show_ordered_avatar,
 )
 from reels_factory.hf_phrases import (
     lay_out_scenes, phrase_timeline, speech_between,
@@ -148,6 +149,51 @@ def _cli(*args: str, cwd, log: Path | None = None,
 #: это провал сборки.
 RENDER_FATAL_WARNINGS = ("sub_timeline_readiness_timeout",
                          "sub_timeline_script_failure")
+
+
+def _write_motion_sidecar(public: Path, board: dict, duration: float) -> None:
+    """Намерение движения — их сайдкаром, а не нашей отдельной пробой.
+
+    `check` читает `*.motion.json` рядом с композицией сам, без флага, и
+    сверяет намерение с той же перемотанной шкалой, по которой идёт рендер:
+    «the closest automated proxy for "render the MP4 and watch it"»
+    (hyperframes-cli/references/lint-validate-inspect.md). Нам это закрывает
+    два вопроса разом: вставка действительно въехала в кадр к своей секунде и
+    не уехала за его край.
+
+    Проверяем `appearsBy` — что вставка въехала в кадр к своей секунде.
+    `staysInFrame` здесь не годится: наши вставки едут наездом, и их бокс
+    законно выходит за канвас на десятки пикселей — прогон пересборки
+    462a1c62 поймал ровно это (`motion_off_frame` на 14,61 с при вылете 30 px).
+
+    Селектор, который ничего не нашёл, они считают провалом
+    (`motion_selector_missing`), поэтому перечисляем только те вставки, что
+    реально попали в разметку.
+    """
+    if not (public / "index.html").exists():
+        return
+    markup = (public / "index.html").read_text(encoding="utf-8")
+    assertions = []
+    for scene in board.get("scenes") or []:
+        for shot in range(2):
+            name = f'ins-{scene["id"]}-{shot}'
+            if f'id="{name}"' not in markup:
+                continue
+            # Срок — конец сцены: шов между планами серии код ставит по
+            # сильнейшей паузе речи, а не посередине (`split_series`), и
+            # вычислять его здесь второй раз значит держать два разных
+            # ответа на один вопрос. Проверка при этом делает своё: вставка,
+            # которая не появилась вовсе, ловится.
+            assertions.append({
+                "kind": "appearsBy", "selector": f"#{name}",
+                "bySec": round(float(scene.get("endSec", 0)) - 0.05, 2)})
+    if not assertions:
+        return
+    (public / "index.motion.json").write_text(
+        json.dumps({"duration": round(float(duration), 3),
+                    "assertions": assertions},
+                   ensure_ascii=False, indent=1),
+        encoding="utf-8")
 
 
 def _render_or_die(rdir: Path, raw: Path) -> None:
@@ -566,17 +612,32 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             # чем войдёт; сколько их останется, считает арифметика.
             try:
                 check_shots(board["scenes"])
+                check_inserts(board["scenes"])
             except RuntimeError as error:
                 reason = str(error)
                 if attempt == MAX_COMPOSE_ATTEMPTS - 1:
                     raise
                 continue
+            # Ведущая, за которую уже заплачено, обязана быть в кадре: клипы
+            # куплены до плана, и `presenter: "none"` на купленной секунде
+            # выбрасывает деньги, а не бережёт их.
+            show_ordered_avatar(board["scenes"], saved_clips, duration)
             # Соседние бироллы — одна серия из двух планов, а не две сцены,
             # разведённые правилом «между сериями держим лицо».
-            merge_adjacent_series(board["scenes"])
+            merge_adjacent_series(board["scenes"], clips=saved_clips,
+                                  duration=duration)
             kept, series = pick_series(board["scenes"], saved_clips, duration)
             drop_series(board["scenes"], kept, clips=saved_clips,
                         duration=duration)
+            # Снятая серия оставляет на своём месте ведущую — и сцена может
+            # стать копией соседа. Разводим здесь, а не гейтом: план на этом
+            # месте уже написан кодом, агенту чинить нечего.
+            dedupe_neighbours(board["scenes"], clips=saved_clips,
+                              duration=duration)
+            # Схема, которой не хватит секунд, разбирается здесь, до сборки:
+            # иначе она снималась уже в кадре, и сцена без ведущей оставалась
+            # с одним фоном.
+            settle_schemas(board["scenes"])
             print(f'серий бироллов {series["series"]}, доля аватара '
                   f'{series["avatar_share"] * 100:.0f}%'
                   + (("; выброшены — " + "; ".join(series["dropped"]))
@@ -622,6 +683,10 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     if lost:
                         print(f"вставка не нашлась у сцен: {', '.join(lost)} — "
                               "ведущая там встала во весь кадр")
+                    # Потеря вставки перекраивает кадр так же, как снятая
+                    # серия, — и так же плодит пары одинаковых кусков.
+                    dedupe_neighbours(board.get("scenes") or [],
+                                      clips=saved_clips, duration=duration)
                     # Запасную схему подбираем вторым заходом и только для тех
                     # сцен, которым она реально понадобилась: в обычном прогоне
                     # сток отвечает, и этих запросов не будет вовсе.
@@ -635,6 +700,7 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                                       words=words, resolved=found,
                                       sfx_whoosh=whoosh, theme=theme,
                                       face=load_face(rdir))
+                _write_motion_sidecar(public, board, duration)
                 # Шрифты врезаем до проверок: и наши гейты, и их `check` меряют
                 # переполнение и перекрытие по отрисованному тексту, а без наших
                 # @font-face кириллица считалась бы по подменному шрифту.
@@ -689,9 +755,28 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             # _cli бросает RuntimeError: ветка except читает находки из того же
             # отчёта, оба пути сходятся.
             try:
+                # `--caption-zone` и `--frame-check` — их собственные гейты
+                # конвейера, выключенные по умолчанию («Opt-in pipeline gates
+                # (used by orchestrators; off by default)»,
+                # hyperframes-cli/references/lint-validate-inspect.md). Первый
+                # ловит содержимое, заехавшее в полосу титра, второй — медиа,
+                # вылезшее за кадр. Полоса у нас начинается на
+                # `CAPTION_BAND_TOP` из 1920, то есть с доли 0,52.
+                #
+                # Долю пишем без ведущего нуля: их парсер принимает `.52` и
+                # отвергает `0.52` — «Invalid --caption-zone; use
+                # "x0=0;y0=.82;..."» (проверено на 0.7.84).
+                band = f"{CAPTION_BAND_TOP / OUT_H:.2f}".lstrip("0")
                 _cli("check", "public", "--json", "--strict",
+                     "--caption-zone",
+                     f"x0=0;y0={band};x1=1;y1=1;severity=error",
                      "--at", ",".join(f"{time:g}" for time in
                                       _scene_midpoints(board)),
+                     # `--frame-check` — последним: поставленный перед
+                     # `--caption-zone`, он съедает его значение, и разбор
+                     # падает «Invalid --caption-zone» (0.7.84, проверено
+                     # вручную обоими порядками).
+                     "--frame-check",
                      cwd=rdir, log=rdir / "check.json")
                 result["D0_check"] = _check_verdict(rdir / "check.json")
             except RuntimeError as error:

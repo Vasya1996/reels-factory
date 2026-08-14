@@ -70,7 +70,8 @@ from reels_factory.hf_layout import (
 )
 from reels_factory.hf_media import insert_problem
 from reels_factory.hf_montage import (
-    cut_into_plans, flash_moments, insert_of, refill_scene, shot_queries,
+    cut_into_plans, drop_schema, flash_moments, insert_of, refill_scene,
+    shot_queries,
     shots_for, split_series, zoom_ladder,
 )
 from reels_factory.hf_schema import (
@@ -195,6 +196,25 @@ def _skipped_blocks() -> dict:
         return dict(skipped_blocks())
     except (OSError, ValueError):
         return {}
+
+
+@functools.lru_cache(maxsize=1)
+def _known_overlays() -> frozenset:
+    """Имена накладок, которые каталог действительно отдаёт.
+
+    Паспорта лежат в `OVERLAYS.md` рядом с заданием, и агент открывает файл
+    сам. Не открыл — назовёт имя по памяти, а такого блока в реестре нет:
+    `hyperframes add` его не поставит, и `_stage_overlay` уронит попытку
+    целиком. Накладка того не стоит — снимаем её, как снимаем запрещённые.
+
+    Каталог недоступен — возвращаем пустое множество, и проверка не
+    применяется: обвинять план в том, что не поднялся наш же реестр, незачем.
+    """
+    from reels_factory.hf_catalog import overlay_names
+    try:
+        return frozenset(overlay_names())
+    except (OSError, ValueError):
+        return frozenset()
 
 
 @functools.lru_cache(maxsize=1)
@@ -950,6 +970,10 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         if not block:
             continue
         reason = _skipped_blocks().get(str(block))
+        known = _known_overlays()
+        if not reason and known and str(block) not in known:
+            reason = ("такого блока в каталоге нет — паспорта лежат в "
+                      "OVERLAYS.md рядом с заданием")
         if reason:
             print(f'{scene["id"]}: накладка {block} снята — {reason}')
             scene.pop("overlay", None)
@@ -962,9 +986,19 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         room = duration - start
         if position + 1 < len(marked):
             room = min(room, _q(marked[position + 1]["startSec"]) - start)
-        unique, native, canvas = _stage_overlay(
-            public, str(overlay["block"]), scene["id"], sdk=sdk,
-            text={k: str(v) for k, v in (overlay.get("text") or {}).items()})
+        try:
+            unique, native, canvas = _stage_overlay(
+                public, str(overlay["block"]), scene["id"], sdk=sdk,
+                text={k: str(v)
+                      for k, v in (overlay.get("text") or {}).items()})
+        except RuntimeError as error:
+            # Слот назван не тем именем либо не назван вовсе: заполнение
+            # падает, и раньше вместе с ним падала вся попытка. Паспорта
+            # лежат в OVERLAYS.md, агент открывает их сам — цена ошибки
+            # должна быть равна цене плашки, а не цене прогона.
+            print(f'{scene["id"]}: накладка {overlay["block"]} снята — {error}')
+            scene.pop("overlay", None)
+            continue
         length = round(min(native, room), 4)
         if length < min_card_seconds(native):
             if position + 1 < len(marked) and room < duration - start:
@@ -973,10 +1007,15 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                       f"{min_card_seconds(native):g}")
                 scene.pop("overlay", None)
                 continue
-            raise RuntimeError(
-                f'{scene["id"]}: накладке {overlay["block"]} нужно '
-                f"{min_card_seconds(native):g} с, а до конца ролика "
-                f"{duration - start:.2f} — поставь её раньше или возьми короче")
+            # До конца ролика места не хватило. Раньше это роняло попытку
+            # целиком — из-за плашки, без которой ролик прекрасно живёт;
+            # задание при этом само предлагало ставить её «на призыве в
+            # финале», где места нет никогда.
+            print(f'{scene["id"]}: накладка {overlay["block"]} снята — до '
+                  f"конца ролика {duration - start:.2f} с, а ей нужно "
+                  f"{min_card_seconds(native):g}")
+            scene.pop("overlay", None)
+            continue
         # Фактура кроет кадр целиком, плашка стоит полосой над титром. Обе
         # приезжают канвасом 1920x1080, и различить их можно только по метке
         # каталога — той же, которой помечены их собственные обработки кадра.
@@ -1099,6 +1138,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             content["files"] = [f for f in files if f]
             if not content["files"]:
                 print(f'{scene["id"]}: схема бренда снята — знак не подобрался')
+                drop_schema(scenes, scene)
                 continue
         block, config, css, patches = schema_build(
             plan["form"], content, duration=end - start, colors=colors)
@@ -1110,6 +1150,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         if end - start < need - 0.05:
             print(f'{scene["id"]}: схема «{plan["form"]}» снята — сцене '
                   f"{end - start:.1f} с, а форме нужно {need:.1f}")
+            drop_schema(scenes, scene)
             continue
         elastic = schema_is_elastic(block)
         # Упругий блок раскладывается по коробке, а не по числам внутри себя:

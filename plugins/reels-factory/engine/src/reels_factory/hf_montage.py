@@ -62,10 +62,16 @@ def face_gap(duration: float) -> float:
         return FACE_GAP_MIN
     return min(FACE_GAP_MAX, max(FACE_GAP_MIN, FACE_GAP_SHARE * float(duration)))
 
-#: Потолок времени, когда аватар виден в кадре. Требование заказчика
-#: 10.08.2026: каждая секунда аватара в кадре — это заказанная секунда
-#: генерации, а она главные деньги ролика, поэтому число считается буквально
-#: глазами зрителя и держится сверху.
+#: Потолок аватарного времени. Требование заказчика 10.08.2026: секунда
+#: аватара — главные деньги ролика, поэтому её держат сверху.
+#:
+#: Меряется он на ЗАКАЗЕ, а не на показе. Куски аватара покупаются до того, как
+#: агент напишет план (pipeline.py:365), поэтому спрятать ведущую из кадра
+#: денег уже не экономит: клип куплен и просто не попадёт в ролик. Прогон
+#: 462a1c62 так потерял 9,2 с из 27,5 заказанных — треть заказа в никуда.
+#: Показом это число больше не управляет; сравнивает с ним заказ
+#: `avatar_islands`, а `hf_gates` следит за обратным — чтобы оплаченное
+#: попало в кадр.
 #:
 #: Прежняя вилка 65–70 % (её стандарт: «аватар 65–70%, b-roll 30–35%») мерила
 #: другое — сколько ролика НЕ занято бироллом во весь кадр. В `pip-*` аватар
@@ -122,7 +128,167 @@ def check_shots(scenes: list[dict]) -> None:
                 "монтаже не бывает")
 
 
-def merge_adjacent_series(scenes: list[dict]) -> list[str]:
+#: Сколько моментов под вставку план обязан назвать. Задание просит от пяти до
+#: восьми и объясняет зачем: часть снимет отбор. Требование стало проверяемым
+#: после пересборки 462a1c62 — там план назвал четыре, до кадра дошли две, и
+#: ролик встал одним планом на 8,1 с при пределе 8 (D19), недобрав одну смену
+#: картинки до планки эталонов (D18). Проверка стоит до подбора и до рендера:
+#: их же паттерн «валидатор → починка → повтор» (agent-skills/best-practices).
+INSERTS_WANTED = 5
+
+
+def check_inserts(scenes: list[dict]) -> None:
+    """План назвал достаточно моментов под вставку.
+
+    Пол считается от числа сцен: на коротком ролике пяти сцен со вставкой
+    просто не бывает, и требовать их — требовать невозможного.
+    """
+    wanted = min(INSERTS_WANTED, max(2, len(scenes) // 2))
+    have = sum(1 for scene in scenes if insert_of(scene))
+    if have >= wanted:
+        return
+    raise RuntimeError(
+        f"вставок в плане {have}, а нужно хотя бы {wanted}: часть из них "
+        "снимет отбор серий (две подряд он не ставит), и на оставшихся ролик "
+        "встаёт одним планом. Добавь моменты под вставку там, где реплика "
+        "описывает действие или предмет")
+
+
+def ordered_gaps(clips: list[dict] | None,
+                 duration: float) -> list[tuple[float, float]]:
+    """Куски, на которых ведущей нет физически.
+
+    Отличие от `avatar_gaps` одно, зато важное: клипов не передали вовсе —
+    значит про заказ ничего не известно, и считать оплаченным нельзя ничего.
+    Иначе сцена, которую агент честно назвал `none`, поднималась бы в кадр по
+    пустому списку клипов.
+    """
+    if not clips:
+        return [(0.0, float("inf"))]
+    return avatar_gaps(clips, duration)
+
+
+def scene_look(scene: dict) -> str:
+    """Чем сцена занимает кадр — словами, по которым её видно.
+
+    Жила в гейтах, переехала сюда: тем же сравнением код разводит соседей, а
+    гейт после него только проверяет. Два места считать одинаковость по-разному
+    не должны — иначе код чинит одно, а проверка судит другое.
+    """
+    shots = " ".join(shot_queries(scene))
+    if shots:
+        return shots
+    icon = str((scene.get("icon") or {}).get("query") or "").strip()
+    if icon:
+        return f"значок {icon}"
+    plan = scene.get("schema")
+    if not (isinstance(plan, dict) and plan.get("form")):
+        plan = scene.get("fallback") if scene.get("needsSchema") else None
+    if isinstance(plan, dict) and plan.get("form"):
+        # Форма и её содержимое: две схемы одной формы, но с разными словами —
+        # это две разные картинки, а не один план. `rows` в этот список
+        # попали не сразу, и без них две сцены подряд с разными парами
+        # («кажется → товар» и «звонок → голосом») читались одной картинкой:
+        # содержимое `pairs` живёт только в `rows`, и гейт его не видел.
+        words = plan.get("items") or plan.get("nodes") or plan.get("brands") \
+            or [f'{row.get("label")} {row.get("value")}'
+                for row in (plan.get("rows") or []) if isinstance(row, dict)] \
+            or [plan.get("value"), plan.get("label")]
+        return f'схема {plan["form"]} ' + " ".join(
+            str(word) for word in words if word)
+    block = str((scene.get("overlay") or {}).get("block") or "").strip()
+    return f"накладка {block}" if block else ""
+
+
+def same_look(left: dict, right: dict) -> bool:
+    """Два соседних куска зритель прочтёт как один план."""
+    return (str(left.get("presenter") or "full")
+            == str(right.get("presenter") or "full")
+            and scene_look(left) == scene_look(right))
+
+
+def _schema_scene(scene: dict) -> bool:
+    """Кадр держит схема — своя или запасная."""
+    plan = scene.get("schema")
+    if isinstance(plan, dict) and plan.get("form"):
+        return True
+    return bool(scene.get("needsSchema") or scene.get("schemaShown"))
+
+
+def positions_for(scene: dict) -> tuple[str, ...]:
+    """Положения ведущей, при которых кадр этой сцены остаётся закрытым.
+
+    Порядок — по убыванию желательности. Со вставкой кадр держит она, а
+    ведущая живёт уголком поверх или половиной над ней (`stack`). Со схемой
+    остаются нижние уголки: схема стоит в верхней трети, и там они не спорят.
+    Без того и другого кадр закрывает сама ведущая.
+    """
+    if insert_of(scene):
+        return ("pip-tr", "pip-tl", "stack", "pip-br", "pip-bl")
+    if _schema_scene(scene):
+        return ("pip-br", "pip-bl")
+    return ("full", "punch")
+
+
+def _taken_near(scenes: list[dict], index: int, look: str) -> set[str]:
+    """Положения соседей, у которых в кадре то же самое, что и здесь."""
+    taken = set()
+    for near in (index - 1, index + 1):
+        if not 0 <= near < len(scenes) or near == index:
+            continue
+        if scene_look(scenes[near]) == look:
+            taken.add(str(scenes[near].get("presenter") or "full"))
+    return taken
+
+
+def pick_position(scenes: list[dict], index: int) -> str:
+    """Как показать ведущую в этой сцене, не повторив соседа.
+
+    Ни одного свободного положения не осталось — берём первое подходящее:
+    закрытый кадр важнее различимости, а пару близнецов потом разведёт
+    `dedupe_neighbours`, склеив их в один кусок.
+    """
+    scene = scenes[index]
+    allowed = positions_for(scene)
+    taken = _taken_near(scenes, index, scene_look(scene))
+    free = [name for name in allowed if name not in taken]
+    return (free or list(allowed))[0]
+
+
+def show_ordered_avatar(scenes: list[dict], clips: list[dict] | None,
+                        duration: float) -> list[str]:
+    """Ведущая, за которую заплачено, обязана быть в кадре.
+
+    Куски аватара покупаются ДО плана агента (pipeline.py:365), и `presenter:
+    "none"` на купленной секунде не экономит ничего — клип уже оплачен и
+    просто не доедет до зрителя. В прогоне 462a1c62 так пропали 9,2 с из 27,5:
+    две сцены агент отдал целиком под схему и биролл, а заказ на них уже стоял.
+
+    Прятать ведущую можно только там, где её нет физически, — на дырах между
+    островами. Всюду остальном она возвращается в кадр тем положением, которое
+    не спорит ни со вставкой, ни со схемой, ни с соседями.
+
+    Возвращает id сцен, которым положение подняли.
+    """
+    gaps = ordered_gaps(clips, duration)
+    lifted = []
+    for index, scene in enumerate(scenes):
+        if str(scene.get("presenter") or "full") != "none":
+            continue
+        if in_avatar_gap(float(scene.get("startSec", 0)),
+                         float(scene.get("endSec", 0)), gaps):
+            continue
+        scene["presenter"] = pick_position(scenes, index)
+        lifted.append(f'{scene["id"]} → {scene["presenter"]}')
+    if lifted:
+        print("ведущая возвращена в кадр, её секунды уже оплачены: "
+              + ", ".join(lifted))
+    return [item.split(" ")[0] for item in lifted]
+
+
+def merge_adjacent_series(scenes: list[dict], *,
+                          clips: list[dict] | None = None,
+                          duration: float = 0.0) -> list[str]:
     """Соседние сцены с бироллом — это одна серия, а не две.
 
     Агент называет моменты по смыслу и ставит их подряд там, где подряд идёт
@@ -139,6 +305,7 @@ def merge_adjacent_series(scenes: list[dict]) -> list[str]:
     длинная пара — это два стоячих плана, а не монтаж. Возвращает id сцен,
     которые исчезли, слившись с предыдущей.
     """
+    gaps = ordered_gaps(clips, duration)
     merged: list[str] = []
     index = 0
     while index < len(scenes) - 1:
@@ -157,11 +324,17 @@ def merge_adjacent_series(scenes: list[dict]) -> list[str]:
             **(left.get("insert") or {}),
             "shots": [shot_queries(left)[0], shot_queries(right)[0]],
         }
-        # Кадр держит биролл — ведущей в нём места нет; плашка второй сцены
-        # уезжает вместе с самой сценой.
-        left["presenter"] = "none"
         merged.append(right["id"])
         scenes.pop(index + 1)
+        # Кадр держит биролл, но убрать ведущую совсем можно только там, где
+        # её и не заказывали: на купленной секунде `none` — это выброшенные
+        # деньги. Поэтому она уходит в уголок поверх серии, а на дыре
+        # исчезает. Положение выбираем после `pop`: соседом стала уже
+        # следующая сцена, а не та, что слилась. Плашка второй сцены уезжает
+        # вместе с самой сценой.
+        left["presenter"] = "none" if in_avatar_gap(
+            float(left["startSec"]), float(left["endSec"]), gaps) \
+            else pick_position(scenes, index)
     if merged:
         print("соседние бироллы склеены в одну серию: " + ", ".join(merged))
     return merged
@@ -181,7 +354,7 @@ def drop_series(scenes: list[dict], kept: list[str], *,
     """
     from reels_factory.hf_layout import avatar_gaps
 
-    gaps = avatar_gaps(clips or [], duration)
+    gaps = ordered_gaps(clips, duration)
     dropped = []
     for index, scene in enumerate(scenes):
         if not insert_of(scene) or scene["id"] in kept:
@@ -197,38 +370,39 @@ def refill_scene(scenes: list[dict], index: int, gaps) -> None:
 
     Три исхода, по убыванию желательности:
 
-    1. Ведущая в нижнем уголке остаётся на месте, а кадр закрывает запасная
-       схема из `fallback`. Это единственный случай, где раскладка агента
-       переживает потерю биролла: схема стоит в верхней трети, нижние уголки
-       с ней не пересекаются. Заодно у ролика сохраняется третье окно ведущей,
-       которого требует приёмка (D14).
-    2. Ведущая занимает кадр целиком — `full` или `punch`, и не такая, как у
-       соседей: две сцены подряд одним планом детектор не разделит (D21).
-    3. Ведущей на этом куске нет физически — остаётся схема.
+    1. Ведущей на этом куске нет физически — кадр остаётся за схемой.
+    2. Запасная схема из `fallback` закрывает кадр, а ведущая остаётся в
+       нижнем уголке: схема стоит в верхней трети, они не спорят. Так у ролика
+       сохраняется третье окно ведущей, которого требует приёмка (D14).
+    3. Ведущая закрывает кадр сама — `full` или `punch`, и не такая, как у
+       соседа с той же картинкой: две сцены подряд одним планом детектор не
+       разделит (D21).
+
+    Прежняя версия уводила в `none` любую сцену, которую агент так и назвал, —
+    и оплаченные секунды исчезали из ролика. Теперь `none` остаётся только за
+    дырой между островами; всюду остальном ведущая возвращается в кадр.
+    Полнокадровое положение больше не «оставить как было»: раньше сцена,
+    уже стоявшая во `full`, уходила отсюда нетронутой и повторяла соседа —
+    ровно так прогон 462a1c62 получил два одинаковых куска подряд.
     """
     from reels_factory.hf_layout import in_avatar_gap
 
     scene = scenes[index]
     position = str(scene.get("presenter") or "full")
-    near = {scenes[i].get("presenter")
-            for i in (index - 1, index + 1) if 0 <= i < len(scenes)}
     faceless = in_avatar_gap(float(scene.get("startSec", 0)),
                              float(scene.get("endSec", 0)), gaps)
     has_fallback = any(str((scene.get("fallback") or {}).get(kind) or "").strip()
                        for kind in ("logo", "icon"))
 
-    if not faceless and position in ("pip-br", "pip-bl") and has_fallback \
-            and position not in near:
-        scene["needsSchema"] = True
-        return
-    if faceless or position == "none":
+    if faceless:
         scene["presenter"] = "none"
         scene["needsSchema"] = True
         return
-    if position in ("full", "punch"):
+    if has_fallback and position not in ("full", "punch"):
+        scene["needsSchema"] = True
+    scene["presenter"] = pick_position(scenes, index)
+    if scene["presenter"] not in ("full", "punch"):
         return
-    free = [name for name in ("full", "punch") if name not in near]
-    scene["presenter"] = free[0] if free else "full"
     # Плашку агент ставил под ту раскладку, которой больше нет: на
     # полнокадровой ведущей её текст ложится прямо на лицо — прогон 24
     # поймал это гейтом D8 и их же `content_overlap`. Снимаем вместе с
@@ -236,6 +410,153 @@ def refill_scene(scenes: list[dict], index: int, gaps) -> None:
     if scene.pop("overlay", None) is not None:
         print(f'{scene["id"]}: плашка снята вместе с серией — под ведущей '
               "во весь кадр её текст лёг бы на лицо")
+
+
+def drop_schema(scenes: list[dict], scene: dict) -> None:
+    """Схема в кадр не встала — закрывать его теперь ведущей.
+
+    Пока схема стояла, ведущая могла жить нижним уголком: схема держит верхнюю
+    треть, и они не спорят. Без неё уголок висит на пустом фоне — это их аудит
+    переполнения и наш D20. Ведущая, которой на этом куске нет вовсе, остаётся
+    как была: там сцена законно фоновая.
+    """
+    scene.pop("schema", None)
+    scene.pop("needsSchema", None)
+    if str(scene.get("presenter") or "full") == "none" or insert_of(scene):
+        return
+    scene["presenter"] = pick_position(scenes, scenes.index(scene))
+
+
+def settle_schemas(scenes: list[dict]) -> list[str]:
+    """Схема, которой не хватит секунд, разбирается ДО сборки.
+
+    Пол формы известен заранее — он считается по числу её элементов
+    (`hf_schema.min_seconds`), а длительности сцен посчитаны раньше. Раньше
+    несоответствие всплывало в `build_composition`: схема снималась на месте, и
+    сцена без ведущей оставалась с одним фоном — обрыв рассказа, который ловит
+    D25 уже после сборки. Прогон пересборки 462a1c62 встал ровно на этом:
+    `steps` из двух узлов на сцене 2,1 с при поле 2,8 с.
+
+    Сначала пробуем отдать короткую сцену соседке — секунды никуда не
+    деваются, а кадр держит то, что у соседки уже есть. Не вышло — снимаем
+    схему и закрываем кадр ведущей.
+    """
+    from reels_factory.hf_schema import min_seconds
+
+    settled: list[str] = []
+    for scene in list(scenes):
+        plan = scene.get("schema")
+        if not (isinstance(plan, dict) and plan.get("form")):
+            continue
+        count = len(plan.get("items") or plan.get("rows")
+                    or plan.get("nodes") or plan.get("brands") or [1])
+        need = min_seconds(str(plan["form"]), count)
+        length = float(scene["endSec"]) - float(scene["startSec"])
+        if length >= need - 0.05:
+            continue
+        if absorb_scene(scenes, scene):
+            settled.append(f'{scene["id"]} → соседке')
+            continue
+        drop_schema(scenes, scene)
+        settled.append(f'{scene["id"]}: схема снята')
+    if settled:
+        print("схемы, которым не хватало секунд: " + ", ".join(settled))
+    return settled
+
+
+def absorb_scene(scenes: list[dict], scene: dict) -> bool:
+    """Отдать секунды сцены соседке, которой есть чем занять кадр.
+
+    Берём предыдущую, а при её отсутствии — следующую: у предыдущей уже
+    сыгран вход, и продление читается спокойнее, чем ранний старт следующей.
+    Слияние не должно рождать кусок длиннее `MAX_STATIC_SPAN` — иначе ролик
+    встанет одним планом, и это поймает D19 уже на готовом файле.
+    """
+    from reels_factory.hf_rhythm import MAX_STATIC_SPAN
+
+    index = scenes.index(scene)
+    start, end = float(scene["startSec"]), float(scene["endSec"])
+    for neighbour in ([scenes[index - 1]] if index else []) + (
+            [scenes[index + 1]] if index + 1 < len(scenes) else []):
+        if str(neighbour.get("presenter") or "full") == "none" \
+                and not insert_of(neighbour) and not _schema_scene(neighbour):
+            continue
+        length = float(neighbour["endSec"]) - float(neighbour["startSec"])
+        if length + (end - start) > MAX_STATIC_SPAN + 0.001:
+            continue
+        if float(neighbour["startSec"]) < start:
+            neighbour["endSec"] = end
+        else:
+            neighbour["startSec"] = start
+        neighbour["phrases"] = [
+            min(neighbour.get("phrases", [0])[0], scene.get("phrases", [0])[0]),
+            max(neighbour.get("phrases", [0])[-1],
+                scene.get("phrases", [0])[-1])]
+        scenes.remove(scene)
+        print(f'{scene["id"]}: сцена отдана соседке {neighbour["id"]} — '
+              "закрыть её кадр было нечем")
+        return True
+    return False
+
+
+def dedupe_neighbours(scenes: list[dict], *, clips: list[dict] | None = None,
+                      duration: float = 0.0) -> list[str]:
+    """Развести два соседних куска, которые зритель прочтёт как один план.
+
+    Проверка D21 судит уже собранный план, а собирает его код: сняв вставку,
+    он ставит на её место ведущую — и сцена становится копией соседа. Раньше
+    за это отвечал агент, хотя ломал не он: какие серии снимет отбор, решается
+    после него. Теперь чинит тот, кто ломает.
+
+    Два средства, по порядку. Сначала меняем вид кадра у правой сцены —
+    ролик от этого только выигрывает, у ведущей прибавляется положений (D14).
+    Не вышло (дыра без аватара либо все подходящие положения заняты
+    соседями) — склеиваем пару в один кусок, как и предлагает сама проверка.
+
+    Склейка ограничена `MAX_STATIC_SPAN`: кусок длиннее восьми секунд без
+    смены картинки валит D19 уже на готовом файле, после платного рендера.
+    Первую сцену не трогаем — ролик обязан открываться лицом.
+
+    Возвращает описания разведённых пар.
+    """
+    from reels_factory.hf_rhythm import MAX_STATIC_SPAN
+
+    gaps = ordered_gaps(clips, duration)
+    fixed: list[str] = []
+    index = 0
+    while index < len(scenes) - 1:
+        left, right = scenes[index], scenes[index + 1]
+        if not same_look(left, right):
+            index += 1
+            continue
+        faceless = in_avatar_gap(float(right.get("startSec", 0)),
+                                 float(right.get("endSec", 0)), gaps)
+        # Считаемся только с левым соседом. Правого исключать нельзя: когда
+        # без вставок остаётся цепочка сцен, каждая одинакова с обеими
+        # соседками, свободных положений не остаётся ни у одной, и цепочка
+        # так и стоит одним планом. Идём слева направо — правого разведёт
+        # его собственный шаг, и выходит чередование `full`/`punch`.
+        allowed = positions_for(right)
+        taken = str(left.get("presenter") or "full")
+        free = [name for name in allowed if name != taken]
+        position = (free or list(allowed))[0]
+        if not faceless and position != str(right.get("presenter") or "full"):
+            right["presenter"] = position
+            fixed.append(f'{right["id"]} → {position}')
+            index += 1
+            continue
+        size = float(right["endSec"]) - float(left["startSec"])
+        if index >= 1 and size <= MAX_STATIC_SPAN + 0.001:
+            left["endSec"] = right["endSec"]
+            left["phrases"] = [left.get("phrases", [0, 0])[0],
+                               right.get("phrases", [0, 0])[-1]]
+            fixed.append(f'{left["id"]} + {right["id"]} → один кусок')
+            scenes.pop(index + 1)
+            continue
+        index += 1
+    if fixed:
+        print("одинаковые куски подряд разведены: " + ", ".join(fixed))
+    return fixed
 
 
 def shots_for(scene: dict) -> int:
@@ -313,15 +634,12 @@ def pick_series(scenes: list[dict], clips: list[dict],
        первой два плана превратятся в мигание, во второй — в две стоячие
        картинки.
     3. Между соседними сериями остаётся `FACE_GAP` секунд с лицом в кадре.
-    4. Аватар виден в кадре не дольше `AVATAR_ON_SCREEN_MAX` хронометража.
-       Долю считает `on_screen_seconds` по полю `presenter`, и сбить её
-       можно единственным способом — увести сцену с бироллом в `none`:
-       снятая серия аватар из кадра не убирает, он там остаётся уголком или
-       полным кадром. Поэтому набор серий выбирается тот, с которого потолок
-       достижим, а лишний аватар код снимает сам.
 
-    Сцены, с которых аватар снят, метод правит на месте: `presenter` у них
-    становится `none`. Их id перечислены в отчёте полем `stripped`.
+    Четвёртым правилом здесь стоял потолок аватарного времени: код уводил
+    самые длинные сцены с бироллом в `none`, пока доля не влезала в
+    `AVATAR_ON_SCREEN_MAX`. Экономии в этом нет ни секунды — клипы куплены до
+    того, как агент написал план, — а ролик терял и ведущую из кадра, и
+    оплаченные деньги. Потолок остался один, на заказе.
 
     Возвращает (id оставленных сцен, отчёт с числами).
     """
@@ -336,11 +654,7 @@ def pick_series(scenes: list[dict], clips: list[dict],
         return in_avatar_gap(float(scene["startSec"]),
                              float(scene["endSec"]), gaps)
 
-    def hides_face(scene: dict, stripped: frozenset) -> bool:
-        """Лицо ушло из кадра: либо так написал агент, либо так решил код."""
-        return scene["id"] in stripped or dominant_broll(scene)
-
-    def face_between(left: dict, right: dict, stripped: frozenset) -> float:
+    def face_between(left: dict, right: dict) -> float:
         """Секунды с лицом между двумя сериями."""
         seconds = 0.0
         for scene in scenes:
@@ -348,13 +662,13 @@ def pick_series(scenes: list[dict], clips: list[dict],
                 continue
             if float(scene["endSec"]) > float(right["startSec"]):
                 break
-            if not faceless(scene) and not hides_face(scene, stripped):
+            if not faceless(scene) and not dominant_broll(scene):
                 seconds += length(scene)
         return seconds
 
     gap = face_gap(duration)
 
-    def spaced(chosen: list[dict], stripped: frozenset = frozenset()) -> bool:
+    def spaced(chosen: list[dict]) -> bool:
         """Между выбранными сериями лицо держится `face_gap(duration)`.
 
         Считаем только те серии, на которых лицо действительно уходит из
@@ -362,14 +676,11 @@ def pick_series(scenes: list[dict], clips: list[dict],
         девается, а правило — про то, чтобы зритель не терял лицо надолго.
         Дыры без аватара из счёта выброшены тоже: там лица нет физически,
         требовать его — требовать невозможного.
-
-        `stripped` — сцены, с которых аватар снимает код: после этого лицо
-        уходит из кадра и там, поэтому зазор считается уже с ними.
         """
         ordered = sorted((s for s in chosen
-                          if hides_face(s, stripped) and not faceless(s)),
+                          if dominant_broll(s) and not faceless(s)),
                          key=lambda s: float(s["startSec"]))
-        return all(face_between(left, right, stripped) >= gap
+        return all(face_between(left, right) >= gap
                    for left, right in zip(ordered, ordered[1:]))
 
     candidates = [s for s in scenes if insert_of(s)]
@@ -384,87 +695,47 @@ def pick_series(scenes: list[dict], clips: list[dict],
             continue
         optional.append(scene)
 
-    on_screen = on_screen_seconds(scenes)
-    ceiling = duration * AVATAR_ON_SCREEN_MAX
-
-    def strip_plan(chosen: list[dict]) -> tuple[frozenset, float]:
-        """С кого из выбранных серий снять аватар и сколько его останется.
-
-        Снимаем с самых длинных сцен: одна длинная отдаёт больше секунд
-        генерации, чем три коротких, и рвёт лицо на меньшее число кусков.
-        Сцену, после которой между сериями перестанет хватать лица,
-        пропускаем — правило зазора старше экономии. Сцена, где аватара и так
-        нет, снимать нечего.
-        """
-        stripped: frozenset = frozenset()
-        left = on_screen
-        if duration <= 0:
-            return stripped, left
-        for scene in sorted(chosen, key=length, reverse=True):
-            if left <= ceiling + 0.001:
-                break
-            if str(scene.get("presenter") or "full") == "none":
-                continue
-            planned = stripped | {scene["id"]}
-            if not spaced(chosen, planned):
-                continue
-            stripped, left = planned, left - length(scene)
-        return stripped, left
-
     # Перебираем подмножества, а не идём жадно по времени: жадность выбирает
     # первое, что влезло, и на прогоне 24 из трёх кандидатов взяла две
     # короткие вместо одной длинной — биролла вышло 25 % вместо 30–35 %.
     # Кандидатов единицы, перебор дешевле любой эвристики. Сначала те наборы,
-    # где серий больше: больше серий — живее монтаж, и тем больше сцен, с
-    # которых можно снять аватар.
-    def rank(picked: list[dict], left: float) -> tuple:
-        """Чем набор лучше: ближе к потолку, больше серий, целее плашки агента.
-
-        Первое число — на сколько секунд аватар не влез в потолок с этим
-        набором. Ноль значит, что потолок взят; когда его не взять ни одним
-        набором, выигрывает ближайший снизу — тот, где аватара меньше.
+    # где серий больше: больше серий — живее монтаж.
+    def rank(picked: list[dict]) -> tuple:
+        """Чем набор лучше: больше серий, целее плашки агента.
 
         Плашка — решение агента про конкретный кадр; сняв под ней биролл, код
         меняет раскладку, и плашка вместе с ней уходит. Поэтому при прочих
         равных выбираем набор, где таких потерь меньше.
         """
         overlays = sum(1 for s in picked if s.get("overlay"))
-        return (round(max(0.0, left - ceiling), 3), -len(picked), -overlays)
+        return (-len(picked), -overlays)
 
-    best: tuple[list[dict], frozenset] | None = None
+    best: list[dict] | None = None
     best_rank: tuple | None = None
     for size in range(len(optional), -1, -1):
         for subset in combinations(optional, size):
             picked = list(subset)
-            chosen = forced + picked
-            if not spaced(chosen):
+            if not spaced(forced + picked):
                 continue
-            stripped, left = strip_plan(chosen)
-            key = rank(picked, left)
+            key = rank(picked)
             if best_rank is None or key < best_rank:
-                best, best_rank = (picked, stripped), key
-        if best_rank is not None and best_rank[0] <= 0.001:
+                best, best_rank = picked, key
+        # Наборы перебираются от большего к меньшему: как только на очередном
+        # размере нашёлся проходящий, дальше будут только наборы беднее.
+        if best is not None:
             break
 
-    picked, stripped = best if best is not None else ([], frozenset())
+    picked = best if best is not None else []
     kept = sorted(forced + picked, key=lambda s: float(s["startSec"]))
-    for scene in kept:
-        if scene["id"] not in stripped:
-            continue
-        scene["presenter"] = "none"
-        print(f'{scene["id"]}: аватар снят с кадра — иначе он виден дольше '
-              f"{AVATAR_ON_SCREEN_MAX * 100:.0f} % ролика")
-    on_screen -= sum(length(s) for s in kept if s["id"] in stripped)
     broll = sum(length(s) for s in kept if dominant_broll(s))
     for scene in optional:
         if scene not in picked:
             dropped.append(f'{scene["id"]}: не вошла в отбор серий')
 
     report = {"broll_seconds": round(broll, 2),
-              "avatar_share": round(on_screen / duration, 4)
+              "avatar_share": round(on_screen_seconds(scenes) / duration, 4)
               if duration else 1.0,
               "series": len(kept), "dropped": dropped,
-              "stripped": sorted(stripped),
               "forced": [s["id"] for s in forced]}
     return [s["id"] for s in kept], report
 

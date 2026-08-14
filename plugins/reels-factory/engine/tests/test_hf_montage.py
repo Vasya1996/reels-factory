@@ -2,9 +2,10 @@
 import pytest
 
 from reels_factory.hf_montage import (
-    AVATAR_ON_SCREEN_MAX, MIN_STEP, PLAN_MAX, PLAN_MIN, PUSH_TO,
-    check_shots, cut_into_plans, flash_moments, on_screen_seconds, pick_series,
-    shots_for, split_series, zoom_ladder,
+    MIN_STEP, PLAN_MAX, PLAN_MIN, PUSH_TO,
+    check_shots, cut_into_plans, dedupe_neighbours, flash_moments,
+    on_screen_seconds, pick_series, shots_for, show_ordered_avatar,
+    split_series, zoom_ladder,
 )
 
 CLIPS = [{"file": "a.mp4", "start": 0.0, "duration": 30.0}]
@@ -73,9 +74,11 @@ def test_серии_держат_лицо_между_собой():
     assert report["dropped"]
 
 
-def test_аватар_в_кадре_не_дольше_потолка():
-    """Сцены с бироллом агент отдал под уголок — зритель видел бы аватар весь
-    ролик. Код уводит самые длинные из них в `none`, пока не уложится."""
+def test_отбор_серий_не_снимает_оплаченного_аватара():
+    """Прежний отбор уводил самые длинные сцены с бироллом в `none`, чтобы
+    аватар не был виден дольше 60 % ролика. Клипы куплены до плана, экономии в
+    этом нет ни секунды — есть только оплаченная ведущая, выброшенная из
+    кадра."""
     scenes = [_scene(0, 0.0, 3.0, "full", None)]
     start = 3.0
     for index in range(1, 8):                      # семь кандидатов подряд
@@ -86,15 +89,25 @@ def test_аватар_в_кадре_не_дольше_потолка():
     duration = scenes[-1]["endSec"]
     kept, report = pick_series(scenes, [{"file": "a.mp4", "start": 0.0,
                                          "duration": duration}], duration)
-    assert report["avatar_share"] <= AVATAR_ON_SCREEN_MAX + 0.005
-    assert report["stripped"]
-    # доля отчёта — это то же, что видно в раскадровке после отбора
-    assert (report["avatar_share"]
-            == round(on_screen_seconds(scenes) / duration, 4))
-    # аватар снят только со сцен, которые несут биролл
-    assert all(scene["insert"] for scene in scenes
-               if scene["id"] in report["stripped"])
-    assert set(report["stripped"]) <= set(kept)
+    assert kept
+    assert all(str(scene.get("presenter")) != "none" for scene in scenes)
+    assert report["avatar_share"] == 1.0
+    assert "stripped" not in report
+
+
+def test_оплаченная_ведущая_возвращается_в_кадр():
+    """`none` остаётся только за дырой между островами: там ведущей нет
+    физически. На заказанной секунде она встаёт уголком поверх вставки, а без
+    вставки — во весь кадр."""
+    scenes = [_scene(0, 0.0, 3.0, "none", "рука"),      # заказана, есть вставка
+              _scene(1, 3.0, 6.0, "none", None),        # заказана, вставки нет
+              _scene(2, 6.0, 9.0, "none", "стол")]      # дыра
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 6.0}]
+    lifted = show_ordered_avatar(scenes, clips, 9.0)
+    assert lifted == ["s-00", "s-01"]
+    assert scenes[0]["presenter"] == "pip-tr"
+    assert scenes[1]["presenter"] == "full"
+    assert scenes[2]["presenter"] == "none"
 
 
 def test_аватар_в_уголке_это_аватар_в_кадре():
@@ -115,6 +128,58 @@ def test_дыра_без_аватара_несёт_серию_вне_очере�
     clips = [{"file": "a.mp4", "start": 0.0, "duration": 10.0}]
     kept, _ = pick_series(scenes, clips, 30.0)
     assert kept == ["s-01"]
+
+
+def test_одинаковые_куски_разводятся_сменой_кадра():
+    """Дешёвое средство: у второй сцены меняется вид кадра, обе остаются на
+    месте. Ролику это и на пользу — у ведущей прибавляется положений (D14)."""
+    scenes = [_scene(4, 0.0, 1.5, "full", None),
+              _scene(5, 1.5, 5.0, "full", None),
+              _scene(6, 5.0, 8.0, "none", "стол")]
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 8.0}]
+    fixed = dedupe_neighbours(scenes, clips=clips, duration=8.0)
+    assert fixed == ["s-05 → punch"]
+    assert len(scenes) == 3
+    assert scenes[0]["presenter"] != scenes[1]["presenter"]
+
+
+def test_цепочка_одинаковых_кусков_чередуется():
+    """Живой прогон без стока: вставок нет ни у кого, и подряд стоят четыре
+    одинаковых куска. Если исключать оба соседних положения, свободных не
+    останется ни у одной сцены и цепочка так и стоит одним планом."""
+    scenes = [_scene(index, index * 2.0, index * 2.0 + 2.0, "full", None)
+              for index in range(1, 5)]
+    for scene in scenes:
+        scene["phrases"] = [0, 0]
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 10.0}]
+    dedupe_neighbours(scenes, clips=clips, duration=10.0)
+    assert len(scenes) == 4                       # склейка не понадобилась
+    assert [scene["presenter"] for scene in scenes] == [
+        "full", "punch", "full", "punch"]
+
+
+def test_неразводимые_куски_склеиваются_в_один():
+    """Обе сцены на дыре без аватара: положение там обязано быть `none`, и
+    менять его нечем. Тогда пара становится одним куском — это и предлагала
+    сама проверка."""
+    scenes = [_scene(1, 0.0, 2.0, "full", None),
+              _scene(2, 2.0, 4.0, "none", None),
+              _scene(3, 4.0, 6.0, "none", None)]
+    for scene in scenes:
+        scene["phrases"] = [0, 0]
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 2.0}]
+    dedupe_neighbours(scenes, clips=clips, duration=6.0)
+    assert [scene["id"] for scene in scenes] == ["s-01", "s-02"]
+    assert scenes[1]["endSec"] == 6.0
+
+
+def test_первая_сцена_не_склеивается():
+    """Ролик обязан открываться лицом — начало не трогаем даже ради D21."""
+    scenes = [_scene(1, 0.0, 2.0, "full", None),
+              _scene(2, 2.0, 4.0, "full", None)]
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 4.0}]
+    dedupe_neighbours(scenes, clips=clips, duration=4.0)
+    assert len(scenes) == 2
 
 
 def test_слишком_длинная_сцена_серию_не_несёт():
@@ -209,7 +274,8 @@ def test_снятая_серия_возвращает_ведущую_в_кадр
               _scene(1, 3.0, 6.0, "pip-br"),
               _scene(2, 6.0, 9.0, "stack"),
               _scene(3, 9.0, 12.0, "none")]
-    dropped = drop_series(scenes, kept=["s-03"])
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 12.0}]
+    dropped = drop_series(scenes, kept=["s-03"], clips=clips, duration=12.0)
     assert dropped == ["s-01", "s-02"]
     assert scenes[1]["presenter"] == "punch"     # у соседа слева `full`
     assert scenes[2]["presenter"] == "full"      # у соседа слева уже `punch`
@@ -217,15 +283,31 @@ def test_снятая_серия_возвращает_ведущую_в_кадр
     assert scenes[3]["insert"] is not None
 
 
-def test_снятая_серия_не_оставляет_пустого_кадра():
+def test_снятая_серия_на_дыре_не_оставляет_пустого_кадра():
     """Сцена без ведущей теряла серию и показывала голый фон с титром: ветка
-    `none` просто пропускалась. Прогон 28 поймал это гейтом D25."""
+    `none` просто пропускалась. Прогон 28 поймал это гейтом D25. `none` здесь
+    законен: аватар на этот кусок не заказывали."""
     from reels_factory.hf_montage import drop_series
 
     scenes = [_scene(0, 0.0, 3.0, "full", None),
               _scene(1, 3.0, 6.0, "none")]
-    drop_series(scenes, kept=[])
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 3.0}]
+    drop_series(scenes, kept=[], clips=clips, duration=6.0)
     assert scenes[1]["presenter"] == "none"
+    assert scenes[1]["needsSchema"] is True
+
+
+def test_снятая_серия_на_оплаченном_куске_держит_ведущую():
+    """Тот же случай, но аватар на этих секундах куплен: прятать его — значит
+    выбросить деньги. Кадр закрывает запасная схема, ведущая остаётся."""
+    from reels_factory.hf_montage import drop_series
+
+    scenes = [_scene(0, 0.0, 3.0, "full", None),
+              _scene(1, 3.0, 6.0, "none")]
+    scenes[1]["fallback"] = {"logo": "notion", "icon": "checklist icon"}
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 6.0}]
+    drop_series(scenes, kept=[], clips=clips, duration=6.0)
+    assert scenes[1]["presenter"] in ("pip-br", "pip-bl")
     assert scenes[1]["needsSchema"] is True
 
 
@@ -238,7 +320,8 @@ def test_нижний_уголок_переживает_потерю_бирол�
     scenes = [_scene(0, 0.0, 3.0, "full", None),
               _scene(1, 3.0, 6.0, "pip-br")]
     scenes[1]["fallback"] = {"logo": "notion", "icon": "checklist icon"}
-    drop_series(scenes, kept=[])
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 6.0}]
+    drop_series(scenes, kept=[], clips=clips, duration=6.0)
     assert scenes[1]["presenter"] == "pip-br"
     assert scenes[1]["needsSchema"] is True
 
@@ -248,7 +331,8 @@ def test_без_запасной_схемы_уголок_уходит_под_п�
 
     scenes = [_scene(0, 0.0, 3.0, "full", None),
               _scene(1, 3.0, 6.0, "pip-br")]
-    drop_series(scenes, kept=[])
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 6.0}]
+    drop_series(scenes, kept=[], clips=clips, duration=6.0)
     assert scenes[1]["presenter"] == "punch"
     assert not scenes[1].get("needsSchema")
 
@@ -302,7 +386,71 @@ def test_слишком_длинная_пара_не_склеивается():
 
 
 def test_потолок_аватара_шестьдесят_процентов():
-    """Требование заказчика 10.08.2026: каждая секунда аватара в кадре —
-    заказанная секунда генерации, и это главные деньги ролика. Прежняя вилка
-    65–70 % мерила другое — сколько ролика не занято полнокадровым бироллом."""
+    """Требование заказчика 10.08.2026: секунда аватара — главные деньги
+    ролика. Потолок остался прежним, но меряет теперь заказ, а не показ:
+    клипы покупаются до плана, и спрятанная ведущая ничего не сберегает."""
+    from reels_factory.hf_montage import AVATAR_ON_SCREEN_MAX
+
     assert AVATAR_ON_SCREEN_MAX == 0.60
+
+
+def test_короткая_схема_отдаёт_сцену_соседке():
+    """Пересборка 462a1c62: `steps` из двух узлов встал на сцену 2,1 с при поле
+    2,8 с. Схема снималась уже в кадре, и сцена без ведущей оставалась с одним
+    фоном — обрыв рассказа, который ловит D25 после сборки."""
+    from reels_factory.hf_montage import settle_schemas
+
+    scenes = [{"id": "s-01", "startSec": 0.0, "endSec": 3.0,
+               "presenter": "full", "phrases": [0, 1], "insert": None},
+              {"id": "s-02", "startSec": 3.0, "endSec": 5.1,
+               "presenter": "none", "phrases": [2, 2], "insert": None,
+               "schema": {"form": "steps", "why": "порядок",
+                          "nodes": ["кто", "что"]}}]
+    settled = settle_schemas(scenes)
+
+    assert settled == ["s-02 → соседке"]
+    assert [scene["id"] for scene in scenes] == ["s-01"]
+    assert scenes[0]["endSec"] == 5.1
+    assert scenes[0]["phrases"] == [0, 2]
+
+
+def test_схема_снимается_когда_соседки_нет():
+    """Слить не с кем — тогда схему снимаем, а кадр закрывает ведущая."""
+    from reels_factory.hf_montage import settle_schemas
+
+    scenes = [{"id": "s-01", "startSec": 0.0, "endSec": 2.0,
+               "presenter": "pip-br", "phrases": [0, 0], "insert": None,
+               "schema": {"form": "items", "why": "набор",
+                          "items": [{"label": "а", "icon": "поиск"}] * 3}}]
+    settle_schemas(scenes)
+
+    assert "schema" not in scenes[0]
+    assert scenes[0]["presenter"] in ("full", "punch")
+
+
+def test_план_с_четырьмя_вставками_возвращается_на_доработку():
+    """Пересборка 462a1c62: план назвал четыре момента вместо пяти, до кадра
+    дошли две вставки, и ролик встал одним планом на 8,1 с при пределе 8.
+    Проверка стоит до подбора и до рендера — цена ошибки одна попытка плана, а
+    не полный прогон."""
+    from reels_factory.hf_montage import check_inserts
+
+    scenes = [_scene(index, index * 3.0, index * 3.0 + 3.0,
+                     "pip-tr" if index < 4 else "full",
+                     "рука" if index < 4 else None)
+              for index in range(10)]
+    with pytest.raises(RuntimeError, match="вставок в плане 4"):
+        check_inserts(scenes)
+
+    scenes[4]["insert"] = {"shots": ["стол", "стол крупно"], "kind": "video"}
+    check_inserts(scenes)
+
+
+def test_на_коротком_ролике_пяти_вставок_не_требуют():
+    """Пол считается от числа сцен: четырёх сцен со вставкой в трёх сценах не
+    бывает, и требовать их — требовать невозможного."""
+    from reels_factory.hf_montage import check_inserts
+
+    check_inserts([_scene(0, 0.0, 3.0, "pip-tr", "рука"),
+                   _scene(1, 3.0, 6.0, "pip-tl", "стол"),
+                   _scene(2, 6.0, 9.0, "full", None)])

@@ -44,10 +44,11 @@ def _board(scenes, **over):
 
 
 #: Раскадровка по монтажному стандарту: серии по два плана, между сериями
-#: лицо ≥2,5 с, аватар в кадре не дольше 60 %. Куски без аватара (11.72–12.22 и
-#: 34.62–41.5) закрыты сценами `none` — там серия обязательна независимо от
-#: доли, иначе чёрный кадр. Остальные серии стоят полным кадром: аватар поверх
-#: биролла оставлен только на одной сцене, иначе он виден дольше потолка.
+#: лицо ≥2,5 с. Куски без аватара (11.72–12.22 и 34.62–41.5) закрыты сценами
+#: `none`: там серия обязательна, иначе чёрный кадр, и ведущей на них нет
+#: физически. Всюду, где аватар заказан, он в кадре — биролл держит кадр, а
+#: ведущая живёт уголком поверх него. Спрятать её там значит выбросить
+#: оплаченные секунды, и это ловит D24.
 _LAYOUT = [
     (0.0, 2.0, "full", None),
     (2.0, 4.6, "pip-br", "разложить бумаги"),
@@ -55,11 +56,11 @@ _LAYOUT = [
     (8.2, 11.72, "punch", None),
     (11.72, 12.22, "none", "рука на столе"),
     (12.22, 15.8, "full", None),
-    (15.8, 18.4, "none", "печатает на ноутбуке"),
+    (15.8, 18.4, "pip-tr", "печатает на ноутбуке"),
     (18.4, 22.0, "punch", None),
-    (22.0, 25.6, "none", "перелистывает страницы"),
+    (22.0, 25.6, "pip-tl", "перелистывает страницы"),
     (25.6, 29.2, "full", None),
-    (29.2, 32.8, "none", "ставит чашку на стол"),
+    (29.2, 32.8, "pip-tr", "ставит чашку на стол"),
     (32.8, 34.62, "punch", None),
     (34.62, 37.2, "none", "закрывает блокнот"),
     (37.2, 39.4, "none", "телефон в руке"),
@@ -86,7 +87,8 @@ def test_чистая_раскадровка_проходит():
     verdicts = _check(_plausible_scenes())
     assert not [name for name, value in verdicts.items()
                 if value.startswith("FAIL")]
-    assert verdicts["D24_avatar_share"] == "PASS: аватар в кадре 59% хронометража"
+    assert verdicts["D24_avatar_paid_shown"] == (
+        "PASS: оплаченной ведущей мимо кадра 0.0 с")
 
 
 # ---------- схема ----------
@@ -192,30 +194,41 @@ def test_чем_можно_закрыть_кадр_без_ведущей(filler)
     assert _check(scenes)["D25_empty_frame"] == "PASS"
 
 
-# ---------- D24: сколько аватара в кадре ----------
+# ---------- D24: оплаченная ведущая попала в кадр ----------
+
+def test_спрятанная_ведущая_на_оплаченном_куске_это_провал():
+    """Прогон 462a1c62: 9,2 с из 27,5 заказанных не попали в кадр — сцены
+    стояли под `none` там, где клип уже куплен. Прежний гейт считал ровно
+    наоборот и такую раскадровку хвалил."""
+    from reels_factory.hf_gates import check_montage
+
+    scenes = [_scene(0, 0.0, 11.0, presenter="none", insert=_photo("стол")),
+              _scene(1, 11.0, DURATION, presenter="full")]
+    verdict = check_montage(_board(scenes), clips=CLIPS, duration=DURATION)
+    assert verdict["D24_avatar_paid_shown"].startswith("FAIL")
+    assert "s-00" in verdict["D24_avatar_paid_shown"]
+
+
+def test_ведущая_спрятана_на_дыре_и_это_законно():
+    """Хвост 34.62–41.5 без клипа: прятать там нечего, аватар не заказан."""
+    from reels_factory.hf_gates import check_montage
+
+    scenes = [_scene(0, 0.0, 34.62, presenter="full"),
+              _scene(1, 34.62, DURATION, presenter="none",
+                     insert=_photo("руки"))]
+    verdict = check_montage(_board(scenes), clips=CLIPS, duration=DURATION)
+    assert verdict["D24_avatar_paid_shown"].startswith("PASS")
+
 
 def test_аватар_в_уголке_считается_аватаром_в_кадре():
-    """Прежний счёт относил `pip-*` к бироллу и показывал долю, которой
-    зритель не видел: аватар в уголке из кадра никуда не девается, и его
-    секунды заказаны у HeyGen наравне с полным кадром."""
+    """`pip-*` — это ведущая в кадре: заказанные секунды дошли до зрителя."""
     from reels_factory.hf_gates import check_montage
 
-    scenes = [_scene(0, 0.0, 30.0, presenter="pip-br", insert=_photo("стол")),
-              _scene(1, 30.0, DURATION, presenter="none",
+    scenes = [_scene(0, 0.0, 34.62, presenter="pip-br", insert=_photo("стол")),
+              _scene(1, 34.62, DURATION, presenter="none",
                      insert=_photo("руки"))]
-    verdict = check_montage(_board(scenes), clips=[], duration=DURATION)
-    assert verdict["D24_avatar_share"].startswith("FAIL")
-    assert "72%" in verdict["D24_avatar_share"]
-    assert "60%" in verdict["D24_avatar_share"]
-
-
-def test_биролл_во_весь_кадр_снимает_аватар_со_счёта():
-    from reels_factory.hf_gates import check_montage
-
-    scenes = [_scene(0, 0.0, 20.0, presenter="none", insert=_photo("стол")),
-              _scene(1, 20.0, DURATION, presenter="full")]
-    verdict = check_montage(_board(scenes), clips=[], duration=DURATION)
-    assert verdict["D24_avatar_share"] == "PASS: аватар в кадре 52% хронометража"
+    verdict = check_montage(_board(scenes), clips=CLIPS, duration=DURATION)
+    assert verdict["D24_avatar_paid_shown"].startswith("PASS")
 
 
 # ---------- D20: пустого кадра не бывает ----------

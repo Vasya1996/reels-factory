@@ -22,8 +22,7 @@ from reels_factory.hf_layout import (
     PRESENTER_POSITIONS, avatar_gaps, fills_frame, in_avatar_gap,
 )
 from reels_factory.hf_montage import (
-    AVATAR_ON_SCREEN_MAX, SERIES_SHOTS, insert_of, on_screen_seconds,
-    shot_queries,
+    SERIES_SHOTS, insert_of, same_look, scene_look, shot_queries,
 )
 from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 
@@ -303,34 +302,52 @@ def _has_insert(scene: dict) -> bool:
     return insert_of(scene) is not None
 
 
+#: Сколько оплаченных секунд аватара позволено не показать. Ручки островов
+#: (`handle_seconds`) дают клипу небольшой запас по краям, и он в кадр
+#: действительно не попадает — это не потеря, а стык.
+WASTED_AVATAR_TOLERANCE = 0.5
+
+
 def check_montage(storyboard: dict, *, clips: list[dict] | None = None,
                   duration: float = 0.0) -> dict:
-    """Сколько аватара осталось в кадре после подбора.
+    """Всё, за что заплачено, попало в кадр.
 
     Грамматика серий (два плана, длина серии, лицо между сериями) отсюда снята:
     число планов роняет `check_shots` ещё до подбора, а длину и зазор
-    конструктивно держит отбор `pick_series`. Доля аватара — другое дело: она
-    меняется уже ПОСЛЕ отбора, когда `settle_inserts` переводит сцену без
-    вставки на полнокадровую ведущую, и ловить этот дрейф больше некому.
+    конструктивно держит отбор `pick_series`.
+
+    Здесь считается обратное тому, что считалось раньше. Прежний гейт следил,
+    чтобы аватар не был виден дольше 60 % ролика, — экономия предполагала, что
+    показ определяет заказ. Порядок обратный: клипы покупаются до плана
+    (pipeline.py:365), и спрятанная ведущая — это выброшенные деньги, а не
+    сбережённые. Прогон 462a1c62 потерял так 9,2 с из 27,5 заказанных.
+    Потолок заказа остался у `avatar_islands`, а здесь сторожат кошелёк.
+
+    Текст находки обращён к коду, а не к агенту: сцену без ведущей на
+    оплаченном куске оставляет `show_ordered_avatar`/`refill_scene`, и чинить
+    её агенту нечем.
     """
     scenes = storyboard.get("scenes") or []
+    gaps = avatar_gaps(clips or [], duration)
+    wasted = []
+    seconds = 0.0
+    for scene in scenes:
+        start = float(scene.get("startSec", 0))
+        end = float(scene.get("endSec", 0))
+        if str(scene.get("presenter") or "full") != "none":
+            continue
+        if in_avatar_gap(start, end, gaps):
+            continue
+        seconds += end - start
+        wasted.append(f'{scene.get("id", "?")} ({start:g}–{end:g} с)')
 
-    # Сколько аватар виден зрителю. Считается по полю `presenter`: всё, что не
-    # `none`, — аватар в кадре, включая уголок `pip-*` и половину `stack`.
-    # Секунды, где аватар не заказан вовсе, в счёт не попадают сами: там
-    # `presenter` обязан быть `none`, и за это отвечает D12.
-    share = on_screen_seconds(scenes) / duration if duration else 1.0
-    if share > AVATAR_ON_SCREEN_MAX + 0.005:
-        share_gate = (
-            f"FAIL: аватар в кадре {share * 100:.0f}% хронометража при потолке "
-            f"{AVATAR_ON_SCREEN_MAX * 100:.0f}% — каждая лишняя секунда это "
-            "заказанная секунда генерации. Переведи самые длинные сцены с "
-            'бироллом в `presenter: "none"` либо назови больше моментов под '
-            "биролл")
+    if seconds > WASTED_AVATAR_TOLERANCE:
+        gate = (f"FAIL: {seconds:.1f} с ведущей оплачены и не попали в кадр — "
+                + "; ".join(wasted))
     else:
-        share_gate = f"PASS: аватар в кадре {share * 100:.0f}% хронометража"
+        gate = f"PASS: оплаченной ведущей мимо кадра {seconds:.1f} с"
 
-    return {"D24_avatar_share": share_gate}
+    return {"D24_avatar_paid_shown": gate}
 
 
 def check_frame_filled(storyboard: dict) -> dict:
@@ -348,9 +365,13 @@ def check_frame_filled(storyboard: dict) -> dict:
     problems = []
     for scene in storyboard.get("scenes") or []:
         position = str(scene.get("presenter") or "full")
-        # Запасная схема закрывает кадр наравне со вставкой: она стоит в
-        # верхней трети, и нижний уголок ведущей с ней не спорит.
-        if scene.get("schemaShown"):
+        # Схема закрывает кадр наравне со вставкой: она стоит в верхней трети,
+        # и нижний уголок ведущей с ней не спорит. Считается и запланированная,
+        # а не только отрисованная: гейт судит и до сборки — а схему, которая в
+        # кадр не встала, `drop_schema` снимает вместе с уголком.
+        if scene.get("schemaShown") or scene.get("needsSchema") \
+                or isinstance(scene.get("schema"), dict) \
+                and (scene.get("schema") or {}).get("form"):
             continue
         if not fills_frame(position, _has_insert(scene)):
             problems.append(
@@ -376,7 +397,12 @@ def _empty_frame_problems(scenes: list[dict]) -> list[str]:
             continue
         if _has_insert(scene):
             continue
-        if scene.get("icon") or scene.get("overlay") or scene.get("schemaShown"):
+        # Схема считается и запланированная: не встала — её снимает
+        # `drop_schema`, и тогда поле уже пусто. Иначе вердикт зависел бы от
+        # того, звали гейт до сборки композиции или после.
+        if scene.get("icon") or scene.get("overlay") \
+                or scene.get("schemaShown") or scene.get("needsSchema") \
+                or (scene.get("schema") or {}).get("form"):
             continue
         problems.append(
             f'{scene.get("id", "?")}: ведущей нет, вставка не встала, и закрыть '
@@ -446,38 +472,6 @@ def _faceless_problems(scenes: list[dict], clips: list[dict],
     return problems
 
 
-def _scene_look(scene: dict) -> str:
-    """Чем сцена занимает кадр — словами, по которым её видно.
-
-    Раньше сравнивались только запросы вставки, и две сцены подряд с запасной
-    схемой считались одним планом: вставки нет ни у той, ни у другой. Схемы
-    разные — разный значок, разный знак бренда, — и зритель видит смену.
-    """
-    shots = " ".join(shot_queries(scene))
-    if shots:
-        return shots
-    icon = str((scene.get("icon") or {}).get("query") or "").strip()
-    if icon:
-        return f"значок {icon}"
-    plan = scene.get("schema")
-    if not (isinstance(plan, dict) and plan.get("form")):
-        plan = scene.get("fallback") if scene.get("needsSchema") else None
-    if isinstance(plan, dict) and plan.get("form"):
-        # Форма и её содержимое: две схемы одной формы, но с разными словами —
-        # это две разные картинки, а не один план. `rows` в этот список
-        # попали не сразу, и без них две сцены подряд с разными парами
-        # («кажется → товар» и «звонок → голосом») читались одной картинкой:
-        # содержимое `pairs` живёт только в `rows`, и гейт его не видел.
-        words = plan.get("items") or plan.get("nodes") or plan.get("brands") \
-            or [f'{row.get("label")} {row.get("value")}'
-                for row in (plan.get("rows") or []) if isinstance(row, dict)] \
-            or [plan.get("value"), plan.get("label")]
-        return f'схема {plan["form"]} ' + " ".join(
-            str(word) for word in words if word)
-    block = str((scene.get("overlay") or {}).get("block") or "").strip()
-    return f"накладка {block}" if block else ""
-
-
 def _sameness_problems(scenes: list[dict]) -> list[str]:
     """Соседние сцены отличаются картинкой.
 
@@ -487,16 +481,20 @@ def _sameness_problems(scenes: list[dict]) -> list[str]:
     даёт сама граница, но только если по её сторонам разная картинка: две сцены
     подряд с ведущей во весь кадр и без вставки — это один план, а не два, и
     детектор их не разделит.
+
+    Пару разводит сам код — `dedupe_neighbours` меняет вид кадра у второй сцены
+    либо склеивает обе в одну. Сюда находка доходит, только если не сработало
+    ни то ни другое, поэтому текст говорит, что именно осталось несведённым, а
+    не велит агенту переделать план: план на этом месте уже не его.
     """
     problems = []
     ordered = sorted(scenes, key=lambda scene: float(scene.get("startSec", 0)))
     for left, right in zip(ordered, ordered[1:]):
-        same_presenter = (left.get("presenter") or "full") == (
-            right.get("presenter") or "full")
-        if same_presenter and _scene_look(left) == _scene_look(right):
-            problems.append(
-                f'{left.get("id", "?")} и {right.get("id", "?")} идут подряд с '
-                "одинаковой картинкой — зритель увидит один план, а не два. "
-                "Смени в одной из них положение ведущей или вставку, либо "
-                "объедини их в одну сцену")
+        if not same_look(left, right):
+            continue
+        look = scene_look(left) or "ведущая без вставки"
+        problems.append(
+            f'{left.get("id", "?")} и {right.get("id", "?")} идут подряд с '
+            f"одинаковой картинкой ({look}) — зритель увидит один план, а не "
+            "два")
     return problems

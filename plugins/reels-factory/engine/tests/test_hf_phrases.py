@@ -164,3 +164,23 @@ def test_фразы_без_ведущей_названы_номерами():
 def test_без_пропусков_список_пуст():
     phrases = phrase_timeline(SCENARIO, WORDS)
     assert faceless_phrases(phrases, CLIPS, 12.0) == []
+
+
+def test_список_номеров_вместо_пары_не_роняет_план():
+    """Боевой прогон 462a1c62: агент вернул `[6, 7, 8]` на сцену из трёх фраз и
+    `[13]` на сцену из одной — то же самое другими словами. Раньше это роняло
+    попытку с сообщением «нет поля `phrases`»."""
+    phrases = [{"id": index, "role": "hook", "text": f"ф{index}",
+                "start": index * 2.0, "end": index * 2.0 + 2.0}
+               for index in range(4)]
+    scenes = [{"id": "s-01", "phrases": [0, 1], "presenter": "full"},
+              {"id": "s-02", "phrases": [2, 3, 3], "presenter": "punch"}]
+    placed = lay_out_scenes(scenes, phrases, duration=8.0)
+    # Поле снимается при раскладке — сцены получают секунды; проверяем их.
+    assert [round(scene["startSec"], 2) for scene in placed] == [0.0, 4.0]
+
+    single = [{"id": "s-01", "phrases": [0, 1], "presenter": "full"},
+              {"id": "s-02", "phrases": [2], "presenter": "punch"},
+              {"id": "s-03", "phrases": [3], "presenter": "full"}]
+    placed = lay_out_scenes(single, phrases, duration=8.0)
+    assert [round(scene["startSec"], 2) for scene in placed] == [0.0, 4.0, 6.0]

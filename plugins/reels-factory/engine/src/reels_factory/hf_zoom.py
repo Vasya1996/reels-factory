@@ -120,7 +120,11 @@ def brightness(mp4, at: float) -> float:
 
 
 def zoom_gates(mp4, camera: dict | None) -> dict[str, str]:
-    """D25 — наезды доехали, D26 — вспышки видны в кадре.
+    """D27 — наезды доехали, D26 — вспышки видны в кадре.
+
+    Ключ был `D25` и совпадал с плановым `D25_empty_frame` (hf_gates.py):
+    зумовый вердикт мержится после рендера (hf_render.py) и молча затирал
+    проверку пустого кадра в общем `gates.json`.
 
     Меряются только наезды на большом окне ведущей: в углу 18 % прироста дают
     три пикселя, а под полнокадровой вставкой замер бессмыслен вовсе.
@@ -134,7 +138,7 @@ def zoom_gates(mp4, camera: dict | None) -> dict[str, str]:
         # Не «SKIP, и ладно»: без замера наезды никто не проверит, а глазами
         # их проверять нельзя — это ровно та тихая деградация, из-за которой
         # две версии ролика уехали с мёртвым зумом.
-        return {"D25_zoom": f"FAIL: замерить нечем ({error})"}
+        return {"D27_zoom": f"FAIL: замерить нечем ({error})"}
 
     origin = str(camera.get("origin") or "50% 38%")
     flashes = [float(at) for at in camera.get("flash") or []]
@@ -163,11 +167,11 @@ def zoom_gates(mp4, camera: dict | None) -> dict[str, str]:
             misses.append(f'{plan["start"]:.1f} с: ждали x{wanted:.2f}, '
                           f"в файле x{measured:.2f}")
     if not pushes:
-        gates["D25_zoom"] = "PASS: полнокадровых наездов, пригодных к замеру, нет"
+        gates["D27_zoom"] = "PASS: полнокадровых наездов, пригодных к замеру, нет"
     elif misses:
-        gates["D25_zoom"] = ("FAIL: наезд не доехал — " + "; ".join(misses))
+        gates["D27_zoom"] = ("FAIL: наезд не доехал — " + "; ".join(misses))
     else:
-        gates["D25_zoom"] = f"PASS: наездов {len(pushes)}, все по замеру"
+        gates["D27_zoom"] = f"PASS: наездов {len(pushes)}, все по замеру"
 
     flashes = [float(at) for at in camera.get("flash") or []]
     if not flashes:

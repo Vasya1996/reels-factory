@@ -30,6 +30,13 @@ def _text(tmp_path, **kw):
                        duration=41.5, **kw).read_text(encoding="utf-8")
 
 
+def _skill(tmp_path, **kw):
+    """Монтажная доктрина: живёт скиллом рядом с заданием, а не в нём."""
+    _text(tmp_path, **kw)
+    return (tmp_path / ".claude" / "skills" / "reels-montage"
+            / "SKILL.md").read_text(encoding="utf-8")
+
+
 # ---------- паспорт задания ----------
 
 def test_поля_которые_знает_движок_проставлены(tmp_path):
@@ -42,14 +49,15 @@ def test_поля_которые_знает_движок_проставлены(
     assert "1080x1920" in text
 
 
-def test_поля_контракта_агент_выводит_сам(tmp_path):
-    """`message`, `audience`, `angle` — поля их контракта брифа
-    (hyperframes-core/references/brief-contract.md:71-73). Клиента о них не
-    спрашивают: глаголы контракта — infer, derive, recommend."""
-    text = _text(tmp_path)
-    for field in ("message", "audience", "angle"):
-        assert f'"{field}"' in text, f"нет поля {field}"
-    assert "выведи из материала сам" in text
+def test_мёртвых_полей_у_агента_не_просят(tmp_path):
+    """`message`, `audience`, `angle`, `arc` не читает ни одна строка движка, а
+    их собственный формат держит эти поля во frontmatter брифа, а не в выходе
+    плана («message, audience, length, angle live in the frontmatter only»,
+    hyperframes-core/references/brief-format.md). Решение, которое никуда не
+    идёт, тратит внимание агента впустую."""
+    sample = _text(tmp_path).split("```json")[1].split("```")[0]
+    for field in ("message", "audience", "angle", "arc"):
+        assert f'"{field}"' not in sample, f"поле {field} снова в образце"
 
 
 def test_фразы_пронумерованы_в_задании(tmp_path):
@@ -120,7 +128,7 @@ def test_наших_блоков_агенту_больше_не_выдают(tmp
 
 def test_словарь_положений_ведущей_в_задании(tmp_path):
     """Позиции нет в списке — падаем внятно, а не додумываем."""
-    text = _text(tmp_path)
+    text = _skill(tmp_path)
     for position in ("full", "punch", "pip-tr", "stack", "none"):
         assert f"`{position}`" in text
     # `split` снят: лицо ведущей в нижней половине попадает в полосу титра
@@ -145,7 +153,7 @@ def test_вёрстку_у_агента_не_просят(tmp_path):
     text = _text(tmp_path)
     assert "public/cards/" not in text
     assert "data-anim" not in text
-    assert "Композицию, разметку и субтитры собирает код" in text
+    assert "Изготовление за\nкодом" in text
 
 
 def test_интервалы_без_ведущей_названы(tmp_path):
@@ -179,45 +187,55 @@ def test_у_агента_просят_только_сцены(tmp_path):
 
 def test_поле_под_следующий_шаг_заложено(tmp_path):
     """Работа 8 переставит заказ островов после плана — читать он будет это."""
-    assert "avatarNeeded" in _text(tmp_path)
+    assert "avatarNeeded" not in _text(tmp_path)
+    assert "avatarNeeded" in _text(tmp_path, avatar_ordered=False)
 
 
 def test_запрос_вставки_объяснён_без_квоты(tmp_path):
     """Квоты «не меньше N вставок» больше нет: она загоняла агента в бироллы
     там, где они не нужны. Отрицательного правила взамен тоже нет — агент
     руководствуется положительным смыслом (решение Васи 09.08.2026)."""
-    text = _text(tmp_path)
+    text = _skill(tmp_path)
     assert "не меньше чем в трёх сценах" not in text
     assert "`shots`" in text
     assert "ПО-АНГЛИЙСКИ" in text
-    assert "brollContext" in text
+    # `brollContext` — часть контракта ответа, он в задании.
+    assert "brollContext" in _text(tmp_path)
 
 
 def test_серия_из_двух_планов_объяснена(tmp_path):
     """Одиночных вставок больше не бывает: агент называет два плана, а сколько
     серий доживёт до кадра — считает код."""
-    text = _text(tmp_path)
+    text = _skill(tmp_path)
     assert "серией из двух планов" in text
-    assert "5–8 на ролик" in text
+    assert "от пяти до восьми на ролик" in text
+    assert "2,1 с лица" in text or "с лица" in text
 
 
-def test_потолок_аватара_в_кадре_назван(tmp_path):
-    """Требование заказчика 10.08.2026: аватар видно не больше 60 %, и счёт
-    идёт по полю `presenter`. Правило одно — прежней вилки 65–70 % в задании
-    остаться не должно, иначе агент читает два разных требования."""
-    text = _text(tmp_path)
-    assert "## Сколько аватара в кадре" in text
-    assert "не больше 60 % хронометража" in text
+def test_оплаченная_ведущая_обязана_быть_в_кадре(tmp_path):
+    """Клипы куплены до плана, поэтому задание требует обратного прежнему:
+    прятать ведущую на оплаченной секунде — выбрасывать деньги заказчика.
+    Прежнего потолка 60 % в этом тексте остаться не должно, иначе агент читает
+    два взаимоисключающих требования."""
+    text = _skill(tmp_path)
+    assert "клип куплен и оплачен" in text
+    assert "зритель должен её увидеть" in text
+    assert "не больше 60 %" not in text
     assert "65–70" not in text and "65-70" not in text
-    # чем оправдан потолок и что будет при его превышении
-    assert "заказанная секунда генерации" in text
-    assert "код\nснимет аватар сам, начиная с самых длинных сцен" in text
+
+
+def test_до_заказа_аватара_потолок_остаётся(tmp_path):
+    """План до заказа (работа 9) считает деньги ровно наоборот: там сцена без
+    ведущей её и не закажет, и потолок аватарного времени осмыслен."""
+    text = _text(tmp_path, avatar_ordered=False)
+    assert "60 % хронометража" in text
+    assert "это главные деньги ролика" in text
 
 
 def test_когда_аватар_остаётся_поверх_биролла(tmp_path):
     """Четыре случая названы явно: без них агент ставил уголок по вкусу."""
-    text = _text(tmp_path)
-    assert 'Сцена с бироллом — `presenter: "none"`' in text
+    text = _skill(tmp_path)
+    assert "Сцена со вставкой — `pip-*` (ведущая уголком поверх вставки)" in text
     assert "обращается к зрителю" in text
     assert "предмет, который диктор называет" in text
 
@@ -225,26 +243,30 @@ def test_когда_аватар_остаётся_поверх_биролла(tm
 def test_субтитры_снимаются_с_агента(tmp_path):
     text = _text(tmp_path)
     assert "субтитры" in text.lower()
-    assert "Композицию, разметку и субтитры собирает код" in text
+    assert "Изготовление за\nкодом" in text
 
 
-def test_правило_смены_положения_совпадает_с_проверкой(tmp_path):
-    """Проверка считает заметно разные ОКНА ведущей и сцены с `none` не
-    засчитывает вовсе. Прежняя формулировка «сменилось не меньше трёх раз»
-    разрешала план `full → none → full → none → full`: он выполняет написанное
-    буквально и валит гейт, а попытка одна и аватар уже оплачен."""
-    text = _text(tmp_path)
-    assert "заметно разных окнах" in text
-    assert "сцены с `none` в этот счёт не" in text
-    assert "минимум три" in text
+def test_три_окна_ведущей_названы_как_решение_агента(tmp_path):
+    """Три разных окна — то, что агент действительно выбирает полем
+    `presenter`. Про саму проверку в задании не говорим: она меряет
+    отрендеренный ролик, а положение сцены после агента переписывает код —
+    обещать её исход он не может."""
+    text = _skill(tmp_path)
+    assert "в трёх разных окнах, не считая `none`" in text
     assert "не меньше трёх раз" not in text
+    assert "Проверка считает по" not in text
+    # Само задание доктрину не пересказывает — только ссылается.
+    assert "в трёх разных окнах" not in _text(tmp_path)
 
 
 def test_смену_картинки_даёт_граница_сцен(tmp_path):
     """Зазора между сценами больше нет: кадр из слоёв, сцены выстилают ролик,
-    и две одинаковые подряд детектор видит одним планом."""
-    text = _text(tmp_path)
-    assert "Соседние сцены обязаны отличаться картинкой" in text
+    и две одинаковые подряд детектор видит одним планом. Формулировка —
+    указанием, что делать: пару близнецов, которую создаёт уже сам код,
+    разводит `dedupe_neighbours`, а не агент."""
+    text = _skill(tmp_path)
+    assert "Меняй картинку между соседними сценами" in text
+    assert "обязаны отличаться" not in text
     assert "свободные фразы" not in text
 
 
@@ -257,24 +279,25 @@ def test_секунд_в_ответе_не_бывает_но_длину_сцен
     text = _text(tmp_path)
     sample = text.split("```json")[1].split("```")[0]
     assert "startSec" not in sample and "endSec" not in sample
-    assert '"phrases": [1, 2]' in sample
-    assert "Секунд в них\nбыть не должно" in text
-    assert "сложением длительностей её фраз" in text
+    assert '"phrases": [0, 0]' in sample
+    assert "Секунд в плане быть не должно" in text
+    assert "сложением длительностей" in text
     assert text.count("Не считай секунды") == 0
 
 
 def test_служебные_надписи_запрещены(tmp_path):
-    """Запреты собраны в negative list — их же приём из visual-design.md:89."""
-    text = _text(tmp_path)
-    assert "Чего в кадре не бывает" in text
+    """Раздел говорит, из чего кадр складывается, и уже отсюда — чего в нём не
+    ставят: их же совет писать, что делать, а не чего не делать."""
+    text = _skill(tmp_path)
+    assert "## Что зритель читает" in text
     assert "фото из каталога" in text
-    assert "Стоковых клише" in text
+    assert "Стоковые клише" in text
 
 
 def test_биты_объяснены_и_кульминация_одна(tmp_path):
-    text = _text(tmp_path)
+    text = _skill(tmp_path)
     assert "`climax`" in text
-    assert "Ровно одна на ролик" in text
+    assert "одна на ролик и не в первой сцене" in text
     assert "сцена-передышка" in text
 
 
@@ -283,8 +306,8 @@ def test_пол_сцен_дан_числом(tmp_path):
     задании больше нет — темп задаёт их правило жанра (1,5–4 с на мысль),
     наш детектор остаётся замером по готовому файлу."""
     text = _text(tmp_path)
-    assert "Сцен не меньше 6" in text
-    assert "1,5–4 секунды" in text
+    assert "меньше 6" in text
+    assert "1,5–4 секунды" in _skill(tmp_path)
     assert "заметных смен" not in text
 
 
@@ -294,17 +317,19 @@ def test_лишняя_работа_названа_разделением_раб�
     прямо советует позитивную форму («Tell Claude what to do instead of what
     not to do», prompt-engineering/claude-prompting-best-practices)."""
     text = _text(tmp_path)
-    assert "## Что делает код после тебя" in text
-    assert "hyperframes check" in text
-    assert "HTML, CSS и JavaScript в этом\n  прогоне не пишутся вовсе" in text
+    # Раздел-перечень снят: разделение работ сказано одной утвердительной
+    # строкой в шапке, а перечисление запретов их дока не одобряет.
+    assert "подбор файлов, субтитры и проверки он" in text
+    assert "## Что делает код после тебя" not in text
 
 
 def test_правило_наполнения_кадра_живёт_в_одном_месте(tmp_path):
     """Разбор задания: правило про значок стояло в трёх местах в трёх
     редакциях. Средства кадра описаны одним разделом — иначе агент читает
     два разных требования и выбирает одно из них."""
-    text = _text(tmp_path)
+    text = _skill(tmp_path)
     assert text.count("## Чем занять кадр") == 1
+    assert _text(tmp_path).count("## Чем занять кадр") == 0
     assert "## Медиа-проход" not in text
     assert "## Иконка фоновой сцены" not in text
     assert "## Их накладки из каталога" not in text
@@ -314,71 +339,101 @@ def test_выбор_между_бироллом_и_схемой_дан_приз�
     """Их дока про классификацию: качество выбора прямо пропорционально
     качеству определений, а не количеству запретов; варианты — закрытым
     списком, и ровно один применим."""
-    text = _text(tmp_path)
-    assert "У сцены\nровно одно средство" in text
+    text = _skill(tmp_path)
+    assert "Кадр держит одно из двух" in text
     assert "когда мысль снимается камерой" in text
     assert "когда мысль камерой не снимается" in text
-    assert "У сцены ровно одна форма" in text
-    assert "Форма идёт от **типа высказывания**" in text
+    assert "У сцены одна форма" in text
+    assert "Форма идёт от типа высказывания" in text
 
 
 def test_у_каждой_формы_названо_и_назначение_и_граница(tmp_path):
     """Канон описания инструмента: что делает, когда брать, **когда не
     брать** и чего не выражает — иначе форму применяют не по адресу.
     Проверено на нас: метрика с полосой прогресса стояла под «три вопроса»."""
-    text = _text(tmp_path)
+    text = _skill(tmp_path)
     section = text.split("<forms>")[1].split("</forms>")[0]
     for form in ("metric", "items", "pairs", "steps", "brand"):
         assert f'<form name="{form}">' in section
     assert section.count("Бери") >= 5
-    assert section.count("Не бери") >= 4
-    assert "Не бери под счёт названных вещей" in section
+    # Каждая форма называет и своё назначение, и поля, которыми задаётся.
+    assert section.count("Поля:") >= 4
+    assert "Счёт названных вещей" in section
     assert "три из ста" in section
 
 
 def test_разбор_идёт_до_выбора_формы(tmp_path):
     """Их же приём из руководства по классификации: сначала рассуждение,
     потом метка. У нас рассуждение — строка `why` в самой схеме."""
-    text = _text(tmp_path)
-    assert "напиши в поле `why` одну строку разбора" in text
-    assert "Разбор идёт до выбора, а не после" in text
+    text = _skill(tmp_path)
+    # Их дока для нынешнего поколения прямо не советует просить агента
+    # излагать ход мысли в ответе; `why` остаётся данными — типом
+    # высказывания, к которому отнесена сцена.
+    assert "назови тип" in text and "высказывания" in text
+    assert "Разбор идёт до выбора" not in text
     assert '"why"' in text
 
 
 def test_спор_решается_названным_приоритетом(tmp_path):
     """Приём из их же руководства по классификации: когда подходят два
     признака, сказать вслух, какой весит больше, и почему."""
-    text = _text(tmp_path)
+    text = _skill(tmp_path)
     assert "есть и чувство, и величина" in text
-    assert "чувство уже\nзвучит в голосе ведущей" in text
+    assert "чувство уже звучит в голосе" in text
 
 
 def test_формы_схемы_даны_закрытым_списком_с_примерами(tmp_path):
-    """Их рекомендация — 3–5 примеров, разнородных, в `<example>`, и один
-    спорный с объяснением выбора."""
-    text = _text(tmp_path)
-    assert "<fillings>" in text
+    """Их рекомендация — 3–5 примеров, разнородных, в `<example>`, и в каждом
+    разбор выбора: не только взятая форма, но и отброшенная. Блок `<fillings>`
+    снят — он показывал тот же синтаксис третьим заходом после `<forms>` и
+    образца ответа."""
+    text = _skill(tmp_path)
+    assert "<fillings>" not in text
     for form in ("metric", "items", "pairs", "steps", "brand"):
-        assert f'"form": "{form}"' in text
-    section = text.split("## Чем занять кадр")[1].split("### Паспорта")[0]
+        assert f'<form name="{form}">' in text
+    section = text.split("## Чем занять кадр: схема")[1]
     assert 3 <= section.count("<example>") <= 5
-    assert "Метрика запрещена" in section
+    # Разбор в примере называет и отброшенную форму: перенос на непохожую
+    # реплику даёт именно он, а не сам ответ.
+    assert "`metric` отпадает" in section
+    assert "навязал бы порядок" in section
+    # Синтаксис поля показан на примерах, а не отдельным блоком-каталогом.
+    for form in ("items", "steps", "pairs", "metric"):
+        assert f'"form": "{form}"' in section
 
 
 def test_запасная_схема_той_же_формы(tmp_path):
     """Схему выбирает агент по смыслу; `fallback` — та же форма на случай,
     когда сток не ответил, а не отдельный вид."""
-    text = _text(tmp_path)
+    text = _skill(tmp_path)
     assert "**`fallback` — та же схема на случай" in text
-    assert "Заполняй у\nкаждой сцены с бироллом" in text
+    # Причина правила и его область совпадают: закрывать кадр нечем
+    # только там, где ведущей нет.
+    assert "у\nсцен со вставкой, где ведущей нет" in text
 
 
 def test_имена_слотов_накладки_берутся_дословно(tmp_path):
-    """Три способа уронить сборку накладкой не были названы ни разу."""
-    text = _text(tmp_path)
-    assert "имя блока — из паспортов дословно" in text
-    assert "имена слотов из паспорта этого блока дословно" in text
-    assert "поля `text` быть не должно" in text
+    """Способы уронить сборку накладкой названы, а сами паспорта уехали в
+    соседний файл: шестнадцать карточек занимали шестую часть задания, а
+    накладка нужна в двух-трёх сценах из десяти."""
+    text = _skill(tmp_path)
+    assert "`OVERLAYS.md`" in text
+    assert "пиши дословно из паспорта" in text
+    assert "у блока со слотами `text`\nобязателен" in text
+    assert "у блока без слотов поля `text` нет" in text
+
+
+def test_паспорта_накладок_лежат_отдельным_файлом(tmp_path):
+    """Ссылка одна и ведёт из задания прямо в файл: глубже одного уровня их же
+    дока ходить не советует."""
+    _text(tmp_path, overlay_passports="### lt-clean-bar\n\nслоты: name, role\n")
+    passports = (tmp_path / "OVERLAYS.md").read_text(encoding="utf-8")
+    assert "lt-clean-bar" in passports
+    assert "Паспорта накладок" in passports
+    # В самом задании остаётся только имя блока в образце ответа — паспорта
+    # со слотами и длительностями там больше нет.
+    assert "слоты: name, role" not in (tmp_path / "BRIEF.md").read_text(
+        encoding="utf-8")
 
 
 def test_настроение_титра_больше_не_спрашивают(tmp_path):
@@ -400,7 +455,7 @@ def test_бриф_до_заказа_аватара_отдаёт_решение_�
                   "text": "Привет"}])
     text = path.read_text(encoding="utf-8")
     assert "не заказан" in text and "avatarNeeded: true" in text
-    assert "дешевле" in text
+    assert "% хронометража" in text
     assert "ведущей тут нет" not in text
 
 
@@ -410,12 +465,14 @@ def test_схема_не_берёт_чужую_реплику_и_не_повто
     ставил на карточку два слова подряд из самой реплики — титр печатает их в
     тот же момент. Правило их же: «never a sentence from the narration… the
     root caption track already shows the spoken words»."""
-    text = _text(tmp_path)
+    text = _skill(tmp_path)
     assert "Объявлен набор целиком" in text
     assert "Названа одна позиция" in text
     assert "Слова схемы говорят своё" in text
-    assert "Проверь каждую подпись, и" in text
-    assert "живёт по тем же правилам" in text
+    # «Проверь каждую подпись» снято: их дока велит убирать инструкции
+    # самопроверки, а не переписывать их.
+    assert "Проверь каждую" not in text
+    assert "Живёт по тем же правилам" in text
 
 
 def test_шаг_пожеланий_можно_пропустить(tmp_path):
@@ -435,3 +492,74 @@ def test_сказанное_заказчиком_идёт_дословно_и_о
     # Незаполненное поле не превращается в пустую строку в брифе — оно
     # остаётся на выведение агентом, и об этом сказано вслух.
     assert "Остальное (audience, angle, destination) выведи сам." in text
+
+
+def test_образец_плана_проходит_наши_же_проверки(tmp_path):
+    """Образец сильнее правила, стоящего рядом с ним, поэтому он собирается из
+    фраз этого ролика и обязан проходить те же гейты, что мы требуем от агента.
+    Прежний образец был написан руками: сцен меньше минимума, ни одного
+    `climax`, две последние сцены с одинаковым кадром и плашка со слотом,
+    которого нет в её паспорте."""
+    import json
+
+    from reels_factory.hf_compose import complete_storyboard
+    from reels_factory.hf_gates import check_montage, check_storyboard
+    from reels_factory.hf_phrases import lay_out_scenes
+
+    phrases = [{"id": index, "role": "hook", "text": f"фраза {index}",
+                "start": index * 2.0, "end": index * 2.0 + 2.0}
+               for index in range(8)]
+    clips = [{"file": "clips/clip-00.mp4", "start": 0.0, "duration": 16.0}]
+    text = _text(tmp_path, phrases=phrases, clips=clips)
+    sample = text.split("```json")[1].split("```")[0]
+    # Хвост образца подписан многоточием — для проверки берём показанные сцены
+    # и дотягиваем последнюю до конца озвучки.
+    body = "\n".join(line for line in sample.splitlines()
+                     if "остальные сцены" not in line)
+    body = body.rstrip().rstrip("}").rstrip().rstrip("]").rstrip().rstrip(",")
+    board = json.loads(body + "\n ]\n}")
+    shown = board["scenes"]
+    shown[-1]["phrases"] = [shown[-1]["phrases"][0], 7]
+
+    board["scenes"] = lay_out_scenes(shown, phrases, duration=16.0)
+    board = complete_storyboard(board, clips=clips, duration=16.0)
+    verdicts = check_storyboard(board, clips=clips, duration=16.0)
+    verdicts.update(check_montage(board, clips=clips, duration=16.0))
+    failed = [f"{name}: {value}" for name, value in verdicts.items()
+              if value.startswith("FAIL")]
+    assert not failed, failed
+
+
+def test_правило_не_живёт_в_двух_местах(tmp_path):
+    """Одно правило — одно место. Их канон: «Choose one term and use it
+    throughout the Skill» и «the minimal set of information that fully outlines
+    your expected behavior». Разбор задания находил по четыре редакции одного и
+    того же — «верни два файла», «разметку не пиши», «сложи длительности».
+
+    Проверяем механически: ключевые темы не должны встречаться и в задании, и
+    в скиле, а внутри каждого файла — дважды.
+    """
+    brief = _text(tmp_path)
+    skill = _skill(tmp_path)
+    # (тема, где ей место, как её узнать)
+    topics = [
+        ("контракт ответа", brief, skill, "storyboard.json` и `frame.md`"),
+        ("серия из двух планов", skill, brief, "серией из двух планов"),
+        ("формы схемы", skill, brief, "<forms>"),
+        ("положения ведущей", skill, brief, "Выбор положения:"),
+        ("биты рассказа", skill, brief, "`hook` — первая сцена"),
+    ]
+    for name, home, foreign, mark in topics:
+        assert mark in home, f"{name}: правило пропало из своего файла"
+        assert mark not in foreign, f"{name}: правило сказано дважды"
+
+
+def test_в_задании_нет_требований_к_чужому_результату(tmp_path):
+    """Требовать от агента исход, который после него правит код, — источник
+    провала 462a1c62. Пять функций переписывают `presenter`, пару близнецов
+    разводит `dedupe_neighbours`, вставки снимает `pick_series`."""
+    text = _text(tmp_path) + _skill(tmp_path)
+    for banned in ("Проверка считает", "проверка заворачивает",
+                   "сборка не пройдёт проверку", "детектор их не разделит",
+                   "каждое роняет сборку"):
+        assert banned not in text, f"обещание за код: {banned}"

@@ -168,12 +168,16 @@ def lay_out_scenes(scenes: list[dict], phrases: list[dict], *,
     placed: list[dict] = []
     for scene in scenes:
         span = scene.get("phrases")
-        if not isinstance(span, (list, tuple)) or len(span) != 2:
+        if not isinstance(span, (list, tuple)) or not span:
             raise RuntimeError(
                 f'{scene.get("id", "?")}: нет поля `phrases` — сцена обязана '
                 "назвать первую и последнюю фразу, которые накрывает. Секунды "
                 "(`startSec`, `endSec`) считает код, в плане их быть не должно")
-        first, last = int(span[0]), int(span[1])
+        # Список номеров вместо пары — не ошибка плана, а другое прочтение
+        # того же: боевой прогон 462a1c62 вернул `[6, 7, 8]` на сцену из трёх
+        # фраз и `[13]` на сцену из одной. Смысл сцены от этого не меняется,
+        # поэтому берём края, а не роняем попытку целиком.
+        first, last = int(span[0]), int(span[-1])
         start, end = phrase_span(phrases, first, last)
         # Копия, а не оригинал: план агента остаётся тем, что он написал, —
         # при пересборке его перечитывают с диска и раскладывают заново.
