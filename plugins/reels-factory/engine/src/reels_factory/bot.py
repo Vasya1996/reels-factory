@@ -3234,6 +3234,34 @@ async def _job_worker(bot_api) -> None:
             await asyncio.sleep(1)
 
 
+AUDIO_FILE_SUFFIXES = (
+    ".mp3", ".m4a", ".aac", ".wav", ".ogg", ".oga", ".opus", ".flac",
+    ".mp4", ".webm", ".mov",
+)
+
+
+def _final_audio_media(msg):
+    """Финальная озвучка: голосовое, аудио или аудиофайл документом.
+
+    Человек присылает готовую озвучку как угодно: записью в Telegram, mp3
+    или файлом «без сжатия». Документ пропускаем только с аудио/видео mime
+    или расширением — иначе в ffmpeg уедет случайный pdf, а вместо подсказки
+    человек получит непонятную ошибку.
+    """
+    if msg.voice is not None:
+        return msg.voice
+    if msg.audio is not None:
+        return msg.audio
+    doc = msg.document
+    if doc is None:
+        return None
+    mime = str(getattr(doc, "mime_type", None) or "").lower()
+    name = str(getattr(doc, "file_name", None) or "").lower()
+    if mime.startswith(("audio/", "video/")) or name.endswith(AUDIO_FILE_SUFFIXES):
+        return doc
+    return None
+
+
 async def on_message(update, context):
     chat_id = update.effective_chat.id
     s = load_session(chat_id)
@@ -3254,7 +3282,8 @@ async def on_message(update, context):
         ):
             await msg.reply_text(AUDIO_ACTION_STALE)
             return
-        if msg.voice is None:
+        rec = _final_audio_media(msg)
+        if rec is None:
             await msg.reply_text(
                 "Жду одно голосовое сообщение Telegram с полным текстом сценария.",
                 reply_markup=_kb_final_audio(job.job_id),
@@ -3272,7 +3301,7 @@ async def on_message(update, context):
             return
         await msg.reply_text(PROCESSING_FINAL_AUDIO)
         try:
-            path = await _download(context, msg.voice, chat_id)
+            path = await _download(context, rec, chat_id)
             await asyncio.to_thread(prepare_user_audio, job.workdir, path)
             _job_store().transition(
                 job.job_id,

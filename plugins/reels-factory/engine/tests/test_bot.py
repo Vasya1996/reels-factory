@@ -1885,6 +1885,99 @@ def test_отказ_от_tts_принимает_одно_telegram_voice_и_ст�
     assert voice_msg.replies[-1] == bot.FINAL_AUDIO_ACCEPTED
 
 
+def test_отказ_от_tts_принимает_mp3_файлом(work, клиент, monkeypatch):
+    # человек уже записал озвучку в редакторе и шлёт готовый mp3 — это тот же
+    # «запишу сам(а)», просто файлом, и заново диктовать его нельзя заставлять
+    bot.save_session(7, {
+        "step": bot.READY,
+        "scenario": SCENARIO,
+        "photo": {"asset_id": "a1", "file": "ф.jpg"},
+        "voice_id": "voice-1",
+    })
+    _press("build:plain", _Msg())
+    job, _api = _deliver_audio_preview()
+    _press(f"audio_self:{job.job_id}", _Msg())
+
+    monkeypatch.setattr(bot, "_download", _fake_download)
+    prepared = []
+    monkeypatch.setattr(
+        bot,
+        "prepare_user_audio",
+        lambda workdir, source: prepared.append((workdir, source)) or {"ok": True},
+    )
+    audio_msg = _Msg()
+    audio_msg.audio = type("A", (), {"file_id": "aud-1", "file_name": "voice.mp3"})()
+    asyncio.run(bot.on_message(_Update(audio_msg), None))
+
+    assert prepared and prepared[0][0] == job.workdir
+    assert bot._job_store().get(job.job_id).status == "queued"
+    assert bot.load_session(7)["step"] == bot.BUILDING
+    assert audio_msg.replies[-1] == bot.FINAL_AUDIO_ACCEPTED
+
+
+def test_отказ_от_tts_принимает_аудио_документом(work, клиент, monkeypatch):
+    # «отправить как файл» в Telegram — это document, а не audio: он тоже
+    # должен уходить в сборку, а не в отбивку
+    bot.save_session(7, {
+        "step": bot.READY,
+        "scenario": SCENARIO,
+        "photo": {"asset_id": "a1", "file": "ф.jpg"},
+        "voice_id": "voice-1",
+    })
+    _press("build:plain", _Msg())
+    job, _api = _deliver_audio_preview()
+    _press(f"audio_self:{job.job_id}", _Msg())
+
+    monkeypatch.setattr(bot, "_download", _fake_download)
+    prepared = []
+    monkeypatch.setattr(
+        bot,
+        "prepare_user_audio",
+        lambda workdir, source: prepared.append((workdir, source)) or {"ok": True},
+    )
+    doc_msg = _Msg()
+    doc_msg.document = type(
+        "D", (),
+        {"file_id": "doc-1", "file_name": "озвучка.wav", "mime_type": "audio/wav"},
+    )()
+    asyncio.run(bot.on_message(_Update(doc_msg), None))
+
+    assert prepared and prepared[0][0] == job.workdir
+    assert bot._job_store().get(job.job_id).status == "queued"
+    assert doc_msg.replies[-1] == bot.FINAL_AUDIO_ACCEPTED
+
+
+def test_не_аудио_документ_не_уходит_в_сборку_озвучки(work, клиент, monkeypatch):
+    # pdf вместо озвучки: job остаётся ждать запись, ffmpeg не зовём
+    bot.save_session(7, {
+        "step": bot.READY,
+        "scenario": SCENARIO,
+        "photo": {"asset_id": "a1", "file": "ф.jpg"},
+        "voice_id": "voice-1",
+    })
+    _press("build:plain", _Msg())
+    job, _api = _deliver_audio_preview()
+    _press(f"audio_self:{job.job_id}", _Msg())
+
+    monkeypatch.setattr(bot, "_download", _fake_download)
+    monkeypatch.setattr(
+        bot,
+        "prepare_user_audio",
+        lambda workdir, source: pytest.fail("не аудио не должно идти в сборку"),
+    )
+    doc_msg = _Msg()
+    doc_msg.document = type(
+        "D", (),
+        {"file_id": "doc-2", "file_name": "сценарий.pdf",
+         "mime_type": "application/pdf"},
+    )()
+    asyncio.run(bot.on_message(_Update(doc_msg), None))
+
+    assert bot._job_store().get(job.job_id).status == "awaiting_user_audio"
+    assert bot.load_session(7)["step"] == bot.WAIT_FINAL_AUDIO
+    assert "голосовое сообщение" in doc_msg.replies[-1]
+
+
 def test_new_отменяет_job_которая_ждёт_audio_approval(work, клиент):
     # ролик стоит на подтверждении озвучки и ждёт юзера — /new его отменяет
     # и начинает новый, а не блокирует пользователя в тупике
