@@ -20,29 +20,35 @@ from reels_factory.compose import VENC
 from reels_factory.config import (
     FFMPEG, FPS, LUFS_TARGET, OUT_H, OUT_W, TP_TARGET, cli_env,
 )
+from reels_factory.editplan import MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S
 from reels_factory.face_detect import face_box_for, load_face
-from reels_factory.hf_agent import plan_with_agent
+from reels_factory.hf_agent import (
+    AgentPlanMissing, AgentSpend, HeyGenAgentRunner, plan_with_agent,
+)
 from reels_factory.hf_assets import vendor_gsap
-from reels_factory.hf_brief import write_brief
+from reels_factory.hf_brief import POSITIONS, write_brief
 from reels_factory.hf_catalog import (
     overlay_passports as catalog_overlay_passports, serve_catalog,
     write_project_config,
 )
 from reels_factory.hf_compose import (
     CAPTION_BAND_TOP, build_composition, clear_generated, collect_intents,
-    complete_storyboard, needed_blocks, schema_intents, settle_inserts,
+    complete_storyboard, needed_blocks, schema_intents, settle_fillers,
+    settle_inserts,
 )
 from reels_factory.hf_fonts import inject_fonts
 from reels_factory.hf_frame import read_frame
 from reels_factory.hf_gates import (
     check_media, check_placeholders, check_storyboard,
 )
-from reels_factory.hf_layout import quantize
+from reels_factory.hf_layout import FULL_FRAME_PRESENTER, quantize
 from reels_factory.hf_media import resolve_all
 from reels_factory.hf_montage import (
     check_inserts, check_shots, dedupe_neighbours, drop_series,
+    inserts_shortfall, inserts_wanted,
     merge_adjacent_series, pick_series, settle_schemas, show_ordered_avatar,
 )
+from reels_factory.hf_montage_skill import SKILL_NAME, seconds
 from reels_factory.hf_phrases import (
     lay_out_scenes, phrase_timeline, speech_between,
 )
@@ -73,6 +79,17 @@ RENDER_LOW_MEMORY = os.environ.get("REELS_RENDER_LOW_MEMORY", "off")
 
 STEPS = ("prepare", "plan", "compose", "gates", "shots", "render", "loudness")
 MAX_COMPOSE_ATTEMPTS = 2
+
+#: Сколько раз агента спрашивают ДО заказа аватара: план и одна пересдача.
+#: Заказ у HeyGen платный и необратимый, поэтому промах проверок плана стоит
+#: одного переспроса. Второй промах уходит в отчёт по сборке, а не отклоняет
+#: прогон: план всё равно лучше, чем ничего, а разбирать его будет человек.
+MAX_PLAN_ATTEMPTS = 2
+
+#: Маркер шага «план сделан до заказа аватара». В STEPS его нет намеренно: это
+#: не отдельный шаг сборки, а память о том, ЧЕЙ план лежит в `plan.json`.
+#: Аватар уже куплен ровно по нему, и пересдавать его после покупки нельзя.
+EARLY_PLAN_STEP = "plan-early"
 
 #: До скольких сцен контактный лист снимает ещё и пару кадров вокруг каждой
 #: склейки. Выше — только середины: съёмка идёт по кадру за раз, и при видео в
@@ -478,48 +495,532 @@ def _capture_shots(rdir: Path, board: dict, duration: float) -> Path:
     return sheets[0]
 
 
+def _avatar_ordered_scene(scene: dict) -> bool:
+    """Закажут ли ведущую на этой сцене.
+
+    Поле `avatarNeeded` ставит агент (работа 9). Сцена без поля решения не
+    несёт, и острова оставляют её фразам эвристическое покрытие
+    (`apply_agent_coverage` в `avatar_islands.py`), то есть ведущую там скорее
+    закажут, чем нет. Считаем такую сцену заказанной: ошибиться в сторону
+    «дороже» безопаснее, чем прозевать перерасход и узнать о нём по счёту.
+
+    Само молчание агента план не спасает: сцену без решения заворачивает
+    `D33_avatar_decisions`, и до заказа такой план не доходит. Эта функция
+    отвечает только на вопрос «сколько будет стоить», а не «принят ли план».
+    """
+    needed = scene.get("avatarNeeded")
+    return True if needed is None else bool(needed)
+
+
+def islands_settings(config: dict | None) -> dict:
+    """Настройки нарезки островов того профиля, которым будут заказывать.
+
+    Числа заказа (ручка по краям куска, минимальный кусок, предел длины куска)
+    берутся из настроек клиента, а не из `DEFAULTS`: у клиента с другим
+    профилем задание, гейт и счёт HeyGen считались бы по трём разным числам.
+    Без настроек функция отдаёт те же умолчания — они и стоят у всех, кто
+    островов не настраивал.
+    """
+    from reels_factory.avatar_islands import avatar_islands_settings
+
+    return avatar_islands_settings(config)
+
+
+def _scene_phrases(scenes: list[dict],
+                   phrases: list[dict]) -> list[tuple[dict, list[dict]]]:
+    """Какие фразы накрывает каждая сцена — так же, как это разберёт заказ.
+
+    Решение сцены наследует фраза, чья СЕРЕДИНА попала внутрь сцены
+    (`apply_agent_coverage` в `avatar_islands.py`). Своего второго правила тут
+    не заводим: границы сцен округлены к сетке кадров и с границами фраз
+    совпадают не всегда, и разойдись эти два ответа — гейт судил бы план не по
+    тем фразам, за которые заплатят.
+    """
+    from reels_factory.avatar_islands import _scene_at
+
+    ordered = sorted(scenes or [],
+                     key=lambda scene: float(scene.get("startSec", 0)))
+    # Ключ по `id` объекта, а не по самой сцене: две сцены плана могут совпасть
+    # всеми полями, и словарь по значению склеил бы их в одну.
+    pockets: dict[int, list[dict]] = {id(scene): [] for scene in ordered}
+    for phrase in phrases or []:
+        middle = (float(phrase["start"]) + float(phrase["end"])) / 2
+        scene = _scene_at(ordered, middle)
+        if scene is not None:
+            pockets[id(scene)].append(phrase)
+    return [(scene, pockets[id(scene)]) for scene in ordered]
+
+
+def _order_phrases(scenes: list[dict], phrases: list[dict]) -> list[dict]:
+    """Фразы в том виде, в каком их читает нарезка островов.
+
+    Нарезке нужны ровно четыре вещи: покрытие, секунды, роль и пластика. Первые
+    три известны уже здесь, а пластику назначает `editplan` позже, и на разбивку
+    она влияет только различием: одинаковая пластика границы куска не создаёт
+    (`_group_allowed` в `avatar_islands.py`). Поэтому всем фразам кладётся один
+    и тот же профиль, и оценка выходит снизу — настоящий заказ режет куски там
+    же, где мы, и вдобавок на сменах выразительности.
+    """
+    items = []
+    for scene, own in _scene_phrases(scenes, phrases):
+        covered = _avatar_ordered_scene(scene)
+        for phrase in own:
+            items.append({
+                "id": phrase["id"],
+                "index": phrase["id"],
+                "role": phrase.get("role"),
+                "coverage": "avatar" if covered else "full_broll",
+                "final_timing": {"start": float(phrase["start"]),
+                                 "end": float(phrase["end"])},
+                "avatar_performance": {"expressiveness": "medium",
+                                       "motion_prompt": ""},
+            })
+    return items
+
+
+def _avatar_order_seconds(scenes: list[dict], phrases: list[dict],
+                          duration: float, settings: dict) -> float:
+    """Сколько секунд ведущей выставит HeyGen по этому плану.
+
+    Меряем на ЗАКАЗЕ, а не на показе: клип покупается кусками, и с каждого
+    края куска код докупает `handle_seconds`, а короткий кусок дорастает до
+    `min_request_seconds` за счёт соседнего звука (`_request_timing` в
+    `avatar_islands.py`) — доплаченное в ролик не попадает, но в счёт попадает.
+
+    Арифметику берём у самого заказа, тремя его же функциями: непрерывные
+    фразы с ведущей — остров (`_islands_from_phrases`), остров режется на куски
+    (`_partition_island`), и КАЖДЫЙ кусок покупается отдельно со своей парой
+    ручек (`_request_timing`). Прежний счёт брал остров целиком, и на острове
+    из двух кусков гейт говорил PASS, а счёт приходил на пару ручек больше.
+
+    Соседние сцены с ведущей дают один остров — ровно за это агенту сказано
+    ставить сцены с ведущей подряд.
+    """
+    from reels_factory.avatar_islands import (
+        _islands_from_phrases, _partition_island, _request_timing,
+    )
+
+    total = 0.0
+    for island in _islands_from_phrases(_order_phrases(scenes, phrases)):
+        try:
+            groups = _partition_island(island, settings)
+        except ValueError:
+            # Разбить не удалось — считаем остров одним куском. Это оценка
+            # снизу, и она честнее отказа: гейт судит план до заказа, а
+            # настоящий отказ разбивки прилетит из самого заказа.
+            groups = [island]
+        for group in groups:
+            total += _request_timing(
+                float(group[0]["final_timing"]["start"]),
+                float(group[-1]["final_timing"]["end"]),
+                duration, settings)["duration"]
+    return total
+
+
+#: Чем открытие и финал закрывают кадр целиком. Пересечение полнокадровых
+#: положений с закрытым списком, который задание вообще предлагает агенту
+#: (`POSITIONS` в `hf_brief.py`): `overlay` кадр закрывает, но в списке его нет,
+#: и проверка, принимающая его, мягче контракта — план с ним прошёл бы гейт до
+#: заказа и упёрся бы в сборку, когда клипы уже куплены.
+BOOKEND_PRESENTER = FULL_FRAME_PRESENTER & {name for name, *_ in POSITIONS}
+
+
+#: Роли, которые ролик обязан говорить лицом. Прятать их запрещает валидатор
+#: плана монтажа (`validate_edit_plan`, editplan.py:2558-2562), и запрет тот же
+#: самый: сорванный на нём план роняет сборку, когда озвучка уже оплачена.
+SPEAKING_ROLES = ("hook", "cta")
+
+#: Запас к порогам, которые меряются по фразам. Наши фразы округлены к
+#: миллисекунде, а валидатор меряет неокруглённые (`final_timing` в
+#: `finalize_edit_plan`), поэтому фразу ровно на пороге гейт заворачивает: промах
+#: в тысячную стоит всей сборки, а пересдача — одной сессии планировщика. Запас
+#: идёт в обе стороны: к полу длительности фразы (D31) и к потолку куска без
+#: лица (D32) — в обоих случаях в сторону строгости.
+PHRASE_TIME_MARGIN = 0.002
+
+#: Сколько непредсказанных швов оплачивает допуск бюджета. Наш счёт заказа
+#: кладёт всем фразам одну пластику (`_order_phrases`), потому что на этом шаге
+#: её ещё нет: `avatar_performance` назначает `editplan` позже. Настоящая
+#: нарезка режет остров ещё и на сменах выразительности (`_group_allowed` в
+#: `avatar_islands.py`), и каждый такой шов докупает по ручке с обеих сторон.
+#: Смоделировать смену подачи нечем — данных нет, — поэтому цена швов отдаётся
+#: допуску.
+#:
+#: Швов держим два. Раньше стоял один (замер давал 0,4 с при ручке 0,2 с), но
+#: сплошной перебор расстановок показал расхождение до 1,95 с на быстрой речи:
+#: заказ добирает секунды ещё и там, где код сам возвращает ведущую слишком
+#: короткому куску (`_restore_short_faceless` в `avatar_islands.py`). Запас в
+#: один шов такие планы заворачивал, хотя заказ по ним собирается.
+_UNPREDICTED_SEAMS = 2
+
+
+def _blind_stretches(scenes: list[dict],
+                     phrases: list[dict]) -> list[dict]:
+    """Куски ролика, идущие подряд без ведущей.
+
+    Считаем так же, как валидатор плана монтажа: он ведёт отсчёт от начала
+    первого окна без лица и сбрасывает его на первом же окне с ведущей
+    (`validate_edit_plan`, editplan.py:2548-2556). Сцена без фраз ни отсчёта не
+    начинает, ни не сбрасывает: окна заводятся по фразам, и такой сцены в плане
+    монтажа не будет вовсе.
+
+    Какие фразы возьмёт схема, на этом шаге неизвестно, и раньше эта оценка
+    считалась заниженной: валидатор ведёт отсчёт и по окнам `hyperframes`.
+    Плана, принятого гейтами, это не касается — счёт сходится с валидатором:
+    фразу, где кадр держит схема, сцена с `avatarNeeded: true` забирает
+    ведущей (`apply_agent_coverage` переписывает покрытие вне
+    `_VISIBLE_COVERAGE` на `avatar`), сцены выстилают ролик без зазоров
+    (`lay_out_scenes` в hf_phrases.py), и сцену без решения вовсе заворачивает
+    `D33_avatar_decisions`. Держит это
+    `test_схема_в_сцене_с_ведущей_не_считается_пропажей_лица`
+    (tests/test_avatar_islands.py): снимут перевод покрытия — гейт снова начнёт
+    считать меньше валидатора, и тест упадёт до заказа, а не сборка после него.
+    """
+    stretches: list[dict] = []
+    current: dict | None = None
+    for scene, own in _scene_phrases(scenes, phrases):
+        if not own:
+            continue
+        if _avatar_ordered_scene(scene):
+            current = None
+            continue
+        if current is None:
+            current = {"scenes": [], "start": float(own[0]["start"]),
+                       "end": float(own[-1]["end"])}
+            stretches.append(current)
+        current["scenes"].append(str(scene.get("id", "?")))
+        current["end"] = float(own[-1]["end"])
+    return stretches
+
+
+def _early_plan_gates(scenes: list[dict], duration: float,
+                      phrases: list[dict], settings: dict) -> dict:
+    """Что проверяем в плане ДО заказа аватара (работа D).
+
+    Все проверки — про то, что после заказа уже не поправить. Ведущую на
+    открытии и в финале потом взять неоткуда: клипов на эти секунды просто не
+    будет; бюджет — это деньги, которые к тому времени уже уйдут; а план,
+    который заворачивает `validate_edit_plan`, роняет сборку уже с оплаченной
+    озвучкой и купленными клипами. Место всем таким проверкам здесь: падать
+    после оплаты нельзя.
+
+    Провал не отклоняет план, а становится причиной пересдачи: формулировка
+    называет виноватую сцену и говорит, что сделать, — этот же текст уезжает
+    агенту разделом пересдачи в BRIEF.md вместе с именем гейта.
+    """
+    from reels_factory.avatar_islands import avatar_budget_targets
+
+    result = {}
+    wrong = []
+    for scene, place in ((scenes[0], "открытие"), (scenes[-1], "финал")):
+        position = str(scene.get("presenter") or "full")
+        if position in BOOKEND_PRESENTER and _avatar_ordered_scene(scene):
+            continue
+        wrong.append(f'{scene.get("id", "?")} — {place} ролика: presenter '
+                     f'`{position}`, avatarNeeded '
+                     f'{json.dumps(scene.get("avatarNeeded"))}')
+    result["D28_avatar_bookends"] = "PASS" if not wrong else (
+        "FAIL: ролик открывает и закрывает ведущая во весь кадр — лицо "
+        "встречает зрителя и провожает его. Поставь этим сценам presenter "
+        "`full` или `punch` и `avatarNeeded: true`: " + "; ".join(wrong))
+
+    ordered = _avatar_order_seconds(scenes, phrases, duration, settings)
+    budget = avatar_budget_targets(duration, settings)
+    # Допуск островов на их собственном замере заказа
+    # (`build_avatar_render_plan` в `avatar_islands.py`) — полпроцента
+    # хронометража: это округления сетки кадров, а не перерасход. Здесь к нему
+    # добавляется цена непредсказанных швов (`_UNPREDICTED_SEAMS`), по ручке с
+    # каждой стороны шва.
+    slack = (0.005 * duration
+             + 2 * _UNPREDICTED_SEAMS * settings["handle_seconds"])
+    # Запас прибавляется к НАШЕЙ оценке, а не к границе. Прежде он двигал
+    # границу вверх, и объявленные 70 % на деле превращались в 71,9 %, а на
+    # длинной ручке клиента — заметно больше: перебор поймал 106 принятых
+    # планов выше объявленного потолка. Неуверенность в собственном счёте
+    # должна стоить нам пересдачи, а не заказчику лишних секунд HeyGen.
+    #
+    # Судим по ГРАНИЦЕ, а не по ориентиру: ориентир 60 % — то, куда агенту
+    # велено целиться, и промах по нему монтажа не портит, а пересдача стоит
+    # новой сессии планировщика. Перебор расстановок показал, почему полоса
+    # нужна: расстановка квантована сценой, соседние планы отличаются на целую
+    # сцену (27,3 → 34,5 с на ролике 56,1 с), и ориентир 33,7 с стоял ровно в
+    # провале между ступенями.
+    if duration <= 0 or ordered + slack <= budget["hard_ceiling_seconds"]:
+        result["D29_avatar_budget"] = "PASS"
+    else:
+        paid = ", ".join(str(scene.get("id", "?")) for scene in scenes
+                         if _avatar_ordered_scene(scene))
+        # Тот же счёт, которым велено считать агенту: сложение длительностей
+        # фраз тех сцен, где он попросил ведущую. Ручек в нём нет, и потому это
+        # не то число, которое выставит HeyGen, — оба и называем.
+        spoken_avatar = sum(float(phrase["end"]) - float(phrase["start"])
+                            for scene, pocket in _scene_phrases(scenes, phrases)
+                            if _avatar_ordered_scene(scene)
+                            for phrase in pocket)
+        result["D29_avatar_budget"] = (
+            "FAIL: секунда ведущей — самая дорогая секунда ролика, и её "
+            "бюджет меряется сложением длительностей фраз: у сцен с "
+            f"`avatarNeeded: true` сейчас выходит {seconds(spoken_avatar)} из "
+            f"{seconds(duration)} ролика, а целься в "
+            f'{seconds(budget["target_seconds"])} — это то же число, что '
+            "названо тебе в задании. Заказ выходит длиннее показа на ручки по "
+            f"краям кусков, поэтому HeyGen выставит {seconds(ordered)}, и это "
+            f'выше границы {seconds(budget["hard_ceiling_seconds"])}, за '
+            "которой план не берут; в твоём счёте фразами та же граница — "
+            f'{seconds(budget["hard_target_seconds"])}, и это то же число, что '
+            "стоит пунктом сверки в задании. Отдай одну сцену из середины "
+            "вставке или схеме, поставив ей `avatarNeeded: false`: хватит "
+            "самой длинной, "
+            "которая не несёт фраз ролей hook и cta. Сейчас с ведущей идут: "
+            f"{paid}")
+
+    # Роль тянется по фразам, а не по сценам, поэтому D28 её не ловит: он
+    # смотрит только первую и последнюю сцену ролика, а хук занимает несколько
+    # фраз и может уехать во вторую сцену.
+    hidden_roles = []
+    short = []
+    for scene, own in _scene_phrases(scenes, phrases):
+        if _avatar_ordered_scene(scene):
+            continue
+        name = str(scene.get("id", "?"))
+        speaking = [phrase for phrase in own
+                    if phrase.get("role") in SPEAKING_ROLES]
+        if speaking:
+            hidden_roles.append(
+                f"{name} — " + ", ".join(
+                    f'фраза {phrase["id"]} роли {phrase.get("role")}'
+                    for phrase in speaking))
+        # Меряем сцену, а не каждую её фразу: заказ склеивает окна одного
+        # решения агента в одно (`_merge_agent_windows` в `avatar_islands.py`),
+        # и валидатор увидит длину всей сцены. Считаем сложением длительностей
+        # фраз — тем же действием, которым велено считать агенту.
+        spoken = sum(float(phrase["end"]) - float(phrase["start"])
+                     for phrase in own)
+        if own and spoken < MIN_FULLSCREEN_S + PHRASE_TIME_MARGIN:
+            named = (f'фраза {own[0]["id"]}' if len(own) == 1
+                     else f'фразы {own[0]["id"]}–{own[-1]["id"]}')
+            short.append(f"{name} — {named}, вместе {seconds(spoken)}")
+
+    result["D30_avatar_roles"] = "PASS" if not hidden_roles else (
+        "FAIL: хук и призыв ролик говорит лицом. На первых секундах зритель "
+        "решает, смотреть ли дальше, а призыву без лица он не верит, и заказ "
+        "по плану, где эти фразы спрятаны, не состоится вовсе. Поставь этим "
+        "сценам `avatarNeeded: true` либо отдай фразы ролей hook и cta "
+        "соседней сцене с ведущей: " + "; ".join(hidden_roles))
+
+    # Смягчать D31 до мерки валидатора нельзя, и это замерено. Валидатор
+    # такие планы принимает — но только потому, что код сам возвращает
+    # слишком короткому куску ведущую (`_restore_short_faceless` в
+    # `avatar_islands.py`). Сплошной перебор (обычная речь, 1024 плана): из 26
+    # планов, которые D31 валит, а заказ собирает, возврат случился во всех 26,
+    # и после возврата 21 план заказывает больше границы 70 %. То есть
+    # смягчение меняет пересдачу на молчаливый перерасход поверх границы.
+    result["D31_faceless_scenes"] = "PASS" if not short else (
+        f"FAIL: сцена без ведущей идёт не короче {seconds(MIN_FULLSCREEN_S)} — "
+        "кадр там держит одна вставка, и на более коротком куске зритель не "
+        "успевает её прочитать. Меряется сцена целиком: сложи длительности её "
+        "фраз. Отдай такой сцене соседнюю фразу либо поставь ей "
+        "`avatarNeeded: true`: " + "; ".join(short))
+
+    # Тот же запрет, что и у валидатора (`validate_edit_plan`,
+    # editplan.py:2548-2556): план, где сцены без ведущей идут подряд дольше
+    # предела, роняет сборку уже с оплаченной озвучкой. Запас берём в сторону
+    # строгости — наши секунды округлены к миллисекунде, а меряют неокруглённые.
+    blind = [stretch for stretch in _blind_stretches(scenes, phrases)
+             if stretch["end"] - stretch["start"]
+             > MAX_FACE_ABSENCE_S - PHRASE_TIME_MARGIN]
+    result["D32_face_absence"] = "PASS" if not blind else (
+        f"FAIL: лицо не пропадает дольше {seconds(MAX_FACE_ABSENCE_S)} подряд — "
+        "без рассказчика зритель бросает ролик, и заказ по такому плану не "
+        "состоится вовсе. Поставь посреди этих сцен сцену с "
+        "`avatarNeeded: true`: " + "; ".join(
+            ", ".join(stretch["scenes"])
+            + f" идут подряд без ведущей "
+              f'{seconds(stretch["end"] - stretch["start"])}'
+            for stretch in blind))
+
+    # Решение обязано быть у каждой сцены. Сцену, где поля нет, гейты считают
+    # заказанной, а перенос решения на фразы её не трогает вовсе
+    # (`apply_agent_coverage` в `avatar_islands.py`): покрытие там остаётся
+    # эвристическим и с планом агента не совпадает. Прогон это и показал —
+    # все гейты зелёные, а заказ упал на «лицо отсутствует дольше 10 с», когда
+    # озвучка уже оплачена.
+    silent = [str(scene.get("id", "?")) for scene in scenes
+              if not isinstance(scene.get("avatarNeeded"), bool)]
+    result["D33_avatar_decisions"] = "PASS" if not silent else (
+        "FAIL: поле `avatarNeeded` стоит у каждой сцены — по нему у HeyGen "
+        "заказывают ведущую. Сцена без него решения не несёт: код оставляет "
+        "там свою догадку о кадре, она расходится с твоим планом, и сборка "
+        "падает уже с оплаченной озвучкой. Поставь `true` там, где фразу "
+        "ведёт лицо, и `false` там, где кадр держит вставка или схема: "
+        + ", ".join(silent))
+
+    # Число моментов под вставку требовала только сборка — и роняла её отказом
+    # (`check_inserts`). До работы 9 это стоило одного прогона; после — падения
+    # с оплаченной озвучкой и заказанной ведущей. Живой прогон 17.08 именно так
+    # и кончился: шесть ранних гейтов зелёные, сборка легла на «вставок 3, а
+    # нужно 4». Счёт тот же самый, чтобы два места не разъехались.
+    shortfall = inserts_shortfall(scenes)
+    result["D34_inserts"] = "PASS" if not shortfall else f"FAIL: {shortfall}"
+    return result
+
+
+#: Копии задания раннего шага. Что копируем и куда: задание и свод правил,
+#: рядом с оригиналом.
+EARLY_BRIEF_COPIES = (("BRIEF.md", "BRIEF.plan.md"),
+                      (f".claude/skills/{SKILL_NAME}/SKILL.md",
+                       "SKILL.plan.md"))
+
+
+def _keep_early_brief(rdir: Path) -> None:
+    """Оставить на диске задание, по которому сделан ранний план.
+
+    Сборка зовёт `write_brief` заново и переписывает и `BRIEF.md`, и свод правил
+    версией «аватар уже заказан» (`prepare` ниже), а решал агент `avatarNeeded`
+    по другой версии — по той, где ведущей ещё нет. Разбирать прогон по
+    переписанным файлам значит читать не то задание, поэтому ранняя версия
+    остаётся рядом отдельными именами.
+    """
+    for source, name in EARLY_BRIEF_COPIES:
+        path = rdir / source
+        if path.exists():
+            shutil.copyfile(path, rdir / name)
+
+
 def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
-                       agent_runner=None) -> dict:
+                       config: dict | None = None,
+                       agent_runner=None, agent_spend=None) -> dict:
     """План агента ДО заказа аватара (работа 9).
 
     Клипов ещё нет, поэтому бриф не навязывает дыр: агент сам решает
     `avatarNeeded` по сценам, и острова закажут по его решению
-    (`avatar_islands.apply_agent_coverage`). План и маркер шага ложатся на
+    (`avatar_islands.apply_agent_coverage`). План и маркеры шага ложатся на
     диск — последующая сборка `assemble_hyperframes` агента повторно не
     зовёт, она подхватит готовый `plan.json`.
 
-    Возвращает `{"board": план, "scenes": сцены с секундами}` — по вторым
-    считаются интервалы заказа. Фреймворка это не касается: заказ у HeyGen
-    идёт до композиции, HyperFrames видит уже готовые клипы.
+    Окружение поднимаем то же, что и сборка: реестр блоков на localhost и
+    `hyperframes.json` в обеих папках. Без конфига их `add` не отказывает, а
+    заводит свой — с публичным реестром heygen-com/hyperframes
+    (`write_project_config` в `hf_catalog.py`, со ссылкой на их
+    `install-locations.md`), и в кадр поехал бы чужой блок.
+
+    `config` — настройки клиента. Из них берутся числа заказа
+    (`avatar_islands`): они уезжают и в задание, и в гейты, чтобы задание, гейт
+    и счёт HeyGen считались одной арифметикой. Без настроек берутся умолчания.
+
+    `agent_spend` — общий кошелёк ролика. Обёртку заводим здесь, а не оставляем
+    её умолчанию `plan_with_agent`: там она осталась бы при функции вместе со
+    своим расходом, и работа планировщика (по замеру $0,45 за ролик) в счёт бы
+    не попала.
+
+    Возвращает `{"board": план, "scenes": сцены с секундами, "gates": отчёт}` —
+    по сценам считаются интервалы заказа, `gates` уезжает в отчёт по сборке.
+    Фреймворка это не касается: заказ у HeyGen идёт до композиции, HyperFrames
+    видит уже готовые клипы.
     """
     rdir = Path(rdir).resolve()
     (rdir / "public").mkdir(parents=True, exist_ok=True)
+    spend = agent_spend if agent_spend is not None else AgentSpend()
     words = _normalize_words(alignment_words)
     duration = quantize(float(timed_scenario.get("total") or 0.0))
     phrases = phrase_timeline(timed_scenario, words,
                               language=timed_scenario.get("language", "ru"))
+    # Один набор чисел на задание и на гейты: профиль островов у клиента может
+    # быть свой, и посчитанное по умолчаниям разошлось бы со счётом.
+    islands = (config or {}).get("avatar_islands")
+    settings = islands_settings(config)
+
+    # Прерванный прогон возобновляем, а не переигрываем: аватар заказан ровно
+    # по этому плану, и второй план после заказа оставил бы оплаченные секунды
+    # без кадра — да ещё и стоил бы второй сессии планировщика.
+    if step_done(rdir, EARLY_PLAN_STEP) and (rdir / "plan.json").exists():
+        board = json.loads((rdir / "plan.json").read_text(encoding="utf-8"))
+        scenes = lay_out_scenes(board.get("scenes") or [], phrases,
+                                duration=duration)
+        return {"board": board, "scenes": scenes,
+                "gates": _early_plan_gates(scenes, duration, phrases,
+                                           settings)}
+
     try:
         passports = catalog_overlay_passports()
     except Exception as error:
         print(f"паспорта накладок не собрались: {error}")
         passports = ""
-    write_brief(rdir, scenario=timed_scenario, face=None, duration=duration,
-                clips=[], phrases=phrases, overlay_passports=passports,
-                avatar_ordered=False)
-    board = plan_with_agent(rdir, runner=agent_runner)
-    scenes = lay_out_scenes(board.get("scenes") or [], phrases,
-                            duration=duration)
+
+    board: dict = {}
+    scenes: list[dict] = []
+    gates: dict = {}
+    reason = None
+    with serve_catalog() as registry_url:
+        write_project_config(rdir, registry_url)
+        for attempt in range(MAX_PLAN_ATTEMPTS):
+            write_brief(rdir, scenario=timed_scenario, face=None,
+                        duration=duration, clips=[], phrases=phrases,
+                        overlay_passports=passports, retry_reason=reason,
+                        avatar_ordered=False, islands=islands)
+            # Ход без плана — такая же причина пересдачи, как и план, не легший
+            # на озвучку: сессия обрывается по своим причинам, а стоит эта
+            # осечка одного переспроса против всей сборки. Ловим только пустой
+            # ответ агента (`AgentPlanMissing`): упавший процесс `claude` —
+            # авария окружения, и второй заход по ней ничего не чинит.
+            try:
+                board = plan_with_agent(
+                    rdir, runner=agent_runner or HeyGenAgentRunner(spend=spend),
+                    avatar_ordered=False)
+            except AgentPlanMissing as error:
+                reason = (
+                    f"{error}. Закончи ход двумя файлами на диске: "
+                    "`storyboard.json` с непустым списком `scenes` и "
+                    "`frame.md`. По этим сценам заказывают ведущую, и без них "
+                    "заказывать нечего")
+                if attempt == MAX_PLAN_ATTEMPTS - 1:
+                    raise
+                continue
+            # Секунды считаем здесь: агент назвал только фразы. План, который
+            # не лёг на озвучку, он поправит сам — это причина пересдачи, а не
+            # авария. Но без сцен заказывать нечего, поэтому на последней
+            # попытке это уже отказ.
+            try:
+                scenes = lay_out_scenes(board.get("scenes") or [], phrases,
+                                        duration=duration)
+            except RuntimeError as error:
+                reason = str(error)
+                if attempt == MAX_PLAN_ATTEMPTS - 1:
+                    raise RuntimeError("план не лёг на озвучку — " + reason)
+                continue
+            gates = _early_plan_gates(scenes, duration, phrases, settings)
+            failed = [f"{key}: {value}" for key, value in gates.items()
+                      if value.startswith("FAIL")]
+            if not failed:
+                break
+            reason = "; ".join(failed)
+
+    # Задание последней попытки — это то самое, по которому сделан лежащий
+    # план: копию снимаем до того, как сборка перепишет оригинал.
+    _keep_early_brief(rdir)
     _marker(rdir, "plan").write_text("ok", encoding="utf-8")
-    return {"board": board, "scenes": scenes}
+    # Память о том, чей план лежит в `plan.json`: аватар закажут ровно по нему,
+    # и сборка второй план спрашивать не вправе.
+    _marker(rdir, EARLY_PLAN_STEP).write_text("ok", encoding="utf-8")
+    return {"board": board, "scenes": scenes, "gates": gates}
 
 
 def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                          avatar_mp4s: list, master_audio, alignment_words: list,
                          avatar_render_plan: dict | None = None,
-                         out_mp4=None, agent_runner=None,
+                         out_mp4=None, agent_runner=None, agent_spend=None,
                          wishes: dict | None = None) -> dict:
-    """Материал -> план агента -> сборка кодом -> гейты -> рендер -> громкость."""
+    """Материал -> план агента -> сборка кодом -> гейты -> рендер -> громкость.
+
+    `agent_spend` — кошелёк расхода сессий (`AgentSpend`). Своего кошелька у
+    вызывающего обычно нет, поэтому сборка заводит его сама: расход планировщика
+    и судьи бироллов уезжает в итог (`agent_cost_usd`, `agent_runs`), откуда его
+    списывает счётчик денег (`meter.claude_agent` в `pipeline.py`). Кто передаёт
+    свою обёртку через `agent_runner`, тот отдаёт её со своим кошельком —
+    иначе её прогоны останутся при ней.
+    """
     rdir = Path(rdir).resolve()
+    spend = agent_spend if agent_spend is not None else AgentSpend()
     public = rdir / "public"
     words = _normalize_words(alignment_words)
     duration = quantize(float(timed_scenario.get("total") or 0.0))
@@ -572,22 +1073,35 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
     saved_clips = json.loads((rdir / "clips.json").read_text(encoding="utf-8"))
 
     gate_result, reason = None, None
+    # План, сделанный до заказа аватара (работа 9), пересдаче не подлежит:
+    # клипы куплены ровно по нему, и второй план после покупки оставил бы
+    # оплаченные секунды без кадра, а неоплаченные — с ведущей, которой нет.
+    # Пересдача тогда сводится к повторной сборке по тому же плану, и брифа с
+    # `avatar_ordered=True` агент не увидит — его вообще не зовут.
+    early_plan = step_done(rdir, EARLY_PLAN_STEP)
     # Каталог поднимаем на всё время сборки: `hyperframes add` ходит в него за
     # каждым блоком, который назвал агент.
     with serve_catalog() as registry_url:
         write_project_config(rdir, registry_url)
         for attempt in range(MAX_COMPOSE_ATTEMPTS):
             if reason is not None:
-                for step in ("plan", "compose", "gates", "shots", "render",
-                             "loudness"):
+                steps = ["compose", "gates", "shots", "render", "loudness"]
+                if not early_plan:
+                    steps.insert(0, "plan")
+                for step in steps:
                     reset_step(rdir, step)
-                write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
-                            duration=duration, clips=saved_clips,
-                            retry_reason=reason, phrases=phrases,
-                            overlay_passports=_passports(), wishes=wishes)
+                if not early_plan:
+                    write_brief(rdir, scenario=timed_scenario,
+                                face=load_face(rdir), duration=duration,
+                                clips=saved_clips, retry_reason=reason,
+                                phrases=phrases,
+                                overlay_passports=_passports(), wishes=wishes)
 
-            board = run_step(rdir, "plan",
-                             lambda: plan_with_agent(rdir, runner=agent_runner))
+            # Обёртку заводим здесь, а не внутри `plan_with_agent`: там она
+            # осталась бы при функции вместе со своим расходом, и работа
+            # планировщика (по замеру $0,45 за ролик) в счёт бы не попала.
+            board = run_step(rdir, "plan", lambda: plan_with_agent(
+                rdir, runner=agent_runner or HeyGenAgentRunner(spend=spend)))
             if board is None:
                 # Не `storyboard.json`: его переписывает сборка, дописывая
                 # секунды и снимая `phrases`. Пересборка без агента обязана
@@ -677,14 +1191,22 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                         float(scene.get("endSec", 0)))
                 with sdk_session() as sdk:
                     found = resolve_all(public, requests,
-                                        context=board.get("brollContext"))
+                                        context=board.get("brollContext"),
+                                        agent_spend=spend)
                     lost = settle_inserts(board, found, saved_clips, duration,
                                           public=public)
                     if lost:
                         print(f"вставка не нашлась у сцен: {', '.join(lost)} — "
                               "ведущая там встала во весь кадр")
+                    # Значок без файла и плашку с непригодным блоком
+                    # снимаем здесь же: раньше их снимала сама сборка, то
+                    # есть после разбора пустых сцен, и сцена, стоявшая на
+                    # одном значке, доезжала до зрителя фоном с титром.
+                    settle_fillers(board, found)
                     # Потеря вставки перекраивает кадр так же, как снятая
                     # серия, — и так же плодит пары одинаковых кусков.
+                    # `dedupe_neighbours` заодно разбирает сцены, кадр
+                    # которых закрыть уже нечем (`settle_empty_frames`).
                     dedupe_neighbours(board.get("scenes") or [],
                                       clips=saved_clips, duration=duration)
                     # Запасную схему подбираем вторым заходом и только для тех
@@ -694,7 +1216,8 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     schema = schema_intents(board.get("scenes") or [],
                                             theme=theme)
                     if schema:
-                        found.update(resolve_all(public, schema))
+                        found.update(resolve_all(public, schema,
+                                                 agent_spend=spend))
                     build_composition(rdir, sdk, storyboard=board,
                                       clips=saved_clips, duration=duration,
                                       words=words, resolved=found,
@@ -827,5 +1350,8 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
 
     return {"mp4": str(final), "dur": duration, "timed_scenario": timed_scenario,
             "words_fixed": words, "gates": gate_result,
-            "agent_cost_usd": getattr(agent_runner, "total_cost_usd", 0.0),
-            "agent_runs": getattr(agent_runner, "runs", [])}
+            # Расход берём из кошелька, а не из обёртки: обёрток за сборку
+            # несколько (план на Sonnet 5, суд бироллов на Haiku 4.5), и каждая
+            # знает только про себя.
+            "agent_cost_usd": spend.total_cost_usd,
+            "agent_runs": spend.runs}

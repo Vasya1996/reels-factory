@@ -2,10 +2,10 @@
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
-    <!-- GSAP ДО всего: их компонент субтитров строит таймлайн в
-         `document.fonts.ready.then()` и зовёт голый `gsap` (caption-highlight
-         .html:405), сам подключая библиотеку в <head> (там же:13). Тег после
-         сниппета проигрывал гонку — подробности в hf_compose. -->
+    <!-- GSAP ДО всего: их компонент субтитров зовёт голый `gsap`
+         (caption-highlight.html:187), сам подключая библиотеку в <head>
+         (там же:13). Тег после сниппета проигрывал гонку — подробности
+         и что у них с тех пор изменилось в hf_compose. -->
     <script src="vendor/gsap.min.js"></script>
     <style>
       * { box-sizing: border-box; }

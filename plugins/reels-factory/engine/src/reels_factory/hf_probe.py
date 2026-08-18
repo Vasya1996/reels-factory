@@ -42,7 +42,7 @@ def _node() -> str:
     if not node:
         raise RuntimeError(
             "нет node в PATH — проба живой композиции не запускается; "
-            "без неё гейты D8/D14/D15 не проверены")
+            "без неё гейты D8/D14/D15/D26 не проверены")
     return node
 
 
@@ -227,6 +227,82 @@ def _gate_inserts_visible(samples: list[dict]) -> str:
     return f"PASS: вставок в кадре {len(visible)}"
 
 
+#: Что считается содержимым кадра — закрытый список идентификаторов, которые
+#: ставит `hf_compose`: клип ведущей (`clip-NN`), вставка (`ins-…`), схема
+#: (`schema-…`), накладка (`ovl-…`), значок (`icon-…`). Фон, титр, подложка
+#: читаемости (`scrim-…`) и вспышка (`fx-…`) сюда не входят намеренно: на
+#: пустом кадре прогона hf-live2 вспышка стояла visible=true, и правило «видно
+#: хоть что-нибудь» объявило бы кадр занятым.
+FRAME_CONTENT_PREFIXES = ("clip-", "ins-", "schema-", "ovl-", "icon-")
+
+#: Сколько кадр может простоять без содержимого. Выборки идут каждые 0,25 с;
+#: одна-две подряд — это шов между клипами (их сетка 1/30 с плюс наш «кадр+1»),
+#: а не дыра. Третья значит, что смотреть не на что уже больше полусекунды.
+EMPTY_FRAME_MAX = 0.5
+
+
+def _frame_covered(sample: dict) -> bool:
+    """В этот момент в кадре есть что-то из закрытого списка."""
+    if (sample.get("videoRect") or {}).get("visible"):
+        return True
+    for clip in sample.get("clips") or []:
+        if clip.get("visible") and str(clip.get("id") or "").startswith(
+                FRAME_CONTENT_PREFIXES):
+            return True
+    return False
+
+
+def _empty_spans(samples: list[dict]) -> list[tuple[float, float]]:
+    """Куски времени, на которых кадр пуст. Конец куска — первая занятая
+    выборка после него, а у хвоста — последняя выборка плюс шаг."""
+    times = [float(sample["time"]) for sample in samples]
+    steps = [b - a for a, b in zip(times, times[1:]) if b > a]
+    step = min(steps) if steps else DEFAULT_INTERVAL
+    spans, start = [], None
+    for sample, time in zip(samples, times):
+        if _frame_covered(sample):
+            if start is not None:
+                spans.append((start, time))
+                start = None
+        elif start is None:
+            start = time
+    if start is not None:
+        spans.append((start, times[-1] + step))
+    return spans
+
+
+def _gate_frame_content(samples: list[dict]) -> str:
+    """В кадре есть что показать — судится по собранной композиции.
+
+    D25 отвечает на тот же вопрос по раскадровке и потому промахивается: он
+    читает `needsSchema` — просьбу кода нарисовать схему, а не факт, что она
+    нарисовалась. Прогон hf-live2 отдал зрителю 2,7 с фона с титром (сцена
+    s-07, 25,43–28,13 с), и оба плановых гейта сказали PASS.
+
+    Здесь считается то, что видит зритель, и до платного рендера: проба
+    открывает ту же композицию тем же браузером, которым рендерит движок.
+    Готовой проверки на пустой кадр у них нет: ближайший по смыслу код их
+    линтера — `subcomposition_blanks_before_host`
+    (packages/lint/src/rules/composition.ts:981), и он судит один элемент, а не
+    кусок таймлайна, на котором не видно ничего. Их `snapshot --describe`
+    (packages/cli/src/commands/snapshot.ts:636) посудил бы отрисованный кадр
+    моделью, но включается только при GEMINI_API_KEY, которого у нас нет: в
+    прогоне hf-live2 он так и написал «GEMINI_API_KEY not set, skipping»
+    (там же:739, hf-live2/snapshot.log).
+
+    Находка обращена к коду, а не к агенту: кадр на этом месте собирает
+    `refill_scene`, и чинить его агенту нечем.
+    """
+    spans = [(start, end) for start, end in _empty_spans(samples)
+             if end - start > EMPTY_FRAME_MAX + 1e-6]
+    if not spans:
+        return "PASS: кадр занят на всех выборках"
+    shown = "; ".join(f"{start:g}–{end:g} с ({end - start:.1f} с)"
+                      for start, end in spans[:5])
+    return (f"FAIL: кадр пуст — {shown}: ни ведущей, ни вставки, ни схемы, ни "
+            "значка, ни накладки, только фон с титром")
+
+
 def gates_from_report(report: dict, face: dict | None = None) -> dict[str, str]:
     """Судить готовый отчёт пробы. Отдельно от запуска — ради тестов."""
     samples = report.get("samples") or []
@@ -239,12 +315,14 @@ def gates_from_report(report: dict, face: dict | None = None) -> dict[str, str]:
         reason = ("FAIL: таймлайн не двигался под перемоткой — "
                   "вердикты пробы недостоверны")
         return {"D8_face": reason, "D14_presenter_moves": reason,
-                "D15_inserts_visible": reason, "D17_service_text": reason}
+                "D15_inserts_visible": reason, "D17_service_text": reason,
+                "D26_frame_content": reason}
     return {
         "D8_face": _gate_face(samples, face),
         "D14_presenter_moves": _gate_presenter_moves(samples),
         "D15_inserts_visible": _gate_inserts_visible(samples),
         "D17_service_text": _gate_service_text(samples),
+        "D26_frame_content": _gate_frame_content(samples),
     }
 
 

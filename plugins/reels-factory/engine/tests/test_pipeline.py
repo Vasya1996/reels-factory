@@ -121,6 +121,30 @@ def _fakes(monkeypatch, tmp_path, calls, captured=None):
     return fake_synth, fake_assemble
 
 
+def _fake_early_plan(monkeypatch, calls=None, scenes=None):
+    """Заглушка раннего плана агента (работа 9).
+
+    После работы 9 аватар заказывается ПОСЛЕ плана агента, поэтому островной
+    путь зовёт `hf_render.plan_before_avatar` — то есть настоящую сессию
+    `claude -p`. В тестах она подменяется здесь.
+
+    Имя в `pipeline` заранее не известно (в модуле принят стиль
+    `from … import assemble_hyperframes as _assemble`), поэтому подменяются оба
+    вероятных: `_plan_before_avatar` и `plan_before_avatar`.
+    """
+    сцены = list(scenes or [])
+
+    def fake_plan(rdir, timed_scenario, **kw):
+        if calls is not None:
+            calls.append(("plan_before_avatar", Path(rdir),
+                          kw.get("agent_spend"), kw.get("config")))
+        return {"board": {"scenes": сцены}, "scenes": сцены, "gates": {}}
+
+    for name in ("_plan_before_avatar", "plan_before_avatar"):
+        monkeypatch.setattr(pipeline, name, fake_plan, raising=False)
+    return fake_plan
+
+
 def _wd_with_scenario(tmp_path):
     wd = tmp_path / "wd"; wd.mkdir()
     (wd / "scenario.json").write_text(json.dumps(_scenario(), ensure_ascii=False), encoding="utf-8")
@@ -362,6 +386,7 @@ def test_avatar_islands_заменяет_block_by_block_photo_avatar_iv(
     calls = []
     captured = {}
     fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    _fake_early_plan(monkeypatch)
     avatar = _FakeAvatar()
     avatar.engine = "avatar_iv"
     wd = _wd_with_scenario(tmp_path)
@@ -441,6 +466,7 @@ def test_avatar_islands_с_meter_не_падает_и_тарифицирует_�
     каждому отрендеренному шоту. Фейки, без живых вызовов HeyGen/ffmpeg."""
     calls = []
     fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    _fake_early_plan(monkeypatch)
     avatar = _FakeAvatar()
     avatar.engine = "avatar_iv"
     wd = _wd_with_scenario(tmp_path)
@@ -510,6 +536,176 @@ def test_avatar_islands_с_meter_не_падает_и_тарифицирует_�
         seconds == 3.5 and cached is False and twin is False
         for seconds, cached, twin in meter.heygen_calls
     )
+
+
+def test_на_островах_работа_агента_тоже_уходит_в_счёт(monkeypatch, tmp_path):
+    """Аватар-острова меняют только заказ HeyGen: план островов считает наш
+    детерминированный код (`build_avatar_render_plan`), а монтаж планирует агент.
+    Значит его расход обязан списываться и здесь, ровно как на обычном пути —
+    это боевая настройка сервера.
+
+    Кошелёк ролика (`AgentSpend`) заводит конвейер и отдаёт его и раннему плану,
+    и сборке: только так расход планировщика попадает в счёт при любом исходе.
+    Поэтому фейк сборки кладёт прогон в переданный кошелёк, как это делает
+    настоящая `assemble_hyperframes`."""
+    calls = []
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    _fake_early_plan(monkeypatch)
+    avatar = _FakeAvatar()
+    avatar.engine = "avatar_iv"
+    прогон = {"model": "claude-sonnet-5", "usage": {"output_tokens": 1000}}
+    кошельки = []
+
+    def сборка_с_агентом(rdir, timed_scenario, **kw):
+        res = fa(rdir, timed_scenario, **kw)
+        spend = kw.get("agent_spend")
+        кошельки.append(spend)
+        if spend is not None:
+            spend.add(прогон, 1.24)
+            res["agent_runs"] = spend.runs
+            res["agent_cost_usd"] = spend.total_cost_usd
+        return res
+
+    def fake_master(scenario, config, workdir, voice_id=None, meter=None):
+        master_wav = Path(workdir) / "voice_master.wav"
+        master_wav.write_bytes(b"master-islands")
+        timed = json.loads(json.dumps(scenario))
+        block_wavs, words = [], []
+        for index, block in enumerate(timed["blocks"]):
+            block["start"], block["end"] = index * 2.0, (index + 1) * 2.0
+            wav = Path(workdir) / f"voice_{index}.wav"
+            wav.write_bytes(b"legacy-slice")
+            block_wavs.append(wav)
+            words.append({"start": index * 2.0 + 0.2, "end": (index + 1) * 2.0 - 0.2,
+                          "text": block["speech"], "block_index": index})
+        timed["total"] = 8.0
+        return SimpleNamespace(wav=master_wav, block_wavs=tuple(block_wavs),
+                               words=tuple(words), timed_scenario=timed)
+
+    def fake_render(master_wav, plan, client, workdir, cache_dir, *, edit_plan,
+                    meter=None):
+        clips = []
+        for shot in plan["shots"]:
+            clip = Path(workdir) / f"{shot['id']}.mp4"
+            clip.write_bytes(b"offline-avatar-iv")
+            clips.append(clip)
+        return SimpleNamespace(clips=tuple(clips), plan=plan,
+                               manifest={"shots": [{"status": "ready"}
+                                                   for _ in clips]})
+
+    cfg = _cfg("avatar")
+    cfg["master_audio"] = {"enabled": True}
+    cfg["avatar_islands"] = {"enabled": True}
+    meter = _FakeMeter()
+    res = pipeline.run_make(
+        cfg, _wd_with_scenario(tmp_path), avatar_client=avatar, synth_fn=fs,
+        assemble_fn=сборка_с_агентом, master_audio_fn=fake_master,
+        avatar_render_fn=fake_render, meter=meter,
+    )
+
+    assert res["ok"] is True, res.get("error")
+    assert кошельки and кошельки[0] is not None, "сборке не передан кошелёк"
+    assert meter.agent_calls == [([прогон], 1.24)]
+
+
+def test_ранний_план_агента_идёт_до_заказа_аватара(monkeypatch, tmp_path):
+    """Работа 9 (E): аватар заказывается ПО плану агента, а не до него.
+
+    Заготовка есть, но не подключена — `hf_render.plan_before_avatar` и
+    `avatar_islands.apply_agent_coverage` никто не зовёт, поэтому поле
+    `avatarNeeded` сегодня ни на что не влияет и деньги HeyGen тратятся по
+    эвристике. Порядок обязателен именно такой: план -> разметка покрытия по
+    плану -> план заказа -> заказ. Кошелёк ролика при этом один на ранний план
+    и на сборку.
+    """
+    calls = []
+    captured = {}
+    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    avatar = _FakeAvatar()
+    avatar.engine = "avatar_iv"
+    wd = _wd_with_scenario(tmp_path)
+
+    сцены = [{"id": "s-00", "startSec": 0.0, "endSec": 4.0,
+              "presenter": "punch", "avatarNeeded": True},
+             {"id": "s-01", "startSec": 4.0, "endSec": 8.0,
+              "presenter": "none", "avatarNeeded": False}]
+    _fake_early_plan(monkeypatch, calls=calls, scenes=сцены)
+
+    def fake_coverage(edit_plan, scenes):
+        calls.append(("apply_agent_coverage", scenes, None))
+        return dict(json.loads(json.dumps(edit_plan)), coverage_by_agent=True)
+
+    for name in ("apply_agent_coverage", "_apply_agent_coverage"):
+        monkeypatch.setattr(pipeline, name, fake_coverage, raising=False)
+
+    заказ = {}
+
+    def fake_avatar_plan(edit_plan, config, *, master_audio_sha256=None):
+        calls.append(("avatar_plan", None, None))
+        заказ["edit_plan"] = edit_plan
+        return {"format_version": 1, "engine_scope": "photo_avatar_iv",
+                "shots": [{"id": "shot-000"}], "summary": {"island_count": 1},
+                "validation": {"all_pass": True}}
+
+    def fake_render(master_wav, plan, client, workdir, cache_dir, *, edit_plan,
+                    meter=None):
+        calls.append(("avatar_render", None, None))
+        clip = Path(workdir) / "shot-000.mp4"
+        clip.write_bytes(b"offline-avatar-iv")
+        return SimpleNamespace(clips=(clip,), plan=plan,
+                               manifest={"shots": [{"status": "ready"}]})
+
+    def fake_master(scenario, config, workdir, voice_id=None, meter=None):
+        master_wav = Path(workdir) / "voice_master.wav"
+        master_wav.write_bytes(b"master-islands")
+        timed = json.loads(json.dumps(scenario))
+        block_wavs, words = [], []
+        for index, block in enumerate(timed["blocks"]):
+            block["start"], block["end"] = index * 2.0, (index + 1) * 2.0
+            wav = Path(workdir) / f"voice_{index}.wav"
+            wav.write_bytes(b"legacy-slice")
+            block_wavs.append(wav)
+            words.append({"start": index * 2.0 + 0.2,
+                          "end": (index + 1) * 2.0 - 0.2,
+                          "text": block["speech"], "block_index": index})
+        timed["total"] = 8.0
+        return SimpleNamespace(wav=master_wav, block_wavs=tuple(block_wavs),
+                               words=tuple(words), timed_scenario=timed)
+
+    cfg = _cfg("avatar")
+    cfg["master_audio"] = {"enabled": True}
+    cfg["avatar_islands"] = {"enabled": True}
+    res = pipeline.run_make(
+        cfg, wd, avatar_client=avatar, synth_fn=fs, assemble_fn=fa,
+        master_audio_fn=fake_master, avatar_plan_fn=fake_avatar_plan,
+        avatar_render_fn=fake_render,
+    )
+
+    assert res["ok"] is True, res.get("error")
+    этапы = [call[0] for call in calls]
+    for шаг in ("plan_before_avatar", "apply_agent_coverage", "avatar_plan",
+                "avatar_render"):
+        assert шаг in этапы, f"шага {шаг} в прогоне не было"
+    assert (этапы.index("plan_before_avatar")
+            < этапы.index("apply_agent_coverage")
+            < этапы.index("avatar_plan") < этапы.index("avatar_render"))
+    # план агента разложен по той же папке, куда потом идёт сборка
+    ранний = next(call for call in calls if call[0] == "plan_before_avatar")
+    assert ранний[1] == wd
+    # островам достались сцены агента и размеченный по ним план
+    покрытие = next(call for call in calls
+                    if call[0] == "apply_agent_coverage")
+    assert покрытие[1] == сцены
+    assert заказ["edit_plan"].get("coverage_by_agent") is True
+    # кошелёк один: расход раннего плана и сборки уходит в один счёт
+    assert ранний[2] is not None, "раннему плану не передан кошелёк"
+    assert captured["agent_spend"] is ранний[2]
+    # Настройки клиента доехали до раннего шага: по ним считаются и числа в
+    # задании агенту, и гейты плана, и сам заказ у HeyGen (`avatar_islands`).
+    # Без этой передачи задание и гейты считали бы по умолчаниям, а счёт
+    # пришёл бы по профилю клиента.
+    assert ранний[3] is cfg, "раннему плану не переданы настройки клиента"
+    assert (ранний[3] or {}).get("avatar_islands") == cfg["avatar_islands"]
 
 
 def test_avatar_блок_на_100pct_закрытый_вставкой_не_дёргает_heygen(monkeypatch, tmp_path):
@@ -899,12 +1095,16 @@ class _FakeMeter:
     def __init__(self):
         self.heygen_calls = []
         self.eleven_calls = []
+        self.agent_calls = []
 
     def heygen(self, seconds, *, cached=False, twin=False):
         self.heygen_calls.append((seconds, cached, twin))
 
     def elevenlabs(self, chars):
         self.eleven_calls.append(chars)
+
+    def claude_agent(self, runs, reported_usd=0.0):
+        self.agent_calls.append((runs, reported_usd))
 
 
 def test_кэшированный_фрагмент_не_тарифицируется():
@@ -980,6 +1180,110 @@ def test_master_audio_с_meter_тарифицирует_единственный
     assert meter.eleven_calls[0] == sum(len(b["speech"]) for b in _scenario()["blocks"])
 
 
+def test_работа_агента_монтажа_попадает_в_счёт(monkeypatch, tmp_path):
+    """Планировщик и судья бироллов — платный шаг наравне с HeyGen: их расход
+    копится в кошельке ролика, и он должен уйти в метр, а не потеряться.
+
+    Кошелёк заводит конвейер и передаёт его сборке (`agent_spend`): иначе расход
+    раннего плана и упавшей сборки в счёт не попадёт вовсе."""
+    calls = []
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    прогон = {"model": "claude-sonnet-5", "usage": {"output_tokens": 1000}}
+    кошельки = []
+
+    def сборка_с_агентом(rdir, timed_scenario, **kw):
+        res = fa(rdir, timed_scenario, **kw)
+        spend = kw.get("agent_spend")
+        кошельки.append(spend)
+        if spend is not None:
+            spend.add(прогон, 1.24)
+            res["agent_runs"] = spend.runs
+            res["agent_cost_usd"] = spend.total_cost_usd
+        return res
+
+    meter = _FakeMeter()
+    res = pipeline.run_make(
+        _cfg("avatar"), _wd_with_scenario(tmp_path), avatar_client=_FakeAvatar(),
+        synth_fn=fs, assemble_fn=сборка_с_агентом, meter=meter,
+    )
+
+    assert res["ok"] is True, res.get("error")
+    assert кошельки and кошельки[0] is not None, "сборке не передан кошелёк"
+    assert meter.agent_calls == [([прогон], 1.24)]
+
+
+def test_работа_агента_списывается_и_при_падении_сборки(monkeypatch, tmp_path):
+    """Дефект 11: `meter.claude_agent` стоял после успешной сборки, поэтому
+    упавший прогон не списывал ни планировщика, ни судью бироллов — а деньги за
+    них уже потрачены. У бота та же задача решена через try/finally
+    (`_charge_claude` в `bot.py`)."""
+    calls = []
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    meter = _FakeMeter()
+    кошельки = []
+
+    def падающая_сборка(rdir, timed_scenario, **kw):
+        кошельки.append(kw.get("agent_spend"))
+        if kw.get("agent_spend") is not None:
+            kw["agent_spend"].add(
+                {"model": "claude-sonnet-5", "usage": {"output_tokens": 1000}},
+                0.45)
+        raise RuntimeError("рендер упал на середине")
+
+    res = pipeline.run_make(
+        _cfg("avatar"), _wd_with_scenario(tmp_path), avatar_client=_FakeAvatar(),
+        synth_fn=fs, assemble_fn=падающая_сборка, meter=meter,
+    )
+
+    assert кошельки and кошельки[0] is not None, "сборке не передан кошелёк"
+    assert res["ok"] is False and res["stage"] == "assemble"
+    assert len(meter.agent_calls) == 1, "расход агента при падении не списан"
+    прогоны, стоимость = meter.agent_calls[0]
+    assert [run["model"] for run in прогоны] == ["claude-sonnet-5"]
+    assert стоимость == 0.45
+
+
+def test_повторный_прогон_не_списывает_работу_агента_дважды(monkeypatch, tmp_path):
+    """Сборка возобновляемая: маркеры шагов позволяют запустить `run_make` на
+    той же папке ещё раз, и второй прогон агента уже не зовёт. Списываться
+    должно только то, что потрачено этим прогоном, — иначе кошелёк ролика,
+    заведённый один раз на модуль, вычтет работу первого прогона второй раз."""
+    calls = []
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    meter = _FakeMeter()
+    wd = _wd_with_scenario(tmp_path)
+    # первый прогон платит за план, второй подхватывает готовый и не платит
+    по_прогонам = [[({"model": "claude-sonnet-5",
+                      "usage": {"output_tokens": 1000}}, 1.0)], []]
+
+    кошельки = []
+
+    def сборка(rdir, timed_scenario, **kw):
+        res = fa(rdir, timed_scenario, **kw)
+        spend = kw.get("agent_spend")
+        кошельки.append(spend)
+        if spend is not None:
+            for run, cost in по_прогонам.pop(0):
+                spend.add(run, cost)
+            res["agent_runs"] = spend.runs
+            res["agent_cost_usd"] = spend.total_cost_usd
+        return res
+
+    for _ in range(2):
+        res = pipeline.run_make(
+            _cfg("avatar"), wd, avatar_client=_FakeAvatar(),
+            synth_fn=fs, assemble_fn=сборка, meter=meter,
+        )
+        assert res["ok"] is True, res.get("error")
+
+    assert all(кошелёк is not None for кошелёк in кошельки), (
+        "сборке не передан кошелёк")
+    # кошелёк заводится на каждый прогон заново — иначе второй спишет первый
+    assert кошельки[0] is not кошельки[1]
+    assert [стоимость for _, стоимость in meter.agent_calls] == [1.0, 0.0]
+    assert sum(len(прогоны) for прогоны, _ in meter.agent_calls) == 1
+
+
 def test_без_монтажа_один_проход_heygen(monkeypatch, tmp_path):
     """montage=False: единая master-дорожка -> один вызов HeyGen, без edit_plan,
     assemble, verify и поблочной озвучки."""
@@ -1020,3 +1324,88 @@ def test_без_монтажа_один_проход_heygen(monkeypatch, tmp_pat
     json.dumps(res)
 
 
+
+
+def test_красный_план_не_едет_в_заказ_а_откатывается_на_эвристику(
+        monkeypatch, tmp_path):
+    """Ревизия четвёртого круга померила цену этой дыры: после последней
+    попытки код заказывал ведущую по плану с красными гейтами, а такой план
+    заваливает `build_avatar_render_plan` — то есть сборка падает с уже
+    оплаченной озвучкой (95 % расстановок обычной речи).
+
+    Решение заказчика: откатываемся на прежнюю разметку. Клиент получает
+    ролик, деньги за озвучку не сгорают, решение агента частично теряется — и
+    это видно в гейтах ролика.
+    """
+    calls = []
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    avatar = _FakeAvatar()
+    avatar.engine = "avatar_iv"
+    wd = _wd_with_scenario(tmp_path)
+
+    сцены = [{"id": "s-00", "startSec": 0.0, "endSec": 4.0,
+              "presenter": "punch", "avatarNeeded": True},
+             {"id": "s-01", "startSec": 4.0, "endSec": 8.0,
+              "presenter": "none", "avatarNeeded": False}]
+
+    def fake_plan(rdir, timed_scenario, **kw):
+        calls.append(("plan_before_avatar", Path(rdir), None))
+        return {"board": {"scenes": сцены}, "scenes": сцены,
+                "gates": {"D29_avatar_budget": "FAIL: заказ выше границы"}}
+
+    for name in ("_plan_before_avatar", "plan_before_avatar"):
+        monkeypatch.setattr(pipeline, name, fake_plan, raising=False)
+
+    def fake_coverage(edit_plan, scenes):
+        calls.append(("apply_agent_coverage", scenes, None))
+        return edit_plan
+
+    for name in ("apply_agent_coverage", "_apply_agent_coverage"):
+        monkeypatch.setattr(pipeline, name, fake_coverage, raising=False)
+
+    def fake_avatar_plan(edit_plan, config, *, master_audio_sha256=None):
+        calls.append(("avatar_plan", None, None))
+        return {"format_version": 1, "engine_scope": "photo_avatar_iv",
+                "shots": [{"id": "shot-000"}], "summary": {"island_count": 1},
+                "validation": {"all_pass": True}}
+
+    def fake_render(master_wav, plan, client, workdir, cache_dir, *, edit_plan,
+                    meter=None):
+        clip = Path(workdir) / "shot-000.mp4"
+        clip.write_bytes(b"offline-avatar-iv")
+        return SimpleNamespace(clips=(clip,), plan=plan,
+                               manifest={"shots": [{"status": "ready"}]})
+
+    def fake_master(scenario, config, workdir, voice_id=None, meter=None):
+        master_wav = Path(workdir) / "voice_master.wav"
+        master_wav.write_bytes(b"master-islands")
+        timed = json.loads(json.dumps(scenario))
+        block_wavs, words = [], []
+        for index, block in enumerate(timed["blocks"]):
+            block["start"], block["end"] = index * 2.0, (index + 1) * 2.0
+            wav = Path(workdir) / f"voice_{index}.wav"
+            wav.write_bytes(b"slice")
+            block_wavs.append(wav)
+            words.append({"start": index * 2.0 + 0.2,
+                          "end": (index + 1) * 2.0 - 0.2,
+                          "text": block["speech"], "block_index": index})
+        timed["total"] = 8.0
+        return SimpleNamespace(wav=master_wav, block_wavs=tuple(block_wavs),
+                               words=tuple(words), timed_scenario=timed)
+
+    cfg = _cfg("avatar")
+    cfg["master_audio"] = {"enabled": True}
+    cfg["avatar_islands"] = {"enabled": True}
+    res = pipeline.run_make(
+        cfg, wd, avatar_client=avatar, synth_fn=fs, assemble_fn=fa,
+        master_audio_fn=fake_master, avatar_plan_fn=fake_avatar_plan,
+        avatar_render_fn=fake_render,
+    )
+
+    assert res["ok"] is True, res.get("error")
+    этапы = [call[0] for call in calls]
+    assert "apply_agent_coverage" not in этапы, (
+        "решение агента применили, хотя его же гейты красные")
+    assert "avatar_plan" in этапы, "ролик всё равно должен собраться"
+    assert any(str(v).startswith("FAIL")
+               for v in (res.get("gates") or {}).values())

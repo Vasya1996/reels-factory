@@ -87,6 +87,10 @@ class ClaudeSkillRunner:
         # хуманизатор, судья), поэтому нужна и сумма: по last_cost_usd
         # видно только последний вызов, и остальные потерялись бы.
         self.total_cost_usd: float = 0.0
+        # Под подпиской CLI присылает нулевую стоимость, и единственный честный
+        # счёт остаётся по токенам (`claude_run_cost_usd` в billing.py) —
+        # поэтому храним `usage` каждого вызова, а не только сумму.
+        self.runs: list[dict] = []
 
     def _env(self) -> dict:
         env = dict(os.environ)
@@ -136,6 +140,15 @@ class ClaudeSkillRunner:
         self.last_cost_usd = float(cost) if cost is not None else None
         if self.last_cost_usd:
             self.total_cost_usd += self.last_cost_usd
+        self.runs.append({
+            "skill": skill,
+            "cost_usd": cost,
+            "usage": obj.get("usage"),
+            # Модель называет сам ответ: скиллы зовутся без `--model`, поэтому
+            # тут может стоять и None — тогда счёт идёт по ставке модели по
+            # умолчанию (`claude_default_model`).
+            "model": obj.get("model"),
+        })
         # Свою ошибку (протухший вход, упёршийся лимит ходов, отказ) CLI кладёт
         # в то же поле result и не всегда меняет код возврата. Без этой проверки
         # текст ошибки уезжает дальше как ответ скилла, и вызывающий код

@@ -46,7 +46,8 @@ from pathlib import Path
 
 from reels_factory.analytics import EventStore, render_funnel
 from reels_factory.billing import (
-    LedgerStore, apply_markup, claude_cost_micro, estimate_micro,
+    LedgerStore, apply_markup, claude_cost_micro, claude_run_cost_usd,
+    estimate_micro,
 )
 from reels_factory.config import (
     OUT_H, OUT_W, WORK_ROOT, load_billing_config, load_config,
@@ -327,6 +328,17 @@ READY_MSG = (
     "«Быстро, без монтажа» — один говорящий ведущий во весь кадр, без вставок "
     "и титров."
 )
+#: Цены обоих путей на экране выбора. До этого экрана точной цены быть не
+#: может: пути стоят по-разному, а какой из них нужен, человек говорит здесь.
+READY_PRICE_MSG = "\n\nС монтажом — примерно {montage}, без монтажа — {plain}."
+
+#: Имена провайдеров в чеке: человек платит за ведущую и монтаж, а не за
+#: heygen и claude — названия наших подрядчиков ему ничего не говорят.
+PROVIDER_NAMES = {
+    "heygen": "ведущая",
+    "elevenlabs": "озвучка",
+    "claude": "монтаж",
+}
 WISH_THANKS = "Записал, спасибо. Учту в работе."
 WISH_SKIPPED = "Хорошо, без пожеланий."
 WISH_EMPTY = "Жду пожелание текстом — одним сообщением."
@@ -573,26 +585,75 @@ def format_usd(micro: int) -> str:
     return f"{sign}${abs(micro) / 1_000_000:.2f}"
 
 
-def estimate_material_micro(session: dict, billing: dict) -> int:
+def island_avatar_share(chat_id: int, billing: dict, *,
+                        montage: bool = True) -> float | None:
+    """Доля ведущей в кадре, если этот ролик пойдёт островами; иначе None.
+
+    Одно место на всех, кто называет цену: экран выбора пути и очередь
+    (`enqueue_build`) обязаны считать одну и ту же сборку одинаково. Разойдись
+    они — человек пополнит ровно по экрану и получит отказ уже после того, как
+    заплатил.
+
+    Условие ровно то же, по которому island-путь берёт `run_make`: включены и
+    avatar_islands, и master_audio. Быстрый путь (montage=False) островов не
+    знает вовсе, поэтому доля к нему не применяется.
+
+    Профиль может отсутствовать (человек ещё не заведён) или быть битым:
+    `avatar_islands_enabled` зовёт `avatar_islands_settings`, а тот на
+    недопустимых диапазонах поднимает голый ValueError, которого load_config не
+    проверяет. Это лишь оценка ДО платного шага — она не должна ронять ни
+    разговор, ни постановку в очередь, поэтому ловим широко и откатываемся на
+    полную цену.
+    """
+    if not montage:
+        return None
+    from reels_factory.avatar_islands import avatar_islands_enabled
+    from reels_factory.clients import load_client
+    from reels_factory.master_audio import master_audio_enabled
+
+    try:
+        profile = load_client(str(chat_id))
+        if avatar_islands_enabled(profile) and master_audio_enabled(profile):
+            return float(billing["rates"]["avatar_visible_share"])
+    except Exception:
+        return None
+    return None
+
+
+def estimate_material_micro(session: dict, billing: dict, *,
+                            montage: bool = True,
+                            avatar_share: float | None = None) -> int:
     """Во сколько обойдётся ролик по принятому материалу — до генерации.
 
-    В режиме готового текста символы уже известны: это ровно те слова, что
-    уйдут в озвучку. В режиме сырья сценария ещё нет, поэтому берём верхнюю
-    границу длины ролика (DEFAULT_MAX_DURATION_S) — оценка сверху честнее,
-    чем приятная снизу.
+    Готовый сценарий точнее всего: в озвучку уйдут ровно его реплики, теми же
+    блоками их считает enqueue_build. Пока сценария нет, в режиме готового
+    текста берём символы материала, а в режиме сырья — верхнюю границу длины
+    ролика (DEFAULT_MAX_DURATION_S): оценка сверху честнее, чем приятная снизу.
 
-    Долю аватара в кадре (avatar islands) здесь НЕ применяем, хотя
-    enqueue_build умеет: оценка на экране цены должна быть не ниже той, что
-    посчитает очередь, иначе человек заплатит ровно по экрану и упрётся в
-    отказ уже после генерации сценария.
+    montage=False — цена быстрого пути, без работы агента монтажа.
+
+    Готовый сценарий уже оплачен своей строкой журнала (_charge_claude), поэтому
+    из его цены надбавка за подготовку уходит: она там была бы вторым счётом за
+    одну и ту же работу.
+
+    avatar_share — доля ведущей в кадре на island-пути; её считает
+    `island_avatar_share` по профилю чата. Без неё (None) цена полная: на
+    экранах, где путь ещё не выбран и профиль ещё не сохранён, оценка обязана
+    быть не ниже той, что посчитает очередь, иначе человек заплатит ровно по
+    экрану и упрётся в отказ уже после генерации сценария.
     """
     rates = billing["rates"]
     chars = 0
-    if (session or {}).get("material_mode") == "text":
+    blocks = ((session or {}).get("scenario") or {}).get("blocks") or []
+    if blocks:
+        chars = sum(len(b.get("speech") or "") for b in blocks)
+    if chars <= 0 and (session or {}).get("material_mode") == "text":
         chars = len(clean_input((session or {}).get("material_text") or ""))
     if chars <= 0:
         chars = int(DEFAULT_MAX_DURATION_S * float(rates["chars_per_second"]))
-    return estimate_micro(chars, rates, billing["markup"])
+    share = {} if avatar_share is None else {"avatar_share": avatar_share}
+    return estimate_micro(chars, rates, billing["markup"], montage=montage,
+                          script=not blocks, **share)
 
 
 class InsufficientBalance(Exception):
@@ -613,18 +674,26 @@ def _charge_claude(chat_id: int, runner: ClaudeSkillRunner) -> None:
     job_id=None — сборки ещё нет и может не быть вовсе (человек передумает).
     Деньги при этом уже потрачены, поэтому запись всё равно нужна.
     entry_id случайный: каждое нажатие — новая генерация, склеивать нечего.
+
+    Под подпиской CLI присылает нулевую стоимость, и тогда счёт идёт по токенам
+    прогонов: без этого запасного счёта подготовка сценария не попадала в журнал
+    вовсе, хотя в оценку на экране цены она заложена.
     """
     billing = _billing()
-    if not billing["enabled"] or not runner.total_cost_usd:
+    if not billing["enabled"]:
         return
-    cost = claude_cost_micro(runner.total_cost_usd)
+    usd = claude_run_cost_usd(getattr(runner, "runs", None) or [],
+                              runner.total_cost_usd or 0.0, billing["rates"])
+    if not usd:
+        return
+    cost = claude_cost_micro(usd)
     _ledger().charge(
         chat_id,
         entry_id=f"claude:{uuid.uuid4().hex}",
         job_id=None,
         provider="claude",
         unit="usd",
-        quantity=runner.total_cost_usd,
+        quantity=usd,
         unit_price_micro=0,
         cost_micro=cost,
         charged_micro=apply_markup(cost, billing["markup"]),
@@ -945,9 +1014,7 @@ def enqueue_build(
     ``montage=False`` — ролик собирается одним проходом HeyGen без монтажного
     слоя (edit_plan, B-roll, субтитры, Revideo). Флаг зашивается в snapshot job.
     """
-    from reels_factory.avatar_islands import avatar_islands_enabled
     from reels_factory.clients import load_client
-    from reels_factory.master_audio import master_audio_enabled
 
     billing = _billing()
     if billing["enabled"]:
@@ -957,34 +1024,18 @@ def enqueue_build(
         chars = sum(
             len(b.get("speech") or "") for b in (scenario.get("blocks") or [])
         )
-        # Профиль клиента может отсутствовать/быть битым (например, в этом же
-        # вызове дальше это честно всплывёт своей ошибкой), а его настройки
-        # avatar_islands — вне допустимого диапазона (avatar_islands_enabled
-        # зовёт avatar_islands_settings, который для этого поднимает голый
-        # ValueError — конфиг-лоадер такое не проверяет). Это лишь оценка ДО
-        # платного шага — она не должна быть причиной, по которой сборку не
-        # удаётся поставить в очередь, поэтому ловим широко и откатываемся на
-        # консервативную оценку по полной цене.
-        estimate_kwargs = {}
-        try:
-            profile_for_estimate = load_client(str(chat_id))
-            # run_make берёт island-путь только когда включены оба флага —
-            # avatar_islands и master_audio; тем же условием сверяем и здесь,
-            # чтобы не показывать урезанную оценку для пути, который не
-            # запустится.
-            use_islands_estimate = (
-                montage
-                and avatar_islands_enabled(profile_for_estimate)
-                and master_audio_enabled(profile_for_estimate)
-            )
-        except Exception:
-            use_islands_estimate = False
-        if use_islands_estimate:
-            # С островами HeyGen в кадре не весь ролик — без доли оценка
-            # завышена и может отказать в сборке тем, кому денег хватало.
-            estimate_kwargs["avatar_share"] = billing["rates"]["avatar_visible_share"]
+        # С островами HeyGen в кадре не весь ролик — без доли оценка завышена и
+        # может отказать в сборке тем, кому денег хватало. Условие, профиль и
+        # обработка его поломок — в island_avatar_share: то же число называет
+        # человеку экран выбора пути.
+        share = island_avatar_share(chat_id, billing, montage=bool(montage))
+        estimate_kwargs = {} if share is None else {"avatar_share": share}
+        # script=False: сценарий на руках, его подготовку уже списал
+        # _charge_claude. Иначе очередь требовала бы за него второй раз — и
+        # отказала бы тому, кому по экрану цены денег хватало.
         need = estimate_micro(
-            chars, billing["rates"], billing["markup"], **estimate_kwargs
+            chars, billing["rates"], billing["markup"],
+            montage=bool(montage), script=False, **estimate_kwargs
         )
         have = _ledger().balance(chat_id)
         if have < need:
@@ -2003,7 +2054,24 @@ async def _start_generation(msg, chat_id: int, s: dict):
 async def _show_ready_screen(msg, chat_id: int, s: dict):
     s["step"] = READY
     save_session(chat_id, s)
-    await msg.reply_text(READY_MSG, reply_markup=_kb_ready())
+    text = READY_MSG
+    billing = _billing()
+    if billing["enabled"]:
+        # Сценарий уже написан, значит символы известны точно — это самая
+        # верная оценка за весь разговор, и она приходит ровно там, где человек
+        # выбирает путь. Экран цены до этого считал по верхней границе длины и
+        # по дорогому пути: его дело — не пустить в работу с пустым балансом.
+        # Здесь же профиль чата известен, поэтому монтажная цена считается с той
+        # же долей ведущей, что применит очередь: на этом экране человек решает,
+        # платить ли вообще, и завышенная цифра отпугивает не меньше, чем
+        # заниженная подводит.
+        text += READY_PRICE_MSG.format(
+            montage=format_usd(estimate_material_micro(
+                s, billing,
+                avatar_share=island_avatar_share(chat_id, billing))),
+            plain=format_usd(estimate_material_micro(s, billing, montage=False)),
+        )
+    await msg.reply_text(text, reply_markup=_kb_ready())
 
 
 async def _ready_stage(msg, chat_id: int, s: dict):
@@ -3124,12 +3192,14 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         breakdown = None
     if breakdown:
         parts = ", ".join(
-            f"{name} {format_usd(value)}" for name, value in sorted(breakdown.items())
+            f"{PROVIDER_NAMES.get(name, name)} {format_usd(value)}"
+            for name, value in sorted(breakdown.items())
         )
         total = sum(breakdown.values())
-        # Это стоимость самого рендера (job_id проставлен): подготовка
-        # сценария Клодом списывается отдельно, без job_id, и сюда не входит —
-        # поэтому не называем total «списано за ролик», баланс ниже точнее.
+        # Это стоимость самого рендера (job_id проставлен): работа агента
+        # монтажа сюда уже входит, а подготовка сценария Клодом списывается
+        # раньше, без job_id, и в чек не попадает — поэтому не называем total
+        # «списано за ролик», баланс ниже точнее.
         await _safe_job_message(
             bot_api,
             job.chat_id,

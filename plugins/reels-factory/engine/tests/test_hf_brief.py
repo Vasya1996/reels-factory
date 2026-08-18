@@ -4,7 +4,17 @@
 работа агента через hyperframes-creative; когда мы отдавали ему готовые окна,
 он переставал быть режиссёром и просто перекладывал наш чертёж в HTML.
 """
+import json
+import math
+import re
+
+from reels_factory.avatar_islands import DEFAULTS as ISLAND_DEFAULTS
+from reels_factory.editplan import MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S
 from reels_factory.hf_brief import FONTS, write_brief
+from reels_factory.hf_montage import SERIES_MIN
+# Написание секунд одно на оба текста, и тесты обязаны искать ровно его:
+# «29,05 с» печатается как «29 с», и поиск по `f"{x:.1f}"` находил бы пустоту.
+from reels_factory.hf_montage_skill import seconds as _секунды
 
 SCENARIO = {
     "total": 41.5,
@@ -23,11 +33,34 @@ SCENARIO = {
 CLIPS = [{"file": "clips/avatar_0.mp4", "start": 0.0, "duration": 12.22}]
 
 
+def _цели(duration: float, islands: dict | None = None) -> tuple[float, float]:
+    """Цель и граница бюджета ведущей — из той же функции, что и задание.
+
+    Числа считает `avatar_budget_targets` (avatar_islands.py), и по ней же
+    судит гейт бюджета `D29_avatar_budget`. Повторять её формулу в тесте
+    нельзя: правка долей (решение заказчика — ориентир 60 % и граница отказа
+    70 % порознь) развела бы тест с кодом, и зелёный тест означал бы прежнее
+    число.
+
+    Возвращаются два числа из трёх: цель — то, в которое агент целится своим
+    счётом (ориентир минус ручки заказа), и граница — та, выше которой план
+    заворачивают. Сам ориентир берётся из `ceiling_seconds` там, где он нужен.
+    """
+    from reels_factory.avatar_islands import (
+        avatar_budget_targets, avatar_islands_settings,
+    )
+
+    settings = avatar_islands_settings({"avatar_islands": islands or {}})
+    budget = avatar_budget_targets(duration, settings)
+    return budget["target_seconds"], budget["hard_ceiling_seconds"]
+
+
 def _text(tmp_path, **kw):
     kw.setdefault("scenario", SCENARIO)
     kw.setdefault("clips", CLIPS)
+    kw.setdefault("duration", 41.5)
     return write_brief(tmp_path, face={"cx": 540, "cy": 520, "h": 260},
-                       duration=41.5, **kw).read_text(encoding="utf-8")
+                       **kw).read_text(encoding="utf-8")
 
 
 def _skill(tmp_path, **kw):
@@ -35,6 +68,131 @@ def _skill(tmp_path, **kw):
     _text(tmp_path, **kw)
     return (tmp_path / ".claude" / "skills" / "reels-montage"
             / "SKILL.md").read_text(encoding="utf-8")
+
+
+#: Фразы, часть которых приходится на пропуск между островами аватара: клип из
+#: `CLIPS` кончается на 12.22, ролик длится 41.5, значит фразы `2`–`4` идут без
+#: ведущей. Нужны там, где проверяется ветка «аватар уже заказан».
+GAP_PHRASES = [
+    {"id": 0, "role": "hook", "text": "Все продажи.", "start": 0.0,
+     "end": 6.0},
+    {"id": 1, "role": "hook", "text": "Порядок решает.", "start": 6.0,
+     "end": 12.0},
+    {"id": 2, "role": "development", "text": "Кому продаём.", "start": 12.4,
+     "end": 20.0},
+    {"id": 3, "role": "payoff", "text": "Как продаём.", "start": 20.0,
+     "end": 30.0},
+    {"id": 4, "role": "cta", "text": "Сохрани это видео.", "start": 30.0,
+     "end": 41.5},
+]
+
+#: Клип на весь ролик: дыр между островами нет вовсе.
+FULL_CLIPS = [{"file": "clips/avatar_0.mp4", "start": 0.0, "duration": 41.5}]
+
+def _фразы(count: int, length: float = 2.0) -> list[dict]:
+    """Ровные фразы с правдоподобными ролями: хук открывает, призыв закрывает.
+
+    Роль тянется по фразам, и образец не вправе отдавать сцене без ведущей
+    фразу роли `hook` или `cta` — это заворачивает и валидатор (editplan.py), и
+    гейт до заказа (`D30_avatar_roles`). Список, где КАЖДАЯ фраза — `hook`,
+    сцены под отказ не оставляет вовсе, и проверка того, какой сцене образец
+    его отдал, становится пустой.
+    """
+    return [{"id": index,
+             "role": "hook" if index < 2 else
+                     "cta" if index >= count - 2 else "development",
+             "text": f"фраза {index}",
+             "start": index * length, "end": index * length + length}
+            for index in range(count)]
+
+
+#: Восемь ровных фраз — на них собирается образец плана: он показывает первые
+#: четыре сцены, а короче списка сцен в образце меньше.
+EVEN_PHRASES = _фразы(8)
+
+#: Быстрая речь: фразы около 2,4 с, то есть каждая короче `MIN_FULLSCREEN_S`.
+#: Ревизия круга 3 перебрала на таком материале все 1024 плана и не нашла ни
+#: одного проходящего: порог мерялся каждой фразой. После склейки соседних окон
+#: (`apply_agent_coverage`) сцена из двух таких фраз пол проходит, и тексты
+#: обязаны звать именно туда.
+FAST_PHRASES = _фразы(17, 2.4)
+
+#: Речь, где короткие фразы стоят в середине показанных образцом сцен, а
+#: длинные — раньше. Выбор сцены под отказ «по номеру» попадал ровно в
+#: короткую пару и печатал сцену, которую гейт заворачивает.
+UNEVEN_PHRASES = [
+    {"id": 0, "role": "hook", "text": "фраза 0", "start": 0.0, "end": 2.0},
+    {"id": 1, "role": "hook", "text": "фраза 1", "start": 2.0, "end": 4.0},
+    {"id": 2, "role": "development", "text": "фраза 2", "start": 4.0,
+     "end": 7.0},
+    {"id": 3, "role": "development", "text": "фраза 3", "start": 7.0,
+     "end": 10.0},
+    {"id": 4, "role": "development", "text": "фраза 4", "start": 10.0,
+     "end": 11.0},
+    {"id": 5, "role": "development", "text": "фраза 5", "start": 11.0,
+     "end": 12.0},
+    {"id": 6, "role": "cta", "text": "фраза 6", "start": 12.0, "end": 14.0},
+    {"id": 7, "role": "cta", "text": "фраза 7", "start": 14.0, "end": 16.0},
+]
+
+#: Речь, где короче порога выходит любая сцена образца: фразы по 1,2 с, и пара
+#: соседних даёт 2,4 с. Отказ показать не на чем — образец обязан обойтись без
+#: него и сказать, почему.
+TINY_PHRASES = _фразы(34, 1.2)
+
+#: Как код может напечатать три секунды. Число одно, а имён у него в текстах
+#: три (пол схемы `items`, минимальный кусок заказа, минимум сцены БЕЗ
+#: ведущей), и тесты ниже требуют, чтобы каждое стояло рядом со своим именем.
+THREE_SECONDS = ("3 с", "3,0 с", "3.0 с")
+
+
+def _абзац(text: str, at: int) -> str:
+    """Абзац или пункт списка, внутри которого стоит позиция `at`.
+
+    Проверять число «рядом со своим именем» окном в N знаков нельзя: соседний
+    пункт списка попадает в окно и подсовывает своё имя чужому числу.
+    """
+    head = max(text.rfind(mark, 0, at) for mark in ("\n- ", "\n\n"))
+    head = head + 1 if head > 0 else 0
+    ends = [end for end in (text.find(mark, at) for mark in ("\n- ", "\n\n"))
+            if end != -1]
+    return text[head:min(ends)] if ends else text[head:]
+
+
+def _абзацы(text: str, mark: str) -> list[str]:
+    """Все абзацы, в которых встречается `mark`."""
+    found, at = [], text.find(mark)
+    while at != -1:
+        found.append(_абзац(text, at))
+        at = text.find(mark, at + 1)
+    return found
+
+
+def _с_числом(text: str, renderings: tuple[str, ...]) -> list[str]:
+    """Абзацы, где число названо в любом из написаний."""
+    return [part for mark in renderings for part in _абзацы(text, mark)]
+
+
+def _минимум_без_ведущей(skill: str) -> list[str]:
+    """Куски свода правил, где три секунды названы минимумом сцены БЕЗ ведущей.
+
+    Именно это меряет `MIN_FULLSCREEN_S` (editplan.py:2543): окно с покрытием
+    `full_broll`/`hyperframes`, то есть кадр, из которого ведущая убрана.
+    """
+    return [part for part in _с_числом(skill, THREE_SECONDS)
+            if "без ведущей" in part and "не меньше" in part]
+
+
+def _board(text: str) -> dict:
+    """Образец плана из задания, разобранный как JSON.
+
+    Хвост образца подписан многоточием — закрываем список сцен сами.
+    """
+    sample = text.split("```json")[1].split("```")[0]
+    body = "\n".join(line for line in sample.splitlines()
+                     if "остальные сцены" not in line)
+    body = body.rstrip().rstrip("}").rstrip().rstrip("]").rstrip().rstrip(",")
+    return json.loads(body + "\n ]\n}")
 
 
 # ---------- паспорт задания ----------
@@ -66,8 +224,9 @@ def test_фразы_пронумерованы_в_задании(tmp_path):
          "start": 0.0, "end": 2.4},
         {"id": 1, "role": "hook", "text": "Порядок решает.",
          "start": 2.4, "end": 5.0}])
-    # длина нужна, чтобы агент не назначал сцену на фразу короче минимума
-    assert "`0` **hook** 2.4 с — Все продажи." in text
+    # длина нужна, чтобы агент не назначал сцену на фразу короче минимума;
+    # написание секунд одно на оба файла (`seconds` в hf_montage_skill.py)
+    assert "`0` **hook** 2,4 с — Все продажи." in text
     assert "есть фразы\n`0`–1" in text or "есть фразы `0`–1" in text
 
 
@@ -95,8 +254,9 @@ def test_сценарий_по_блокам_передан(tmp_path):
 
 
 def test_расписание_клипов_секундами_не_передаётся(tmp_path):
-    """Секунд агент не видит вовсе: где ведущей нет, ему говорят номерами фраз.
-    Расписание клипов в секундах он всё равно ни с чем не мог бы сверить."""
+    """Времени в секундах агент не получает нигде, кроме длины ролика во
+    frontmatter и длительностей фраз: где ведущей нет, ему говорят номерами
+    фраз. Расписание клипов в секундах он ни с чем не мог бы сверить."""
     text = _text(tmp_path)
     assert "clips/avatar_0.mp4" not in text
 
@@ -104,6 +264,30 @@ def test_расписание_клипов_секундами_не_переда�
 def test_материал_перечислен(tmp_path):
     text = _text(tmp_path)
     assert "voice.wav" in text and "words.json" in text
+    assert "Материал (лежит в `public/`)" in text, (
+        "после заказа материал уже на диске, и заголовок обязан это говорить")
+
+
+def test_до_заказа_материала_в_public_ещё_нет(tmp_path):
+    """Дефект 5, половина в задании. Раздел «Материал (лежит в `public/`)»
+    печатался всегда, а на плане ДО заказа папка пуста: клипы и звук кладёт
+    `prepare()` уже в сборке, после того как HeyGen снимет ведущую по этому
+    плану. Обещание готового материала стоит сессии ходов — она уходит искать
+    файлы, которых на диске нет.
+
+    Первый ход сессии на этом шаге говорит ровно то же (`MATERIAL_LATER` в
+    hf_agent.py), и задание не вправе утверждать обратное.
+    """
+    early = _text(tmp_path / "early", phrases=GAP_PHRASES, clips=[],
+                  avatar_ordered=False)
+    assert "Материал (лежит в `public/`)" not in early, (
+        "до заказа задание объявляет материал лежащим на диске")
+    section = early.split("## Материал")[1].split("\n## ")[0]
+    assert "пока пуста" in section, "не сказано, что `public/` пуста"
+    assert "по списку фраз выше" in section, (
+        "не сказано, по чему планировать, раз материала нет")
+    assert "После заказа" in section, (
+        "не сказано, когда материал появится и по чьему решению")
 
 
 # ---------- то, чего в задании быть не должно ----------
@@ -149,21 +333,63 @@ def test_гарнитуры_наши(tmp_path):
 
 
 def test_вёрстку_у_агента_не_просят(tmp_path):
-    """Изготовление ушло коду целиком: разметки в ответе агента больше нет."""
+    """Изготовление ушло коду целиком: разметки в ответе агента больше нет.
+
+    Круг 5: граница ответственности стала разделом со списком, и у каждой
+    строки своя причина — форма их `## You do NOT decide`
+    (hyperframes-core/references/frame-worker-core.md:33-43). Прежде это была
+    одна фраза без причин.
+    """
     text = _text(tmp_path)
     assert "public/cards/" not in text
     assert "data-anim" not in text
-    assert "Изготовление за\nкодом" in text
+    assert "## Что решаешь не ты" in text
+    assert "**Геометрия кадра и разметка**" in text
 
 
 def test_интервалы_без_ведущей_названы(tmp_path):
-    # клип только на 0–12.22, значит 12.22–41.5 ведущей в кадре нет
-    text = _text(tmp_path)
+    """Клип только на 0–12.22, значит на 12.22–41.5 ведущей в кадре нет.
+
+    Фразы теперь обязательны: разметку дыр код считает по ним, а не по одному
+    расписанию клипов, и без списка фраз этот текст проверял пустое место —
+    он проходил на абзаце, который печатался всегда (дефект 5).
+    """
+    text = _text(tmp_path, phrases=GAP_PHRASES)
     assert "без ведущей" in text.lower() or "ведущей в кадре нет" in text.lower()
+    for pid in (2, 3, 4):
+        assert f"- фраза `{pid}`" in text, f"фраза {pid} не названа дырой"
 
 
 def test_причина_повтора_попадает_в_задание(tmp_path):
     assert "лицо перекрыто" in _text(tmp_path, retry_reason="лицо перекрыто")
+
+
+def test_пересдача_просит_положить_план_заново(tmp_path):
+    """Дефект 7, половина в задании. `plan_with_agent` снимает
+    `storyboard.json` перед КАЖДЫМ запуском агента (hf_agent.py), иначе файл
+    прошлой попытки прошёл бы проверку как новый ответ. После этого «исправь
+    именно это» указывает на файл, которого на диске нет, — агент уходит его
+    искать. Дословная копия прошлого ответа лежит в `plan.json`, и раздел
+    пересдачи называет её.
+
+    Факт на диске один на оба шага (снимает и пишет один и тот же код),
+    поэтому и текст один — ветки по `avatar_ordered` тут быть не должно.
+    """
+    for ordered in (True, False):
+        text = _text(tmp_path / f"o{ordered}", phrases=GAP_PHRASES,
+                     clips=CLIPS if ordered else [], avatar_ordered=ordered,
+                     retry_reason="D28_avatar_bookends: FAIL: s-04 — финал")
+        section = (text.split("# Задание на монтаж рилса")[1]
+                   .split("## Порядок работы")[0])
+        assert "D28_avatar_bookends" in section, "причина не доехала до агента"
+        assert "`plan.json`" in section, (
+            "не сказано, где лежит план, который не прошёл проверку")
+        assert "storyboard.json" in section, (
+            "не сказано, куда класть исправленный план")
+        assert "снят" in section, (
+            "не сказано, что прошлого `storyboard.json` на диске уже нет")
+        assert "Исправь именно это" not in section, (
+            "задание просит поправить файл, которого на диске нет")
 
 
 def test_что_вернуть_названо(tmp_path):
@@ -224,12 +450,56 @@ def test_оплаченная_ведущая_обязана_быть_в_кадр
     assert "65–70" not in text and "65-70" not in text
 
 
-def test_до_заказа_аватара_потолок_остаётся(tmp_path):
+def test_до_заказа_аватара_бюджет_назван_секундами(tmp_path):
     """План до заказа (работа 9) считает деньги ровно наоборот: там сцена без
-    ведущей её и не закажет, и потолок аватарного времени осмыслен."""
-    text = _text(tmp_path, avatar_ordered=False)
-    assert "60 % хронометража" in text
-    assert "это главные деньги ролика" in text
+    ведущей её и не закажет, и бюджет аватарного времени осмыслен.
+
+    Секунды остаются рабочей единицей: свои сцены агент меряет сложением
+    длительностей фраз, и пересчёт процента во фразы — арифметика, на которой
+    прогоны 9 и 10 ошибались. Круг 5 добавил рядом долю: решение заказчика про
+    допуск сформулировано долями — ориентир одна, граница отказа другая, — и
+    агент обязан видеть, что чисел два и значат они разное. Оба считает
+    `avatar_budget_targets`, доля выводится из тех же секунд.
+    """
+    from reels_factory.avatar_islands import (
+        avatar_budget_targets, avatar_islands_settings,
+    )
+
+    text = _text(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES)
+    section = _где_ведущей_нет(text)
+    цель, граница = _цели(41.5)
+    for имя, число in (("цель", цель), ("граница", граница)):
+        named = [f"{число:.1f}", f"{число:.0f}",
+                 f"{число:.1f}".replace(".", ",")]
+        assert any(mark in section for mark in named), (
+            f"{имя} по ведущей в секундах не названа, ждали одно из {named}")
+    # Доли названы обе: ориентир по ролику и граница отказа. Обе выводятся из
+    # тех же секунд, что вернул `avatar_budget_targets`.
+    budget = avatar_budget_targets(41.5, avatar_islands_settings({}))
+    for имя, число in (("ориентир", budget["ceiling_seconds"]),
+                       ("граница", граница)):
+        доля = f"{round(100 * число / 41.5)} %"
+        assert доля in section, f"{имя} не назван долей хронометража ({доля})"
+    assert "это главные деньги ролика" in section
+
+
+def test_бюджет_ведущей_это_бюджет_заказа_а_не_показа(tmp_path):
+    """Число меряется на ЗАКАЗЕ у HeyGen, а не на показе: внутри купленного
+    куска платятся все секунды, даже спрятанные под непрозрачной вставкой
+    (`AVATAR_ON_SCREEN_MAX`, hf_montage.py). Агент, прочитавший его как
+    «сколько ведущей видно», начнёт экономить прятанием — а это уже оплаченные
+    секунды.
+    """
+    text = _text(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES)
+    section = _где_ведущей_нет(text)
+    потолок = _цели(41.5)[1]
+    budget = _с_числом(section, (f"{потолок:.0f}", f"{потолок:.1f}",
+                                 f"{потолок:.1f}".replace(".", ",")))
+    assert budget, "бюджет не назван числом"
+    assert any("заказ" in part for part in budget), (
+        "рядом с бюджетом не сказано, что это бюджет заказа")
+    assert any("avatarNeeded" in part for part in budget), (
+        "не сказано, чем набирается бюджет — сценами с `avatarNeeded: true`")
 
 
 def test_когда_аватар_остаётся_поверх_биролла(tmp_path):
@@ -242,8 +512,8 @@ def test_когда_аватар_остаётся_поверх_биролла(tm
 
 def test_субтитры_снимаются_с_агента(tmp_path):
     text = _text(tmp_path)
-    assert "субтитры" in text.lower()
-    assert "Изготовление за\nкодом" in text
+    assert "**Субтитры**" in text
+    assert "Изготовление за кодом" in text
 
 
 def test_три_окна_ведущей_названы_как_решение_агента(tmp_path):
@@ -275,14 +545,24 @@ def test_секунд_в_ответе_не_бывает_но_длину_сцен
     ошибкой — границы сцен считает код. Но длину сцены агенту знать нужно:
     накладка и серия требуют минимума секунд. Способ назван один раз —
     сложение длительностей фраз из списка; прежде задание требовало секунд и
-    тут же запрещало их считать, не назвав ни одного способа."""
+    тут же запрещало их считать, не назвав ни одного способа.
+
+    Требование сказано положительно, чем заменять секунды («Время в плане
+    называй номерами фраз»), а не перечнем запрещённых полей: их канон —
+    «Tell Claude what to do instead of what not to do». Строгость та же —
+    образец по-прежнему обязан обойтись без секундных полей, а перечня
+    запретов в тексте быть не должно.
+    """
     text = _text(tmp_path)
     sample = text.split("```json")[1].split("```")[0]
     assert "startSec" not in sample and "endSec" not in sample
     assert '"phrases": [0, 0]' in sample
-    assert "Секунд в плане быть не должно" in text
+    assert "Время в плане называй номерами фраз" in text
+    assert "границы сцен код считает сам по звуку" in text
     assert "сложением длительностей" in text
-    assert text.count("Не считай секунды") == 0
+    for banned in ("Секунд в плане быть не должно", "Не считай секунды",
+                   "ни `startSec`"):
+        assert banned not in text, f"запрет вместо указания: {banned}"
 
 
 def test_служебные_надписи_запрещены(tmp_path):
@@ -307,7 +587,7 @@ def test_пол_сцен_дан_числом(tmp_path):
     наш детектор остаётся замером по готовому файлу."""
     text = _text(tmp_path)
     assert "меньше 6" in text
-    assert "1,5–4 секунды" in _skill(tmp_path)
+    assert "1,5–4 с" in _skill(tmp_path)
     assert "заметных смен" not in text
 
 
@@ -317,10 +597,14 @@ def test_лишняя_работа_названа_разделением_раб�
     прямо советует позитивную форму («Tell Claude what to do instead of what
     not to do», prompt-engineering/claude-prompting-best-practices)."""
     text = _text(tmp_path)
-    # Раздел-перечень снят: разделение работ сказано одной утвердительной
-    # строкой в шапке, а перечисление запретов их дока не одобряет.
-    assert "подбор файлов, субтитры и проверки он" in text
+    # Раздел говорит, что уже сделано за агента, и почему это не его дело;
+    # перечисления запретов («не пиши разметку») их дока не одобряет.
+    assert "## Что решаешь не ты" in text
+    assert "**Файл вставки**" in text and "судья" in text
     assert "## Что делает код после тебя" not in text
+    for banned in ("не пиши", "не считай", "запрещено"):
+        assert banned not in text.split("## Что решаешь не ты")[1].split(
+            "\n## ")[0], f"запрет вместо указания: {banned}"
 
 
 def test_правило_наполнения_кадра_живёт_в_одном_месте(tmp_path):
@@ -391,7 +675,9 @@ def test_формы_схемы_даны_закрытым_списком_с_пр�
     assert "<fillings>" not in text
     for form in ("metric", "items", "pairs", "steps", "brand"):
         assert f'<form name="{form}">' in text
-    section = text.split("## Чем занять кадр: схема")[1]
+    # Раздел кончается там, где начинается следующий: примеры запаса (круг 6)
+    # стоят ниже своим разделом и в эту вилку не входят.
+    section = text.split("## Чем занять кадр: схема")[1].split("\n## ")[0]
     assert 3 <= section.count("<example>") <= 5
     # Разбор в примере называет и отброшенную форму: перенос на непохожую
     # реплику даёт именно он, а не сам ответ.
@@ -407,9 +693,10 @@ def test_запасная_схема_той_же_формы(tmp_path):
     когда сток не ответил, а не отдельный вид."""
     text = _skill(tmp_path)
     assert "**`fallback` — та же схема на случай" in text
-    # Причина правила и его область совпадают: закрывать кадр нечем
-    # только там, где ведущей нет.
-    assert "у\nсцен со вставкой, где ведущей нет" in text
+    # Область правила круг 6 снял с условия «где ведущей нет» и повесил на саму
+    # вставку: исход заказа и сборки агент проверить не может, а сцены со
+    # вставкой — может (`test_запас_требуется_у_каждой_сцены_со_вставкой`).
+    assert "Живёт по тем же правилам, что и основная" in text
 
 
 def test_имена_слотов_накладки_берутся_дословно(tmp_path):
@@ -455,7 +742,8 @@ def test_бриф_до_заказа_аватара_отдаёт_решение_�
                   "text": "Привет"}])
     text = path.read_text(encoding="utf-8")
     assert "не заказан" in text and "avatarNeeded: true" in text
-    assert "% хронометража" in text
+    # Бюджет ведущей называется и секундами, и долей хронометража — проверка
+    # живёт в `test_до_заказа_аватара_бюджет_назван_секундами`.
     assert "ведущей тут нет" not in text
 
 
@@ -563,3 +851,1628 @@ def test_в_задании_нет_требований_к_чужому_резу�
                    "сборка не пройдёт проверку", "детектор их не разделит",
                    "каждое роняет сборку"):
         assert banned not in text, f"обещание за код: {banned}"
+
+
+# ---------- план до заказа аватара (работа 9) ----------
+
+def test_минимальный_кусок_заказа_назван_числом_из_кода(tmp_path):
+    """Кусок короче `min_request_seconds` код не отбрасывает, а дорастает за
+    счёт соседнего звука и платит за него, — в ролик доплаченное не попадает
+    (`_request_timing`, avatar_islands.py). Агент про это правило не знает
+    ниоткуда: острова считаются после него. Число берётся из кода, чтобы текст
+    не разошёлся с `DEFAULTS`, а вывод для агента сказан прямо — сцены с
+    ведущей ставить подряд (работа B).
+    """
+    text = _text(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES)
+    section = _где_ведущей_нет(text)
+    least = float(ISLAND_DEFAULTS["min_request_seconds"])
+    named = _с_числом(section, (f"{least:g} с", f"{least:.1f} с",
+                                f"{least:.1f} с".replace(".", ",")))
+    assert named, f"минимальный кусок заказа ({least:g} с) агенту не назван"
+    assert any("заказ" in part for part in named), (
+        "число стоит без своего имени: не сказано, что это минимум заказа")
+    assert "подряд" in section, (
+        "не сказано главного вывода — сцены с ведущей ставить подряд")
+
+
+def test_сцены_без_ведущей_требуют_запасную_схему(tmp_path):
+    """Дефект 3. До работы 9 ветка «аватар не заказан» про `fallback` молчала:
+    считалось, что пустой кадр всегда закроет ведущая. После работы 9 закрывать
+    его нечем — на сцене с `avatarNeeded: false` ведущей не существует, и гейт
+    D25 (`_empty_frame_problems`) заворачивает такой план.
+    """
+    text = _text(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES)
+    section = _где_ведущей_нет(text)
+    assert "`fallback`" in section, (
+        "у сцен без ведущей не потребована запасная схема")
+    assert "сток" in section, (
+        "не названа причина: сток отвечает не всегда, а закрыть кадр нечем")
+
+
+def test_образец_плана_показывает_avatarNeeded_в_обоих_значениях(tmp_path):
+    """Дефект 4. Образец сильнее правила, стоящего рядом с ним: поле, которое
+    в нём не показано, агент не заполняет. Заказ островов читает ровно его,
+    поэтому образец обязан показать и `true`, и `false` — и краевой случай
+    целиком: сцена без ведущей стоит с `presenter: "none"` и своим `fallback`.
+    """
+    text = _text(tmp_path, avatar_ordered=False, phrases=EVEN_PHRASES,
+                 clips=[])
+    scenes = _board(text)["scenes"]
+    missing = [scene["id"] for scene in scenes if "avatarNeeded" not in scene]
+    assert not missing, f"сцены образца без `avatarNeeded`: {missing}"
+    assert {scene["avatarNeeded"] for scene in scenes} == {True, False}, (
+        "образец показывает только одно значение `avatarNeeded`")
+    blind = [scene for scene in scenes if not scene["avatarNeeded"]]
+    for scene in blind:
+        assert scene["presenter"] == "none", (
+            f'{scene["id"]}: ведущей не заказано, а `presenter` не `none`')
+        assert scene.get("fallback"), (
+            f'{scene["id"]}: сцена без ведущей показана без `fallback`')
+
+
+def _длина_сцены(scene: dict, phrases: list[dict]) -> float:
+    """Длина сцены образца — сумма длительностей её фраз.
+
+    Ровно этим меряет сцену без ведущей гейт до заказа (D31, hf_render.py)
+    после того, как соседние окна такой сцены склеиваются
+    (`apply_agent_coverage`).
+    """
+    first, last = scene["phrases"][0], scene["phrases"][-1]
+    return sum(float(p["end"]) - float(p["start"]) for p in phrases
+               if first <= p["id"] <= last)
+
+
+def test_образец_отдаёт_отказ_сцене_которая_набирает_пол(tmp_path):
+    """Круг 4, дефект 4. Сцену под `avatarNeeded: false` образец выбирал по
+    номеру — серединой показанных, — и на длительности не смотрел вовсе. На
+    быстрой речи это печатало сцену, которую гейт до заказа заворачивает, а
+    образец сильнее правила, стоящего рядом с ним.
+
+    Смотрим на два материала: быструю речь (фразы по 2,4 с — пара таких фраз
+    пол проходит) и речь, где короткие фразы стоят ровно в середине показанных
+    сцен, а длинные раньше.
+    """
+    for name, phrases in (("fast", FAST_PHRASES), ("uneven", UNEVEN_PHRASES)):
+        scenes = _board(_text(tmp_path / name, phrases=phrases, clips=[],
+                              avatar_ordered=False))["scenes"]
+        отказы = [scene for scene in scenes
+                  if scene.get("avatarNeeded") is False]
+        assert отказы, f"{name}: образец не показывает отказа от ведущей"
+        for scene in отказы:
+            длина = _длина_сцены(scene, phrases)
+            assert длина >= MIN_FULLSCREEN_S, (
+                f'{name}: образец отдаёт под отказ сцену {scene["id"]} длиной '
+                f"{длина:g} с — короче минимума сцены без ведущей "
+                f"({MIN_FULLSCREEN_S:g} с)")
+
+
+def test_образец_не_прячет_фразы_ролей_hook_и_cta(tmp_path):
+    """Тот же класс, что и дефект 4: сцену под отказ образец выбирал, не глядя
+    ни на длительности, ни на роли. Роль тянется по фразам, и на быстрой речи
+    двенадцатисекундный хук занимает пять фраз — середина показанных сцен
+    оказывается хуком целиком, а окно роли `hook` или `cta` без ведущей
+    заворачивает и валидатор (editplan.py), и гейт до заказа
+    (`D30_avatar_roles`, hf_render.py).
+    """
+    from reels_factory.hf_render import SPEAKING_ROLES
+
+    phrases = [dict(phrase, role="hook" if phrase["id"] < 5 else
+                                "cta" if phrase["id"] > 13 else "development")
+               for phrase in FAST_PHRASES]
+    text = _text(tmp_path / "hook", phrases=phrases, clips=[],
+                 avatar_ordered=False)
+    говорящие = {p["id"] for p in phrases if p["role"] in SPEAKING_ROLES}
+    for scene in _board(text)["scenes"]:
+        if scene.get("avatarNeeded") is not False:
+            continue
+        накрыты = {pid for pid in говорящие
+                   if scene["phrases"][0] <= pid <= scene["phrases"][-1]}
+        assert not накрыты, (
+            f'образец прячет за вставку фразы ролей hook и cta: сцена '
+            f'{scene["id"]}, фразы {sorted(накрыты)}')
+
+
+def test_образец_молчит_про_отказ_когда_отдать_его_некому(tmp_path):
+    """Круг 4, дефект 4, вторая половина. Когда ни одна сцена образца пола не
+    набирает, отказ в нём не показывается вовсе: образец, который учит плану,
+    заворачиваемому гейтом, дороже отсутствующего примера. Рядом с образцом
+    сказано, почему его там нет и по какому признаку выбирать сцену под отказ
+    самому.
+    """
+    text = _text(tmp_path / "tiny", phrases=TINY_PHRASES, clips=[],
+                 avatar_ordered=False)
+    scenes = _board(text)["scenes"]
+    assert all(scene.get("avatarNeeded") is True for scene in scenes), (
+        "фразы короче половины пола, а образец всё равно показывает отказ")
+    оговорка = [" ".join(part.split())
+                for part in _абзацы(text, "avatarNeeded: true`, и отказа")]
+    assert оговорка, "образец молчит про отказ и не объясняет, почему"
+    assert any("минимум сцены без ведущей" in part for part in оговорка), (
+        "не названо, чем сцена под отказ отличается от прочих")
+    assert any("суммой её фраз" in part or "целиком" in part
+               for part in оговорка), (
+        "не сказано, чем меряется минимум сцены без ведущей")
+    assert any("собирай под отказ" in part for part in оговорка), (
+        "не сказано, что делать вместо этого — собирать короткие фразы в одну "
+        "сцену")
+
+    с_отказом = _text(tmp_path / "fast", phrases=FAST_PHRASES, clips=[],
+                      avatar_ordered=False)
+    assert not _абзацы(с_отказом, "avatarNeeded: true`, и отказа"), (
+        "оговорка печатается и тогда, когда отказ в образце показан")
+
+
+def test_пометка_без_ведущей_только_в_ветке_с_заказом(tmp_path):
+    """Дефект 5. Абзац «Фразы с пометкой „без ведущей“ держи в отдельных
+    сценах» печатался всегда, а сама пометка ставится в `_phrase_line` только
+    для дыр между островами. До заказа аватара дыр нет по построению — абзац
+    описывает разметку, которой в списке фраз нет, и агент ищет её впустую.
+    """
+    ordered = _text(tmp_path / "ordered", phrases=GAP_PHRASES)
+    assert "ведущей тут нет" in ordered, "пометка на фразах пропала"
+    assert "с пометкой" in ordered, (
+        "в ветке с заказанным аватаром правило про пометку обязано остаться")
+
+    early = _text(tmp_path / "early", phrases=GAP_PHRASES,
+                  avatar_ordered=False)
+    assert "с пометкой" not in early, (
+        "до заказа аватара задание ссылается на несуществующую пометку")
+
+    whole = _text(tmp_path / "whole", phrases=GAP_PHRASES, clips=FULL_CLIPS)
+    assert "с пометкой" not in whole, (
+        "ведущая в кадре весь ролик, а правило про пометку всё ещё печатается")
+
+
+def test_свод_правил_до_заказа_не_объявляет_клипы_купленными(tmp_path):
+    """Дефект 6. «Ведущая уже снята… её клип куплен и оплачен заказчиком» —
+    после работы 9 это ложь и прямой запрет на `avatarNeeded: false`: агент
+    обобщает именно объяснение. До заказа клипов ещё нет, и `none` ставится не
+    по пометке в задании, а по решению самого агента.
+    """
+    early = _skill(tmp_path / "early", avatar_ordered=False,
+                   phrases=GAP_PHRASES)
+    # Запрещено само утверждение, а не слово: «эти секунды не будут оплачены»
+    # — законная причина ставить `avatarNeeded: false`.
+    for lie in ("клип куплен", "оплачен заказчиком", "уже снята"):
+        assert lie not in early, f"до заказа сказано неправду: «{lie}»"
+    assert "avatarNeeded" in early, (
+        "доктрина не называет поле, которым агент отказывается от ведущей")
+    assert "`avatarNeeded: false`" in early, (
+        "не сказано прямо, что отказаться от ведущей можно")
+    assert "помеченных в задании" not in early, (
+        "`none` привязан к пометке, которой до заказа нет")
+
+    ordered = _skill(tmp_path / "ordered", phrases=GAP_PHRASES)
+    assert "клип куплен" in ordered, (
+        "после заказа правило обратное и должно остаться")
+
+
+# ---------- финал ролика и числа проверок ----------
+
+def test_финал_ролика_назван_сценой_а_не_секундами(tmp_path):
+    """Работа C. Про открытие правило есть, про финал не было: ролик кончался
+    вставкой, и лицо зрителя не провожало. Секундами это правило агенту не
+    сформулировать — секунд в его плане нет, есть сцены и номера фраз.
+    """
+    text = _skill(tmp_path)
+    assert "Открывай ролик ведущей во весь кадр" in text, (
+        "правило про открытие пропало")
+    assert "последняя сцена" in text, "правила про финал нет"
+    item = _абзац(text, text.index("последняя сцена"))
+    assert "`full`" in item and "`punch`" in item, (
+        "финал не назван положениями ведущей во весь кадр")
+    named_in_seconds = re.search(r"\d[\d,.]*\s*(с\b|секунд)", item)
+    assert not named_in_seconds, (
+        f"финал назван секундами («{item.strip()}»), которых у агента нет")
+
+
+def test_числа_проверки_плана_названы_в_своде_правил(tmp_path):
+    """Дефект 13. `MIN_FULLSCREEN_S` и `MAX_FACE_ABSENCE_S` (editplan.py) судят
+    план агента, а самому агенту не названы нигде: он узнаёт о них отказом.
+    Числа подставляются из кода — как уже сделано с `face_gap` и `max_static`.
+    """
+    text = _skill(tmp_path)
+    точно = f"{MAX_FACE_ABSENCE_S:.1f} с"
+    absence = _с_числом(text, (f"{MAX_FACE_ABSENCE_S:g} с", точно,
+                               точно.replace(".", ",")))
+    assert absence, f"предел без лица ({MAX_FACE_ABSENCE_S:g} с) не назван"
+    assert any("лиц" in part.lower() or "ведущ" in part.lower()
+               for part in absence), "число стоит без своего имени"
+
+    assert _минимум_без_ведущей(text), (
+        f"минимум сцены без ведущей ({MIN_FULLSCREEN_S:g} с) не назван")
+
+
+def test_минимум_трёх_секунд_меряется_на_сцене_без_ведущей(tmp_path):
+    """Ломает прод 1. `MIN_FULLSCREEN_S` судит окно, где ведущей НЕТ
+    (`coverage in {full_broll, hyperframes}`, editplan.py:2543), а свод правил
+    называл им минимум сцены с `full` или `punch`. Рядом стояло «обычная сцена
+    живёт 1,5–4 с», и агент штатно отдавал вставке сцену в 2 с — окно без
+    ведущей выходило короче минимума, и `build_avatar_render_plan` падал
+    ValueError на всей сборке.
+
+    Проверяем обе стороны: правило стоит у сцены без ведущей и не стоит у
+    полнокадровой. Чем именно меряется минимум — сценой или каждой её фразой —
+    судит `test_порог_без_ведущей_меряется_каждой_фразой`: пофразно его меряет
+    только ранний шаг, где по плану и заказывают.
+    """
+    for kw in ({}, {"avatar_ordered": False, "phrases": GAP_PHRASES}):
+        text = _skill(tmp_path / f"skill{len(kw)}", **kw)
+        item = _минимум_без_ведущей(text)
+        assert item, "минимум сцены без ведущей не назван"
+        assert any("собери" in part or "собирай" in part for part in item), (
+            "не сказано, что делать с фразами, из которых выходит сцена "
+            "короче минимума")
+        обратное = [part for part in _с_числом(text, THREE_SECONDS)
+                    if "полнокадров" in part.lower()
+                    or "`full` или `punch`" in part]
+        assert not обратное, (
+            f"минимум трёх секунд снова приписан ведущей: {обратное}")
+
+
+def test_порог_без_ведущей_меряется_сценой_целиком(tmp_path):
+    """Круг 4, дефект 2. Соседние окна, которые лишил ведущей сам агент, код
+    теперь склеивает в одно (`apply_agent_coverage`), и порог `MIN_FULLSCREEN_S`
+    меряет сцену — сумму длительностей её фраз, а не каждую фразу порознь. Тем
+    же меряет и гейт до заказа (D31, hf_render.py), и правило обязано говорить
+    то же самое.
+
+    Прежний текст требовал обратного — «меряется это каждой её фразой». На
+    быстрой речи (фразы около 2,4 с) такое требование не оставляет ни одного
+    проходящего плана: сплошной перебор круга 3 принял единственный — ведущая
+    весь ролик.
+
+    В ветке с заказанным аватаром склейки нет: там окна навязаны материалом, а
+    общий путь `editplan` не менялся ни поведением, ни числами.
+    """
+    early = _skill(tmp_path / "early", avatar_ordered=False,
+                   phrases=FAST_PHRASES)
+    правило = _минимум_без_ведущей(early)
+    assert правило, "минимум сцены без ведущей не назван"
+    assert all("целиком" in part or "сложением" in part for part in правило), (
+        f"не сказано, что порог меряется сценой целиком: {правило}")
+    пофразно = [part for part in правило
+                if re.search(r"кажд\w+ (её )?фраз", part)]
+    assert not пофразно, (
+        f"порог всё ещё меряется каждой фразой: {пофразно}")
+    assert any("собирай" in part or "собери" in part for part in правило), (
+        "не сказано, что делать с короткими фразами — собирать их в одну сцену")
+
+    примеры = early.split("<examples>")[1].split("</examples>")[0]
+    склейка = [line for line in примеры.splitlines()
+               if "avatarNeeded: false" in line
+               and ("собери" in line or "собирай" in line)]
+    assert склейка, (
+        "краевой случай не показан примером: две короткие соседние фразы "
+        "собираются в одну сцену без ведущей")
+
+
+def test_три_разных_числа_три_секунды_названы_каждое_своим_именем(tmp_path):
+    """Дефект 8. Три несвязанных величины по 3.0 с — пол схемы `items`
+    (hf_schema.py), минимальный кусок заказа ведущей (avatar_islands.py) и
+    минимум сцены без ведущей (editplan.py) — читаются как одно правило.
+    У каждой в тексте своё имя, и ни одна не написана литералом.
+    """
+    brief = _text(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES)
+    skill = _skill(tmp_path)
+
+    order = [part for part in _с_числом(brief, THREE_SECONDS)
+             if "заказ" in part]
+    assert order, "минимальный кусок заказа не назван своим именем"
+
+    floors = [part for part in _с_числом(skill, THREE_SECONDS)
+              if "`items`" in part]
+    assert floors, "пол схемы `items` не назван своим именем"
+
+    blind = _минимум_без_ведущей(skill)
+    assert blind, "минимум сцены без ведущей не назван своим именем"
+    assert set(floors).isdisjoint(blind), (
+        "пол схемы и минимум сцены без ведущей стоят одним абзацем и "
+        "читаются одним правилом")
+
+
+def test_бюджет_и_финал_живут_каждый_в_своём_файле(tmp_path):
+    """Одно правило — одно место (проверка выше делает это для прежних тем).
+    Бюджет ведущей — данные этого ролика, его место в задании; правило про
+    финал — доктрина, её место в скиле.
+    """
+    brief = _text(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES)
+    skill = _skill(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES)
+    assert "последняя сцена" not in brief, (
+        "правило про финал сказано и в задании, и в скиле")
+    assert "avatarNeeded" in brief
+    потолок = _цели(41.5)[1]
+    for mark in (f"{потолок:.0f} с", f"{потолок:.1f} с"):
+        assert mark not in skill, (
+            "бюджет этого ролика попал в доктрину, общую для всех роликов")
+
+
+# ---------- круг ревизии: дефекты, найденные на собранных текстах ----------
+
+def _где_ведущей_нет(text: str) -> str:
+    """Секция про ведущую целиком.
+
+    До заказа она называется бюджетом — решение о ведущей там и принимается, а
+    после заказа дыры между островами навязаны материалом, и заголовок остаётся
+    прежним.
+    """
+    for title in ("## Бюджет ведущей", "## Где ведущей нет"):
+        if title in text:
+            return text.split(title)[1].split("\n## ")[0]
+    raise AssertionError("секции про ведущую в задании нет")
+
+
+def _куски(duration: float) -> int:
+    """Сколько кусков заказа выйдет в ролике такой длины.
+
+    Число навязано нашим же правилом «лицо не пропадает дольше
+    `MAX_FACE_ABSENCE_S` подряд»: между сценами без ведущей обязана стоять
+    сцена с ведущей, и остров режется на столько кусков, сколько таких
+    промежутков помещается в ролик, плюс один.
+    """
+    return math.ceil(duration / MAX_FACE_ABSENCE_S) + 1
+
+
+def test_цель_по_ведущей_ниже_ориентира_на_ручки_заказа(tmp_path):
+    """Ломает прод 3. Названная агенту цель равнялась линии отказа: гейт судит
+    секунды ЗАКАЗА (`_avatar_order_seconds`, hf_render.py), а к заказу код
+    прикладывает `handle_seconds` с каждого края каждого куска. Агент,
+    сложивший длительности фраз ровно до линии, промахивался на эти ручки.
+
+    Круг 3, дефект 3(а): ручки считались по трём кускам, а гейт считает их по
+    фактическому числу. На пяти-шести островах — а столько их навязывает наше
+    же правило про десять секунд без лица — агент, уложившийся в названную
+    цель, получал FAIL и жёг пересдачу.
+    """
+    section = _где_ведущей_нет(
+        _text(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES))
+    target, hard = _цели(41.5)
+    цель, граница = _секунды(target), _секунды(hard)
+    assert цель != граница, "тест бессмыслен: цель совпала с границей"
+
+    цели = [part for part in _абзацы(section, цель) if "цел" in part.lower()]
+    assert цели, f"цель по ведущей ({цель}) не названа"
+    assert any("складывай длительности фраз" in part for part in цели), (
+        "не сказано, чем набирать цель — длительностями фраз своих сцен")
+    assert any("ручек" in part or "ручки" in part for part in цели), (
+        "не сказано, почему цель ниже ориентира по ролику")
+
+    границы = [part for part in _абзацы(section, граница)
+               if "граница" in part.lower()]
+    assert границы, f"граница заказа ({граница}) не названа отдельным числом"
+    assert any("заказ" in part for part in границы), (
+        "не сказано, что граница меряется на заказе")
+
+
+def test_кусок_длиннее_предела_режет_код_а_не_агент(tmp_path):
+    """Ломает прод 3, вторая половина. Длинный остров код режет на несколько
+    заказов (`max_shot_seconds`, avatar_islands.py), и каждый кусок добирает
+    свою пару ручек. Агент, который об этом не знает, читает «один длинный
+    кусок дешевле трёх коротких» как обещание одной пары ручек на весь ролик.
+    """
+    section = _где_ведущей_нет(
+        _text(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES))
+    предел = f'{float(ISLAND_DEFAULTS["max_shot_seconds"]):g} с'
+    названо = [part for part in _абзацы(section, предел) if "реж" in part]
+    assert названо, f"не сказано, что кусок длиннее {предел} код режет сам"
+
+
+def test_контракт_поля_avatarNeeded_объявлен(tmp_path):
+    """Круг 4, дефект 3. Прежний текст обещал: «Сцену без этого поля код
+    считает заказанной». Обещание неверно — гейты такую сцену и правда считали
+    заказанной, а `apply_agent_coverage` её не трогал вовсе, и
+    `build_avatar_render_plan` падал «лицо отсутствует дольше 10 с» уже после
+    оплаты. Полноту решений судит отдельный гейт до заказа
+    (`D33_avatar_decisions`), поэтому задание требует поле у каждой сцены и
+    называет цену пропуска — пересдачу.
+    """
+    section = _где_ведущей_нет(
+        _text(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES))
+    assert "каждой сцене" in section, (
+        "не сказано, что поле ставится каждой сцене")
+    assert "без этого поля код считает заказанной" not in section, (
+        "задание всё ещё обещает, что сцена без поля идёт с ведущей")
+    пересдача = [part for part in _абзацы(section, "avatarNeeded")
+                 if "пересдач" in part]
+    assert пересдача, (
+        "не сказано, чем оборачивается сцена без поля — пересдачей плана")
+    assert any("платит заказчик" in part or "платит заказчику" in part
+               or "платит" in part for part in пересдача), (
+        "не названа причина, по которой поле обязательно, — это деньги")
+
+
+def test_запасная_схема_нужна_там_где_кадр_держит_вставка(tmp_path):
+    """Жжёт ходы 8. Задание требовало `fallback` у каждой сцены без ведущей, а
+    свод правил — только у сцены со вставкой. У сцены со схемой запасная
+    бессмысленна: схему рисует код, и она в кадре уже стоит.
+    """
+    for name, kw in (("ordered", {"clips": CLIPS, "phrases": GAP_PHRASES}),
+                     ("early", {"avatar_ordered": False,
+                                "phrases": GAP_PHRASES})):
+        section = _где_ведущей_нет(_text(tmp_path / name, **kw))
+        assert "вставка" in section and "`fallback`" in section
+        assert "У каждой сцены с `insert`" in section, (
+            f"{name}: запас потребован без привязки к самой вставке")
+        assert "Сцене со схемой запасная не нужна" in section, (
+            f"{name}: не сказано, что сцене со схемой `fallback` не нужен")
+        assert "у каждой такой сцены заполни `fallback`" not in section
+
+
+def test_форма_запасной_схемы_выбирается_по_длине_сцены(tmp_path):
+    """Канон 14. Совет «называй от пяти до восьми моментов, лишние код уберёт
+    сам» после работы 9 неполон: на сцене без ведущей снятая серия оставляет
+    кадр на `fallback`, и форма, которой не хватило пола, снимается тоже —
+    кадр пустеет, и это ловит D25 (`_empty_frame_problems`).
+    """
+    text = _skill(tmp_path)
+    assert "от пяти до восьми на ролик" in text, "совет про запас пропал"
+    assert "снятая серия оставляет кадр на `fallback`" in text, (
+        "не сказано, что при снятой серии кадр остаётся на запасной схеме")
+    assert "выбирай по длине этой сцены" in text, (
+        "не сказано, чем выбирать форму запасной схемы")
+
+
+def test_роли_hook_и_cta_идут_с_ведущей(tmp_path):
+    """Ломает прод 2. Окно роли `hook` или `cta` без ведущей валидатор
+    отклоняет (editplan.py:2559-2562), а роль куска — роль его первой фразы
+    (`_regroup_windows`, avatar_islands.py:357). Роли напечатаны у каждой
+    фразы задания, но правила про них не было ни в задании, ни в своде.
+    """
+    text = _skill(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES)
+    куски = [part for part in _абзацы(text, "`hook` и `cta`")
+             if "avatarNeeded: true" in part]
+    assert куски, "не сказано, что фразы ролей `hook` и `cta` идут с ведущей"
+    assert any("Роль напечатана" in part for part in куски), (
+        "не сказано, где агент берёт роль фразы")
+    assert any("то же, что `beat`" in part for part in куски), (
+        "роль фразы не отделена от `beat`, а имена значений там совпадают")
+
+
+def test_решение_про_ведущую_показано_примерами(tmp_path):
+    """Канон 11. На выбор уголка в своде правил четыре примера, а на
+    `avatarNeeded: false` — решение, которое после работы 9 стоит денег, — не
+    было ни одного. Их канон требует примеров и на краевые случаи.
+    """
+    early = _skill(tmp_path / "early", avatar_ordered=False,
+                   phrases=GAP_PHRASES)
+    block = early.split("<examples>")[1].split("</examples>")[0]
+    lines = block.splitlines()
+    отказы = [line for line in lines if "avatarNeeded: false" in line]
+    assert отказы, "примера на отказ от ведущей нет"
+    assert [line for line in lines if "avatarNeeded: true" in line], (
+        "примера на обязательную ведущую нет")
+    # Краевой случай — фраза короче порога сцены без ведущей. После склейки
+    # соседних окон (круг 4, дефект 1) выходов из него два, и оба стоят
+    # примером: две короткие соседние фразы собираются в одну сцену без
+    # ведущей, а короткая фраза, оставшаяся в сцене одна, идёт с ведущей.
+    короткие = [line for line in lines
+                if "короч" in line and any(mark in line
+                                           for mark in THREE_SECONDS)]
+    assert короткие, "краевой случай — фраза короче порога — примером не показан"
+    assert [line for line in короткие
+            if "avatarNeeded: false" in line
+            and ("собери" in line or "собирай" in line)], (
+        f"нет примера на склейку двух коротких фраз в сцену без ведущей: "
+        f"{короткие}")
+    assert [line for line in короткие if "avatarNeeded: true" in line], (
+        f"нет примера на короткую фразу, оставшуюся в сцене одну: {короткие}")
+
+    ordered = _skill(tmp_path / "ordered", phrases=GAP_PHRASES)
+    assert "avatarNeeded" not in ordered.split("<examples>")[1], (
+        "после заказа аватара примеры зовут решать поле, которого нет")
+
+
+def test_образец_плана_помечен_примером(tmp_path):
+    """Канон 11. Образец — пример, и их канон держит примеры в `<example>`:
+    так видна граница между «вот форма ответа» и «вот твой ответ».
+    """
+    text = _text(tmp_path, phrases=EVEN_PHRASES)
+    голова = text.split("```json")[0]
+    assert голова.rstrip().endswith("<example>"), (
+        "образец плана стоит вне `<example>`")
+    assert "</example>" in text.split("```json")[1]
+
+
+def test_хвост_образца_печатается_только_когда_есть_что_дописывать(tmp_path):
+    """Жжёт ходы 6. «остальные сцены до фразы N тем же порядком» печаталось и
+    тогда, когда образец дошёл до последней фразы сам, — агент дописывал сцены
+    на фразы, уже накрытые выше.
+    """
+    целиком = _text(tmp_path / "whole", phrases=GAP_PHRASES, clips=[],
+                    avatar_ordered=False)
+    assert "остальные сцены" not in целиком, (
+        "образец покрыл все фразы, а хвост всё равно обещает продолжение")
+    json.loads(целиком.split("```json")[1].split("```")[0])
+
+    # Фраз берём столько, чтобы групп вышло больше, чем образец показывает
+    # даже растянутым под бюджет (`SAMPLE_MAX_SCENES`): по две фразы на сцену
+    # это больше двенадцати.
+    длинный = [{"id": index, "role": "hook", "text": f"фраза {index}",
+                "start": index * 2.0, "end": index * 2.0 + 2.0}
+               for index in range(20)]
+    кусок = _text(tmp_path / "part", phrases=длинный, clips=[],
+                  avatar_ordered=False)
+    assert "остальные сцены до фразы 19" in кусок, (
+        "образец обрывается молча, и агент не знает про остальные сцены")
+
+
+def test_образец_не_спорит_с_числом_сцен(tmp_path):
+    """Жжёт ходы 6, вторая половина. Образец из четырёх сцен стоял рядом с
+    «сцен не меньше 6», и образец сильнее правила: агент отдавал четыре сцены.
+    Оговорка снимает спор — образец учит форме, а число сцен названо рядом.
+    """
+    text = _text(tmp_path, phrases=EVEN_PHRASES, clips=[])
+    оговорка = _абзац(text, text.index("Образец ниже показывает форму ответа"))
+    assert "не меньше" in оговорка, "число сцен рядом с образцом не названо"
+    assert "покрывают фразы" in оговорка, (
+        "не сказано, что план целиком покрывает фразы")
+
+
+def test_образец_не_отдаёт_финал_сцене_без_ведущей(tmp_path):
+    """Ломает прод 4. `blind_at = min(2, len(shown) - 1)` попадал в последнюю
+    показанную сцену, когда их меньше четырёх, — образец закрывал ролик сценой
+    без ведущей и учил против правила финала и против роли `cta`.
+    """
+    for count in (4, 5, 6, 8):
+        phrases = _фразы(count)
+        scenes = _board(_text(tmp_path / f"n{count}", phrases=phrases,
+                              clips=[], avatar_ordered=False))["scenes"]
+        последняя = scenes[-1]
+        assert последняя.get("avatarNeeded") is True, (
+            f"{count} фраз: образец закрывает ролик сценой без ведущей")
+        assert последняя["presenter"] != "none", (
+            f"{count} фраз: в финале образца ведущей нет в кадре")
+        assert scenes[0].get("avatarNeeded") is True, (
+            f"{count} фраз: образец открывает ролик сценой без ведущей")
+        отказы = [scene for scene in scenes
+                  if scene.get("avatarNeeded") is False]
+        assert not отказы or отказы[-1] is not scenes[-1]
+
+
+def test_пример_одиночной_сцены_ссылается_на_существующую_фразу(tmp_path):
+    """Пояснение к `phrases` показывало сцену из одной фразы как `[7, 7]` —
+    номер взят из воздуха. На коротком ролике (фразы `0`–4) он указывает на
+    фразу, которой нет, а образец в задании сильнее правила рядом с ним.
+    """
+    text = _text(tmp_path, phrases=GAP_PHRASES, clips=[], avatar_ordered=False)
+    последняя = GAP_PHRASES[-1]["id"]
+    пояснение = _абзац(text, text.index("Сцена из одной фразы"))
+    номера = {int(n) for n in re.findall(r"`\[(\d+), \d+\]`", пояснение)}
+    assert номера, "пример сцены из одной фразы пропал"
+    assert all(n <= последняя for n in номера), (
+        f"пример ссылается на фразу вне `0`–{последняя}: {sorted(номера)}")
+
+
+def test_образец_не_закрывает_ролик_уголком_под_схему(tmp_path):
+    """Тот же класс, что и «ломает прод 4», вторая его половина. Сцена со
+    схемой стоит с `presenter: "pip-br"`, и на коротком ролике (две группы
+    фраз) она оказывалась последней показанной — то есть финалом: образец учил
+    закрывать ролик уголком, а свод правил и гейт до заказа
+    (`D28_avatar_bookends`, hf_render.py) требуют `full` или `punch`.
+    """
+    закрывают = {"full", "punch"}
+    for count in (2, 3, 4, 5, 6, 8, 9):
+        phrases = _фразы(count)
+        рано = _board(_text(tmp_path / f"early{count}", phrases=phrases,
+                            clips=[], avatar_ordered=False))["scenes"]
+        после = _board(_text(tmp_path / f"done{count}", phrases=phrases,
+                             clips=FULL_CLIPS))["scenes"]
+        # Образец идёт до конца ролика ровно тогда, когда фраз хватило на
+        # четыре сцены и меньше: по две фразы на сцену. С хвостом-многоточием
+        # последняя показанная сцена финалом не является, и судить по ней
+        # нечего.
+        весь_ролик = count <= 8
+        for scenes, шаг in ((рано, "до заказа"), (после, "после заказа")):
+            assert scenes[0]["presenter"] in закрывают, (
+                f'{count} фраз, {шаг}: образец открывает ролик '
+                f'`{scenes[0]["presenter"]}`')
+            if not весь_ролик:
+                continue
+            assert scenes[-1]["presenter"] in закрывают, (
+                f'{count} фраз, {шаг}: образец закрывает ролик '
+                f'`{scenes[-1]["presenter"]}`')
+
+
+def test_секунды_пишутся_одним_способом(tmp_path):
+    """Канон 12. Одна и та же величина печаталась тремя способами — «1,5–4
+    секунды», «2.2 с», «4.0 с». Три написания читаются как три единицы;
+    формат один на оба файла (`seconds` в hf_montage_skill.py).
+    """
+    for text in (_text(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES),
+                 _skill(tmp_path)):
+        тело = text.split("---\n", 2)[-1]
+        точкой = re.findall(r"\d+\.\d+\s*с\b", тело)
+        assert not точкой, f"секунды через точку: {точкой}"
+        словом = re.findall(r"\d[\d,.]*\s*секунд\w*", тело)
+        assert not словом, f"секунды словом вместо «с»: {словом}"
+        нулём = re.findall(r"\d+,0\s*с\b", тело)
+        assert not нулём, f"нулевая десятая доля: {нулём}"
+
+
+def test_контракт_ответа_и_шрифты_сказаны_указанием(tmp_path):
+    """Канон 10. «Два файла, и никаких других» и «Гарнитуры не выбирай» —
+    запреты; их канон требует говорить, что делать, и называть причину.
+    """
+    text = _text(tmp_path)
+    assert "Верни ровно два файла" in text
+    assert "читает он только их" in text, "причина не названа"
+    assert "Гарнитуры уже выбраны и стоят в проекте" in text
+    assert "называй цвета и настроение" in text, (
+        "не сказано, что писать во `frame.md` вместо шрифта")
+    for banned in ("и никаких других", "Гарнитуры не выбирай"):
+        assert banned not in text, f"запрет вместо указания: {banned}"
+
+
+def test_число_кусков_названо_и_выведено_из_предела_без_лица(tmp_path):
+    """Круг 3, дефект 3(а), вторая половина. Цель и потолок разошлись на число,
+    которое агент не может проверить, а канон требует называть причину. Кусков
+    столько, сколько их навязывает правило про десять секунд без лица, и оценка
+    названа рядом с числом.
+    """
+    section = _где_ведущей_нет(
+        _text(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES))
+    куски = str(_куски(41.5))
+    названо = [part for part in _абзацы(section, куски) if "куск" in part]
+    assert названо, f"число кусков ({куски}) агенту не названо"
+    предел = f"{MAX_FACE_ABSENCE_S:g} с"
+    assert any(предел in part for part in названо), (
+        f"не сказано, откуда берётся число кусков — предел {предел} без лица")
+    assert not [part for part in названо
+                if "в самом экономном плане три" in part], (
+        "в тексте осталась прежняя оценка в три куска")
+
+
+def test_настройки_островов_доезжают_до_задания(tmp_path):
+    """Круг 3, дефект 3(в), половина в задании. Числа печатались по `DEFAULTS`,
+    а заказ идёт по настройкам клиента: правка настроек разводила задание, гейт
+    и счёт HeyGen. Вызов без параметра обязан работать по-прежнему — его делает
+    и сборка, и все прежние вызовы.
+    """
+    свои = {"handle_seconds": 0.5, "min_request_seconds": 4.0,
+            "max_shot_seconds": 12.0}
+    section = _где_ведущей_нет(
+        _text(tmp_path / "custom", avatar_ordered=False, phrases=GAP_PHRASES,
+              islands=свои))
+    assert "0,5 с" in section, "ручка куска напечатана не по настройкам"
+    assert "4 с" in section, "минимальный кусок заказа напечатан не по настройкам"
+    assert "12 с" in section, "предел куска напечатан не по настройкам"
+    цель = _цели(41.5, свои)[0]
+    assert f"{цель:.1f} с".replace(".", ",") in section, (
+        "цель по ведущей посчитана не по настройкам этого прогона")
+
+    умолчания = _где_ведущей_нет(
+        _text(tmp_path / "default", avatar_ordered=False, phrases=GAP_PHRASES))
+    handle = float(ISLAND_DEFAULTS["handle_seconds"])
+    assert f'{handle:g} с'.replace(".", ",") in умолчания, (
+        "вызов без настроек перестал печатать умолчания")
+
+
+def test_пол_серии_и_пол_сцены_без_ведущей_не_спорят(tmp_path):
+    """Круг 3, дефект 5. «Сцена под серию живёт 2,4–6 с» против «сцена без
+    ведущей живёт не меньше 3 с»: в зазоре 2,4–3 с правила зовут в разные
+    стороны, и проигрывает то, которое роняет сборку. Абзац про серию обязан
+    назвать, кому какой пол.
+    """
+    for kw in ({}, {"avatar_ordered": False, "phrases": GAP_PHRASES}):
+        skill = _skill(tmp_path / f"s{len(kw)}", **kw)
+        абзац = _абзац(skill, skill.index("Сцена под серию живёт"))
+        assert f"{SERIES_MIN:g}".replace(".", ",") in абзац, (
+            "пол серии из абзаца пропал")
+        assert any(mark in абзац for mark in THREE_SECONDS), (
+            "в абзаце про серию не назван пол сцены без ведущей")
+        assert "с ведущей" in абзац and "без ведущей" in абзац, (
+            "не сказано, кому какой пол принадлежит")
+
+
+def test_оговорка_про_образец_печатается_когда_сцен_меньше_пола(tmp_path):
+    """Круг 3, дефект 6. Оговорка печаталась только у образца с хвостом, а на
+    восьми фразах хвоста нет: образец из четырёх сцен читался законченным
+    планом рядом с требованием «сцен не меньше шести», и образец сильнее
+    правила.
+    """
+    text = _text(tmp_path, phrases=EVEN_PHRASES, clips=[])
+    оговорка = _абзац(text, text.index("Образец ниже показывает форму ответа"))
+    сцен = text.count('"id": "s-')
+    assert "остальные сцены" not in text, (
+        "тест бессмыслен: у образца есть хвост, и оговорка печаталась и раньше")
+    assert сцен < 6, "тест бессмыслен: сцен в образце не меньше пола"
+    assert str(сцен) in оговорка, (
+        "не сказано, сколько сцен в образце, — он читается готовым планом")
+    assert "не меньше 6" in оговорка, "пол числа сцен рядом с образцом пропал"
+
+
+def test_пол_числа_сцен_не_требует_больше_сцен_чем_есть_фраз(tmp_path):
+    """Круг 3, дефект 6, вторая половина. `min_scenes` считает пол по длине
+    ролика и о фразах не знает: на трёх фразах он требовал шести сцен, а сцена
+    называет номера фраз — шести сцен там не собрать вовсе.
+    """
+    коротко = _text(tmp_path / "three", phrases=GAP_PHRASES[:3], clips=[],
+                    avatar_ordered=False)
+    assert "Сцен не\n   меньше 3" in коротко or "меньше 3:" in коротко, (
+        "пол числа сцен больше числа фраз")
+    assert "меньше 6" not in коротко, "прежний пол остался в тексте"
+
+    длинно = _text(tmp_path / "eight", phrases=EVEN_PHRASES, clips=[],
+                   avatar_ordered=False)
+    assert "меньше 6" in длинно, (
+        "фраз хватает, а пол числа сцен всё равно срезан")
+
+
+def test_докстринг_образца_совпадает_с_поведением(tmp_path):
+    """Круг 3, дефект 7. Докстринг `_sample_plan` обещал, что образец покажет
+    оба значения `avatarNeeded`, а на коротком ролике отказа в нём нет вовсе:
+    открытие и финал ведёт лицо, и середины, свободной от краёв, там не
+    остаётся. Поведение верное — врал докстринг.
+    """
+    from reels_factory.hf_brief import _sample_plan
+
+    короткий = _board(_text(tmp_path / "short", phrases=GAP_PHRASES[:4],
+                            clips=[], avatar_ordered=False))["scenes"]
+    assert {scene["avatarNeeded"] for scene in короткий} == {True}, (
+        "поведение образца изменилось — докстринг надо перечитать заново")
+    doc = _sample_plan.__doc__
+    assert "обязан показать оба его значения" not in doc, (
+        "докстринг обещает то, чего образец на коротком ролике не делает")
+    assert "трёх" in doc, (
+        "докстринг не называет условие, при котором отказ в образце есть")
+
+
+def test_правило_финала_оговорено_материалом(tmp_path):
+    """Круг 3, дефект 8. В ветке «аватар заказан» образец закрывает ролик
+    сценой `presenter: "none"`, когда последние фразы попали в дыру между
+    островами: ведущей там нет физически, и D12 требует именно `none`. Свод
+    правил при этом требовал закрывать ролик лицом — два требования на один
+    случай, и агент выбирает одно.
+
+    До заказа оговорки быть не должно: там ведущую заказывают ровно по плану,
+    и финал за лицом всегда (`D28_avatar_bookends`, hf_render.py).
+    """
+    ordered = _skill(tmp_path / "ordered", phrases=GAP_PHRASES)
+    правило = _абзац(ordered, ordered.index("последняя сцена"))
+    assert "без ведущей" in правило, (
+        "правило финала не оговорено материалом: на дыре между островами лица "
+        "нет физически")
+    последняя = _board(_text(tmp_path / "ordered",
+                             phrases=GAP_PHRASES))["scenes"][-1]
+    assert последняя["presenter"] == "none", (
+        "тест бессмыслен: образец больше не закрывает ролик сценой без ведущей")
+
+    early = _skill(tmp_path / "early", avatar_ordered=False,
+                   phrases=GAP_PHRASES)
+    рано = _абзац(early, early.index("последняя сцена"))
+    assert "помеч" not in рано, (
+        "до заказа правило финала ссылается на пометку, которой там нет")
+
+
+def test_титр_и_кадр_разведены_указанием(tmp_path):
+    """Канон 10. «в кадр их не ставь» переписано положительно: сказано, что в
+    кадр ставить, и почему рубрика туда не годится.
+    """
+    text = _skill(tmp_path)
+    assert "в кадр ставь то, чего голос не сказал" in text
+    assert "«вопрос первый», «фото из каталога»" in text
+    assert "в кадр их не ставь" not in text
+
+
+# ---------- круг 5: попадание с первой-второй попытки ----------
+
+#: Два материала круга: обычная речь (фразы 3,5 с) и быстрая (2,4 с). На второй
+#: сплошной перебор круга 3 не находил ни одного плана, проходящего гейты,
+#: поэтому каждое требование этого круга проверяется на обеих.
+МАТЕРИАЛЫ = (("обычная речь", _фразы(16, 3.5), 56.0),
+             ("быстрая речь", _фразы(16, 2.42), 38.7))
+
+
+def _гейты(scenes: list[dict], phrases: list[dict], duration: float) -> dict:
+    """Приговор гейтов до заказа — тех самых, что судят план агента.
+
+    Сценам проставляем секунды. Гейты разбирают план по времени (`_scene_at` в
+    avatar_islands.py: фраза достаётся сцене, внутрь `startSec`–`endSec`
+    которой попала её середина), а агент называет сцену номерами фраз, и
+    секунды ей ставит код после сдачи плана (`lay_out_scenes` в hf_phrases.py).
+    Без них КАЖДАЯ сцена остаётся без фраз, и всё, что меряется фразами —
+    бюджет, пол сцены без ведущей, промежуток без лица, — говорит PASS на любом
+    плане: проверка была пустой и зелёной.
+    """
+    from reels_factory.avatar_islands import avatar_islands_settings
+    from reels_factory.hf_render import _early_plan_gates
+
+    длина = {p["id"]: (float(p["start"]), float(p["end"])) for p in phrases}
+    размеченные = []
+    for scene in scenes:
+        scene = dict(scene)
+        first, last = scene["phrases"][0], scene["phrases"][-1]
+        scene.setdefault("startSec", длина[first][0])
+        scene.setdefault("endSec", длина[last][1])
+        размеченные.append(scene)
+    verdicts = _early_plan_gates(размеченные, duration, phrases,
+                                 avatar_islands_settings({}))
+    return {name: value for name, value in verdicts.items()
+            if not value.startswith("PASS")}
+
+
+def _план_из_образца(text: str, phrases: list[dict]) -> list[dict]:
+    """Образец задания как план: показанные сцены плюс хвост, дописанный так,
+    как хвост подписан в самом образце.
+
+    Подпись хвоста говорит «та же длина, то же чередование сцен с ведущей и без
+    неё, финал за лицом» — этим и продолжаем: сцены той же длины, отказ через
+    одну, последняя сцена ролика с ведущей. Гейты судят план целиком, и хвост,
+    отданный целиком ведущей, валил бы бюджет — но такому плану образец и не
+    учит.
+    """
+    scenes = [dict(scene) for scene in _board(text)["scenes"]]
+    last = phrases[-1]["id"]
+    размер = max(1, len(range(scenes[0]["phrases"][0],
+                             scenes[0]["phrases"][-1] + 1)))
+    следующая = scenes[-1]["phrases"][-1] + 1
+    ведущая = bool(scenes[-1].get("avatarNeeded", True))
+    хвост = []
+    while следующая <= last:
+        край = min(следующая + размер - 1, last)
+        ведущая = not ведущая
+        сцена = {"id": f"s-tail{len(хвост)}", "beat": "point",
+                 "phrases": [следующая, край],
+                 "presenter": "full" if ведущая else "none",
+                 "avatarNeeded": ведущая}
+        if not ведущая:
+            # Сцена без ведущей обязана нести вставку: кадр там больше нечем
+            # закрыть, и ровно так её показывает сам образец. Без этого хвост
+            # получался беднее образца, и план не набирал моментов под вставку
+            # (`D34_inserts`).
+            сцена["insert"] = {"shots": ["hands sorting papers on a desk"],
+                               "kind": "video"}
+            сцена["fallback"] = {"form": "items", "why": "набор равноправных",
+                                 "items": [{"label": "кому", "icon": "человек"},
+                                           {"label": "что", "icon": "документ"},
+                                           {"label": "как", "icon": "поиск"}]}
+        хвост.append(сцена)
+        следующая = край + 1
+    if хвост:
+        # Финал ведёт лицо — так подписан хвост образца.
+        хвост[-1].update(avatarNeeded=True, presenter="punch", beat="climax")
+        for scene in scenes:
+            if scene.get("beat") == "climax":
+                scene["beat"] = "point"
+    return scenes + хвост
+
+
+def _счёт_из_задания(text: str) -> list[tuple[int, int]]:
+    """Сцены без ведущей из «сильной» половины счёта-примера в задании."""
+    block = text.split("<example>\n")[1].split("</example>")[0]
+    strong = [line for line in block.splitlines() if "проходит" in line][0]
+    spans = re.search(r"на фразах ([^—]+)—", strong).group(1)
+    found = []
+    for part in spans.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        first, _, last = part.partition("–")
+        found.append((int(first), int(last or first)))
+    return found
+
+
+def test_образец_плана_проходит_гейты_до_заказа(tmp_path):
+    """Требование круга: образец не спорит ни с одним правилом, по которому
+    план судят. Прежний образец спорил с самым дорогим из них — с бюджетом.
+
+    Судим не глазами, а теми же гейтами (`_early_plan_gates`, hf_render.py):
+    образец сильнее любого правила рядом с ним, поэтому план, собранный по
+    образцу, обязан проходить.
+    """
+    for имя, phrases, duration in МАТЕРИАЛЫ:
+        text = _text(tmp_path / f"s{имя}", phrases=phrases, clips=[],
+                     duration=duration, avatar_ordered=False)
+        плохо = _гейты(_план_из_образца(text, phrases), phrases, duration)
+        assert not плохо, (
+            f"{имя}: образец учит плану, который заворачивают: {плохо}")
+
+
+def test_доля_ведущей_в_образце_не_выше_потолка(tmp_path):
+    """Круг 5, дефект 1. В образце было четыре сцены и ведущая на трёх — 75 %
+    показанного при потолке 60 %. Образец сильнее правила, стоящего рядом, и
+    агент воспроизводил именно эту пропорцию.
+    """
+    for имя, phrases, duration in МАТЕРИАЛЫ:
+        text = _text(tmp_path / f"b{имя}", phrases=phrases, clips=[],
+                     duration=duration, avatar_ordered=False)
+        scenes = _board(text)["scenes"]
+        длина = {p["id"]: float(p["end"]) - float(p["start"]) for p in phrases}
+
+        def _длина(scene):
+            first, last = scene["phrases"][0], scene["phrases"][-1]
+            return sum(длина[pid] for pid in range(first, last + 1))
+
+        всего = sum(_длина(scene) for scene in scenes)
+        с_ведущей = sum(_длина(scene) for scene in scenes
+                        if scene.get("avatarNeeded") is not False)
+        # Мерка та же, какой меряется сам образец: сложение длительностей фраз.
+        # Граница заказа тех же секунд не значит — заказ добирает ручки, — и
+        # доля от неё разрешала бы образцу расстановку, которую гейт валит.
+        потолок = _граница_в_счёте_агента(duration) / duration
+        assert с_ведущей / всего <= потолок + 1e-6, (
+            f"{имя}: в образце ведущая на {с_ведущей / всего:.0%} показанного "
+            f"при потолке {потолок:.0%}")
+        assert any(scene.get("avatarNeeded") is False for scene in scenes), (
+            f"{имя}: образец не показывает отказа от ведущей вовсе")
+
+
+def test_счёт_бюджета_показан_примером_и_проходит_гейты(tmp_path):
+    """Канон: «Multishot examples work with thinking… show Claude the reasoning
+    pattern». Ревизия круга 4 замерила, что арифметика агента верна, а
+    промахивается он на квантовании — мерка плана целая сцена. Поэтому пример
+    показывает сам счёт, обе его стороны (слабую и сильную), и назван на
+    настоящих номерах фраз этого ролика.
+    """
+    for имя, phrases, duration in МАТЕРИАЛЫ:
+        text = _text(tmp_path / f"c{имя}", phrases=phrases, clips=[],
+                     duration=duration, avatar_ordered=False)
+        section = _где_ведущей_нет(text)
+        assert "<example>" in section, f"{имя}: счёта-примера в бюджете нет"
+        assert "вернётся на пересдачу" in section, (
+            f"{имя}: слабая половина пары не показана")
+        # Сильная половина — план, который гейты действительно принимают.
+        blind = _счёт_из_задания(text)
+        assert len(blind) >= 2, f"{имя}: сильный вариант не назвал сцен"
+        куски, at = [], 0
+        for first, last in blind:
+            if at < first:
+                куски.append((at, first - 1, True))
+            куски.append((first, last, False))
+            at = last + 1
+        if at <= phrases[-1]["id"]:
+            куски.append((at, phrases[-1]["id"], True))
+        план = [{"id": f"s-{i + 1:02d}", "phrases": [first, last],
+                 "avatarNeeded": avatar,
+                 "presenter": ("punch" if avatar and i == len(куски) - 1
+                               else "full" if avatar else "none"),
+                 "beat": "hook" if i == 0 else "point",
+                 # Сцену без ведущей держит вставка — иначе кадр пуст, и этого
+                 # же числа моментов требует `D34_inserts`.
+                 "insert": None if avatar else {
+                     "shots": ["hands sorting papers on a desk"],
+                     "kind": "video"}}
+                for i, (first, last, avatar) in enumerate(куски)]
+        плохо = _гейты(план, phrases, duration)
+        assert not плохо, (
+            f"{имя}: счёт-пример учит плану, который валят: {плохо}")
+
+
+def test_цель_и_граница_названы_порознь_и_допуск_объяснён(tmp_path):
+    """Решение заказчика этого круга: ориентир доли ведущей — одно число,
+    граница отказа — другое, и между ними план годен.
+
+    Sonnet читает буквально и не обобщает одно указание на другое
+    (prompting-claude-sonnet-5), поэтому глаголы у чисел разные: в цель целятся,
+    выше границы заворачивают. Без явной оговорки «между ними план годен»
+    буквальный читатель принял бы цель за единственно допустимое число.
+    """
+    text = _text(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES)
+    section = _где_ведущей_нет(text)
+    target, hard = _цели(41.5)
+    цель = _абзацы(section, _секунды(target))
+    граница = _абзацы(section, _секунды(hard))
+    assert any("Ориентир по ролику" in part for part in цель), (
+        "цель не названа ориентиром — читается линией отказа")
+    assert any("не линия отказа" in part for part in цель), (
+        "не сказано, что цель отказом не является")
+    assert any("ручек" in part or "ручки" in part for part in цель), (
+        "не названа первая причина допуска: заказ длиннее показа на ручки")
+    годен = [part for part in граница if "план годен" in part]
+    assert годен, "не сказано, что между целью и границей план годен"
+    assert any("целая сцена" in part for part in годен), (
+        "не названа вторая причина допуска: мерка агента — целая сцена")
+
+
+def test_требование_бюджета_сказано_действием(tmp_path):
+    """Канон: «Tell Claude what to do instead of what not to do». «Не выходи за
+    потолок» действием не является, а «отдай вставке не меньше N секунд, это от
+    A до B сцен» — является, и мерка тут та же, какой считает агент.
+    """
+    for имя, phrases, duration in МАТЕРИАЛЫ:
+        section = _где_ведущей_нет(
+            _text(tmp_path / f"d{имя}", phrases=phrases, clips=[],
+                  duration=duration, avatar_ordered=False))
+        отдай = _абзацы(section, "отдай не меньше")
+        assert отдай, f"{имя}: требование бюджета не повёрнуто в действие"
+        target = _цели(duration)[0]
+        assert any(f"{duration - target:.1f} с".replace(".", ",") in part
+                   or f"{duration - target:.0f} с" in part
+                   for part in отдай), (
+            f"{имя}: не названо, сколько секунд уходит вставке и схеме")
+        assert any("сцен с `avatarNeeded: false`" in part for part in отдай), (
+            f"{имя}: не названа вилка числа сцен без ведущей")
+
+
+def test_роли_hook_и_cta_названы_суммой_секунд(tmp_path):
+    """Ревизия круга 4: роли `hook` и `cta` съедали от 58 до 81 % цели ещё до
+    первого свободного решения агента, а сумму он не видел — роли напечатаны у
+    каждой фразы порознь, итог не подводился. Код её знает.
+    """
+    for имя, phrases, duration in МАТЕРИАЛЫ:
+        section = _где_ведущей_нет(
+            _text(tmp_path / f"r{имя}", phrases=phrases, clips=[],
+                  duration=duration, avatar_ordered=False))
+        занято = sum(float(p["end"]) - float(p["start"]) for p in phrases
+                     if p["role"] in ("hook", "cta"))
+        части = [part for part in _абзацы(section, "`hook` и `cta`")
+                 if "забирают" in part]
+        assert части, f"{имя}: сумма ролей `hook` и `cta` не названа"
+        assert any(f"{занято:.1f} с".replace(".", ",") in part
+                   or f"{занято:.0f} с" in part for part in части), (
+            f"{имя}: названо не то число ({занято:g} с)")
+
+
+def test_все_гейты_названы_в_сверке_перед_сдачей(tmp_path):
+    """Приём взят у фреймворка: «## Self-check before finishing… the codes in
+    parens are `hyperframes lint`'s and what the orchestrator may cite back»
+    (hyperframes-core/references/frame-worker-core.md:63-80). Имена гейтов агент
+    всё равно видит в причине пересдачи, а до отказа не знал, по чему его судят.
+
+    Anthropic советует то же самое: «Ask Claude to self-check… This catches
+    errors reliably», и от приёма освобождён только Opus 5 — наш планировщик
+    Sonnet 5.
+    """
+    text = _text(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES)
+    сверка = text.split("## Сверка перед сдачей")[1]
+    for гейт in ("D28_avatar_bookends", "D29_avatar_budget",
+                 "D30_avatar_roles", "D31_faceless_scenes",
+                 "D32_face_absence", "D33_avatar_decisions"):
+        assert гейт in сверка, f"{гейт} в сверке не назван"
+    assert "почини план и только потом записывай файлы" in сверка, (
+        "не сказано, что делать с найденным расхождением")
+    # Мерка каждого пункта — та же, какой меряет гейт: сложение длительностей
+    # фраз сцены. Иначе агент сверяется не тем, чем его судят.
+    assert сверка.count("длительност") >= 3, (
+        "пункты сверки не называют, чем мерить")
+
+
+def test_сверка_стоит_последней_а_данные_выше_инструкций(tmp_path):
+    """Канон про порядок: «Put longform data at the top… Queries at the end can
+    improve response quality». Длинные данные у нас одни — список фраз; контракт
+    ответа, образец и сверка стоят в конце.
+    """
+    text = _text(tmp_path, avatar_ordered=False, phrases=EVEN_PHRASES)
+    порядок = [text.index(mark) for mark in
+               ("## Сценарий", "## Фразы озвучки", "## Порядок работы",
+                "## Что вернуть", "## Сверка перед сдачей")]
+    assert порядок == sorted(порядок), f"разделы идут не по канону: {порядок}"
+    assert text.rstrip().endswith(
+        "почини план и только потом записывай файлы."), (
+        "последним агент читает не сверку")
+
+
+def test_пересдача_названа_жёстким_ограничением(tmp_path):
+    """Их формулировка: «if your context carries `lint` / `check` feedback from
+    a prior pass, read it first and re-author so none of those findings recur;
+    treat each as a hard constraint» (frame-worker-core.md:25). Наш раздел
+    называл причину, но не переводил её в статус ограничения.
+    """
+    text = _text(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES,
+                 retry_reason="D29_avatar_budget: FAIL: 40 с при потолке 25 с")
+    section = text.split("# Задание на монтаж рилса")[1].split(
+        "\n## Что решаешь не ты")[0]
+    assert "жёстким ограничением" in section, (
+        "замечания прошлой попытки не названы ограничением")
+    assert "ни одно из них не должно повториться" in section
+
+
+def test_главная_ошибка_названа_отдельным_блоком(tmp_path):
+    """Форма их: «## Core rule… **The single most common failure is…**»
+    (faceless-explainer/references/story-design.md:29-31). Наша самая частая
+    ошибка измерена сплошным перебором: план валится на бюджете заказа, пройдя
+    все прочие правила, — и до этого круга нигде не была названа ошибкой №1.
+    """
+    рано = _text(tmp_path / "early", avatar_ordered=False, phrases=GAP_PHRASES)
+    assert "## Главная ошибка" in рано
+    блок = рано.split("## Главная ошибка")[1].split("\n## ")[0]
+    assert "границу заказа" in блок, "не названа цена ошибки"
+    assert "ДО того как распишешь сцены" in блок, (
+        "не сказано, что делать вместо этого")
+    # Ошибка у шагов разная: после заказа клипы уже куплены, и дорого обратное
+    # — прятать оплаченную ведущую.
+    после = _text(tmp_path / "done", phrases=GAP_PHRASES)
+    assert "Оплаченная ведущая спрятана" in после
+
+
+def test_решение_про_ведущую_дано_таблицей_случаев(tmp_path):
+    """Форма их: дорогое решение выносится нулевым шагом и оформляется строкой
+    на случай («0. **Decide first…**» и таблица «Category | Pick when…»,
+    motion-graphics/agents/director.md:9-11). Прежде решение выводилось из
+    четырёх примеров подряд.
+    """
+    skill = _skill(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES)
+    таблица = skill.split("| Случай | `avatarNeeded` |")[1].split("\n\n")[0]
+    for случай in ("`hook` или `cta`", "открывает или закрывает ролик",
+                   "Предыдущая сцена уже идёт без ведущей"):
+        assert случай in таблица, f"в таблице решения нет случая: {случай}"
+    assert "Ни одна строка не подошла" in skill, (
+        "не сказано, что делать, когда ни один случай не подошёл")
+    после = _skill(tmp_path / "done", phrases=GAP_PHRASES)
+    assert "| Случай |" not in после, (
+        "после заказа таблица зовёт решать поле, которого нет")
+
+
+def test_края_ролика_судятся_двумя_мерками_и_названы_обеими(tmp_path):
+    """Круг 4, дефект 5. `D28_avatar_bookends` требует ОДНОВРЕМЕННО
+    полнокадрового положения и `avatarNeeded: true`, а правило называло только
+    положение: связь подана в другом разделе и в одну сторону, и буквальный
+    читатель обратную не выводит.
+    """
+    skill = _skill(tmp_path / "early", avatar_ordered=False,
+                   phrases=GAP_PHRASES)
+    for mark in ("первая сцена", "последняя сцена"):
+        правило = _абзац(skill, skill.index(mark))
+        assert "`avatarNeeded: true`" in правило, (
+            f"правило про «{mark}» не называет заказ ведущей")
+
+
+def test_предел_без_лица_назван_меркой_а_не_ощущением(tmp_path):
+    """`D32_face_absence` меряет сумму идущих подряд сцен без ведущей. Правило
+    говорило «когда сцен без ведущей идёт несколько» — это не мерка, и агенту
+    нечем себя проверить.
+    """
+    skill = _skill(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES)
+    правило = _абзац(skill, skill.index("Лицо не пропадает дольше"))
+    assert "сложи" in правило.lower(), "не сказано, чем мерить промежуток"
+    assert "подряд сцен без ведущей" in правило
+
+
+def test_вилка_обычной_сцены_не_спорит_с_полом_сцены_без_ведущей(tmp_path):
+    """Ревизия круга 4, место 6: «Обычная сцена живёт 1,5–4 с» стояло рядом с
+    «сцена без ведущей живёт не меньше 3 с», и на быстрой речи агент штатно
+    отдавал вставке сцену в 2,4 с — законную по первой строке и незаконную по
+    второй.
+    """
+    for kw in ({}, {"avatar_ordered": False, "phrases": FAST_PHRASES}):
+        skill = _skill(tmp_path / f"v{len(kw)}", **kw)
+        правило = _абзац(skill, skill.index("1,5–4 с"))
+        assert "с ведущей" in правило, (
+            "вилка обычной сцены не сказала, к какой сцене относится")
+        assert "без ведущей" in правило, (
+            "рядом с вилкой не назван пол сцены без ведущей")
+
+
+def _граница_в_счёте_агента(duration: float) -> float:
+    """Та же граница бюджета, но в мерке агента: сложением длительностей фраз.
+
+    Гейт судит секунды ЗАКАЗА, а агент складывает фразы, и разница — ручки по
+    краям кусков. Число считает `avatar_budget_targets`, повторять его формулу
+    в тесте нельзя по той же причине, что и в `_цели`.
+    """
+    from reels_factory.avatar_islands import (
+        avatar_budget_targets, avatar_islands_settings,
+    )
+
+    return avatar_budget_targets(
+        duration, avatar_islands_settings({}))["hard_target_seconds"]
+
+
+def test_граница_бюджета_названа_и_в_счёте_агента(tmp_path):
+    """Хвост между агентами. Сверка велела складывать длительности фраз и
+    сравнивать сумму с границей, названной в секундах ЗАКАЗА: заказ длиннее
+    показа на ручки, поэтому пункт сверки обещал проход плану, который
+    `D29_avatar_budget` заворачивает. Граница называется дважды — секундами
+    заказа (её видит гейт) и секундами счёта агента (её проверяет он сам).
+    """
+    for имя, phrases, duration in МАТЕРИАЛЫ:
+        text = _text(tmp_path / f"h{имя}", phrases=phrases, clips=[],
+                     duration=duration, avatar_ordered=False)
+        мера = _секунды(_граница_в_счёте_агента(duration))
+        заказ = _секунды(_цели(duration)[1])
+        assert мера != заказ, "тест бессмыслен: обе границы совпали"
+        свои = [part for part in _абзацы(_где_ведущей_нет(text), мера)
+                if "твоём счёте" in part]
+        assert свои, f"{имя}: граница в счёте агента ({мера}) не названа"
+        пункт = [line for line in
+                 text.split("## Сверка перед сдачей")[1].splitlines()
+                 if "длительностей фраз всех сцен" in line]
+        assert пункт, f"{имя}: пункта сверки про бюджет нет"
+        абзац = _абзац(text, text.index(пункт[0]))
+        assert мера in абзац, (
+            f"{имя}: сверка судит счёт агента чужой меркой — в ней {заказ}, "
+            f"а сложение фраз меряется {мера}")
+
+
+def test_план_под_границей_счёта_агента_бюджет_пропускает(tmp_path):
+    """Число из сверки проверяется тем же гейтом, которым судят план: план,
+    уложившийся в него и прошедший остальные проверки, бюджет обязан брать.
+    Иначе сверка снова обещает проход тому, кого заворачивают.
+
+    Перебираем все расстановки ведущей по сценам из двух фраз на обоих
+    материалах круга — так же, как мерила ревизия.
+    """
+    for имя, phrases, duration in МАТЕРИАЛЫ:
+        мера = _граница_в_счёте_агента(duration)
+        куски = [phrases[i:i + 2] for i in range(0, len(phrases), 2)]
+        проверено = 0
+        for mask in range(1 << len(куски)):
+            флаги = [bool(mask >> bit & 1) for bit in range(len(куски))]
+            сумма = sum(float(p["end"]) - float(p["start"])
+                        for кусок, флаг in zip(куски, флаги) if флаг
+                        for p in кусок)
+            if сумма > мера:
+                continue
+            # Вставку несут и сцены без ведущей (кадр там больше нечем
+            # закрыть), и середина ролика с ведущей в верхней половине кадра:
+            # моментов под вставку план обязан набрать столько же, сколько
+            # требует `D34_inserts`, и одними «слепыми» сценами их не набрать.
+            def _сцена(i, к, флаг):
+                край = i == 0 or i == len(куски) - 1
+                scene = {"id": f"s-{i:02d}",
+                         "phrases": [к[0]["id"], к[-1]["id"]],
+                         "avatarNeeded": флаг,
+                         "beat": "hook" if i == 0 else "point",
+                         "presenter": "full" if флаг else "none",
+                         "insert": None}
+                if not флаг or not край:
+                    scene["insert"] = {
+                        "shots": ["hands sorting papers on a desk"],
+                        "kind": "video"}
+                    if флаг:
+                        scene["presenter"] = "stack"
+                return scene
+
+            план = [_сцена(i, к, флаг)
+                    for i, (к, флаг) in enumerate(zip(куски, флаги))]
+            плохо = _гейты(план, phrases, duration)
+            if set(плохо) - {"D29_avatar_budget"}:
+                continue  # план валят другие правила — бюджет тут ни при чём
+            проверено += 1
+            assert "D29_avatar_budget" not in плохо, (
+                f"{имя}: план на {сумма:g} с при мере {мера:g} с прошёл все "
+                f"прочие правила, а бюджет его завернул: "
+                f"{плохо['D29_avatar_budget']}")
+        assert проверено, f"{имя}: под мерой не нашлось ни одного плана"
+
+    # Обратная сторона: мерой сверки не может быть сама граница заказа. Этот
+    # план (обычная речь, вставке отданы фразы 7, 9–10, 12–13) складывается в
+    # 38,5 с — ниже границы заказа 39,2 с и выше меры счёта 36,4 с, и бюджет
+    # его заворачивает. Сплошной перебор нашёл таких 366 из 65 536; прежняя
+    # сверка каждому из них обещала проход.
+    phrases, duration = _фразы(16, 3.5), 56.0
+    без_ведущей = {7, 9, 10, 12, 13}
+    план = [{"id": f"s-{p['id']:02d}", "phrases": [p["id"], p["id"]],
+             "avatarNeeded": p["id"] not in без_ведущей,
+             "beat": "hook" if p["id"] == 0 else "point",
+             "presenter": "none" if p["id"] in без_ведущей else "full"}
+            for p in phrases]
+    сумма = sum(float(p["end"]) - float(p["start"]) for p in phrases
+                if p["id"] not in без_ведущей)
+    assert (_граница_в_счёте_агента(duration) < сумма
+            <= _цели(duration)[1]), "тест бессмыслен: план не в полосе"
+    assert "D29_avatar_budget" in _гейты(план, phrases, duration), (
+        "план между мерой счёта и границей заказа гейт берёт — тогда сверке "
+        "хватило бы границы заказа")
+
+
+def test_действие_бюджета_названо_и_границей_и_целью(tmp_path):
+    """Допуск этого круга сказан и в той половине бюджета, которая повёрнута в
+    действие. Прежде «отдай не меньше» стояло у числа ЦЕЛИ, и абзац требовал
+    больше, чем абзац выше объявлял годным: план между целью и границей задание
+    называло годным и тут же запрещало.
+    """
+    for имя, phrases, duration in МАТЕРИАЛЫ:
+        text = _text(tmp_path / f"g{имя}", phrases=phrases, clips=[],
+                     duration=duration, avatar_ordered=False)
+        отдай = [part for part in _абзацы(_где_ведущей_нет(text),
+                                          "отдай не меньше")]
+        assert отдай, f"{имя}: требование не повёрнуто в действие"
+        цель, граница = _цели(duration)[0], _граница_в_счёте_агента(duration)
+        мало = _секунды(duration - граница)
+        много = _секунды(duration - цель)
+        assert мало != много, "тест бессмыслен: числа совпали"
+        assert any(f"не меньше {мало}" in part for part in отдай), (
+            f"{имя}: «не меньше» стоит не у границы ({мало})")
+        assert any(много in part for part in отдай), (
+            f"{имя}: цель ({много}) в требовании-действии не названа")
+
+
+def test_пол_сцены_без_ведущей_переведён_во_фразы(tmp_path):
+    """Хвост соседа: на быстрой речи сплошной перебор не нашёл ни одного годного
+    плана из 65 536 — все расстановки, где сцена без ведущей взяла одну фразу,
+    валил `D31_faceless_scenes`. Пол сцены сказан секундами, а мерка агента —
+    фразы, и перевод он делал сам. Число знает код.
+    """
+    section = _где_ведущей_нет(
+        _text(tmp_path / "fast", phrases=_фразы(16, 2.42), clips=[],
+              duration=38.7, avatar_ordered=False))
+    сказано = [part for part in _абзацы(section, "не меньше 2 подряд")]
+    assert сказано, "на быстрой речи не сказано, сколько фраз берёт такая сцена"
+    assert "D31_faceless_scenes" in сказано[0], (
+        "рядом с числом не названа проверка, которая его требует")
+    длинные = _где_ведущей_нет(
+        _text(tmp_path / "slow", phrases=_фразы(16, 3.5), clips=[],
+              duration=56.0, avatar_ordered=False))
+    assert "подряд, иначе сцена не наберёт" not in длинные, (
+        "на обычной речи одной фразы хватает — оговорка лишняя")
+
+
+def test_краевой_случай_показан_парой_сильный_слабый(tmp_path):
+    """Их приём: «**Strong** (concretization)… **Weak** (article-paraphrase)…»
+    (faceless-explainer/references/story-design.md:198-199). Канон Sonnet 5
+    разрешает отрицательный пример только парой к положительному, поэтому пара
+    одна и стоит на самой частой ошибке — сцене без ведущей короче пола.
+    """
+    skill = _skill(tmp_path, avatar_ordered=False, phrases=FAST_PHRASES)
+    примеры = skill.split("<examples>")[1].split("</examples>")[0]
+    пара = [block for block in примеры.split("<example>")
+            if "Слабый вариант" in block]
+    assert пара, "пары «сильный/слабый» на решение про ведущую нет"
+    assert "собери их в одну сцену" in пара[0], (
+        "в паре не показано, как делать правильно")
+    assert примеры.count("Слабый вариант") == 1, (
+        "отрицательных примеров больше одного — канон разрешает их только "
+        "парой к положительному")
+
+
+def test_счёт_пример_не_зовёт_в_сцену_длиннее_предела():
+    """Ревизия пятого круга: счёт-пример называл куски по 9,0 и 9,6 с, потому
+    что мерил их пределом промежутка без лица (10 с). Сцена такой длины —
+    отказ раскладки (`MAX_STATIC_SPAN`, 8 с) ещё ДО первого гейта, то есть
+    пример учил плану, который срывается раньше всех проверок.
+    """
+    from reels_factory.hf_brief import _faceless_candidates
+    from reels_factory.hf_rhythm import MAX_STATIC_SPAN
+
+    фразы = [{"id": i, "role": ("hook" if i == 0 else "cta" if i == 15
+                                else "context"),
+              "start": i * 3.6, "end": (i + 1) * 3.6, "text": f"фраза {i}"}
+             for i in range(16)]
+    куски = _faceless_candidates(фразы)
+    assert куски, "пример не нашёл ни одного куска — проверять нечего"
+    for кусок in куски:
+        длина = sum(float(p["end"]) - float(p["start"]) for p in кусок)
+        assert длина <= MAX_STATIC_SPAN + 1e-6, (
+            f"пример зовёт в сцену {длина:.1f} с при пределе {MAX_STATIC_SPAN}")
+
+
+def test_хвост_образца_не_зовёт_прятать_оплаченную_ведущую(tmp_path):
+    """Ревизия пятого круга: правило «то же чередование сцен с ведущей и без
+    неё» уехало в обе ветки. Там, где аватар уже куплен, прятать его нечем
+    оправдать — доктрина этой ветки обратная, и чередование звало бы выбросить
+    оплаченные секунды.
+    """
+    длинные = [{"id": i, "role": ("hook" if i == 0 else "cta" if i == 15
+                                  else "context"),
+                "start": i * 2.5, "end": (i + 1) * 2.5, "text": f"фраза {i}"}
+               for i in range(16)]
+    до_заказа = _text(tmp_path / "рано", phrases=длинные, duration=40.0,
+                      avatar_ordered=False)
+    после_заказа = _text(tmp_path / "поздно", phrases=длинные, duration=40.0)
+
+    хвост_рано = [s for s in до_заказа.splitlines() if "остальные сцены" in s]
+    хвост_потом = [s for s in после_заказа.splitlines()
+                   if "остальные сцены" in s]
+    assert хвост_рано and "чередование" in хвост_рано[0]
+    assert not хвост_потом or "чередование" not in хвост_потом[0]
+
+
+def test_образец_остаётся_разбираемым_json(tmp_path):
+    """Ревизия пятого круга: хвост образца разрезали на две строки, и `}}` из
+    f-строки уехало в обычную — образец закрывался двумя скобками и переставал
+    читаться как JSON в обеих ветках. Тесты этого не поймали: их помощник
+    срезает закрытие сам.
+    """
+    for kw in ({"phrases": EVEN_PHRASES, "avatar_ordered": False},
+               {"phrases": GAP_PHRASES}):
+        text = _text(tmp_path / str(len(kw)), **kw)
+        sample = text.split("```json")[1].split("```")[0].rstrip()
+        assert not sample.endswith("}}"), "образец закрыт двумя скобками"
+        assert sample.endswith("}")
+
+
+# ---------- круг 6: чем закрыть кадр ----------
+#
+# Прогон hf-live2: 2,7 с фона с титром на 25-й секунде. Сцена s-07 стояла со
+# вставкой и `avatarNeeded: true`, вставка не собралась, ведущей на этих
+# секундах не оказалось — и закрыть кадр было нечем, потому что правило про
+# запас было условным: «заполняй `fallback` у сцены с `avatarNeeded: false`».
+# Условие агент выполнил по букве, а кадр остался пуст.
+
+def _запас(text: str) -> str:
+    """Раздел свода правил про запас — то, чем закрывают кадр без вставки."""
+    заголовок = "## Запас: чем закрыть кадр, если вставки не будет"
+    assert заголовок in text, "раздела про запас в своде правил нет"
+    return text.split(заголовок)[1].split("\n## ")[0]
+
+
+def _средства(text: str) -> str:
+    """Раздел с закрытым списком средств кадра."""
+    заголовок = "## Чем закрывают кадр"
+    assert заголовок in text, "закрытого списка средств в своде правил нет"
+    return text.split(заголовок)[1].split("\n## ")[0]
+
+
+def test_средства_кадра_даны_закрытым_списком(tmp_path):
+    """Диагноз 4: «чем закрыть кадр» нигде не объявлено закрытым списком, а
+    последствие описано вместо действия. Канон Anthropic про выбор из набора —
+    перечислять валидные значения; форма таблицы у нас уже работает на решении
+    про ведущую (`D33_avatar_decisions` зелёный на обоих прогонах).
+    """
+    section = _средства(_skill(tmp_path))
+    for поле in ("`presenter`", "`insert`", "`schema`", "`overlay`", "`icon`"):
+        assert поле in section, f"средство {поле} в списке не названо"
+    assert "шестого нет" in section, "список не объявлен закрытым"
+    # У каждого средства названо, что должно сойтись, чтобы оно встало в кадр:
+    # именно этого знания агенту не хватило — он считал вставку и ведущую
+    # гарантированными.
+    assert "судья" in section and "заказ" in section
+    # Блоки каталога попадают в кадр только схемой и плашкой: своих имён агент
+    # не выдумывает, а наши 25 полноэкранных ему по-прежнему не выдаются.
+    assert "Блоки каталога" in section
+
+
+def test_запас_требуется_у_каждой_сцены_со_вставкой(tmp_path):
+    """Главная правка круга. Условие «где ведущей нет» агент проверить не
+    может: ведущая в кадре — исход заказа и сборки, а не его пометки. Правило
+    вешается на саму вставку и становится счётным.
+    """
+    skill = _запас(_skill(tmp_path))
+    assert "У каждой сцены с `insert`" in skill, (
+        "правило запаса осталось условным")
+    assert "где ведущей нет" not in skill, (
+        "условие, которое агент проверить не может, осталось в правиле")
+    for name, kw in (("early", {"avatar_ordered": False,
+                                "phrases": GAP_PHRASES}),
+                     ("ordered", {"clips": CLIPS, "phrases": GAP_PHRASES})):
+        section = _где_ведущей_нет(_text(tmp_path / name, **kw))
+        assert "У каждой сцены с `insert`" in section, (
+            f"{name}: задание требует запас по старому условию")
+
+
+def test_три_ответа_на_потерянную_вставку_названы_и_упорядочены(tmp_path):
+    """Диагноз 3 и канон: `icon` и `overlay` описаны как украшения, а не как
+    дешёвое спасение кадра, и в плане прогона их ноль. Порядок — по тому,
+    сколько средству нужно найти: схему и плашку код рисует из текста агента.
+    """
+    section = _запас(_skill(tmp_path))
+    места = [section.find(f"`{поле}`") for поле in
+             ("fallback", "overlay", "icon")]
+    assert all(место > 0 for место in места), "названы не все три ответа"
+    assert места == sorted(места), "ответы идут не по порядку выбора"
+    assert "первый, который подходит" in section, (
+        "не сказано, как выбирать из трёх")
+
+
+def test_значок_назван_запасом_а_не_украшением(tmp_path):
+    """Условие «уместен на сцене без ведущей и без вставки» не наступает
+    никогда: такую сцену агент намеренно не планирует. Значок — ответ на
+    «ни одна форма не подходит» и на сцену короче пола любой формы.
+    """
+    section = _запас(_skill(tmp_path))
+    assert "Уместен на сцене без ведущей и без вставки" not in section
+    assert "ни на одну форму" in section, (
+        "не сказано, что значок берут, когда форма не подошла")
+    assert "пола нет" in section, "не сказано, что у значка нет пола сцены"
+    assert "Рядом с полнокадровой ведущей код его не ставит" in section
+    # Слово `icon` значит в своде правил две разные вещи — поле сцены и имя
+    # значка внутри карточки `items`. Разница названа вслух.
+    assert "не тот `icon`" in section
+
+
+def test_плашки_названы_списком_из_кода(tmp_path):
+    """«Данные даёт код, не агент»: какие плашки установлены и какой у каждой
+    пол сцены, агент вывести не может — он открывает `OVERLAYS.md` только если
+    знает, что там есть подходящее. Имена и полы печатает код.
+    """
+    passports = ("### `lt-kicker-name` — сцена собирается 4.8 с, "
+                 "карточка не короче 3.4 с\n"
+                 "Lower Third. Kicker\n- `kicker` — сейчас «Episode 47»\n\n"
+                 "### `camcorder-hud` — сцена собирается 4 с, "
+                 "карточка не короче 2.8 с\nCamcorder HUD.\n"
+                 "- `span` — сейчас «REC»\n\n"
+                 "### `editorial-flash-overlay` — сцена собирается 4 с, "
+                 "карточка не короче 2.8 с\nEditorial Flash Overlay.\n")
+    skill = _skill(tmp_path, overlay_passports=passports)
+    section = _запас(skill)
+    assert "`lt-kicker-name`" in section and "`camcorder-hud`" in section, (
+        "имена установленных плашек агенту не названы")
+    assert _секунды(3.4) in section and _секунды(2.8) in section, (
+        "пол сцены под плашку агенту не назван")
+    # Фактура без слотов кроет кадр целиком и ничего не говорит: ровно такая
+    # вспышка и стояла единственным содержимым в 2,7 с пустого кадра прогона.
+    assert "`editorial-flash-overlay`" not in section, (
+        "фактура названа плашкой, которой закрывают кадр")
+    # Ссылка на паспорта ведёт и из задания: комментарий кода обещал именно это.
+    assert "`OVERLAYS.md`" in _text(tmp_path, overlay_passports=passports)
+
+
+def test_без_каталога_плашек_агента_туда_не_зовут(tmp_path):
+    """Каталог накладок может быть недоступен: тогда список пуст, и звать
+    агента в `overlay` нечем."""
+    section = _запас(_skill(tmp_path, overlay_passports=""))
+    assert "плашек в этом прогоне нет" in section
+
+
+def test_краевые_случаи_запаса_показаны_примерами(tmp_path):
+    """Канон Anthropic: примеры на краевые случаи, а не на середину. Оба
+    краевых случая — из прогона: сцена, мысль которой не ложится ни на одну
+    форму, и сцена со вставкой ПОД ведущей.
+    """
+    section = _запас(_skill(tmp_path))
+    примеры = section.count("<example>")
+    assert 2 <= примеры <= 5, f"примеров на краевые случаи {примеры}"
+    assert "avatarNeeded: true" in section, (
+        "не показан краевой случай: вставка под ведущей тоже требует запаса")
+
+
+def test_образец_даёт_запас_каждой_сцене_со_вставкой(tmp_path):
+    """Образец сильнее правила, стоящего рядом. В прогоне он показывал
+    `fallback` ровно у одной сцены — той, где `avatarNeeded: false`, — и агент
+    воспроизвёл именно эту структуру.
+    """
+    for name, kw in (("early", {"avatar_ordered": False,
+                                "phrases": EVEN_PHRASES}),
+                     ("ordered", {"phrases": GAP_PHRASES})):
+        board = _board(_text(tmp_path / name, **kw))
+        со_вставкой = [s for s in board["scenes"] if s.get("insert")]
+        assert со_вставкой, f"{name}: в образце нет сцен со вставкой"
+        for scene in со_вставкой:
+            assert (scene.get("fallback") or scene.get("icon")
+                    or scene.get("overlay")), (
+                f'{name}: {scene["id"]} со вставкой и без запаса')
+
+
+def test_образец_показывает_значок_там_где_он_встаёт(tmp_path):
+    """Приём, которого нет в образце, агент не применяет: значков в плане
+    прогона ноль. Показываем его на законном месте — значок не ставится рядом
+    с полнокадровой ведущей (`icon_fits`, hf_layout.py).
+    """
+    from reels_factory.hf_layout import icon_fits
+
+    # Показывается он со второй сцены со вставкой: первая учит запасной схеме,
+    # а два одинаковых запаса подряд учили бы, что ответ всегда один.
+    for name, kw in (("early", {"avatar_ordered": False,
+                                "phrases": FAST_PHRASES}),
+                     ("ordered", {"phrases": GAP_PHRASES})):
+        board = _board(_text(tmp_path / name, **kw))
+        со_значком = [s for s in board["scenes"] if s.get("icon")]
+        assert со_значком, f"{name}: образец не показывает `icon` ни разу"
+        for scene in со_значком:
+            assert str(scene["icon"].get("query") or "").strip(), (
+                "значок образца без запроса")
+            assert icon_fits(str(scene.get("presenter") or "none")), (
+                f'{scene["id"]}: значок стоит там, где код его снимет')
+
+
+def test_сверка_считает_запас_числом(tmp_path):
+    """Диагноз 8: пункт сверки повторял условие самого правила и потому не
+    ловил ничего. Счётный пункт проверяется глазами за секунду.
+    """
+    for name, kw in (("early", {"avatar_ordered": False,
+                                "phrases": GAP_PHRASES}),
+                     ("ordered", {"clips": CLIPS, "phrases": GAP_PHRASES})):
+        сверка = _text(tmp_path / name, **kw).split(
+            "## Сверка перед сдачей")[1]
+        пункты = [part for part in сверка.splitlines()
+                  if "`insert`" in part and "столько же" in part]
+        assert пункты, f"{name}: в сверке нет счётного пункта про запас"
+        assert "где ведущей нет" not in сверка, (
+            f"{name}: сверка меряет ту же условную выборку, что и правило")
+
+
+def test_слои_кадра_названы_одинаково_в_задании_и_своде(tmp_path):
+    """Диагноз 11: первое, что агент читает про устройство кадра, беднее того,
+    чем он располагает. В задании было три слоя, в своде четыре, а средств
+    пять.
+    """
+    brief = _text(tmp_path)
+    skill = _skill(tmp_path)
+    слой = brief.split("**Геометрия кадра и разметка**")[1].split("\n- ")[0]
+    for средство in ("схема", "плашка", "значок"):
+        assert средство in слой, f"в задании слой «{средство}» не назван"
+    assert "**схема, плашка или значок**" in skill, (
+        "в своде правил слой оформления не назван")
+
+
+def test_порядок_работы_называет_проход_по_запасу(tmp_path):
+    """Канон: последовательные шаги — нумерованным списком, и шага «назови,
+    чем закрыт кадр» в нём не было вовсе, хотя промахивается прогон на нём.
+    """
+    for name, kw in (("early", {"avatar_ordered": False,
+                                "phrases": GAP_PHRASES}),
+                     ("ordered", {"clips": CLIPS, "phrases": GAP_PHRASES})):
+        шаги = _text(tmp_path / name, **kw).split("## Порядок работы")[1]
+        шаги = шаги.split("\n## ")[0]
+        assert "запас" in шаги, f"{name}: прохода по запасу в шагах нет"

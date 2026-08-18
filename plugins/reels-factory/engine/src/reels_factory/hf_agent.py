@@ -16,6 +16,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 #: Прежняя редакция добавляла «следуй буквально: числа не рекомендации, а
@@ -27,7 +28,24 @@ from pathlib import Path
 PROMPT = """/hyperframes
 
 Смонтируй рилс по заданию. Задание — файл BRIEF.md в текущей папке: прочитай
-его целиком и начни с раздела «Порядок работы». Материал уже готов в public/."""
+его целиком и начни с раздела «Порядок работы». {material}"""
+
+#: Чем занята `public/` на этом шаге. Ситуации две, и называть их одинаково
+#: нельзя: на раннем шаге (план ДО заказа аватара) клипов и звука там ещё нет —
+#: их кладёт `prepare()` уже в сборке, после того как HeyGen снимет ведущую
+#: ровно по этому плану. Обещание готового материала стоит сессии ходов: она
+#: идёт искать файлы, которых на диске не будет.
+MATERIAL_READY = ("Материал — клипы ведущей, `voice.wav` и `words.json` — уже "
+                  "лежит в `public/`.")
+MATERIAL_LATER = ("Ведущую снимут у HeyGen по этому плану, поэтому `public/` "
+                  "пока пуста: планируй по фразам озвучки из задания — их "
+                  "номера, роли и длительности там перечислены.")
+
+
+def prompt_for(avatar_ordered: bool) -> str:
+    """Первый ход сессии под ситуацию шага."""
+    return PROMPT.format(
+        material=MATERIAL_READY if avatar_ordered else MATERIAL_LATER)
 
 #: Автономность и границы работы — в системный промпт, а не в задание: их же
 #: дока говорит, что текст пользовательского хода весит меньше того же текста
@@ -59,24 +77,73 @@ TIMEOUT_S = 1800
 #: Глубина рассуждения по умолчанию. Обоснование — в комментарии к `effort`.
 EFFORT = "medium"
 
-#: Что сессии разрешено. Bash нужен ради их же инструментов — media-use ищет
-#: картинки скриптом на node, каталог блоков ставится через npx hyperframes.
-#: Остальное — чтение и правка файлов композиции в своей рабочей папке.
+#: Модель плана монтажа. Обоснование — в комментарии к `self.model`.
+MODEL = "claude-sonnet-5"
+
+#: Что сессии разрешено. Bash нужен их собственному маршруту: роутер
+#: `/hyperframes` четвёртым шагом ставит и обновляет скилл маршрута командой
+#: `npx hyperframes skills update <workflow-name>` и требует показать ошибку,
+#: а не собирать маршрут по памяти («If the command fails, surface the error;
+#: do not reconstruct the workflow from memory», skills/hyperframes/SKILL.md:78-84
+#: на пине 0.7.84). Остальное — чтение и правка файлов в своей рабочей папке.
 AGENT_TOOLS = ("Bash", "Read", "Write", "Edit", "Glob", "Grep", "Skill",
                "TodoWrite")
+
+
+class AgentPlanMissing(RuntimeError):
+    """Ход закончился, а плана на диске нет — или он пуст.
+
+    Отдельный тип, потому что зовущему это не авария, а причина пересдачи:
+    сессия обрывается по своим причинам (потолок вывода, истёкшее время), и
+    второй заход обычно отвечает. Наследуемся от `RuntimeError`: вызывающий,
+    который ловит его целиком, работает как прежде.
+
+    Упавший процесс `claude` под этот тип не подпадает намеренно — это авария
+    окружения, и переспрос по ней ничего не чинит.
+    """
+
+
+class AgentSpend:
+    """Общий кошелёк сборки: куда все её сессии складывают свой расход.
+
+    Одну сборку обслуживают сессии на разных моделях — план монтажа на Sonnet 5
+    и суд бироллов на Haiku 4.5 (`judge_previews` в `hf_media.py`). Обёртка
+    несёт модель и глубину рассуждения, поэтому вести обе одной нельзя: судья
+    пересел бы на дорогую модель, а его прогоны посчитались бы по её ставке.
+    Общее у них ровно одно — счёт, и он живёт здесь.
+
+    Сессии судьи идут параллельно (`pool.map` в `_resolve_videos`), поэтому
+    добавление под локом: список у CPython потокобезопасен и сам, а `+=` на
+    сумме — нет, и полагаться на порядок байткода тут незачем.
+    """
+
+    def __init__(self) -> None:
+        self.total_cost_usd = 0.0
+        self.runs: list[dict] = []
+        self._lock = threading.Lock()
+
+    def add(self, run: dict, cost_usd: float = 0.0) -> None:
+        with self._lock:
+            self.runs.append(run)
+            self.total_cost_usd += float(cost_usd or 0.0)
 
 
 class HeyGenAgentRunner:
     """Headless-сессия в обычном профиле, с правом писать файлы."""
 
     def __init__(self, timeout_s: int = TIMEOUT_S, model: str | None = None,
-                 effort: str | None = None):
+                 effort: str | None = None, spend: AgentSpend | None = None):
         self.timeout_s = timeout_s
+        # Кошелёк сборки, если она его завела. Своя пара `total_cost_usd`/`runs`
+        # остаётся при любом раскладе: по ней мерят один прогон в консоли.
+        self.spend = spend
         self.exe = shutil.which("claude") or "claude"
         # Замер себестоимости требует одного и того же задания на разных
-        # моделях. Без явного выбора headless-сессия берёт модель по умолчанию,
-        # и сравнить Sonnet 5 с Opus 5 нечем. Пусто — модель не навязываем.
-        self.model = model or os.environ.get("REELS_AGENT_MODEL") or None
+        # моделях, поэтому модель называется явно, а не берётся по умолчанию:
+        # умолчание CLI меняется без нашего ведома, и вместе с ним меняется
+        # цена ролика, посчитанная по прайсу этой модели. Переменная окружения
+        # перекрывает — так и меряют Sonnet 5 против Opus 5.
+        self.model = model or os.environ.get("REELS_AGENT_MODEL") or MODEL
         # Глубина рассуждения сессии. По умолчанию Sonnet 5 работает на `high`,
         # и на плане монтажа это видно. Замерено на одном материале:
         #
@@ -114,11 +181,10 @@ class HeyGenAgentRunner:
              "--append-system-prompt", SYSTEM_PROMPT,
              # Без явного разрешения Bash сессия получает на `node` и `npx`
              # ответ «This command requires approval» и молча остаётся без
-             # инструментов: ни подобрать картинку через media-use, ни
-             # заглянуть в каталог блоков. Именно так выходили пустые ролики —
-             # агент не отказывался работать, он рисовал заглушки сам, потому
-             # что все команды ему отбивало. acceptEdits покрывает только
-             # правку файлов.
+             # своего же маршрута: `npx hyperframes skills update` не проходит.
+             # Именно так выходили пустые ролики — агент не отказывался
+             # работать, он рисовал заглушки сам, потому что все команды ему
+             # отбивало. acceptEdits покрывает только правку файлов.
              "--allowedTools", *AGENT_TOOLS, *model_args],
             input=prompt, capture_output=True, text=True, encoding="utf-8",
             timeout=self.timeout_s, env=env, cwd=str(cwd) if cwd else None,
@@ -138,31 +204,54 @@ class HeyGenAgentRunner:
         # сколько ходов сделала сессия, сколько токенов прочла и написала.
         # Под подпиской `total_cost_usd` бывает нулевым, и тогда единственный
         # честный счёт — токены.
-        self.runs.append({
+        run = {
             "duration_ms": obj.get("duration_ms"),
             "num_turns": obj.get("num_turns"),
             "cost_usd": cost,
             "usage": obj.get("usage"),
             "model": self.model,
-        })
+        }
+        self.runs.append(run)
+        if self.spend is not None:
+            self.spend.add(run, cost or 0.0)
         return obj.get("result", "")
 
 
-def plan_with_agent(rdir, *, runner=None) -> dict:
-    """Попросить агента спланировать монтаж. Возвращает раскадровку."""
+def plan_with_agent(rdir, *, runner=None, avatar_ordered: bool = True) -> dict:
+    """Попросить агента спланировать монтаж. Возвращает раскадровку.
+
+    Обёртку заводит вызывающий и отдаёт её вместе с кошельком ролика
+    (`HeyGenAgentRunner(spend=…)`): обе точки входа — `plan_before_avatar` и
+    `assemble_hyperframes` — делают именно так. Умолчание `runner=None` заводит
+    сессию БЕЗ кошелька, и её расход (по замеру $0,45 за ролик) остаётся при
+    функции, то есть мимо счёта пользователя. Годится оно только там, где счёта
+    нет вовсе, — в ручном прогоне из консоли.
+
+    `avatar_ordered=False` — план ДО заказа аватара: клипов и звука в `public/`
+    ещё нет, и первый ход говорит об этом прямо.
+
+    Ход, закончившийся без плана, поднимает `AgentPlanMissing` — по нему
+    вызывающий даёт пересдачу, а не роняет сборку (`plan_before_avatar`).
+    """
     rdir = Path(rdir).resolve()
     if not (rdir / "BRIEF.md").exists():
         raise RuntimeError(f"нет BRIEF.md в {rdir}")
 
-    runner = runner or HeyGenAgentRunner()
-    runner.run(PROMPT, cwd=rdir)
-
     storyboard = rdir / "storyboard.json"
+    # Прошлый ответ снимаем ДО запуска: пересдачу агент отрабатывает в той же
+    # папке, и файл прошлой попытки прошёл бы проверку ниже как новый ответ —
+    # сборка поехала бы по плану, который только что завернули. Пусто на диске
+    # значит «агент не ответил», и это видно сразу.
+    storyboard.unlink(missing_ok=True)
+
+    runner = runner or HeyGenAgentRunner()
+    runner.run(prompt_for(avatar_ordered), cwd=rdir)
+
     if not storyboard.exists():
-        raise RuntimeError(f"агент не вернул {storyboard}")
+        raise AgentPlanMissing(f"агент не вернул {storyboard}")
     board = json.loads(storyboard.read_text(encoding="utf-8"))
     if not (board.get("scenes") or []):
-        raise RuntimeError("в раскадровке нет ни одной сцены")
+        raise AgentPlanMissing("в раскадровке нет ни одной сцены")
     # Нетронутая копия плана. `storyboard.json` сборка переписывает — дописывает
     # секунды и снимает `phrases`, — и пересборка без агента читала бы уже не
     # план, а его отпечаток: диапазонов фраз там нет, разложить нечего.

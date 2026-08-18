@@ -172,7 +172,7 @@ def test_замерший_таймлайн_валит_все_гейты():
     samples = [_sample(0.0), _sample(3.0, video=PIP)]
     gates = gates_from_report(_report(samples, sweepStatic=True), FACE)
     assert set(gates) == {"D8_face", "D14_presenter_moves", "D15_inserts_visible",
-                          "D17_service_text"}
+                          "D17_service_text", "D26_frame_content"}
     assert all(value.startswith("FAIL") for value in gates.values())
 
 
@@ -255,3 +255,54 @@ def test_содержательный_заголовок_проходит(над
     """Две удачные карточки прошлого прогона — заголовок без рубрики."""
     report = _report([_sample(1.0, texts=[_text(60, 200, 900, 120, надпись)])])
     assert gates_from_report(report, FACE)["D17_service_text"] == "PASS"
+
+
+# ---------- D26: в кадре что-то есть ----------
+#
+# Прогон hf-live2 отдал зрителю 2,7 с фона с титром (25,43–28,13 с): сцена
+# потеряла серию, закрыть кадр было нечем, а плановый D25 сказал PASS — он
+# судил флаг `needsSchema`, а не отрисованную композицию. Данные на эту
+# проверку проба снимала и тогда: одиннадцать выборок подряд с пустым кадром
+# лежали в probe.json, и никто их не читал.
+
+def _пусто(time, clips=()):
+    """Выборка, в которой ведущей нет и клипа с содержимым тоже."""
+    return _sample(time, video=dict(FULL_FRAME, visible=False), clips=clips)
+
+
+def test_пустой_кадр_в_готовой_композиции_валится():
+    samples = [_sample(0.0), *[_пусто(t) for t in (1.0, 1.25, 1.5, 1.75)],
+               _sample(2.0)]
+    verdict = gates_from_report(_report(samples), FACE)["D26_frame_content"]
+    assert verdict.startswith("FAIL")
+    assert "1" in verdict
+
+
+def test_вспышка_и_титр_кадр_не_держат():
+    """Ловушка прогона: `fx-0` (накладка вспышки) на пустом кадре стоит
+    visible=true, и правило «видно хоть что-нибудь» его бы засчитало."""
+    вспышка = ({"id": "fx-0", "visible": True},)
+    samples = [_sample(0.0),
+               *[_пусто(t, clips=вспышка) for t in (1.0, 1.25, 1.5, 1.75)],
+               _sample(2.0)]
+    assert gates_from_report(_report(samples), FACE)[
+        "D26_frame_content"].startswith("FAIL")
+
+
+@pytest.mark.parametrize("держит", ["ins-s-07-0", "schema-s-07", "ovl-s-07",
+                                    "icon-s-07", "clip-03"])
+def test_кадр_держит_любое_из_закрытого_списка(держит):
+    клипы = ({"id": держит, "visible": True},)
+    samples = [_sample(0.0),
+               *[_пусто(t, clips=клипы) for t in (1.0, 1.25, 1.5, 1.75)],
+               _sample(2.0)]
+    assert gates_from_report(_report(samples), FACE)[
+        "D26_frame_content"].startswith("PASS")
+
+
+def test_стык_клипов_за_пустой_кадр_не_считается():
+    """Одна-две выборки без содержимого — это шов между клипами (их сетка
+    1/30 с и наш кадр+1), а не дыра, которую видит зритель."""
+    samples = [_sample(0.0), _пусто(1.0), _пусто(1.25), _sample(1.5)]
+    assert gates_from_report(_report(samples), FACE)[
+        "D26_frame_content"].startswith("PASS")

@@ -479,11 +479,15 @@ JUDGE_TIMEOUT_S = 600
 
 
 def judge_previews(requests: list[dict], *, domain: str = "", anti: str = "",
-                   runner=None) -> dict[str, int | None]:
+                   runner=None, spend=None) -> dict[str, int | None]:
     """Один суд на весь ролик: дешёвая сессия смотрит кадры и выбирает.
 
     `requests` — `[{"key", "intent", "speech", "previews": [[кадры кандидата]]}]`.
     Возвращает `{key: индекс выбранного | None}`.
+
+    `spend` — кошелёк сборки (`AgentSpend`): судья платный, на прогоне 462a1c62
+    пять его сессий стоили $0,79 против $0,45 у планировщика. Своя обёртка ему
+    нужна ради дешёвой модели, поэтому в счёт ролика он попадает кошельком.
 
     Отказ судьи — это пересдача, а не повод собирать вслепую. Прогон 23 показал
     цену тихой деградации: судья молча не уложился в таймаут, сборка взяла
@@ -510,7 +514,7 @@ def judge_previews(requests: list[dict], *, domain: str = "", anti: str = "",
         session = runner
         if session is None:
             session = HeyGenAgentRunner(timeout_s=JUDGE_TIMEOUT_S,
-                                        model="claude-haiku-4-5")
+                                        model="claude-haiku-4-5", spend=spend)
             # Дешёвой модели глубина рассуждения не передаётся вовсе:
             # конструктор подхватил бы REELS_AGENT_EFFORT из окружения раннера,
             # а флаг там про модель плана, не про судью.
@@ -655,7 +659,7 @@ def _claim(request: dict, candidates: list[dict], taken: set[str],
 
 def _resolve_videos(public: Path, requests: list[dict], *,
                     domain: str = "", anti: str = "",
-                    judge_runner=None,
+                    judge_runner=None, agent_spend=None,
                     pool: ThreadPoolExecutor) -> dict[str, dict]:
     """Видео-бироллы: поиск в Pexels, суд моделью, заморозка их `resolve`.
 
@@ -692,10 +696,16 @@ def _resolve_videos(public: Path, requests: list[dict], *,
                 [cand["preview"]] if cand.get("preview") else [])
             for shot, url in enumerate(frames[:PREVIEW_FRAMES]):
                 jobs.append((request["key"], index, shot, url))
+    # Имя файла собирается из ключа сцены, а он бывает составным («s-07::shot0»).
+    # Двоеточие Windows в имени файла не принимает: локально каждое превью
+    # падало с «Invalid argument», судья оставался без кадров, и ролик выходил
+    # вовсе без вставок. На сервере это не всплывало — там двоеточие законно.
+    safe = lambda value: re.sub(r'[:<>"/\|?*]', "-", str(value))  # noqa: E731
     paths = dict(zip(
         [(key, index, shot) for key, index, shot, _ in jobs],
         pool.map(lambda job: _download(
-            job[3], previews_dir / f"{job[0]}-{job[1]}-{job[2]}.jpg"), jobs)))
+            job[3],
+            previews_dir / f"{safe(job[0])}-{job[1]}-{job[2]}.jpg"), jobs)))
 
     # Страховка от текста в кадре ДО судьи: OCR по превью снимает кандидата
     # с крупной надписью («NEW YEAR NEW ME» прогона 17 судья пропустил).
@@ -743,7 +753,8 @@ def _resolve_videos(public: Path, requests: list[dict], *,
                                []).append(request)
         for verdicts in pool.map(
                 lambda batch: judge_previews(batch, domain=domain, anti=anti,
-                                             runner=judge_runner),
+                                             runner=judge_runner,
+                                             spend=agent_spend),
                 list(batches.values())):
             judged.update(verdicts)
 
@@ -849,14 +860,15 @@ def _resolve_videos(public: Path, requests: list[dict], *,
 
 
 def resolve_all(public, requests: list[dict], *, context: dict | None = None,
-                judge_runner=None) -> dict[str, dict]:
+                judge_runner=None, agent_spend=None) -> dict[str, dict]:
     """Подобрать все вставки: поиск и заморозка параллельно, выбор по порядку.
 
     `requests` — список `{"key", "type", "intent", "rect", "required",
     "seconds", "speech"}`; `rect` — прямоугольник, который файл закроет в
     кадре, `required` — сцена без ведущей, где вставка обязательна, `speech` —
     реплика диктора для судьи. `context` — `{"domain": …, "anti": …}` из плана
-    агента. Возвращает
+    агента. `agent_spend` — кошелёк сборки, куда судья кладёт свой расход.
+    Возвращает
     `{key: {"file": путь относительно public} | {"error": …}}`.
 
     Выбор кандидатов идёт строго в порядке запросов, а не наперегонки: иначе
@@ -883,7 +895,8 @@ def resolve_all(public, requests: list[dict], *, context: dict | None = None,
                 public, videos,
                 domain=str((context or {}).get("domain") or ""),
                 anti=str((context or {}).get("anti") or ""),
-                judge_runner=judge_runner, pool=pool))
+                judge_runner=judge_runner, agent_spend=agent_spend,
+                pool=pool))
 
         found = dict(zip(
             [r["key"] for r in searchable],

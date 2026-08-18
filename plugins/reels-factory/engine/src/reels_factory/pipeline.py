@@ -21,6 +21,13 @@ HyperFrames получает тот же документ: по нему пиш�
 
 Новый сборщик работает только с мастер-звуком и только с форматами ``split`` и
 ``avatar``; неподдержанный конфиг отбивается до первого платного вызова.
+
+На пути avatar islands ведущую заказывают ПОСЛЕ плана агента: сперва
+``hf_render.plan_before_avatar`` (там же проверка плана и пересдача),
+затем ``avatar_islands.apply_agent_coverage`` переносит его решение
+``avatarNeeded`` на фразы, и только по размеченному плану режутся острова.
+Сессии агента считаются одним кошельком на прогон, и он списывается в
+``finally``: деньги за них потрачены независимо от того, чем прогон кончился.
 """
 import hashlib
 import json
@@ -41,7 +48,12 @@ from reels_factory.master_audio import (
 from reels_factory.compose import apply_caption_fixes, build_caption_fixes
 # Рендер-слой: HyperFrames (единственный рендерер). Контракт результата тот же
 # ({"mp4","timed_scenario","words_fixed"}) плюс "gates" от гейтов раскадровки.
-from reels_factory.hf_render import assemble_hyperframes as _assemble
+from reels_factory.hf_render import (
+    assemble_hyperframes as _assemble,
+    plan_before_avatar as _plan_before_avatar,
+)
+# Кошелёк сессий агента: один на прогон, общий для раннего плана и сборки.
+from reels_factory.hf_agent import AgentSpend
 from reels_factory.edit import jump_cut_fragments as _jump_cut_fragments
 from reels_factory.editplan import (
     build_edit_plan as _build_edit_plan,
@@ -53,6 +65,7 @@ from reels_factory.editplan import (
     save_edit_plan,
 )
 from reels_factory.avatar_islands import (
+    apply_agent_coverage,
     avatar_islands_enabled,
     build_avatar_render_plan as _build_avatar_render_plan,
     render_avatar_islands as _render_avatar_islands,
@@ -304,181 +317,249 @@ def run_make(config: dict, workdir,
     # адресуется block index, а не ролью: повторяющиеся роли не конфликтуют.
     covered_blocks = covered_block_indexes(edit_plan) if fmt == "avatar" else set()
 
-    _log("voice")
+    # Кошелёк сессий агента на этот прогон: и ранний план (работа 9), и сборка
+    # складывают расход в него. Списывается он в finally, потому что деньги за
+    # сессии потрачены независимо от того, чем прогон кончился: раньше
+    # meter.claude_agent стоял после успешной сборки, и упавшая теряла работу
+    # планировщика целиком. У бота та же задача решена так же (_charge_claude).
+    # Кошелёк заводится на каждый прогон свой: сборка возобновляемая, второй
+    # запуск на той же папке агента не зовёт, и общий кошелёк списал бы с
+    # человека работу первого прогона второй раз.
+    agent_spend = AgentSpend()
     try:
-        avatar_mp4s, voice_wavs = [], []
-        master = None
-        avatar_render_plan = None
-        avatar_render_manifest = None
-        cache_dir = WORK_ROOT / AVATAR_CACHE_DIRNAME
-        if use_master_audio:
-            approval_path = wd / "audio.approved.json"
-            review_required = bool(
-                ((config.get("master_audio") or {}).get("review_required", False))
-            )
-            if approval_path.exists():
-                master = load_approved_master_audio(scenario, config, wd)
-            elif review_required:
-                raise RuntimeError(
-                    "render заблокирован: master audio ещё не утверждено"
-                )
-            else:
-                master_audio_fn = master_audio_fn or _build_master_audio
-                master = master_audio_fn(
-                    scenario, config, wd, voice_id=voice_id,
-                    meter=(meter.elevenlabs if meter is not None else None),
-                )
-            block_wavs = list(master.block_wavs)
-            if (
-                not use_avatar_islands
-                and len(block_wavs) != len(scenario["blocks"])
-            ):
-                raise RuntimeError(
-                    f"master audio blocks {len(block_wavs)} != "
-                    f"scenario blocks {len(scenario['blocks'])}"
-                )
-        else:
-            block_wavs = []
-            for i, b in enumerate(scenario["blocks"]):
-                text = b.get("speech")
-                if not text:
-                    raise RuntimeError(f"блок {i} ({b.get('role')}): пустой speech")
-                wav = wd / f"voice_{i}.wav"
-                synth_fn(
-                    text, wav, voice_id=voice_id,
-                    meter=(meter.elevenlabs if meter is not None else None),
-                )
-                block_wavs.append(wav)
-
-        if master is not None:
-            finalize_edit_plan_fn = finalize_edit_plan_fn or _finalize_edit_plan
-            edit_plan = finalize_edit_plan_fn(
-                edit_plan,
-                master.timed_scenario,
-                list(master.words),
-            )
-            save_edit_plan(edit_plan, wd)
-            covered_blocks = (
-                covered_block_indexes(edit_plan) if fmt == "avatar" else set()
-            )
-
-        if use_avatar_islands:
-            avatar_plan_fn = avatar_plan_fn or _build_avatar_render_plan
-            avatar_render_fn = avatar_render_fn or _render_avatar_islands
-            master_sha256 = hashlib.sha256(Path(master.wav).read_bytes()).hexdigest()
-            avatar_render_plan = avatar_plan_fn(
-                edit_plan,
-                config,
-                master_audio_sha256=master_sha256,
-            )
-            save_avatar_render_plan(avatar_render_plan, wd)
-            rendered = avatar_render_fn(
-                master.wav,
-                avatar_render_plan,
-                avatar_client,
-                wd,
-                cache_dir,
-                edit_plan=edit_plan,
-                meter=(meter.heygen if meter is not None else None),
-            )
-            avatar_mp4s = list(
-                rendered.clips if hasattr(rendered, "clips") else rendered
-            )
-            avatar_render_manifest = getattr(rendered, "manifest", None)
-        else:
-            for i, (b, wav) in enumerate(zip(scenario["blocks"], block_wavs)):
-                if fmt in ("split", "avatar"):
-                    role = b.get("role")
-                    billable = True
-                    if role == "cta":
-                        # Попадание в кэш проверяем ДО вызова: сам
-                        # cached_generate возвращает путь одинаково в обоих
-                        # случаях, и по нему хит от промаха не отличить.
-                        key = avatar_cache_key(avatar_client, wav, role=role)
-                        billable = not (cache_dir / f"{key}.mp4").exists()
-                        mp4 = cached_generate(
-                            avatar_client, wav, cache_dir, role=role
-                        )
-                    elif i in covered_blocks:
-                        # Локальный ffmpeg, HeyGen не вызывается — не платно.
-                        billable = False
-                        mp4 = covered_block_fn(wav, wd / f"avatar_{i}.mp4")
-                    else:
-                        # role задаёт пластику: хук энергичный, payoff спокойный
-                        mp4 = avatar_client.generate(
-                            wav, wd / f"avatar_{i}.mp4", role=role
-                        )
-                    if meter is not None and billable:
-                        meter.heygen(
-                            billable_seconds(mp4),
-                            twin=bool(getattr(avatar_client, "look_id", None)),
-                        )
-                    avatar_mp4s.append(mp4)
-                else:
-                    voice_wavs.append(wav)
-    except Exception as e:
-        return fail("voice", e)
-
-    if edit_cfg["jump_cuts"] and avatar_mp4s and not use_master_audio:
-        # режем паузы ДО assemble: media_dur померяет уже подрезанные фрагменты,
-        # retime_scenario построит сетку по ним, и субтитры со вставками сами
-        # встанут на новые времена
-        _log("jump_cuts")
+        _log("voice")
         try:
-            avatar_mp4s = jump_cut_fn(avatar_mp4s, wd)
+            avatar_mp4s, voice_wavs = [], []
+            master = None
+            avatar_render_plan = None
+            avatar_render_manifest = None
+            # Отчёт проверки плана ДО заказа аватара (работа D). Пустой на всех
+            # путях, где раннего плана нет вовсе.
+            early_gates = {}
+            cache_dir = WORK_ROOT / AVATAR_CACHE_DIRNAME
+            if use_master_audio:
+                approval_path = wd / "audio.approved.json"
+                review_required = bool(
+                    ((config.get("master_audio") or {}).get("review_required", False))
+                )
+                if approval_path.exists():
+                    master = load_approved_master_audio(scenario, config, wd)
+                elif review_required:
+                    raise RuntimeError(
+                        "render заблокирован: master audio ещё не утверждено"
+                    )
+                else:
+                    master_audio_fn = master_audio_fn or _build_master_audio
+                    master = master_audio_fn(
+                        scenario, config, wd, voice_id=voice_id,
+                        meter=(meter.elevenlabs if meter is not None else None),
+                    )
+                block_wavs = list(master.block_wavs)
+                if (
+                    not use_avatar_islands
+                    and len(block_wavs) != len(scenario["blocks"])
+                ):
+                    raise RuntimeError(
+                        f"master audio blocks {len(block_wavs)} != "
+                        f"scenario blocks {len(scenario['blocks'])}"
+                    )
+            else:
+                block_wavs = []
+                for i, b in enumerate(scenario["blocks"]):
+                    text = b.get("speech")
+                    if not text:
+                        raise RuntimeError(f"блок {i} ({b.get('role')}): пустой speech")
+                    wav = wd / f"voice_{i}.wav"
+                    synth_fn(
+                        text, wav, voice_id=voice_id,
+                        meter=(meter.elevenlabs if meter is not None else None),
+                    )
+                    block_wavs.append(wav)
+
+            if master is not None:
+                finalize_edit_plan_fn = finalize_edit_plan_fn or _finalize_edit_plan
+                edit_plan = finalize_edit_plan_fn(
+                    edit_plan,
+                    master.timed_scenario,
+                    list(master.words),
+                )
+                save_edit_plan(edit_plan, wd)
+                covered_blocks = (
+                    covered_block_indexes(edit_plan) if fmt == "avatar" else set()
+                )
+
+            if use_avatar_islands:
+                avatar_plan_fn = avatar_plan_fn or _build_avatar_render_plan
+                avatar_render_fn = avatar_render_fn or _render_avatar_islands
+                # Работа 9: сперва план агента, и только потом заказ ведущей.
+                # Секунды ведущей — самые дорогие в ролике, и заказывать их по
+                # эвристике покрытия значит платить за кадры, которые агент
+                # закроет вставкой. План ложится в ту же папку: сборка
+                # подхватит его по маркеру шага и агента заново не позовёт.
+                # Слова выравнивания правим той же картой, что уйдёт в
+                # субтитры, — агент должен читать те же фразы, что увидит
+                # зритель.
+                early_plan = _plan_before_avatar(
+                    wd,
+                    master.timed_scenario,
+                    alignment_words=apply_caption_fixes(
+                        list(master.words), caption_fixes),
+                    # Настройки клиента — те же, по которым пойдёт заказ:
+                    # задание, гейты плана и счёт HeyGen обязаны считаться
+                    # одной арифметикой (`avatar_islands` в config).
+                    config=config,
+                    agent_spend=agent_spend,
+                )
+                # Промахи плана — ведущая в открытии и финале, бюджет, роли
+                # hook и cta, короткие фразы без ведущей, пропажа лица — агенту
+                # уже вернули пересдачей внутри раннего плана. Заказ он
+                # не отменяет — деньги считаны, ролик собирается, — но в отчёт
+                # по сборке попасть обязан: иначе о нём не узнает никто.
+                early_gates = early_plan.get("gates") or {}
+                # Решение агента заменяет эвристику покрытия: фраза в сцене с
+                # avatarNeeded: false уходит из заказа целиком. План на диске
+                # переписываем — по нему потом судят гейты вставок.
+                #
+                # Но только если его собственные гейты зелёные. План, который
+                # они завернули, до заказа не доходит по замеру: 95 % таких
+                # расстановок роняют build_avatar_render_plan — а озвучка к
+                # этому моменту уже оплачена. Пересдачи агенту дал ранний шаг;
+                # если и они не помогли, откатываемся на прежнюю разметку:
+                # человек получает ролик, деньги за голос не сгорают, а
+                # потерянное решение агента остаётся в гейтах ролика.
+                if any(str(value).startswith("FAIL")
+                       for value in early_gates.values()):
+                    print("[make] план агента не прошёл свои проверки — "
+                          "покрытие оставлено прежним", file=sys.stderr)
+                else:
+                    edit_plan = apply_agent_coverage(
+                        edit_plan, early_plan.get("scenes") or [])
+                    save_edit_plan(edit_plan, wd)
+                master_sha256 = hashlib.sha256(
+                    Path(master.wav).read_bytes()).hexdigest()
+                avatar_render_plan = avatar_plan_fn(
+                    edit_plan,
+                    config,
+                    master_audio_sha256=master_sha256,
+                )
+                save_avatar_render_plan(avatar_render_plan, wd)
+                rendered = avatar_render_fn(
+                    master.wav,
+                    avatar_render_plan,
+                    avatar_client,
+                    wd,
+                    cache_dir,
+                    edit_plan=edit_plan,
+                    meter=(meter.heygen if meter is not None else None),
+                )
+                avatar_mp4s = list(
+                    rendered.clips if hasattr(rendered, "clips") else rendered
+                )
+                avatar_render_manifest = getattr(rendered, "manifest", None)
+            else:
+                for i, (b, wav) in enumerate(zip(scenario["blocks"], block_wavs)):
+                    if fmt in ("split", "avatar"):
+                        role = b.get("role")
+                        billable = True
+                        if role == "cta":
+                            # Попадание в кэш проверяем ДО вызова: сам
+                            # cached_generate возвращает путь одинаково в обоих
+                            # случаях, и по нему хит от промаха не отличить.
+                            key = avatar_cache_key(avatar_client, wav, role=role)
+                            billable = not (cache_dir / f"{key}.mp4").exists()
+                            mp4 = cached_generate(
+                                avatar_client, wav, cache_dir, role=role
+                            )
+                        elif i in covered_blocks:
+                            # Локальный ffmpeg, HeyGen не вызывается — не платно.
+                            billable = False
+                            mp4 = covered_block_fn(wav, wd / f"avatar_{i}.mp4")
+                        else:
+                            # role задаёт пластику: хук энергичный, payoff спокойный
+                            mp4 = avatar_client.generate(
+                                wav, wd / f"avatar_{i}.mp4", role=role
+                            )
+                        if meter is not None and billable:
+                            meter.heygen(
+                                billable_seconds(mp4),
+                                twin=bool(getattr(avatar_client, "look_id", None)),
+                            )
+                        avatar_mp4s.append(mp4)
+                    else:
+                        voice_wavs.append(wav)
         except Exception as e:
-            return fail("jump_cuts", e)
-    elif edit_cfg["jump_cuts"] and use_master_audio:
-        # Покадровое удаление пауз из HeyGen-клипов разрушило бы immutable
-        # master timeline. Вернуть jump cuts можно после timeline-aware версии.
-        print(
-            "[make] jump_cuts отключены: master audio является source of truth",
-            file=sys.stderr,
-        )
+            return fail("voice", e)
 
-    _log("assemble")
-    try:
-        out_mp4 = wd / "reel.mp4"
-        # Непрерывный видеоряд-источник (ingest) убран: аватар — единственный
-        # формат, низовое видео сборщик больше не получает.
-        res = assemble_fn(wd,
-                          master.timed_scenario,
-                          edit_plan=edit_plan,
-                          avatar_mp4s=avatar_mp4s or [],
-                          master_audio=master.wav,
-                          alignment_words=apply_caption_fixes(
-                              list(master.words), caption_fixes),
-                          avatar_render_plan=avatar_render_plan,
-                          out_mp4=out_mp4)
-        mp4 = res["mp4"]
-        timed = res["timed_scenario"]
-        words = res.get("words_fixed")
-    except Exception as e:
-        return fail("assemble", e)
+        if edit_cfg["jump_cuts"] and avatar_mp4s and not use_master_audio:
+            # режем паузы ДО assemble: media_dur померяет уже подрезанные фрагменты,
+            # retime_scenario построит сетку по ним, и субтитры со вставками сами
+            # встанут на новые времена
+            _log("jump_cuts")
+            try:
+                avatar_mp4s = jump_cut_fn(avatar_mp4s, wd)
+            except Exception as e:
+                return fail("jump_cuts", e)
+        elif edit_cfg["jump_cuts"] and use_master_audio:
+            # Покадровое удаление пауз из HeyGen-клипов разрушило бы immutable
+            # master timeline. Вернуть jump cuts можно после timeline-aware версии.
+            print(
+                "[make] jump_cuts отключены: master audio является source of truth",
+                file=sys.stderr,
+            )
 
-    _log("verify")
-    try:
-        qa = verify_reel(Path(mp4), timed, words=words,
-                         hypothesis=_fixes_hypothesis(config), format=fmt)
-        # verify_reel не знает про вставки: гейты раскадровки приходят от
-        # сборщика и вливаются в общий отчёт, чтобы qa_pass был честным.
-        qa["gates"].update(res.get("gates") or {})
-        qa["all_pass"] = all(
-            not str(v).startswith("FAIL") for v in qa["gates"].values())
-    except Exception as e:
-        return fail("verify", e)
+        _log("assemble")
+        try:
+            out_mp4 = wd / "reel.mp4"
+            # Непрерывный видеоряд-источник (ingest) убран: аватар — единственный
+            # формат, низовое видео сборщик больше не получает.
+            res = assemble_fn(wd,
+                              master.timed_scenario,
+                              edit_plan=edit_plan,
+                              avatar_mp4s=avatar_mp4s or [],
+                              master_audio=master.wav,
+                              alignment_words=apply_caption_fixes(
+                                  list(master.words), caption_fixes),
+                              avatar_render_plan=avatar_render_plan,
+                              # Тот же кошелёк, что у раннего плана: работа
+                              # агента монтажа — платный шаг наравне с HeyGen и
+                              # озвучкой, и счёт у неё на весь прогон один.
+                              agent_spend=agent_spend,
+                              out_mp4=out_mp4)
+            mp4 = res["mp4"]
+            timed = res["timed_scenario"]
+            words = res.get("words_fixed")
+        except Exception as e:
+            return fail("assemble", e)
 
-    return {
-        "ok": True,
-        "workdir": str(wd),
-        "mp4": mp4,
-        "qa_pass": qa["all_pass"],
-        "gates": qa["gates"],
-        "avatar_summary": (
-            avatar_render_plan.get("summary")
-            if avatar_render_plan is not None else None
-        ),
-        "avatar_render_manifest": avatar_render_manifest,
-        "stage": None,
-        "error": None,
-    }
+        _log("verify")
+        try:
+            qa = verify_reel(Path(mp4), timed, words=words,
+                             hypothesis=_fixes_hypothesis(config), format=fmt)
+            # verify_reel не знает про вставки: гейты раскадровки приходят от
+            # сборщика и вливаются в общий отчёт, чтобы qa_pass был честным.
+            # Проверка плана до заказа аватара идёт первой: её ключи свои
+            # (D28, D29), и сборка их не перекрывает.
+            qa["gates"].update(early_gates)
+            qa["gates"].update(res.get("gates") or {})
+            qa["all_pass"] = all(
+                not str(v).startswith("FAIL") for v in qa["gates"].values())
+        except Exception as e:
+            return fail("verify", e)
+
+        return {
+            "ok": True,
+            "workdir": str(wd),
+            "mp4": mp4,
+            "qa_pass": qa["all_pass"],
+            "gates": qa["gates"],
+            "avatar_summary": (
+                avatar_render_plan.get("summary")
+                if avatar_render_plan is not None else None
+            ),
+            "avatar_render_manifest": avatar_render_manifest,
+            "stage": None,
+            "error": None,
+        }
+    finally:
+        if meter is not None:
+            meter.claude_agent(agent_spend.runs, agent_spend.total_cost_usd)

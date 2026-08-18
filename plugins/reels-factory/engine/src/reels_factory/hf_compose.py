@@ -787,6 +787,66 @@ def _content_mark(public, file: str) -> str:
     return hashlib.md5(path.read_bytes()).hexdigest()
 
 
+def overlay_problem(block: str) -> str | None:
+    """Почему эту накладку в кадр не поставить. `None` — поставить можно.
+
+    Один ответ на два места: этим проходом (`settle_fillers`) плашка снимается
+    до разбора пустых сцен, а сборка проверяет то же самое ещё раз, уже перед
+    вёрсткой слоя. Разойдись они — проход посчитал бы кадр закрытым, сборка
+    сняла бы плашку, и сцена осталась бы с пустым кадром.
+    """
+    reason = _skipped_blocks().get(str(block))
+    if reason:
+        return reason
+    known = _known_overlays()
+    if known and str(block) not in known:
+        return ("такого блока в каталоге нет — паспорта лежат в "
+                "OVERLAYS.md рядом с заданием")
+    return None
+
+
+def settle_fillers(board: dict, resolved: dict[str, dict]) -> list[str]:
+    """Снять с раскадровки то, чего в кадре не будет: значок без файла и
+    накладку с непригодным блоком.
+
+    Обе снимались уже в `build_composition` (значок — не ответил подбор,
+    плашка — имя блока названо по памяти), то есть ПОСЛЕ прохода, который
+    разбирает пустые сцены. Сцена без аватара, стоявшая на одном значке,
+    оставалась после этого с фоном и титром: починить её код уже не успевал,
+    и сборку роняли D25 по раскадровке и D26 по собранной композиции. Значок и
+    плашка — законный способ закрыть кадр по нашему же закрытому списку
+    (`hf_montage.frame_filler`), и правило «средство, которого не будет,
+    снимается до разбора пустых сцен» обязано действовать на них так же, как
+    на вставку (`settle_inserts`).
+
+    Здесь судится только то, что известно без вёрстки: файл значка уже
+    подобран, каталог уже опрошен. Остальные отказы сборки (плашке не хватило
+    места до следующей или до конца ролика, слот назван не тем именем) требуют
+    поставить блок и потому остаются на месте — их по-прежнему ловят гейты.
+    Геометрию значка (`icon_fits`) здесь не считаем нарочно: значок уступает
+    место только ведущей, а с ведущей в кадре сцена не пуста.
+
+    Возвращает id сцен, у которых средство снято.
+    """
+    touched = []
+    for scene in board.get("scenes") or []:
+        name = str(scene.get("id"))
+        if scene.get("icon") and not (
+                resolved.get(f"{name}::icon") or {}).get("file"):
+            print(f"{name}: значок снят — подбор не дал файла")
+            scene.pop("icon", None)
+            touched.append(name)
+        overlay = scene.get("overlay")
+        block = overlay.get("block") if isinstance(overlay, dict) else None
+        reason = overlay_problem(str(block)) if block else None
+        if reason:
+            print(f"{name}: накладка {block} снята — {reason}")
+            scene.pop("overlay", None)
+            if name not in touched:
+                touched.append(name)
+    return touched
+
+
 def settle_inserts(board: dict, resolved: dict[str, dict],
                    clips: list[dict], duration: float,
                    public=None) -> list[str]:
@@ -969,11 +1029,9 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         block = overlay.get("block") if isinstance(overlay, dict) else None
         if not block:
             continue
-        reason = _skipped_blocks().get(str(block))
-        known = _known_overlays()
-        if not reason and known and str(block) not in known:
-            reason = ("такого блока в каталоге нет — паспорта лежат в "
-                      "OVERLAYS.md рядом с заданием")
+        # Тот же вопрос уже задан в `settle_fillers` до разбора пустых сцен;
+        # здесь он повторяется на случай, если сборку позвали без прохода.
+        reason = overlay_problem(str(block))
         if reason:
             print(f'{scene["id"]}: накладка {block} снята — {reason}')
             scene.pop("overlay", None)

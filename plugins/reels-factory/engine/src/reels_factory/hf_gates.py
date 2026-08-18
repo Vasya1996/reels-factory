@@ -22,7 +22,8 @@ from reels_factory.hf_layout import (
     PRESENTER_POSITIONS, avatar_gaps, fills_frame, in_avatar_gap,
 )
 from reels_factory.hf_montage import (
-    SERIES_SHOTS, insert_of, same_look, scene_look, shot_queries,
+    SERIES_SHOTS, frame_filler, insert_of, same_look, scene_look, schema_scene,
+    shot_queries,
 )
 from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 
@@ -272,6 +273,14 @@ def _text_marks(html: str) -> set[str]:
     return found
 
 
+#: Надписи, которые в блоке нарисованы, а не подставлены. Гейт судит по
+#: совпадению с исходником, и такой текст выглядит как незаполненный слот, хотя
+#: это часть оформления: у камкордерного HUD «REC» — сама суть блока, её никто
+#: не заполняет и убирать нечего. Список закрытый и растёт только по разбору
+#: конкретного блока: иначе гейт перестанет ловить настоящие заглушки.
+DECOR_TEXTS = {"camcorder-hud": {"REC"}}
+
+
 def check_placeholders(rdir) -> dict:
     """Заглушка блока не едет в кадр.
 
@@ -291,6 +300,7 @@ def check_placeholders(rdir) -> dict:
             continue
         left = (_text_marks(copy.read_text(encoding="utf-8"))
                 & _text_marks(source.read_text(encoding="utf-8")))
+        left -= DECOR_TEXTS.get(block, set())
         if left:
             problems.append(f'{copy.name}: в кадр едет заглушка: '
                             + "; ".join(f"«{text}»" for text in sorted(left)[:3]))
@@ -369,9 +379,12 @@ def check_frame_filled(storyboard: dict) -> dict:
         # и нижний уголок ведущей с ней не спорит. Считается и запланированная,
         # а не только отрисованная: гейт судит и до сборки — а схему, которая в
         # кадр не встала, `drop_schema` снимает вместе с уголком.
-        if scene.get("schemaShown") or scene.get("needsSchema") \
-                or isinstance(scene.get("schema"), dict) \
-                and (scene.get("schema") or {}).get("form"):
+        #
+        # Спрашиваем `schema_scene`, а не флаг `needsSchema`: флаг — это
+        # просьба кода нарисовать запасную схему, и без пригодного `fallback`
+        # она невыполнима. Прогон hf-live2 прошёл оба гейта ровно на этой
+        # разнице.
+        if schema_scene(scene):
             continue
         if not fills_frame(position, _has_insert(scene)):
             problems.append(
@@ -390,19 +403,19 @@ def _empty_frame_problems(scenes: list[dict]) -> list[str]:
     вставка, значок, накладка или запасная схема. Фоновая сцена с одним титром
     в середине ролика читается обрывом, и раньше это проезжало молча: сцена,
     потерявшая серию, просто показывала фон.
+
+    Раскадровкой дело не заканчивается: тот же вопрос задаёт D26
+    (`hf_probe._gate_frame_content`) уже собранной композиции. Здесь судится
+    решение кода, там — то, что из него вышло в DOM; прогон hf-live2 показал,
+    что расхождение между этими двумя ответами и есть пустой кадр.
     """
     problems = []
     for scene in scenes:
-        if str(scene.get("presenter") or "none") != "none":
-            continue
-        if _has_insert(scene):
-            continue
-        # Схема считается и запланированная: не встала — её снимает
-        # `drop_schema`, и тогда поле уже пусто. Иначе вердикт зависел бы от
-        # того, звали гейт до сборки композиции или после.
-        if scene.get("icon") or scene.get("overlay") \
-                or scene.get("schemaShown") or scene.get("needsSchema") \
-                or (scene.get("schema") or {}).get("form"):
+        # Чем закрыт кадр — считает `frame_filler`: тем же счётом код решает,
+        # можно ли снимать вставку, и два разных счёта означали бы, что код
+        # чинит одно, а гейт судит другое. Схема считается и запланированная:
+        # не встала — её снимает `drop_schema`, и тогда поле уже пусто.
+        if frame_filler(scene):
             continue
         problems.append(
             f'{scene.get("id", "?")}: ведущей нет, вставка не встала, и закрыть '

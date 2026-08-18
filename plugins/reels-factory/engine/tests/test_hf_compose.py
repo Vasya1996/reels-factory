@@ -376,7 +376,8 @@ def test_кусок_без_ведущей_без_вставки_идёт_под_
          "presenter": "pip-tl", "insert": _shots("окно", "окно крупно")},
         {"id": "s-03", "intent": "и", "startSec": 4.0, "endSec": 6.0,
          "presenter": "none", "insert": _shots("не найдётся", "тоже нет"),
-         "fallback": {"logo": "notion", "icon": "checklist icon"}}])
+         "fallback": {"form": "steps", "why": "порядок",
+                      "nodes": ["кто", "что"]}}])
     short = [{"file": "clips/clip-00.mp4", "start": 0.0, "duration": 4.0}]
     resolved = {**_found("s-01", "a.jpg", "b.jpg"),
                 **_found("s-02", "c.jpg", "d.jpg")}
@@ -431,13 +432,22 @@ def test_один_файл_на_два_плана_не_ставится():
 
 def test_сцена_без_вставки_и_без_схемы_доживает_до_гейта():
     """Сборку такая сцена больше не роняет на месте: её судит D25, и агент
-    получает причину вместе с остальными находками, а не по одной."""
+    получает причину вместе с остальными находками, а не по одной.
+
+    Просьба о схеме тут больше не выставляется: `fallback` у сцены нет, рисовать
+    схему не из чего, и флаг означал бы закрытый кадр там, где кадр пуст
+    (прогон hf-live2). Сцена уходит в `lost` и в находку D25, а секунды её
+    отдаёт соседке `settle_empty_frames` — здесь соседки нет."""
+    from reels_factory.hf_montage import frame_filler
+
     board = _board([{"id": "s-01", "intent": "и", "startSec": 0.0,
                      "endSec": 6.0, "presenter": "none",
                      "insert": _shots("нечто", "и ещё нечто")}])
     short = [{"file": "clips/clip-00.mp4", "start": 0.0, "duration": 2.0}]
-    settle_inserts(board, {}, short, 6.0)
-    assert board["scenes"][0]["needsSchema"] is True
+    lost = settle_inserts(board, {}, short, 6.0)
+    assert lost == ["s-01"]
+    assert not board["scenes"][0].get("needsSchema")
+    assert frame_filler(board["scenes"][0]) == ""
     assert board["scenes"][0]["insert"] is None
 
 
@@ -760,3 +770,81 @@ def test_накладка_агента_попадает_в_установку_б
     # камеры уже во время сборки, а ставить блок тогда поздно
     assert needed_blocks(_board(scenes)) == ["editorial-flash-overlay",
                                              "lt-soft-pill"]
+
+
+# ---------- что не встанет в кадр, снимается до разбора пустых сцен ----------
+
+def _пара(filler: dict) -> dict:
+    """Соседка с ведущей и сцена без аватара, кадр которой держит только
+    `filler` — значок или плашка."""
+    return _board([
+        {"id": "s-01", "intent": "хук", "startSec": 0.0, "endSec": 3.0,
+         "presenter": "full", "insert": None},
+        {"id": "s-02", "intent": "мысль", "startSec": 3.0, "endSec": 6.0,
+         "presenter": "none", "insert": None, **filler},
+    ])
+
+
+def test_значок_без_файла_снимается_до_разбора_пустых_сцен(monkeypatch):
+    """Значок — законный способ закрыть кадр, и сцена без аватара может стоять
+    на нём одном. Но подбор мог не ответить, а снимался значок уже в
+    `build_composition` — после `settle_empty_frames`, и починить сцену коду
+    было нечем: кадр оставался пустым, D25 и D26 роняли сборку."""
+    from reels_factory.hf_compose import settle_fillers
+    from reels_factory.hf_montage import dedupe_neighbours, frame_filler
+
+    board = _пара({"icon": {"query": "закладка"}})
+    assert settle_fillers(board, {}) == ["s-02"]
+    assert "icon" not in board["scenes"][1]
+    assert frame_filler(board["scenes"][1]) == ""
+    dedupe_neighbours(board["scenes"], clips=CLIPS, duration=6.0)
+    assert [s["id"] for s in board["scenes"]] == ["s-01"]
+    assert board["scenes"][0]["endSec"] == 6.0
+
+
+def test_найденный_значок_остаётся_на_месте():
+    """Подбор ответил — снимать нечего, и сцена живёт своей жизнью."""
+    from reels_factory.hf_compose import settle_fillers
+    from reels_factory.hf_montage import frame_filler
+
+    board = _пара({"icon": {"query": "закладка"}})
+    found = {"s-02::icon": {"file": ".media/icons/a.png"}}
+    assert settle_fillers(board, found) == []
+    assert frame_filler(board["scenes"][1]) == "значок"
+
+
+def test_накладка_не_из_каталога_снимается_до_разбора_пустых_сцен(monkeypatch):
+    """Имя блока по памяти — та же дыра, что и ненайденный значок: плашку
+    снимала сборка, а пустую сцену разбирать было уже поздно."""
+    from reels_factory.hf_compose import settle_fillers
+    from reels_factory.hf_montage import frame_filler
+
+    monkeypatch.setattr(hf_compose, "_known_overlays",
+                        lambda: frozenset({"lt-clean-bar"}))
+    board = _пара({"overlay": {"block": "lower-third-fancy", "text": {}}})
+    assert settle_fillers(board, {}) == ["s-02"]
+    assert frame_filler(board["scenes"][1]) == ""
+
+
+def test_известная_накладка_кадр_держит(monkeypatch):
+    from reels_factory.hf_compose import settle_fillers
+    from reels_factory.hf_montage import frame_filler
+
+    monkeypatch.setattr(hf_compose, "_known_overlays",
+                        lambda: frozenset({"lt-clean-bar"}))
+    board = _пара({"overlay": {"block": "lt-clean-bar", "text": {}}})
+    assert settle_fillers(board, {}) == []
+    assert frame_filler(board["scenes"][1]) == "плашка"
+
+
+def test_причина_негодности_накладки_считается_одним_местом(monkeypatch):
+    """`settle_fillers` и сама сборка обязаны судить блок одинаково: разойдись
+    они — сборка снимет плашку, которую проход посчитал стоящей, и сцена снова
+    останется с пустым кадром."""
+    monkeypatch.setattr(hf_compose, "_skipped_blocks",
+                        lambda: {"lt-broken": "их блок ломает рендер"})
+    monkeypatch.setattr(hf_compose, "_known_overlays",
+                        lambda: frozenset({"lt-clean-bar", "lt-broken"}))
+    assert hf_compose.overlay_problem("lt-clean-bar") is None
+    assert "ломает" in (hf_compose.overlay_problem("lt-broken") or "")
+    assert "OVERLAYS.md" in (hf_compose.overlay_problem("lt-нет") or "")
