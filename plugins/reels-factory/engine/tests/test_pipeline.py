@@ -1409,3 +1409,336 @@ def test_красный_план_не_едет_в_заказ_а_откатыва
     assert "avatar_plan" in этапы, "ролик всё равно должен собраться"
     assert any(str(v).startswith("FAIL")
                for v in (res.get("gates") or {}).values())
+
+
+# --- продолжение упавшей сборки: за что уже заплачено, то не платится снова ---
+
+RATES_СЧЁТА = {
+    "heygen_usd_per_second": 0.05,
+    "heygen_twin_usd_per_second": 0.0667,
+    "elevenlabs_usd_per_1k_chars": 0.10,
+    "chars_per_second": 14.0,
+    "claude_flat_usd_per_reel": 0.05,
+}
+
+
+class _ФотоАватарIV:
+    """Клиент HeyGen островов: каждый вызов generate — это заказ за деньги."""
+
+    def __init__(self):
+        self.avatar_id = "photo-asset"
+        self.look_id = None
+        self.engine = "avatar_iv"
+        self.resolution = "1080p"
+        self.motion_prompt = "default"
+        self.expressiveness = "low"
+        self.calls = []
+
+    def motion_prompt_for(self, role=None):
+        return self.motion_prompt
+
+    def generate(self, audio_wav, out_mp4, role=None, motion_prompt=None,
+                 expressiveness=None):
+        self.calls.append(str(audio_wav))
+        out_mp4 = Path(out_mp4)
+        out_mp4.write_bytes(b"clip|" + Path(audio_wav).read_bytes())
+        return out_mp4
+
+
+def _нарезка_без_ffmpeg(cmd):
+    """Куски мастер-звука детерминированы: от них считается ключ кэша."""
+    output = Path(cmd[-1])
+    start = cmd[cmd.index("-ss") + 1]
+    duration = cmd[cmd.index("-t") + 1]
+    output.write_bytes(f"slice:{start}:{duration}".encode())
+
+
+def _мастер_островов(scenario, config, workdir, voice_id=None, meter=None):
+    """Синтез мастер-звука. Настоящий тарифицирует символы ровно так же."""
+    if meter is not None:
+        meter(sum(len(b["speech"]) for b in scenario["blocks"]))
+    master_wav = Path(workdir) / "voice_master.wav"
+    master_wav.write_bytes(b"master-islands")
+    block_wavs, words = [], []
+    timed = json.loads(json.dumps(scenario))
+    for index, block in enumerate(timed["blocks"]):
+        block["start"] = index * 2.0
+        block["end"] = (index + 1) * 2.0
+        wav = Path(workdir) / f"voice_{index}.wav"
+        wav.write_bytes(b"legacy-slice")
+        block_wavs.append(wav)
+        words.append({
+            "start": index * 2.0 + 0.2,
+            "end": (index + 1) * 2.0 - 0.2,
+            "text": block["speech"],
+            "block_index": index,
+        })
+    timed["total"] = 8.0
+    return SimpleNamespace(
+        wav=master_wav, block_wavs=tuple(block_wavs), words=tuple(words),
+        timed_scenario=timed,
+    )
+
+
+def _записи_трат(ledger, job_id: str) -> dict:
+    """Сколько строк в журнале трат у этой сборки, по подрядчикам."""
+    with ledger._connect() as conn:
+        rows = conn.execute(
+            "SELECT provider, COUNT(*) AS n FROM spend_log"
+            " WHERE job_id = ? GROUP BY provider",
+            (job_id,),
+        ).fetchall()
+    return {row["provider"]: int(row["n"]) for row in rows}
+
+
+def test_повторный_прогон_не_платит_ни_за_озвучку_ни_за_ведущую(
+        monkeypatch, tmp_path):
+    """Ключевой тест продолжения упавшей сборки.
+
+    Журнал трат от повторного списания НЕ защищает: `entry_id` содержит
+    `run_id`, а он новый на каждый прогон. Защита держится только на двух
+    вещах: утверждённая озвучка берётся с диска (`audio.approved.json`), а
+    клипы ведущей — из общего кэша по ключу от нарезанного звука, и попадание
+    в кэш метр не тарифицирует. Сломайся любая из них — человек оплатит
+    второй раз то, что уже готово, и обещание кнопки продолжения станет
+    неправдой.
+    """
+    from reels_factory.avatar_islands import render_avatar_islands
+    from reels_factory.billing import JobMeter, LedgerStore
+    from reels_factory.hf_render import (
+        EARLY_PLAN_STEP, reset_montage_steps, run_step, step_done,
+    )
+    import reels_factory.render as render_mod
+
+    calls = []
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    _fake_early_plan(monkeypatch)
+    # Длительность клипа меряет ffprobe; на кэш-хите его не зовут вовсе.
+    monkeypatch.setattr(render_mod, "media_dur", lambda path: 4.0)
+
+    ledger = LedgerStore(tmp_path / "billing.sqlite3")
+    ledger.credit(7, 100_000_000, purchase_id="p1", amount_minor=10_000,
+                  currency="usd")
+
+    wd = _wd_with_scenario(tmp_path)
+    # Озвучка утверждена человеком до сборки — как в боевом флоу бота.
+    (wd / "audio.approved.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        pipeline, "load_approved_master_audio",
+        lambda scenario, config, workdir: _мастер_островов(
+            scenario, config, workdir),
+    )
+
+    def озвучка_запрещена(*a, **kw):
+        raise AssertionError("утверждённую озвучку синтезировали заново")
+
+    def острова(master_wav, plan, client, workdir, cache_dir, *, edit_plan,
+                meter=None):
+        return render_avatar_islands(
+            master_wav, plan, client, workdir, cache_dir,
+            edit_plan=edit_plan, meter=meter, run_cmd=_нарезка_без_ffmpeg,
+        )
+
+    cfg = _cfg("avatar")
+    cfg["master_audio"] = {"enabled": True}
+    cfg["avatar_islands"] = {"enabled": True}
+    клиент = _ФотоАватарIV()
+
+    прогоны, заказы = [], []
+    for номер in range(2):
+        if номер == 1:
+            # Продолжение после провала проверок качества: монтаж пересобирают
+            # с нуля, и всё, что помечено монтажными маркерами, снимается.
+            # Озвучка и ведущая при этом обязаны остаться оплаченными один раз.
+            for шаг in ("prepare", "plan", EARLY_PLAN_STEP, "compose",
+                        "gates", "shots", "render", "loudness"):
+                run_step(wd, шаг, lambda: None)
+            reset_montage_steps(wd)
+            assert step_done(wd, EARLY_PLAN_STEP) is True
+            assert step_done(wd, "compose") is False
+        # run_id у каждого прогона свой — ровно поэтому дубль по entry_id не
+        # ловится и вся защита ложится на кэши.
+        meter = JobMeter(ledger, chat_id=7, job_id="job-1",
+                         rates=RATES_СЧЁТА, markup=1.0)
+        res = pipeline.run_make(
+            cfg, wd, avatar_client=клиент, synth_fn=fs, assemble_fn=fa,
+            master_audio_fn=озвучка_запрещена, avatar_render_fn=острова,
+            meter=meter,
+        )
+        assert res["ok"] is True, res.get("error")
+        прогоны.append(_записи_трат(ledger, "job-1"))
+        заказы.append(len(клиент.calls))
+
+    assert прогоны[0].get("elevenlabs", 0) == 0, (
+        "утверждённая озвучка тарифицирована на сборке")
+    assert прогоны[0].get("heygen", 0) > 0, "первый прогон обязан платить"
+    assert прогоны[1] == прогоны[0], (
+        "второй прогон дописал в журнал трат новые записи")
+    assert заказы[1] == заказы[0], "ведущая заказана у HeyGen второй раз"
+
+    # Контроль: тот же стенд без утверждённой озвучки платить обязан — иначе
+    # проверка выше держалась бы на том, что тарифицировать тут нечем.
+    контроль = tmp_path / "контроль"
+    контроль.mkdir()
+    свежая = _wd_with_scenario(контроль)
+    meter = JobMeter(ledger, chat_id=7, job_id="job-контроль",
+                     rates=RATES_СЧЁТА, markup=1.0)
+    res = pipeline.run_make(
+        cfg, свежая, avatar_client=клиент, synth_fn=fs, assemble_fn=fa,
+        master_audio_fn=_мастер_островов, avatar_render_fn=острова,
+        meter=meter,
+    )
+    assert res["ok"] is True, res.get("error")
+    assert _записи_трат(ledger, "job-контроль").get("elevenlabs", 0) > 0
+
+
+def test_быстрый_путь_без_монтажа_не_заказывает_ведущую_второй_раз(
+        monkeypatch, tmp_path):
+    """Д1. Продолжение ролика «без монтажа» заказывает ведущую заново — и
+    человек платит за неё второй раз.
+
+    `_run_plain_avatar` зовёт `avatar_client.generate` и `meter.heygen`
+    безусловно: ни маркера шага, ни взгляда на готовый `reel.mp4` там нет.
+    Второй прогон на той же папке — это второй заказ HeyGen и вторая запись в
+    журнале трат, то есть прямые деньги: минута ведущей стоит около трёх
+    долларов. А кнопка продолжения на этом пути показывается, и её текст
+    обещает ровно обратное — «платить за них второй раз не придётся».
+
+    Стенд настоящий: два прогона одной папки, живой журнал трат и клиент
+    HeyGen, считающий заказы. Утверждённая озвучка лежит на диске, поэтому
+    единственное, за что тут можно заплатить дважды, — ведущая.
+    """
+    from reels_factory.billing import JobMeter, LedgerStore
+    import reels_factory.render as render_mod
+
+    calls = []
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    # Секунды заказа меряет ffprobe; в тесте настоящего mp4 нет.
+    monkeypatch.setattr(render_mod, "media_dur", lambda path: 4.0)
+
+    ledger = LedgerStore(tmp_path / "billing.sqlite3")
+    ledger.credit(7, 100_000_000, purchase_id="p1", amount_minor=10_000,
+                  currency="usd")
+
+    wd = _wd_with_scenario(tmp_path)
+    # Озвучка утверждена человеком до сборки — как в боевом флоу бота.
+    (wd / "audio.approved.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        pipeline, "load_approved_master_audio",
+        lambda scenario, config, workdir: _мастер_островов(
+            scenario, config, workdir),
+    )
+
+    def озвучка_запрещена(*a, **kw):
+        raise AssertionError("утверждённую озвучку синтезировали заново")
+
+    cfg = _cfg("avatar")
+    cfg["montage"] = False
+    cfg["master_audio"] = {"enabled": True}
+    клиент = _ФотоАватарIV()
+
+    прогоны, заказы = [], []
+    for _ in range(2):
+        # run_id у каждого прогона свой — дубль по entry_id журнал не поймает,
+        # защищать деньги обязан сам конвейер.
+        meter = JobMeter(ledger, chat_id=7, job_id="job-без-монтажа",
+                         rates=RATES_СЧЁТА, markup=1.0)
+        res = pipeline.run_make(
+            cfg, wd, avatar_client=клиент, synth_fn=fs, assemble_fn=fa,
+            master_audio_fn=озвучка_запрещена, meter=meter,
+        )
+        assert res["ok"] is True, res.get("error")
+        assert Path(res["mp4"]).exists(), "прогон не оставил ролик на диске"
+        прогоны.append(_записи_трат(ledger, "job-без-монтажа"))
+        заказы.append(len(клиент.calls))
+
+    assert заказы[0] == 1, "первый прогон обязан заказать ведущую один раз"
+    assert прогоны[0].get("heygen", 0) == 1, "первый прогон обязан платить"
+    assert заказы[1] == заказы[0], (
+        "ведущая заказана у HeyGen второй раз — готовый клип не переиспользован")
+    assert прогоны[1] == прогоны[0], (
+        "второй прогон дописал в журнал трат новое списание за ведущую")
+
+    # Контроль: на чистой папке заказ и списание обязаны быть — иначе проверки
+    # выше держались бы на том, что тут вообще нечего заказывать.
+    контроль = tmp_path / "контроль"
+    контроль.mkdir()
+    свежая = _wd_with_scenario(контроль)
+    (свежая / "audio.approved.json").write_text("{}", encoding="utf-8")
+    meter = JobMeter(ledger, chat_id=7, job_id="job-контроль-без-монтажа",
+                     rates=RATES_СЧЁТА, markup=1.0)
+    res = pipeline.run_make(
+        cfg, свежая, avatar_client=клиент, synth_fn=fs, assemble_fn=fa,
+        master_audio_fn=озвучка_запрещена, meter=meter,
+    )
+    assert res["ok"] is True, res.get("error")
+    assert len(клиент.calls) == заказы[0] + 1
+    assert _записи_трат(ledger, "job-контроль-без-монтажа").get("heygen", 0) == 1
+
+
+def test_провал_гейтов_готового_файла_доезжает_до_следующего_прогона(
+        monkeypatch, tmp_path):
+    """Д3. Причина отказа теряется, когда валятся гейты готового файла.
+
+    Общий вердикт складывается в `pipeline.py` из гейтов сборщика и гейтов
+    `verify_reel` (D1_duration, D2_resolution, D3_loudness, D5_voice,
+    D7_captions). А запись причины делает только сборщик и только по СВОИМ
+    гейтам (`hf_render.py:1409`): его гейты зелёные, строка выходит пустой, и
+    `save_retry_reason` файл причины удаляет.
+
+    Итог: ролик признан негодным, человек жмёт «Перезапустить сборку», а
+    следующий прогон получает то же задание без единого слова о том, чем
+    предыдущий не прошёл, — и отдаёт тот же ролик за те же деньги.
+    """
+    from reels_factory.hf_render import last_retry_reason, save_retry_reason
+
+    calls = []
+    _fakes(monkeypatch, tmp_path, calls)
+    wd = _wd_with_scenario(tmp_path)
+    увиденные_причины = []
+    гейты_файла = {"D1_duration": "FAIL: 41 с при потолке 40"}
+
+    def сборка(rdir, timed_scenario, **kw):
+        """Хвост настоящего сборщика: свои гейты — и запись причины по ним."""
+        rdir = Path(rdir)
+        увиденные_причины.append(last_retry_reason(rdir))
+        out = Path(kw.get("out_mp4") or (rdir / "reel.mp4"))
+        out.write_bytes(b"")
+        свои = {"D8_face": "PASS", "D18_change_rate": "PASS"}
+        save_retry_reason(rdir, "; ".join(
+            f"{имя}: {вердикт}" for имя, вердикт in свои.items()
+            if str(вердикт).startswith("FAIL")))
+        return {"mp4": str(out), "dur": float(timed_scenario.get("total") or 0.0),
+                "timed_scenario": timed_scenario,
+                "words_fixed": kw.get("alignment_words") or [], "gates": свои}
+
+    def проверка(mp4, scenario, **kw):
+        return {"all_pass": True, "gates": dict(гейты_файла)}
+
+    monkeypatch.setattr(pipeline, "verify_reel", проверка)
+
+    def прогон():
+        return pipeline.run_make(
+            _cfg("avatar"), wd, avatar_client=_FakeAvatar(),
+            covered_block_fn=_fake_covered_block(), assemble_fn=сборка)
+
+    первый = прогон()
+    assert первый["ok"] is True and первый["qa_pass"] is False, первый
+    assert last_retry_reason(wd), (
+        "провал по готовому файлу не оставил на папке ни слова — продолжение "
+        "получит то же задание и тот же отказ за деньги человека")
+    assert "D1_duration" in last_retry_reason(wd)
+
+    # Продолжение той же сборки: причина обязана доехать до задания.
+    второй = прогон()
+    assert второй["qa_pass"] is False
+    assert увиденные_причины[1] and "D1_duration" in увиденные_причины[1], (
+        f"сборщик второго прогона не узнал причину отказа: "
+        f"{увиденные_причины[1]!r}")
+
+    # Пройденные проверки запись снимают: иначе причина висела бы на папке
+    # вечно и гоняла агента заново на каждом следующем продолжении.
+    гейты_файла = {"D1_duration": "PASS"}
+    третий = прогон()
+    assert третий["qa_pass"] is True
+    assert last_retry_reason(wd) is None

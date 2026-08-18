@@ -1408,3 +1408,229 @@ def test_средство_которого_не_будет_снимается_д
 
     assert "снять" in order
     assert order[order.index("снять"):] == ["снять", "разобрать"]
+
+
+# --- пересборка монтажа на уже оплаченной папке ------------------------------
+
+def test_сброс_монтажных_маркеров_щадит_оплаченное(tmp_path):
+    """Провал проверок качества чинится пересборкой монтажа, а не новым
+    роликом. Снимать надо ровно монтажные шаги: prepare держит снятые сайты и
+    подобранные материалы, plan-early — тот план, ПО КОТОРОМУ УЖЕ КУПЛЕНА
+    ведущая у HeyGen. Сняв его, второй прогон спросил бы агента заново, и
+    заказанные клипы перестали бы соответствовать плану — то есть человек
+    заплатил бы за ведущую второй раз."""
+    from reels_factory.hf_render import (
+        EARLY_PLAN_STEP, reset_montage_steps, step_done,
+    )
+
+    монтажные = ("compose", "gates", "shots", "render", "loudness")
+    for шаг in ("prepare", "plan", EARLY_PLAN_STEP, *монтажные):
+        run_step(tmp_path, шаг, lambda: None)
+
+    reset_montage_steps(tmp_path)
+
+    for шаг in монтажные:
+        assert step_done(tmp_path, шаг) is False, шаг
+    assert step_done(tmp_path, "prepare") is True
+    assert step_done(tmp_path, "plan") is True
+    assert step_done(tmp_path, EARLY_PLAN_STEP) is True
+
+
+def test_сброс_монтажных_маркеров_переживает_папку_без_них(tmp_path):
+    """Сборка могла упасть до первого маркера — снимать тогда нечего, и
+    падать на отсутствующем файле функция не имеет права: её зовут перед
+    возвратом job в очередь, и её исключение оставило бы человека без
+    продолжения вовсе."""
+    from reels_factory.hf_render import reset_montage_steps
+
+    reset_montage_steps(tmp_path)
+
+    assert step_done(tmp_path, "compose") is False
+
+
+def test_пересборка_после_провала_проверок_несёт_причину_в_задание(
+        tmp_path, monkeypatch):
+    """Д6. Пересборка кормит композитора тем же заданием, которое только что
+    не прошло проверки.
+
+    Причина провала уезжает в `BRIEF.md` только внутри одного прогона — в цикле
+    попыток. Между прогонами она не переживает ничего: на продолжении шаг
+    `prepare` пропущен (его маркер стоит), задание остаётся прежним, а маркер
+    `plan` цел — агента не зовут вовсе и в кадр едет тот же план. Человек
+    платит за прогон агента и рендер, чтобы получить ровно тот же ролик и тот
+    же отказ.
+
+    Причина последнего провала обязана сохраниться вместе со сборкой (папка
+    job — единственное, что переживает прогон) и попасть в задание следующего.
+    """
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [])
+    планы = []
+
+    def агент(rdir, *, runner=None):
+        rdir = Path(rdir)
+        планы.append((rdir / "BRIEF.md").read_text(encoding="utf-8"))
+        board = json.loads(json.dumps(GOOD))
+        for name in ("storyboard.json", "plan.json"):
+            (rdir / name).write_text(json.dumps(board), encoding="utf-8")
+        return board
+
+    monkeypatch.setattr(hf_render, "plan_with_agent", агент)
+
+    def собрать():
+        return hf_render.assemble_hyperframes(
+            tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+            master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    # Прогон 1: ролик собрался, но ритм не прошёл — ровно тот случай, из
+    # которого бот делает `qa_failed` и предлагает перезапуск.
+    monkeypatch.setattr(hf_render, "rhythm_gates", lambda mp4: {
+        "D18_change_rate": "FAIL: картинка меняется реже раза в 2,5 секунды",
+        "D19_static_span": "PASS"})
+    первый = собрать()
+    assert _fails(первый["gates"]), "первый прогон обязан не пройти проверки"
+
+    # Продолжение: бот снимает монтажные маркеры и зовёт сборку на той же
+    # папке. Оплаченное (`prepare`, снятые клипы) остаётся на месте.
+    hf_render.reset_montage_steps(tmp_path)
+    monkeypatch.setattr(hf_render, "rhythm_gates", lambda mp4: {
+        "D18_change_rate": "PASS", "D19_static_span": "PASS"})
+    второй = собрать()
+
+    assert _fails(второй["gates"]) == []
+    assert len(планы) == 2, (
+        "на пересборке композитора не спросили заново — в кадр поехал тот же "
+        "план, что проверки уже завернули")
+    assert "меняется реже" in _причина(планы[1]), (
+        "композитор не узнал, чем не прошёл прошлый план")
+
+
+#: Ставки счёта — только чтобы работа моделей вообще получила цену.
+RATES_СЧЁТА_HF = {
+    "heygen_usd_per_second": 0.05,
+    "heygen_twin_usd_per_second": 0.0667,
+    "elevenlabs_usd_per_1k_chars": 0.10,
+    "chars_per_second": 14.0,
+    "claude_flat_usd_per_reel": 0.05,
+}
+
+
+def _записи_трат_hf(ledger, job_id: str) -> dict:
+    """Сколько строк в журнале трат у этой сборки, по подрядчикам."""
+    with ledger._connect() as conn:
+        rows = conn.execute(
+            "SELECT provider, COUNT(*) AS n FROM spend_log"
+            " WHERE job_id = ? GROUP BY provider",
+            (job_id,),
+        ).fetchall()
+    return {row["provider"]: int(row["n"]) for row in rows}
+
+
+def test_продолжение_на_островах_спрашивает_агента_по_купленным_клипам(
+        tmp_path, monkeypatch):
+    """Д2. На островном пути продолжение после провала проверок — холостой
+    прогон за деньги.
+
+    Маркер `plan-early` цел (по тому плану куплена ведущая), поэтому сборка
+    агента не зовёт вовсе: план тот же, значит и провал тот же. А всё, что
+    вокруг плана, гоняется заново — в том числе суд бироллов моделью, который
+    платный. Человек жмёт «Перезапустить сборку», ждёт прогон, платит за него
+    и получает ровно тот же отказ.
+
+    Чинится это не снятием маркера: сняв его, второй план разошёлся бы с уже
+    купленными клипами. Агента надо спросить заново по УЖЕ КУПЛЕННЫМ клипам —
+    задание в режиме «аватар заказан» (там ему называют, где ведущей нет) — и
+    назвать причину прошлого провала. Сам маркер `plan-early` при этом
+    остаётся: он про то, чем оплачена ведущая, а не про монтаж.
+    """
+    from reels_factory import hf_render
+    from reels_factory.billing import JobMeter, LedgerStore
+    from reels_factory.hf_agent import AgentSpend
+
+    _fakes(monkeypatch, tmp_path, [])
+    # Ранний план (работа 9): агент назвал сцены, ведущая куплена ровно по ним.
+    (tmp_path / "plan.json").write_text(json.dumps(GOOD), encoding="utf-8")
+    (tmp_path / ".hf-plan.done").write_text("ok", encoding="utf-8")
+    (tmp_path / f".hf-{hf_render.EARLY_PLAN_STEP}.done").write_text(
+        "ok", encoding="utf-8")
+
+    задания = []
+
+    def агент(rdir, *, runner=None):
+        rdir = Path(rdir)
+        задания.append((rdir / "BRIEF.md").read_text(encoding="utf-8"))
+        кошелёк = getattr(runner, "spend", None)
+        if кошелёк is not None:
+            кошелёк.add({"model": "sonnet"}, 0.45)
+        board = json.loads(json.dumps(GOOD))
+        for name in ("storyboard.json", "plan.json"):
+            (rdir / name).write_text(json.dumps(board), encoding="utf-8")
+        return board
+
+    monkeypatch.setattr(hf_render, "plan_with_agent", агент)
+
+    def суд_бироллов(public, requests, **kw):
+        """Подбор вставок судит модель — платный шаг на каждом прогоне."""
+        кошелёк = kw.get("agent_spend")
+        if кошелёк is not None:
+            кошелёк.add({"model": "haiku"}, 0.12)
+        return {}
+
+    monkeypatch.setattr(hf_render, "resolve_all", суд_бироллов)
+
+    ledger = LedgerStore(tmp_path / "billing.sqlite3")
+    ledger.credit(7, 100_000_000, purchase_id="p1", amount_minor=10_000,
+                  currency="usd")
+
+    def собрать():
+        """Прогон сборки со своим кошельком — как в pipeline.run_make."""
+        кошелёк = AgentSpend()
+        meter = JobMeter(ledger, chat_id=7, job_id="job-острова",
+                         rates=RATES_СЧЁТА_HF, markup=1.0)
+        try:
+            return hf_render.assemble_hyperframes(
+                tmp_path, TIMED, edit_plan=PLAN,
+                avatar_mp4s=[tmp_path / "src.mp4"],
+                master_audio=tmp_path / "voice.wav", alignment_words=WORDS,
+                agent_spend=кошелёк)
+        finally:
+            # Ровно то, что делает pipeline.py в finally: работа агента
+            # списывается независимо от того, чем прогон кончился.
+            meter.claude_agent(кошелёк.runs, кошелёк.total_cost_usd)
+
+    # Прогон 1: ролик собрался, но ритм не прошёл — тот случай, из которого
+    # бот делает qa_failed и предлагает перезапуск.
+    monkeypatch.setattr(hf_render, "rhythm_gates", lambda mp4: {
+        "D18_change_rate": "FAIL: картинка меняется реже раза в 2,5 секунды",
+        "D19_static_span": "PASS"})
+    первый = собрать()
+    assert _fails(первый["gates"]), "первый прогон обязан не пройти проверки"
+    assert задания == [], (
+        "сборка спросила агента поверх раннего плана — ведущая куплена по "
+        "нему, и второй план оставил бы оплаченные секунды без кадра")
+    трата_первого = _записи_трат_hf(ledger, "job-острова")
+
+    # Продолжение: бот снимает монтажные маркеры и зовёт сборку на той же
+    # папке. Оплаченное (prepare, plan-early, купленные клипы) остаётся.
+    hf_render.reset_montage_steps(tmp_path)
+    monkeypatch.setattr(hf_render, "rhythm_gates", lambda mp4: {
+        "D18_change_rate": "PASS", "D19_static_span": "PASS"})
+    второй = собрать()
+
+    assert _fails(второй["gates"]) == []
+    assert трата_первого.get("claude", 0) > 0, "первый прогон обязан платить"
+    assert _записи_трат_hf(ledger, "job-острова").get("claude", 0) > (
+        трата_первого.get("claude", 0)), (
+        "продолжение — это ещё одно списание за работу моделей: суд бироллов "
+        "гоняется заново на каждом прогоне")
+    assert len(задания) == 1, (
+        "на продолжении композитора не спросили — в кадр поехал тот же план, "
+        "который проверки уже завернули, а деньги за прогон списаны")
+    assert "## Где ведущей нет" in задания[0], (
+        "задание пересдачи написано в режиме «аватар ещё не заказан» — агент "
+        "решал бы, где ведущая нужна, поверх уже купленных клипов")
+    assert "меняется реже" in _причина(задания[0]), (
+        "композитор не узнал, чем не прошёл прошлый прогон")
+    assert hf_render.step_done(tmp_path, hf_render.EARLY_PLAN_STEP) is True, (
+        "снят маркер раннего плана — по нему куплена ведущая")
