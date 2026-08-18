@@ -36,6 +36,16 @@ CANCELLABLE_STATUSES = (
 TERMINAL_STATUSES = (
     "completed", "qa_failed", "failed", "interrupted", "delivery_failed", "cancelled",
 )
+# Терминальные статусы, из которых сборку можно вернуть в очередь и продолжить
+# с места остановки: папка job цела, пройденные шаги помечены маркерами,
+# утверждённая озвучка и клипы ведущей лежат в ней готовыми. `completed` сюда
+# не входит — ролик уже в чате; `cancelled` тоже — человек остановил сборку сам.
+RESUMABLE_STATUSES = (
+    "failed",
+    "qa_failed",
+    "delivery_failed",
+    "interrupted",
+)
 
 
 @dataclass(frozen=True)
@@ -47,6 +57,11 @@ class BuildJob:
     created_at: float
     updated_at: float
     attempts: int = 0
+    #: Сколько раз сборку вернули в очередь кнопкой продолжения. Отдельно от
+    #: `attempts`: тот считает ЗАХВАТЫ job worker'ом, а их за один полный
+    #: проход два (озвучка и сборка) — предел перезапусков по нему закрывался
+    #: бы человеку после первого же тапа.
+    resumes: int = 0
     stage: str | None = None
     error: str | None = None
     result: dict | None = None
@@ -83,12 +98,21 @@ class JobStore:
                     started_at REAL,
                     finished_at REAL,
                     attempts INTEGER NOT NULL DEFAULT 0,
+                    resumes INTEGER NOT NULL DEFAULT 0,
                     stage TEXT,
                     error TEXT,
                     result_json TEXT
                 )
                 """
             )
+            # Колонка добавлена позже таблицы: у боевой очереди база уже лежит
+            # на диске, и CREATE TABLE IF NOT EXISTS её не тронет.
+            columns = {row["name"] for row in
+                       conn.execute("PRAGMA table_info(build_jobs)")}
+            if "resumes" not in columns:
+                conn.execute(
+                    "ALTER TABLE build_jobs"
+                    " ADD COLUMN resumes INTEGER NOT NULL DEFAULT 0")
             conn.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_build_jobs_status_created
@@ -173,6 +197,7 @@ class JobStore:
             created_at=float(row["created_at"]),
             updated_at=float(row["updated_at"]),
             attempts=int(row["attempts"]),
+            resumes=int(row["resumes"]),
             stage=row["stage"],
             error=row["error"],
             result=result,
@@ -385,6 +410,43 @@ class JobStore:
                 return None
         return self.get(job_id)
 
+    def requeue(self, job_id: str) -> BuildJob | None:
+        """Вернуть упавшую сборку в очередь на ТУ ЖЕ папку (CAS).
+
+        Через enqueue такую job не пропустить: `workdir` UNIQUE не даст завести
+        вторую сборку на ту же папку, а `transition` ходит только между
+        активными статусами. Новая же папка означала бы новую оплату озвучки и
+        ведущей, которые в старой уже лежат готовыми.
+
+        Возвращает обновлённую job; ``None`` — если статус не возобновим (job
+        отменена, доставлена, уже стоит в очереди или её нет вовсе). Именно на
+        этом держится защита от второго тапа по кнопке из истории чата: после
+        первого статус уже `queued`, и второй requeue молчит.
+
+        `attempts` здесь не трогаем — его увеличит `claim_next`, когда worker
+        реально возьмёт job. `finished_at` снимаем: сборка снова не закончена.
+
+        `resumes` растёт ровно здесь: это и есть перезапуск, по которому бот
+        считает свой предел. Считать его по `attempts` нельзя — за один полный
+        проход worker берёт job дважды (озвучка, сборка), и обещанные человеку
+        три попытки кончались бы на первой.
+        """
+        placeholders = ",".join("?" for _ in RESUMABLE_STATUSES)
+        now = time.time()
+        with self._connect() as conn:
+            cur = conn.execute(
+                f"""
+                UPDATE build_jobs
+                SET status = 'queued', updated_at = ?, finished_at = NULL,
+                    stage = 'build', error = NULL, resumes = resumes + 1
+                WHERE job_id = ? AND status IN ({placeholders})
+                """,
+                (now, job_id, *RESUMABLE_STATUSES),
+            )
+            if cur.rowcount != 1:
+                return None
+        return self.get(job_id)
+
     def mark_running_interrupted(self) -> list[BuildJob]:
         """Безопасно остановить осиротевшие jobs после рестарта.
 
@@ -392,6 +454,13 @@ class JobStore:
         ещё не сохраняет provider job id и idempotency key, поэтому повтор может
         списать деньги второй раз. Queued jobs остаются queued и будут взяты
         новым worker; только реально исполнявшиеся переводятся в interrupted.
+
+        Стадию рестарт не трогает. Она — единственное, по чему потом видно, ЧЕМ
+        сборка была занята, и бот отсекает по ней те job, где продолжать нечего
+        (`NO_RESUME_STAGES` в bot.py). Затерев `audio_preview` служебным
+        значением, рестарт выдавал прерванной озвучке кнопку продолжения, а она
+        возвращает job в общую очередь — то есть в монтаж по звуку, которого
+        человек ещё не слышал. Причина остановки едет в `error`, её и видно.
         """
         with self._connect() as conn:
             rows = conn.execute(
@@ -408,7 +477,6 @@ class JobStore:
                 """
                 UPDATE build_jobs
                 SET status = 'interrupted', updated_at = ?, finished_at = ?,
-                    stage = 'restart',
                     error = 'worker был остановлен; автоповтор отключён во избежание повторной оплаты'
                 WHERE status IN ('audio_running', 'running')
                 """,

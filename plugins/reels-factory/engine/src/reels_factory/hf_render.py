@@ -115,6 +115,63 @@ def reset_step(rdir, step: str) -> None:
     _marker(Path(rdir), step).unlink(missing_ok=True)
 
 
+#: Шаги, которые снимает пересборка монтажа. Это ровно та часть прогона, что
+#: ничего не заказывает у подрядчиков: разметка, гейты, контактный лист, рендер
+#: и громкость считаются на нашей машине из уже оплаченного материала.
+MONTAGE_STEPS = ("compose", "gates", "shots", "render", "loudness")
+
+
+def reset_montage_steps(rdir) -> None:
+    """Снять маркеры монтажа, чтобы ролик пересобрался на той же папке.
+
+    Нужно, когда сборка дошла до файла, но не прошла проверки качества: чинится
+    это пересборкой монтажа, а не новым роликом.
+
+    `prepare`, `plan` и `plan-early` не трогаем намеренно:
+
+    * `prepare` держит снятые сайты и подобранные материалы — работа сделана и
+      второй раз она только потратит время;
+    * `plan-early` помечает план, ПО КОТОРОМУ УЖЕ КУПЛЕНА ведущая у HeyGen.
+      Сняв его, `render_hyperframes` спросит агента заново (около 936), новый
+      план разойдётся с заказанными клипами, и человек заплатит за ведущую
+      второй раз;
+    * `plan` — тот же `plan.json`, что и у `plan-early`, только на прогонах без
+      раннего плана.
+
+    Папка может быть и вовсе без маркеров (сборка упала до первого шага):
+    падать тут нельзя — функцию зовут перед возвратом job в очередь, и её
+    исключение оставило бы человека без продолжения.
+    """
+    for step in MONTAGE_STEPS:
+        reset_step(rdir, step)
+
+
+#: Чем прогон не прошёл проверки. Ритм и наезды меряются по ГОТОВОМУ файлу, то
+#: есть уже за циклом попыток: внутри прогона агент про этот отказ не узнаёт
+#: никогда, а продолжение зовёт сборку заново — и без записи в папке она
+#: получила бы то же задание, тот же план и тот же отказ за деньги человека.
+#: Папка job — единственное, что прогон переживает.
+RETRY_REASON_FILE = "retry_reason.txt"
+
+
+def save_retry_reason(rdir, reason: str | None) -> None:
+    """Запомнить причину провала проверок рядом со сборкой (или забыть её)."""
+    path = Path(rdir) / RETRY_REASON_FILE
+    if reason:
+        path.write_text(reason, encoding="utf-8")
+    else:
+        path.unlink(missing_ok=True)
+
+
+def last_retry_reason(rdir) -> str | None:
+    """Причина, с которой прошлый прогон этой папки ушёл в отказ."""
+    try:
+        text = (Path(rdir) / RETRY_REASON_FILE).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return text.strip() or None
+
+
 def run_step(rdir, step: str, fn):
     """Выполнить шаг, если он ещё не выполнен. Возвращает результат fn."""
     rdir = Path(rdir)
@@ -871,6 +928,13 @@ EARLY_BRIEF_COPIES = (("BRIEF.md", "BRIEF.plan.md"),
                       (f".claude/skills/{SKILL_NAME}/SKILL.md",
                        "SKILL.plan.md"))
 
+#: План, по которому куплена ведущая. `plan.json` его не заменяет: пересдача
+#: монтажа спрашивает агента заново и переписывает `plan.json` (см. цикл
+#: попыток в `assemble_hyperframes`), а возобновлённый прогон обязан разложить
+#: ведущую ровно так, как её заказали, — иначе куски мастер-звука разъедутся,
+#: кэш островов промахнётся и HeyGen снимет деньги второй раз.
+EARLY_PLAN_FILE = "plan.early.json"
+
 
 def _keep_early_brief(rdir: Path) -> None:
     """Оставить на диске задание, по которому сделан ранний план.
@@ -934,7 +998,11 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
     # по этому плану, и второй план после заказа оставил бы оплаченные секунды
     # без кадра — да ещё и стоил бы второй сессии планировщика.
     if step_done(rdir, EARLY_PLAN_STEP) and (rdir / "plan.json").exists():
-        board = json.loads((rdir / "plan.json").read_text(encoding="utf-8"))
+        # Копии может не быть у папок, заведённых до неё, — тогда читаем
+        # `plan.json` как раньше.
+        early = rdir / EARLY_PLAN_FILE
+        source = early if early.exists() else rdir / "plan.json"
+        board = json.loads(source.read_text(encoding="utf-8"))
         scenes = lay_out_scenes(board.get("scenes") or [], phrases,
                                 duration=duration)
         return {"board": board, "scenes": scenes,
@@ -998,6 +1066,10 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
     # Задание последней попытки — это то самое, по которому сделан лежащий
     # план: копию снимаем до того, как сборка перепишет оригинал.
     _keep_early_brief(rdir)
+    # Отдельный снимок плана: `plan.json` перепишет пересдача монтажа, а по
+    # этому файлу заказана ведущая, и возобновлённый прогон раскладывает её
+    # именно по нему.
+    shutil.copyfile(rdir / "plan.json", rdir / EARLY_PLAN_FILE)
     _marker(rdir, "plan").write_text("ok", encoding="utf-8")
     # Память о том, чей план лежит в `plan.json`: аватар закажут ровно по нему,
     # и сборка второй план спрашивать не вправе.
@@ -1072,30 +1144,34 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
 
     saved_clips = json.loads((rdir / "clips.json").read_text(encoding="utf-8"))
 
-    gate_result, reason = None, None
-    # План, сделанный до заказа аватара (работа 9), пересдаче не подлежит:
-    # клипы куплены ровно по нему, и второй план после покупки оставил бы
-    # оплаченные секунды без кадра, а неоплаченные — с ведущей, которой нет.
-    # Пересдача тогда сводится к повторной сборке по тому же плану, и брифа с
-    # `avatar_ordered=True` агент не увидит — его вообще не зовут.
-    early_plan = step_done(rdir, EARLY_PLAN_STEP)
+    # Причина прошлого отказа приходит из папки job: продолжение начинает с
+    # неё тот же круг пересдачи, что и провал внутри прогона — план снимается,
+    # задание переписывается разделом пересдачи. Иначе на продолжении агента не
+    # зовут вовсе (маркер `plan` цел), и в кадр едет план, который проверки уже
+    # завернули.
+    gate_result, reason = None, last_retry_reason(rdir)
     # Каталог поднимаем на всё время сборки: `hyperframes add` ходит в него за
     # каждым блоком, который назвал агент.
     with serve_catalog() as registry_url:
         write_project_config(rdir, registry_url)
         for attempt in range(MAX_COMPOSE_ATTEMPTS):
             if reason is not None:
-                steps = ["compose", "gates", "shots", "render", "loudness"]
-                if not early_plan:
-                    steps.insert(0, "plan")
-                for step in steps:
+                # Пересдача снимает и `plan`: без неё в кадр едет тот самый
+                # план, который проверки уже завернули, а прогон стоит денег —
+                # один суд бироллов моделью считается заново на каждом заходе.
+                # Ранний план (работа 9) тут не исключение: спрашивают агента
+                # заново по УЖЕ КУПЛЕННЫМ клипам, то есть заданием в режиме
+                # «аватар заказан», где ему называют, где ведущей нет. Сам
+                # маркер `plan-early` остаётся — он про то, чем оплачена
+                # ведущая, а не про монтаж.
+                for step in ("plan", "compose", "gates", "shots", "render",
+                             "loudness"):
                     reset_step(rdir, step)
-                if not early_plan:
-                    write_brief(rdir, scenario=timed_scenario,
-                                face=load_face(rdir), duration=duration,
-                                clips=saved_clips, retry_reason=reason,
-                                phrases=phrases,
-                                overlay_passports=_passports(), wishes=wishes)
+                write_brief(rdir, scenario=timed_scenario,
+                            face=load_face(rdir), duration=duration,
+                            clips=saved_clips, retry_reason=reason,
+                            phrases=phrases,
+                            overlay_passports=_passports(), wishes=wishes)
 
             # Обёртку заводим здесь, а не внутри `plan_with_agent`: там она
             # осталась бы при функции вместе со своим расходом, и работа
@@ -1342,6 +1418,13 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
     gate_result.update(zoom_gates(final, read_camera(rdir)))
     (rdir / "gates.json").write_text(
         json.dumps(gate_result, ensure_ascii=False), encoding="utf-8")
+    # Отказ по готовому файлу цикл попыток уже не догоняет: чинит его человек
+    # кнопкой продолжения, а сама пересдача случится в СЛЕДУЮЩЕМ прогоне.
+    # Пройденные проверки запись снимают — иначе причина висела бы на папке
+    # вечно и гоняла агента заново на каждом продолжении.
+    save_retry_reason(rdir, "; ".join(
+        f"{name}: {verdict}" for name, verdict in gate_result.items()
+        if str(verdict).startswith("FAIL")))
 
     (rdir / "scenario.timed.json").write_text(
         json.dumps(timed_scenario, ensure_ascii=False, indent=1), encoding="utf-8")

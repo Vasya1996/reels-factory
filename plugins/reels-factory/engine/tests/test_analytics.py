@@ -2,7 +2,7 @@ import time
 
 import pytest
 
-from reels_factory.analytics import EventStore, render_funnel
+from reels_factory.analytics import FUNNEL_STEPS, EventStore, render_funnel
 
 
 @pytest.fixture
@@ -16,8 +16,21 @@ def _цикл(store, chat_id, cycle, *events, at=None):
         store.record(chat_id, cycle, event)
 
 
+def test_шаги_денег_стоят_после_утверждения_сценария(store):
+    """Цену человек видит один раз и после сценария — на экране выбора пути.
+    Останься её шаги на прежнем месте (перед генерацией), funnel() засчитывал
+    бы «увидел цену» каждому, кто дошёл до сценария, и воронка расширялась бы
+    там, где на самом деле сузилась."""
+    названия = [key for key, _ in FUNNEL_STEPS]
+
+    assert названия.index("price_shown") > названия.index("scenario_approved")
+    assert названия.index("balance_ok") == названия.index("price_shown") + 1
+    assert названия.index("build_queued") == названия.index("balance_ok") + 1
+
+
 def test_воронка_считает_циклы_а_не_события(store):
-    """Человек может дважды увидеть экран цены — это один цикл, а не два."""
+    """Человек может дважды увидеть экран выбора пути с ценами — это один
+    цикл, а не два."""
     _цикл(store, 1, 1, "start", "stage:language", "price_shown", "price_shown")
 
     counts = {r["event"]: r["count"] for r in store.funnel()}
@@ -79,7 +92,7 @@ def test_дубль_оплаты_не_удваивает_шаг(store):
 
 def test_пропущенное_событие_раннего_шага_не_ломает_воронку(store):
     """Событие фото могло не записаться (данные с прошлого ролика), но раз
-    человек дошёл до цены — значит фото у него было."""
+    человек дошёл до экрана выбора пути — значит фото у него было."""
     _цикл(store, 1, 1, "start", "stage:language", "stage:material", "price_shown")
 
     counts = {r["event"]: r["count"] for r in store.funnel()}
@@ -95,8 +108,8 @@ def test_воронка_сужается_даже_у_постоянного_кл
     """У него фото и голос с прошлого ролика, а денег хватает без оплаты —
     и всё равно каждый следующий шаг не может быть шире предыдущего."""
     _цикл(store, 1, 1, "start", "stage:language", "stage:gender", "stage:photo",
-          "stage:voice", "stage:material", "price_shown", "balance_ok",
-          "generation_started")
+          "stage:voice", "stage:material", "generation_started",
+          "scenario_shown", "scenario_approved", "price_shown", "balance_ok")
 
     counts = [r["count"] for r in store.funnel()]
 
@@ -140,10 +153,10 @@ def test_остановившиеся_видно_по_последнему_со�
 
 def test_сводка_читается_человеком(store):
     _цикл(store, 1, 1, "start", "stage:language", "stage:gender", "stage:photo",
-          "stage:voice", "stage:material", "price_shown", "topup_opened",
-          "invoice_created", "payment_received", "generation_started",
-          "scenario_shown", "scenario_approved", "build_queued", "audio_ready",
-          "reel_delivered")
+          "stage:voice", "stage:material", "generation_started",
+          "scenario_shown", "scenario_approved", "price_shown", "topup_opened",
+          "invoice_created", "payment_received", "balance_ok", "build_queued",
+          "audio_ready", "reel_delivered")
     _цикл(store, 2, 1, "start", "stage:language", "error:scenario")
 
     text = render_funnel(store, 0, title="Воронка за 7 дн.")
@@ -162,3 +175,20 @@ def test_запись_не_падает_на_битой_базе(tmp_path):
     битая.write_bytes("не sqlite".encode("utf-8"))
 
     store.record(1, 1, "start")  # не должно бросить
+
+def test_три_самых_дорогих_сбоя_названы_в_журнале(store):
+    """Сбой сборки, провал проверок и несоздавшаяся озвучка — самые дорогие
+    отвалы продукта. Без своего ключа в ERROR_EVENTS событие не попадает ни в
+    счётчик сбоев, ни в подписи сводки: render_funnel берёт названия отсюда, и
+    незнакомое событие показалось бы человеку голым `error:audio`."""
+    from reels_factory.analytics import ERROR_EVENTS
+
+    for key in ("error:build", "error:qa", "error:audio"):
+        assert key in ERROR_EVENTS, key
+        assert ERROR_EVENTS[key] and not ERROR_EVENTS[key].startswith("error")
+
+    _цикл(store, 1, 1, "start", "build_queued", "error:audio")
+
+    assert store.errors()["error:audio"] == 1
+    сводка = render_funnel(store, 0.0, title="Воронка")
+    assert ERROR_EVENTS["error:audio"] in сводка

@@ -1,17 +1,20 @@
 """Телеграм-бот фабрики: сырьё или готовый текст -> утверждённый сценарий.
 
 Разговор: /start (пример ролика) -> язык -> пол -> фото -> запись голоса ->
-бесплатное демо «Это я. Твой аватар!» -> выбор пути -> материал -> экран
-цены -> оплата -> сценарий в чате -> правка текста руками или утверждение ->
-готовность.
+бесплатное демо «Это я. Твой аватар!» -> выбор пути -> материал -> сценарий в
+чате -> правка текста руками или утверждение -> экран выбора «с монтажом или
+без» с ценами на кнопках -> сборка.
 
-Порядок держится на одном правиле: до экрана цены человек НЕ платит. Фото
-загружается в HeyGen бесплатно, запись голоса просто лежит файлом, материал
-принимается как есть. Единственные наши затраты до цены — бесплатное для
-человека демо (клон голоса + 2-3 секунды HeyGen): оно показывает новичку его
-двойника до разговора о деньгах и потому окупается конверсией. Сценарий
-(Клод) и рендер ролика — платные шаги за экраном цены; клон, сделанный ради
-демо, там переиспользуется.
+Порядок держится на одном правиле: цену человек видит ОДИН раз — на экране
+выбора пути, и платные для него шаги начинаются только после нажатия кнопки
+пути. Всё до этого экрана для человека бесплатно: фото загружается в HeyGen,
+запись голоса просто лежит файлом, материал принимается как есть, сценарий
+пишется даром. Наши затраты на этом отрезке (демо двойника, клон голоса,
+работа Клода над сценарием) — вложение в конверсию: они попадают в журнал
+себестоимостью со списанием 0, чтобы не пропасть из отчётов.
+
+Цена не может прозвучать раньше выбора пути: пути стоят по-разному, а какой
+из них нужен, человек говорит именно там.
 
 По кнопке «Создать ролик» durable worker сначала создаёт только master audio и
 присылает его на проверку. Подтверждение продолжает ту же immutable job без
@@ -46,14 +49,14 @@ from pathlib import Path
 
 from reels_factory.analytics import EventStore, render_funnel
 from reels_factory.billing import (
-    LedgerStore, apply_markup, claude_cost_micro, claude_run_cost_usd,
-    estimate_micro,
+    LedgerStore, claude_cost_micro, claude_run_cost_usd, estimate_micro,
 )
 from reels_factory.config import (
     OUT_H, OUT_W, WORK_ROOT, load_billing_config, load_config,
 )
 from reels_factory.feedback import FeedbackStore
-from reels_factory.jobs import BuildJob, JobStore
+from reels_factory.hf_render import reset_montage_steps
+from reels_factory.jobs import RESUMABLE_STATUSES, BuildJob, JobStore
 from reels_factory.language import (
     SUPPORTED_LANGUAGES,
     confident_mismatch,
@@ -70,7 +73,8 @@ from reels_factory.tts import tts_model_for_language
 log = logging.getLogger(__name__)
 
 # Шаги разговора. Порядок: всё бесплатное для человека (язык, пол, фото,
-# запись голоса, демо, материал) идёт ДО экрана цены; Клод и рендер — после.
+# запись голоса, демо, материал, сценарий) идёт ДО экрана выбора пути;
+# платный рендер — после него.
 CHOOSING_LANGUAGE = "choosing_language"  # язык нового ролика
 CHOOSING_GENDER = "choosing_gender"  # пол ведущего нового ролика
 WAIT_PHOTO = "wait_photo"
@@ -80,7 +84,7 @@ CHOOSING = "choosing"                # ждём выбора пути
 CHOOSING_MATERIAL = "choosing_material"  # legacy: экран «Что используем?» убран
 WAIT_TEXT = "wait_text"              # ждём готовый текст реплик
 WAIT_RAW = "wait_raw"                # ждём сырьё (мысли, отрывок, запись)
-CONFIRM_PRICE = "confirm_price"      # оценка показана, ждём «Поехали» или оплату
+CONFIRM_PRICE = "confirm_price"      # legacy: экран цены до сценария убран
 CHOOSING_IDEA = "choosing_idea"
 REVIEW = "review"                    # сценарий показан, ждём решения
 WAIT_EDIT = "wait_edit"              # ждём отредактированный текст
@@ -93,10 +97,11 @@ BUILDING = "building"                # утверждённое audio идёт �
 BUILD_FAILED = "build_failed"        # сборка/QA остановлены, видео не отправлено
 DONE = "done"                        # ролик заказан, ждём новый цикл
 
-# Версия порядка шагов. Сессии, записанные прежним порядком (фото и голос
-# после сценария), помечены её отсутствием и переводятся на новый порядок в
+# Версия порядка шагов. Сессии прежних порядков переводятся на текущий в
 # load_session — с сохранением фото, голосов и всего, за что уже заплачено.
-FLOW_VERSION = 2
+# 2 — фото и голос переехали вперёд сценария; 3 — экран цены до сценария убран,
+# и сессии, стоявшие на нём, иначе остались бы в шаге, которого больше нет.
+FLOW_VERSION = 3
 
 # Этапы, где человек что-то даёт. Пройденный этап показывается сводкой с
 # навигацией в обе стороны: возвращаться к нему приходится часто (ушёл на
@@ -115,6 +120,11 @@ STAGE_ORDER = (STAGE_LANGUAGE, STAGE_GENDER, STAGE_PHOTO, STAGE_VOICE,
 # значило бы один раз выбранный пол на все будущие ролики.
 GENDERS = ("male", "female")
 GENDER_LABELS = {"male": "Мужской", "female": "Женский"}
+
+# Названия языков в падежах живой фразы. `language_label` даёт именительный с
+# флагом («🇷🇺 Русский») — в «написан на …» и «переведу на …» он не встаёт.
+LANGUAGE_LOCATIVE = {"ru": "русском", "kk": "казахском"}
+LANGUAGE_ACCUSATIVE = {"ru": "русский", "kk": "казахский"}
 
 # Сколько знаков материала показываем в сводке: целиком он в экран не влезет.
 MATERIAL_EXCERPT_CHARS = 150
@@ -169,6 +179,21 @@ LANGUAGE_MISMATCH = (
     "Похоже, этот сценарий написан на языке: {detected}.\n\n"
     "Для этого ролика выбран язык: {selected}."
 )
+#: Тап по языку или полу — смена, а не подтверждение. Но когда сценарий уже
+#: написан, смена стоит человеку текста: язык требует перевода, пол — новой
+#: генерации. Поэтому здесь единственное место, где мы переспрашиваем: цена
+#: ответа «да» названа прямо в вопросе.
+CONFIRM_LANGUAGE_SWITCH = (
+    "Сценарий написан на {current}. Хотите на {target_where}?\n\n"
+    "Да — переведу этот же сценарий на {target_what}.\n"
+    "Нет — вернёмся туда, где вы остановились, сценарий останется прежним."
+)
+CONFIRM_GENDER_SWITCH = (
+    "Сценарий уже написан под {current} голос. Сменить на {target}?\n\n"
+    "Да — напишу сценарий заново под {target} голос, прежний текст пропадёт.\n"
+    "Нет — вернёмся туда, где вы остановились, сценарий останется прежним."
+)
+TRANSLATING_MSG = "Перевожу сценарий, это займёт минуту…"
 ASK_TEXT = (
     "Пришлите текст ролика — ровно те слова, которые должны прозвучать.\n\n"
     "Для расстановки пауз используйте тире или многоточие — голос "
@@ -307,30 +332,27 @@ PHOTO_SUMMARY_CAPTION = (
 )
 VOICE_SAVED = "✅ Запись голоса получена"
 CLONING_VOICE_MSG = "Делаю голос по вашей записи, это займёт минуту…"
-PRICE_ENOUGH_MSG = (
-    "Материал принял. Ролик обойдётся примерно в {need}, на балансе {have}.\n\n"
-    "Спишется по факту — обычно меньше оценки. Жмите «Поехали»: напишу "
-    "сценарий, сделаю голос и покажу озвучку на проверку."
-)
-PRICE_SHORT_MSG = (
-    "Материал принял. Ролик обойдётся примерно в {need}, на балансе {have} — "
-    "не хватает {gap}.\n\n"
-    "Пополните баланс кнопкой ниже и нажмите «Проверить баланс» — продолжим "
-    "с этого места, ничего заново присылать не нужно."
-)
-PRICE_STILL_SHORT_MSG = "Баланс: {have}. Не хватает {gap}"
+#: Материал принят — сценарий пишется сразу и для человека бесплатно, поэтому
+#: спрашивать здесь нечего: одна строка вместо прежнего экрана цены.
+MATERIAL_ACCEPTED_MSG = "Материал принял, пишу сценарий."
 PAID_ENOUGH_MSG = "✅ Оплата получена. Баланс: {have}"
 READY_MSG = (
-    "Всё на месте: сценарий, фото и голос.\n\n"
-    "«С монтажом» — полноценный ролик: перебивки, схемы в кадре, титры, "
-    "музыкальные акценты. Собирается дольше и стоит дороже: ведущего заказываю "
-    "только там, где она нужна в кадре.\n\n"
-    "«Быстро, без монтажа» — один говорящий ведущий во весь кадр, без вставок "
-    "и титров."
+    "Всё на месте: сценарий, фото и голос.\n"
+    "Выберите, каким будет ролик.\n"
+    "С монтажом — говорящий аватар, перебивки, схемы в кадре, субтитры.\n"
+    "Без монтажа — один говорящий аватар во весь кадр."
 )
-#: Цены обоих путей на экране выбора. До этого экрана точной цены быть не
+#: Баланс стоит на экране выбора всегда: цена названа на кнопках, и без второго
+#: числа человек не видит, хватает ли ему.
+READY_BALANCE_MSG = "\n\nБаланс: {have}"
+#: Цены обоих путей — на самих кнопках. Раньше этого экрана точной цены быть не
 #: может: пути стоят по-разному, а какой из них нужен, человек говорит здесь.
-READY_PRICE_MSG = "\n\nС монтажом — примерно {montage}, без монтажа — {plain}."
+BTN_MONTAGE = "🎬 С монтажом — {price}"
+BTN_PLAIN = "🎥 Без монтажа — {price}"
+#: Путь дороже баланса кнопкой не исчезает: человек должен видеть, сколько
+#: стоит то, чего он не может себе позволить, — иначе непонятно, на сколько
+#: пополнять.
+NO_FUNDS_SUFFIX = " (недостаточно средств)"
 
 #: Имена провайдеров в чеке: человек платит за ведущую и монтаж, а не за
 #: heygen и claude — названия наших подрядчиков ему ничего не говорят.
@@ -347,8 +369,29 @@ BUILD_FAILED_HINT = (
     "Прошлый ролик остановлен и не отправлен. Начнём новый — кнопкой ниже "
     "или командой /new."
 )
+#: Сборка упала, но сценарий цел. Гнать человека на новый круг (язык, пол,
+#: материал, сценарий заново) незачем: пересобрать можно по тому же тексту.
+BUILD_FAILED_AGAIN_HINT = (
+    "Прошлый ролик остановлен и не отправлен. Сценарий цел — можно вернуться "
+    "к выбору и собрать ролик заново или начать новый."
+)
 DONE_MSG = "Ролик уже создан. Чтобы снять ещё один — жмите «Новый ролик»."
 NOT_NOW = "Сначала выберите, с чего начать: /start"
+#: Что отвечать на реплику в чат, пока идёт оплаченная сборка. Звать /start
+#: здесь нельзя: он отменяет ждущую job, и человек своими руками стирает то,
+#: за что заплатил.
+WORK_IN_PROGRESS_MSG = (
+    "Ролик уже в работе — пришлю его сюда, как только будет готов.\n"
+    "Посмотреть, на каком он этапе: /status"
+)
+AUDIO_REVIEW_WAITING_MSG = (
+    "Ролик в работе: озвучка ждёт вашего решения — кнопки под аудиосообщением "
+    "выше.\nПосмотреть этап: /status"
+)
+FINAL_AUDIO_WAITING_MSG = (
+    "Ролик в работе: жду ваше голосовое со всем сценарием — одним "
+    "сообщением.\nПосмотреть этап: /status"
+)
 
 BUILDING_MSG = (
     "Готовлю озвучку для проверки. Сам ролик начну собирать только после "
@@ -405,9 +448,49 @@ ENQUEUE_FAILED_MSG = (
 )
 MISSING_FILE_MSG = "Сборка отчиталась об успехе, но файла ролика не нашлось — гляньте руками."
 INTERRUPTED_MSG = (
-    "Сборка была остановлена перезапуском сервиса. Автоматически повторять её "
-    "не буду, чтобы исключить повторную оплату генерации."
+    "Сборка прервалась. Готовые части сохранены — можно продолжить с того же "
+    "места."
 )
+
+#: Кнопка продолжения упавшей сборки и её обещание.
+#:
+#: Обещание намеренно про «не платить второй раз за уже готовое», а не про
+#: «ничего не спишется»: кадр, который HeyGen рендерил ровно в момент
+#: перезапуска службы, провайдер не хранит — незавершённые заказы у него не
+#: сохраняются, и такой кадр закажется снова. Всё остальное лежит в папке job:
+#: утверждённая озвучка берётся с диска, клипы ведущей — из общего кэша.
+RESUME_BTN = "Перезапустить сборку"
+RESUME_PROMISE = (
+    "Ролик остановился на середине. Всё, что уже сделано — озвучка и снятые "
+    "кадры — сохранено: продолжу с этого места, платить за них второй раз не "
+    "придётся."
+)
+RESUMING_MSG = (
+    "Возвращаю сборку в очередь — продолжу с места остановки."
+)
+
+#: Сколько раз сборку можно перезапустить кнопкой. Считаем по `resumes` job —
+#: по числу самих перезапусков (`JobStore.requeue`). По `attempts` считать
+#: нельзя: его увеличивает claim_next, а за один полный проход worker берёт
+#: job дважды — на озвучку и на сборку, — и к первому же падению предел уже
+#: почти выбран. Падающая раз за разом сборка чинится руками, а не четвёртым
+#: тапом.
+MAX_RESUME_ATTEMPTS = 3
+
+#: Стадии падения, с которых кнопку продолжения не показываем.
+#:
+#: `audio_preview`/`audio_delivery` — упала сама озвучка: продолжать с неё
+#: нечего (это первый шаг), а вернуть такую job в общую очередь и вовсе нельзя
+#: — она поехала бы в сборку мимо утверждения озвучки человеком.
+#: `delivery_too_big` — ролик собран и прошёл проверки, но тяжелее лимита
+#: Telegram: пересборка веса не изменит, здесь нужны руки.
+#: Отменённая человеком и доставленная job отсекаются раньше, статусом:
+#: `cancelled` и `completed` не входят в RESUMABLE_STATUSES.
+NO_RESUME_STAGES = frozenset({
+    "audio_preview",
+    "audio_delivery",
+    "delivery_too_big",
+})
 
 MAX_TG_VIDEO_BYTES = 50 * 1024 * 1024  # лимит Bot API на видео/документ
 
@@ -585,8 +668,14 @@ def format_usd(micro: int) -> str:
     return f"{sign}${abs(micro) / 1_000_000:.2f}"
 
 
+#: Где в сессии лежит уже посчитанная доля ведущей. Значение может быть и
+#: None (доля не применяется) — поэтому проверяем наличие ключа, а не истину.
+AVATAR_SHARE_KEY = "avatar_share"
+
+
 def island_avatar_share(chat_id: int, billing: dict, *,
-                        montage: bool = True) -> float | None:
+                        montage: bool = True,
+                        session: dict | None = None) -> float | None:
     """Доля ведущей в кадре, если этот ролик пойдёт островами; иначе None.
 
     Одно место на всех, кто называет цену: экран выбора пути и очередь
@@ -604,20 +693,34 @@ def island_avatar_share(chat_id: int, billing: dict, *,
     проверяет. Это лишь оценка ДО платного шага — она не должна ронять ни
     разговор, ни постановку в очередь, поэтому ловим широко и откатываемся на
     полную цену.
+
+    Но именно из-за этого «ловим широко» два вызова подряд могут дать разные
+    числа: профиль сохраняется как раз между экраном и очередью (`_ready_stage`,
+    `save_client_profile`), и молчаливый откат на полную цену случается то там,
+    то тут. Поэтому `session` — не оптимизация: посчитанную долю запоминаем в
+    сессии и дальше берём оттуда, чтобы очередь проверяла ровно то число,
+    которое человек прочитал на кнопке. Ключ живёт до конца цикла: в
+    `_PROFILE_KEYS` его нет, и /start с «Новым роликом» считают заново.
     """
     if not montage:
         return None
+    if session is not None and AVATAR_SHARE_KEY in session:
+        cached = session[AVATAR_SHARE_KEY]
+        return None if cached is None else float(cached)
     from reels_factory.avatar_islands import avatar_islands_enabled
     from reels_factory.clients import load_client
     from reels_factory.master_audio import master_audio_enabled
 
+    share = None
     try:
         profile = load_client(str(chat_id))
         if avatar_islands_enabled(profile) and master_audio_enabled(profile):
-            return float(billing["rates"]["avatar_visible_share"])
+            share = float(billing["rates"]["avatar_visible_share"])
     except Exception:
-        return None
-    return None
+        share = None
+    if session is not None:
+        session[AVATAR_SHARE_KEY] = share
+    return share
 
 
 def estimate_material_micro(session: dict, billing: dict, *,
@@ -666,7 +769,12 @@ class InsufficientBalance(Exception):
 
 
 def _charge_claude(chat_id: int, runner: ClaudeSkillRunner) -> None:
-    """Списать стоимость вызовов Клода за подготовку сценария.
+    """Записать стоимость вызовов Клода за подготовку сценария, не списывая её.
+
+    Сценарий человеку бесплатен: он пишется до того, как человек согласился
+    платить, и служит витриной — по нему он и решает, заказывать ли ролик.
+    Поэтому charged_micro=0, а cost_micro остаётся настоящим: себестоимость
+    видна в отчётах и не превращает витрину в бесплатную для нас.
 
     Списываем сумму по runner, а не последний вызов: за один проход скиллов
     отрабатывают генерация, хуманизатор и судья.
@@ -676,8 +784,8 @@ def _charge_claude(chat_id: int, runner: ClaudeSkillRunner) -> None:
     entry_id случайный: каждое нажатие — новая генерация, склеивать нечего.
 
     Под подпиской CLI присылает нулевую стоимость, и тогда счёт идёт по токенам
-    прогонов: без этого запасного счёта подготовка сценария не попадала в журнал
-    вовсе, хотя в оценку на экране цены она заложена.
+    прогонов: без этого запасного счёта работа Клода не попадала бы в журнал
+    вовсе и себестоимость ролика выглядела бы ниже настоящей.
     """
     billing = _billing()
     if not billing["enabled"]:
@@ -696,7 +804,7 @@ def _charge_claude(chat_id: int, runner: ClaudeSkillRunner) -> None:
         quantity=usd,
         unit_price_micro=0,
         cost_micro=cost,
-        charged_micro=apply_markup(cost, billing["markup"]),
+        charged_micro=0,
     )
 
 
@@ -738,15 +846,34 @@ def load_session(chat_id: int) -> dict:
 
 
 def _migrate_flow(data: dict) -> dict:
-    """Сессия прежнего порядка шагов (фото и голос после сценария).
+    """Сессия прежнего порядка шагов — на текущий порядок.
 
     Трогаем только позицию в разговоре: фото, клоны голоса, сценарий и всё,
     за что уже заплачено, остаются на месте. Разговор, привязанный к job,
     не сдвигаем — иначе оплаченная сборка потеряет своего собеседника.
+
+    Возвращаем человека на самый дальний экран, который его работа уже
+    заслужила: сброс в начало заставил бы заново присылать материал и ждать
+    сценарий, который уже написан. Шаг CONFIRM_PRICE (экран цены до сценария)
+    из продукта убран — сессия, стоявшая на нём, без этой ветки осталась бы в
+    шаге, которого никто больше не показывает.
     """
     if data.get("current_job_id") or data.get("step") in _JOB_BOUND_STEPS:
         return data
-    data["step"] = CHOOSING_LANGUAGE if not data.get("language") else CHOOSING
+    if not data.get("language"):
+        data["step"] = CHOOSING_LANGUAGE
+        return data
+    if data.get("scenario"):
+        # Утверждение переживает миграцию только явным флагом: у сессий прежних
+        # версий его нет, и честнее показать сценарий на утверждение ещё раз,
+        # чем молча увести человека к оплате мимо текста.
+        data["step"] = READY if data.get("scenario_approved") else REVIEW
+        return data
+    if str(data.get("material_text") or "").strip():
+        data["step"] = VIEWING_STAGE
+        data["stage"] = STAGE_MATERIAL
+        return data
+    data["step"] = CHOOSING
     return data
 
 
@@ -868,6 +995,123 @@ def step_scenario(chat_id: int, idea: dict, language: str,
     finally:
         _charge_claude(chat_id, runner)
     return res["scenario"]
+
+
+#: Задание на перевод. Скилла под него нет и быть не должно: скиллы пути «из
+#: сырья» ПИШУТ текст, а здесь текст уже утверждён человеком и менять его
+#: нельзя — можно только сказать те же слова на другом языке.
+TRANSLATE_PROMPT = (
+    "Переведи реплики ролика на язык {language}.\n\n"
+    "Правила:\n"
+    "— это речь вслух: переводи смысл так, чтобы фраза звучала естественно "
+    "на слух, а не подстрочником;\n"
+    "— ничего не добавляй и не выбрасывай: сколько блоков пришло, столько и "
+    "верни, в том же порядке и с теми же ролями;\n"
+    "— имена, бренды и числа оставляй как есть.\n\n"
+    'Ответ — только JSON вида {{"blocks": [{{"role": "hook", "speech": "…"}}]}}, '
+    "без пояснений до и после.\n\n"
+    "Реплики:\n{payload}"
+)
+
+
+class _PromptRunner(ClaudeSkillRunner):
+    """Свободный промпт в той же чистой комнате и с тем же учётом, что скиллы.
+
+    Наследуемся, а не зовём `claude` напрямую, ради двух вещей: изоляции
+    (свой CLAUDE_CONFIG_DIR, ни MCP, ни чужих настроек — см. ClaudeSkillRunner)
+    и полей `runs`/`total_cost_usd`, по которым `_charge_claude` кладёт работу
+    Клода в журнал себестоимости. `ClaudeCliRunner` из llm.py не даёт ни того,
+    ни другого: он ходит в личный профиль разработчика и о стоимости вызова
+    молчит, поэтому перевод пропал бы из отчётов.
+    """
+
+    def run_prompt(self, prompt: str) -> str:
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        p = subprocess.run(
+            [self.exe, "-p", "--output-format", "json",
+             "--setting-sources", "", "--strict-mcp-config"],
+            input=prompt, capture_output=True, text=True, encoding="utf-8",
+            timeout=self.timeout_s, env=self._env(),
+        )
+        if p.returncode != 0:
+            # ошибки входа CLI печатает в stdout, поэтому берём оба потока
+            err = (p.stderr or "").strip() or (p.stdout or "").strip()
+            raise RuntimeError(
+                f"claude -p (перевод) failed (code {p.returncode}): {err[:500]}"
+            )
+        obj = self._extract_json(p.stdout)
+        cost = obj.get("total_cost_usd")
+        self.last_cost_usd = float(cost) if cost is not None else None
+        if self.last_cost_usd:
+            self.total_cost_usd += self.last_cost_usd
+        self.runs.append({
+            "skill": "translate",
+            "cost_usd": cost,
+            "usage": obj.get("usage"),
+            "model": obj.get("model"),
+        })
+        if obj.get("is_error"):
+            raise RuntimeError(
+                f"claude -p (перевод) вернул ошибку ({obj.get('subtype')}): "
+                f"{str(obj.get('result') or '')[:500]}"
+            )
+        if "result" not in obj:
+            raise RuntimeError(
+                f"claude -p (перевод): ответ без поля result: {str(obj)[:300]}"
+            )
+        return obj["result"]
+
+
+def step_translate(chat_id: int, scenario: dict, language: str) -> dict:
+    """Тот же сценарий на другом языке: слова переводятся, блоки и роли — нет.
+
+    Роли и их число сохраняются, потому что по ним считает всё остальное:
+    сборка озвучивает blocks[i]["speech"], а оценка цены — их символы. Тайминги
+    пересчитываются по новому тексту той же формулой, что и в split_verbatim:
+    перевод длиннее оригинала, и старые границы разъехались бы с речью.
+    """
+    from reels_factory.scenario import (WORDS_PER_SEC, _extract_json,
+                                        validate_integrity)
+
+    language = normalize_profile_language(language)
+    blocks = list((scenario or {}).get("blocks") or [])
+    if not blocks:
+        raise ScenarioError("нечего переводить: в сценарии нет блоков")
+    payload = json.dumps(
+        {"language": language,
+         "blocks": [{"role": b.get("role"), "speech": b.get("speech")}
+                    for b in blocks]},
+        ensure_ascii=False, indent=1,
+    )
+    runner = _PromptRunner()
+    try:
+        reply = runner.run_prompt(TRANSLATE_PROMPT.format(
+            language=language_label(language), payload=payload
+        ))
+    finally:
+        # См. step_verbatim: провал стоит столько же, сколько успех.
+        _charge_claude(chat_id, runner)
+    data = _extract_json(reply)
+    translated_blocks = data.get("blocks")
+    if (not isinstance(translated_blocks, list)
+            or len(translated_blocks) != len(blocks)):
+        raise ScenarioError(
+            f"перевод вернул не те блоки: {str(translated_blocks)[:200]}"
+        )
+    out, t = [], 0.0
+    for old, new in zip(blocks, translated_blocks):
+        speech = str((new or {}).get("speech") or "").strip()
+        if not speech:
+            raise ScenarioError("перевод вернул пустую реплику")
+        dur = round(len(speech.split()) / WORDS_PER_SEC, 1)
+        out.append({**old, "speech": speech,
+                    "start": round(t, 1), "end": round(t + dur, 1)})
+        t += dur
+    result = {**(scenario or {}), "blocks": out, "language": language}
+    errs = validate_integrity(result)
+    if errs:
+        raise ScenarioError(f"целостность перевода: {errs}")
+    return result
 
 
 def step_photo(chat_id: int, photo: Path) -> str:
@@ -1008,11 +1252,16 @@ def enqueue_build(
     language: str | None = None,
     voice_id: str | None = None,
     montage: bool = True,
+    session: dict | None = None,
 ) -> BuildJob:
     """Подготовить immutable scenario/config и лишь затем показать job worker.
 
     ``montage=False`` — ролик собирается одним проходом HeyGen без монтажного
     слоя (edit_plan, B-roll, субтитры, Revideo). Флаг зашивается в snapshot job.
+
+    ``session`` — сессия чата, из которой берётся уже посчитанная доля ведущей
+    (см. island_avatar_share). Без неё доля считается заново, и оценка очереди
+    может разойтись с числом на кнопке, по которому человек пополнял баланс.
     """
     from reels_factory.clients import load_client
 
@@ -1028,7 +1277,8 @@ def enqueue_build(
         # может отказать в сборке тем, кому денег хватало. Условие, профиль и
         # обработка его поломок — в island_avatar_share: то же число называет
         # человеку экран выбора пути.
-        share = island_avatar_share(chat_id, billing, montage=bool(montage))
+        share = island_avatar_share(chat_id, billing, montage=bool(montage),
+                                    session=session)
         estimate_kwargs = {} if share is None else {"avatar_share": share}
         # script=False: сценарий на руках, его подготовку уже списал
         # _charge_claude. Иначе очередь требовала бы за него второй раз — и
@@ -1301,7 +1551,11 @@ def _kb_language(selected: str | None = None):
             f"{label}{mark}", callback_data=f"reel_language:{code}"
         )])
     if selected:
-        rows.append([InlineKeyboardButton("Продолжить →", callback_data="stage:next")])
+        # Этап называет сама кнопка: сообщение с ней остаётся в истории чата
+        # навсегда, а «текущий» этап к тому времени будет уже другим.
+        rows.append([InlineKeyboardButton(
+            "Продолжить →", callback_data=f"stage:next:{STAGE_LANGUAGE}"
+        )])
     return InlineKeyboardMarkup(rows)
 
 
@@ -1316,7 +1570,9 @@ def _kb_gender(selected: str | None = None):
             f"{GENDER_LABELS[code]}{mark}", callback_data=f"reel_gender:{code}"
         )])
     if selected:
-        rows.append([InlineKeyboardButton("Продолжить →", callback_data="stage:next")])
+        rows.append([InlineKeyboardButton(
+            "Продолжить →", callback_data=f"stage:next:{STAGE_GENDER}"
+        )])
     return InlineKeyboardMarkup(rows)
 
 
@@ -1384,19 +1640,35 @@ def _kb_review():
     ])
 
 
-def _kb_ready():
-    """Два пути сборки. Монтаж стоит первым: он и есть продукт, а одинокий
-    говорящий аватар — быстрый и дешёвый запасной вариант."""
+def _kb_ready(prices: dict | None = None, have: int | None = None):
+    """Два пути сборки, цена — на самой кнопке. Монтаж стоит первым: он и есть
+    продукт, а одинокий говорящий аватар — быстрый и дешёвый запасной вариант.
+
+    prices=None — биллинг выключен, называть нечего.
+
+    Путь дороже баланса кнопку не теряет: она помечена нехваткой и ведёт на
+    пополнение. Убрать её значило бы спрятать и цену — то самое число, ради
+    которого человек и пошёл бы пополнять.
+    """
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(
-            "🎬 Создать ролик с монтажом", callback_data="build:montage"
-        )],
-        [InlineKeyboardButton(
-            "🎥 Быстро, без монтажа", callback_data="build:plain"
-        )],
-        [InlineKeyboardButton("← Назад", callback_data="back")],
-    ])
+
+    rows = []
+    не_хватает = False
+    for code, шаблон in (("montage", BTN_MONTAGE), ("plain", BTN_PLAIN)):
+        if prices is None:
+            label = шаблон.format(price="").rstrip(" —")
+        else:
+            label = шаблон.format(price=format_usd(prices[code]))
+            if have is not None and have < prices[code]:
+                label += NO_FUNDS_SUFFIX
+                не_хватает = True
+        rows.append([InlineKeyboardButton(label, callback_data=f"build:{code}")])
+    if не_хватает:
+        rows.append([InlineKeyboardButton(
+            "💳 Пополнить баланс", callback_data="topup:start"
+        )])
+    rows.append([InlineKeyboardButton("← Назад", callback_data="back")])
+    return InlineKeyboardMarkup(rows)
 
 
 def _kb_wish():
@@ -1431,26 +1703,64 @@ def _kb_final_audio(job_id: str):
     ]])
 
 
-def _kb_price(enough: bool):
-    """Экран цены. Хватает баланса — одна кнопка «Поехали»; не хватает —
-    кнопки пополнения Tribute и проверка баланса, чтобы вернуться сюда же."""
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    if enough:
-        rows = [[InlineKeyboardButton("🚀 Поехали", callback_data="pay:go")]]
-    else:
-        rows = [
-            [InlineKeyboardButton(
-                "💳 Пополнить баланс", callback_data="topup:start"
-            )],
-            [InlineKeyboardButton("Проверить баланс", callback_data="pay:check")],
-        ]
-    rows.append([InlineKeyboardButton("← Назад", callback_data="back")])
-    return InlineKeyboardMarkup(rows)
-
-
 def _kb_done():
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     return InlineKeyboardMarkup([[InlineKeyboardButton("Новый ролик", callback_data="new_reel")]])
+
+
+def _kb_failed(with_scenario: bool, resume_job_id: str | None = None,
+               need_topup: bool = False):
+    """Отказ сборки: сценарий цел — предлагаем вернуться к выбору пути.
+
+    Без этой кнопки единственным выходом остаётся «Новый ролик», то есть
+    заново язык, пол, материал и сценарий ради ролика, текст которого уже
+    написан и утверждён.
+
+    `resume_job_id` — упавшая сборка, которую можно продолжить с места
+    остановки. Её кнопка стоит первой: возврат к выбору пути заводит НОВУЮ
+    папку и просит денег на весь ролик заново, а продолжение доделывает уже
+    оплаченное. Номер сборки едет в callback: кнопка живёт в истории чата
+    вечно, и на нажатии всё проверяется заново.
+
+    `need_topup` — продолжать есть что, но баланс в минусе. Перезапуск это
+    работа агента-сборщика и рендер, то есть новые списания, а спрашивают
+    деньги один раз, на выборе пути: тремя тапами по перезапуску человек
+    уводил баланс в минус, ничего об этом не зная. Пополнение встаёт на то же
+    первое место, чтобы выход отсюда остался ровно один и он был честным.
+    """
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    rows = []
+    if resume_job_id:
+        rows.append([InlineKeyboardButton(
+            RESUME_BTN, callback_data=f"resume:{resume_job_id}"
+        )])
+    elif need_topup:
+        rows.append([InlineKeyboardButton(
+            "💳 Пополнить баланс", callback_data="topup:start"
+        )])
+    if with_scenario:
+        # Кнопка обещает ровно тот экран, куда ведёт: выбор «с монтажом или
+        # без». «К готовому сценарию» обещало текст, а показывало цены.
+        rows.append([InlineKeyboardButton(
+            "← Назад к выбору", callback_data="ready:show"
+        )])
+    rows.append([InlineKeyboardButton("Новый ролик", callback_data="new_reel")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _kb_switch(kind: str):
+    """Переспрос при смене языка или пола на готовом сценарии.
+
+    Обе кнопки обязательны: «Нет» — единственный способ отменить случайный
+    тап, не потеряв написанный текст.
+    """
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("Да", callback_data=f"switch:{kind}:yes"),
+        InlineKeyboardButton("Нет", callback_data=f"switch:{kind}:no"),
+    ]])
 
 
 async def _show_start(msg, chat_id: int, s: dict, session_builder=fresh_session):
@@ -1489,16 +1799,21 @@ async def _show_start(msg, chat_id: int, s: dict, session_builder=fresh_session)
 
 
 async def _show_language_choice(msg, chat_id: int, s: dict):
+    """Экран выбора языка. Сам по себе он ничего не стирает.
+
+    Раньше показ экрана сносил сценарий, идеи и материал — то есть человек,
+    заглянувший посмотреть, какой язык выбран, терял написанный текст, ничего
+    не поменяв. Сценарий и материал стирает только подтверждённая смена языка
+    (`_switch_language` через переспрос `_confirm_switch`): именно там названа
+    цена ответа «да», и только там есть ответ «нет».
+    """
     s["step"] = CHOOSING_LANGUAGE
-    s.pop("language", None)
-    s.pop("scenario", None)
-    s.pop("ideas", None)
-    s.pop("material_mode", None)
-    # Материал написан на прежнем языке — держать его в сводке нового ролика
-    # значит показывать человеку «✅ принято» о том, что уже не подходит.
-    s.pop("material_text", None)
     save_session(chat_id, s)
-    await msg.reply_text(ASK_LANGUAGE, reply_markup=_kb_language())
+    await msg.reply_text(
+        ASK_LANGUAGE,
+        # Галочка на выбранном: экран открывают и чтобы просто свериться.
+        reply_markup=_kb_language(_reel_language(s, required=False)),
+    )
 
 
 async def _select_reel_language(msg, chat_id: int, s: dict, language: str):
@@ -1507,8 +1822,16 @@ async def _select_reel_language(msg, chat_id: int, s: dict, language: str):
     Новичку сразу показываем следующий шаг — он всё равно ещё ничего не дал;
     у повторного экран остаётся на месте, чтобы он мог передумать и уйти
     вперёд кнопкой, а не получить ещё одно сообщение.
+
+    Тап по другому языку — смена, а не подтверждение. Пока сценария нет,
+    менять нечего; с готовым сценарием сначала спрашиваем: язык сессии сам по
+    себе текст не переводит, и раньше сборка падала на несовпадении языков
+    непонятной человеку ошибкой.
     """
     language = normalize_profile_language(language)
+    if language != _reel_language(s, required=False) and s.get("scenario"):
+        await _confirm_switch(msg, chat_id, s, "language", language)
+        return
     s["language"] = language
     s["step"] = VIEWING_STAGE
     s["stage"] = STAGE_LANGUAGE
@@ -1532,21 +1855,163 @@ async def _select_reel_gender(msg, chat_id: int, s: dict, gender: str):
 
     Дальше сам не уводим: пол выбирают перед фото, а фото у постоянного
     пользователя уже есть, и лишний прыжок мимо экрана только сбивает.
+
+    Тап по другому полу — смена, а не подтверждение. С готовым сценарием
+    сначала спрашиваем: под новый род текст придётся писать заново, и раньше
+    случайный тап стирал его молча — вместе с идеями и утверждением.
     """
     if gender not in GENDERS:
+        return
+    changed = gender != s.get("gender")
+    if changed and s.get("scenario"):
+        await _confirm_switch(msg, chat_id, s, "gender", gender)
         return
     s["gender"] = gender
     s["step"] = VIEWING_STAGE
     s["stage"] = STAGE_GENDER
     _track(chat_id, s, "stage:gender", gender)
-    # Сценарий пишется под род ведущего: сменили пол — прежний текст уже не
-    # про этого человека.
-    s.pop("scenario", None)
-    s.pop("ideas", None)
+    if changed:
+        # Сценарий пишется под род ведущего: сменили пол — прежний текст уже
+        # не про этого человека. Терять здесь нечего: случай, когда сценарий
+        # написан, ушёл в переспрос выше.
+        s.pop("scenario", None)
+        s.pop("scenario_approved", None)
+        s.pop("scenario_idea", None)
+        s.pop("ideas", None)
     save_session(chat_id, s)
     await _edit_or_reply(msg, ASK_GENDER, _kb_gender(gender))
     if not _stage_filled(s, STAGE_PHOTO):
         await _next_stage(msg, chat_id, s, STAGE_GENDER)
+
+
+async def _confirm_switch(msg, chat_id: int, s: dict, kind: str,
+                          target: str) -> None:
+    """Спросить, менять ли язык/пол, когда сценарий уже написан.
+
+    Экран, с которого пришёл тап, запоминаем целиком (шаг и этап): «Нет»
+    обязано вернуть человека ровно туда, где он стоял, — иначе отмена сама по
+    себе становится потерей места в разговоре.
+    """
+    s["switch"] = {
+        "kind": kind,
+        "target": target,
+        "step": s.get("step"),
+        "stage": s.get("stage"),
+    }
+    save_session(chat_id, s)
+    if kind == "language":
+        # Спрашиваем от языка ТЕКСТА, а не от языка сессии: сюда приходит и
+        # несовпадение (сценарий на одном языке, ролик на другом), и там язык
+        # сессии дал бы вопрос «с русского на русский».
+        current = (s.get("scenario") or {}).get("language")
+        if current not in LANGUAGE_LOCATIVE:
+            current = _reel_language(s)
+        text = CONFIRM_LANGUAGE_SWITCH.format(
+            current=LANGUAGE_LOCATIVE[current],
+            target_where=LANGUAGE_LOCATIVE[target],
+            target_what=LANGUAGE_ACCUSATIVE[target],
+        )
+    else:
+        text = CONFIRM_GENDER_SWITCH.format(
+            current=GENDER_LABELS[s["gender"]].lower(),
+            target=GENDER_LABELS[target].lower(),
+        )
+    await msg.reply_text(text, reply_markup=_kb_switch(kind))
+
+
+async def _apply_switch(msg, chat_id: int, s: dict, data: str) -> None:
+    """Ответ на переспрос о смене языка или пола."""
+    parts = data.split(":")
+    kind = parts[1] if len(parts) > 2 else ""
+    answer = parts[2] if len(parts) > 2 else ""
+    pending = s.get("switch") or {}
+    if pending.get("kind") != kind or pending.get("target") not in (
+        SUPPORTED_LANGUAGES if kind == "language" else GENDERS
+    ):
+        # Кнопка из истории чата: на этот вопрос уже ответили.
+        await _reshow(msg, chat_id, s)
+        return
+    target = pending["target"]
+    s.pop("switch", None)
+    if answer != "yes":
+        # Ничего не трогаем, кроме места в разговоре: язык, пол, сценарий и
+        # его утверждение остаются прежними.
+        if pending.get("step"):
+            s["step"] = pending["step"]
+        if pending.get("stage"):
+            s["stage"] = pending["stage"]
+        save_session(chat_id, s)
+        await _reshow(msg, chat_id, s)
+        return
+    save_session(chat_id, s)
+    if kind == "language":
+        await _switch_language(msg, chat_id, s, target)
+    else:
+        await _switch_gender(msg, chat_id, s, target)
+
+
+async def _switch_language(msg, chat_id: int, s: dict, language: str) -> None:
+    """Тот же сценарий на другом языке.
+
+    Именно перевод, а не новая генерация: человек уже выбрал, что говорить, и
+    сменил только язык. Пока перевод не получен, язык сессии не двигаем —
+    иначе сценарий и язык ролика разъедутся, а сборка упадёт на их сверке.
+
+    Голос нужен свой на каждый язык. Записи для нового может не быть — тогда
+    её попросит первый же шаг, которому голос понадобится (`_ensure_voice_clone`
+    перед постановкой в очередь): сценарий человек читает раньше и решает по
+    нему, стоит ли вообще записываться.
+    """
+    await msg.reply_text(TRANSLATING_MSG)
+    try:
+        translated = await asyncio.to_thread(
+            step_translate, chat_id, s.get("scenario") or {}, language
+        )
+    except (ScenarioError, RuntimeError) as e:
+        _track(chat_id, s, "error:scenario", str(e)[:120])
+        await msg.reply_text(f"Не получилось перевести сценарий: {str(e)[:200]}")
+        await _reshow(msg, chat_id, s)
+        return
+    s["language"] = language
+    s["scenario"] = translated
+    # Перевод — другой текст: прежнее утверждение относилось не к нему.
+    s.pop("scenario_approved", None)
+    _activate_language_voice(s, language)
+    save_session(chat_id, s)
+    _track(chat_id, s, "stage:language", language)
+    await _show_review(msg, chat_id, s)
+
+
+async def _switch_gender(msg, chat_id: int, s: dict, gender: str) -> None:
+    """Сценарий заново под новый род ведущего.
+
+    Идею, если она была выбрана, не переспрашиваем: человек менял голос, а не
+    тему ролика. Идеи пишутся без рода (`run_ideas` пола не знает), поэтому
+    заново гонять их за деньги незачем.
+    """
+    s["gender"] = gender
+    s.pop("scenario", None)
+    s.pop("scenario_approved", None)
+    save_session(chat_id, s)
+    _track(chat_id, s, "stage:gender", gender)
+    ideas = s.get("ideas") or []
+    index = s.get("scenario_idea")
+    if isinstance(index, int) and 0 <= index < len(ideas):
+        await msg.reply_text(WORKING)
+        try:
+            sc = await asyncio.to_thread(
+                step_scenario, chat_id, ideas[index], _reel_language(s), gender
+            )
+        except (ScenarioError, RuntimeError) as e:
+            _track(chat_id, s, "error:scenario", str(e)[:120])
+            await msg.reply_text(f"Не получилось собрать сценарий: {str(e)[:200]}")
+            await _show_ideas(msg, chat_id, s)
+            return
+        s["scenario"] = sc
+        await _show_review(msg, chat_id, s)
+        return
+    s.pop("scenario_idea", None)
+    await _after_material(msg, chat_id, s)
 
 
 async def _ask(msg, chat_id: int, s: dict, step: str, text: str):
@@ -1685,16 +2150,28 @@ def _stage_summary(s: dict, stage: str) -> str:
 
 def _kb_stage(stage: str):
     """Пройденный этап: вперёд, назад и явная замена. Присланное без
-    «Изменить» прежние данные не затирает."""
+    «Изменить» прежние данные не затирает.
+
+    Этап зашит в сам callback. Иначе кнопка берёт его из сессии, а сообщение с
+    кнопкой живёт в чате вечно: человек жмёт «Изменить» под карточкой фото и
+    попадает на замену того этапа, который бот считает текущим, — то есть
+    правит язык вместо фото.
+    """
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     nav = []
     if STAGE_ORDER.index(stage) > 0:
-        nav.append(InlineKeyboardButton("← Назад", callback_data="stage:prev"))
-    nav.append(InlineKeyboardButton("Вперёд →", callback_data="stage:next"))
+        nav.append(InlineKeyboardButton(
+            "← Назад", callback_data=f"stage:prev:{stage}"
+        ))
+    nav.append(InlineKeyboardButton(
+        "Вперёд →", callback_data=f"stage:next:{stage}"
+    ))
     return InlineKeyboardMarkup([
         nav,
-        [InlineKeyboardButton("✏️ Изменить", callback_data="stage:edit")],
+        [InlineKeyboardButton(
+            "✏️ Изменить", callback_data=f"stage:edit:{stage}"
+        )],
     ])
 
 
@@ -1764,18 +2241,63 @@ async def _ask_stage(msg, chat_id: int, s: dict, stage: str):
 
 
 async def _next_stage(msg, chat_id: int, s: dict, stage: str):
-    """Вперёд: следующий этап, а после последнего — экран цены."""
+    """Вперёд: следующий этап, а после последнего — то, что уже сделано."""
     idx = STAGE_ORDER.index(stage)
     for nxt in STAGE_ORDER[idx + 1:]:
         await _show_stage(msg, chat_id, s, nxt)
         return
-    await _show_price(msg, chat_id, s)
+    await _after_material(msg, chat_id, s)
+
+
+def _scenario_approved(s: dict) -> bool:
+    """Сценарий утверждён человеком.
+
+    Отдельный флаг, а не шаг READY: шаг меняется от любой навигации, а факт
+    «этот текст человек утвердил» переживает и уход назад, и перезапуск бота.
+    Ставится в обработчике «Утвердить» и снимается вместе с самим сценарием.
+    """
+    return bool((s or {}).get("scenario")) and bool((s or {}).get("scenario_approved"))
+
+
+async def _after_material(msg, chat_id: int, s: dict):
+    """Материал собран — показываем самый дальний уже готовый результат.
+
+    «Вперёд →» с материала приходит и из кнопки, висящей в истории чата.
+    Запускать по ней генерацию вслепую значит звать Клода поверх уже
+    написанного сценария: человек увидел бы «пишу сценарий» вместо своего
+    текста, а мы заплатили бы за ту же работу второй раз.
+    """
+    if _scenario_approved(s):
+        await _show_ready_screen(msg, chat_id, s)
+    elif s.get("scenario"):
+        await _show_review(msg, chat_id, s)
+    elif s.get("ideas"):
+        await _show_ideas(msg, chat_id, s)
+    else:
+        await _start_generation(msg, chat_id, s)
 
 
 async def _prev_stage(msg, chat_id: int, s: dict, stage: str):
     """Назад: предыдущий этап; с первого уходить некуда."""
     idx = STAGE_ORDER.index(stage)
     await _show_stage(msg, chat_id, s, STAGE_ORDER[max(idx - 1, 0)])
+
+
+def _replace_material(s: dict, mode: str, text: str) -> None:
+    """Запомнить присланный материал.
+
+    Другой материал — другой ролик: прежние идеи и сценарий написаны не по
+    нему, и показывать их дальше значило бы выдать человеку чужой текст.
+    Тот же материал, присланный заново (перечитал, отправил ещё раз), готовое
+    не трогает: переписывать нечего, а прогон Клода стоит денег.
+    """
+    if text != s.get("material_text"):
+        s.pop("ideas", None)
+        s.pop("scenario", None)
+        s.pop("scenario_approved", None)
+        s.pop("scenario_idea", None)
+    s["material_mode"] = mode
+    s["material_text"] = text
 
 
 async def _ask_material(msg, chat_id: int, s: dict, mode: str):
@@ -1828,7 +2350,10 @@ async def _show_ideas(msg, chat_id: int, s: dict):
 
 async def _show_review(msg, chat_id: int, s: dict):
     if not s.get("scenario"):
-        await _show_start(msg, chat_id, s)
+        # Сценария нет — значит его ещё не написали или он снят вместе с
+        # материалом. Возвращаем на материал: /start отсюда сбрасывал бы
+        # разговор в начало и терял язык, пол и уже собранное сырьё.
+        await _show_stage(msg, chat_id, s, STAGE_MATERIAL)
         return
     s["step"] = REVIEW
     save_session(chat_id, s)
@@ -1836,48 +2361,47 @@ async def _show_review(msg, chat_id: int, s: dict):
     await msg.reply_text(render_scenario(s["scenario"]), reply_markup=_kb_review())
 
 
-async def _show_price(msg, chat_id: int, s: dict, *, checked: bool = False):
-    """Экран цены — единственная точка, где человек соглашается платить.
+def path_prices(chat_id: int, s: dict, billing: dict) -> dict[str, int]:
+    """Цены обоих путей сборки — одно место на всех, кто их называет.
 
-    До него не сделано ни одного платного вызова: фото уже в HeyGen (бесплатно),
-    запись голоса лежит файлом, материал принят как есть. checked=True — человек
-    вернулся сюда кнопкой после пополнения, ему нужен свежий баланс, а не
-    повтор длинного текста.
+    Экран выбора, подсчёт нехватки для счёта и разбор отказа очереди обязаны
+    брать числа отсюда: разойдись они, человек пополнит ровно по кнопке и
+    получит отказ уже после того, как заплатил.
+
+    Монтажная цена считается с той же долей ведущей, что применит очередь
+    (island_avatar_share по профилю чата); быстрый путь островов не знает, там
+    цена полная. Долю передаём вместе с сессией: посчитанная один раз, она
+    остаётся в ней до конца цикла, и очередь проверит ровно то число, которое
+    человек прочитал на кнопке.
+    """
+    return {
+        "montage": estimate_material_micro(
+            s, billing,
+            avatar_share=island_avatar_share(chat_id, billing, session=s),
+        ),
+        "plain": estimate_material_micro(s, billing, montage=False),
+    }
+
+
+def ready_screen(chat_id: int, s: dict):
+    """Экран выбора пути: текст и кнопки, посчитанные заново.
+
+    В журнал не пишет; в сессию — только посчитанную долю ведущей, чтобы
+    очередь проверяла ровно то число, что на кнопке (island_avatar_share). Её
+    зовёт и показ экрана, и возврат после оплаты — иначе человек, вернувшийся
+    с пополнения, попадал бы на кнопку «Продолжить», ведущую в шаг, которого
+    больше нет.
+
+    Биллинг выключен — на экране нет ни баланса, ни цен: цены на кнопках
+    считать нечем, а один голый баланс без них врёт про то, чего с
+    выключенными деньгами вообще не существует.
     """
     billing = _billing()
     if not billing["enabled"]:
-        # Биллинг выключен — спрашивать не о чем, сразу за работу.
-        await _start_generation(msg, chat_id, s)
-        return
-    need = estimate_material_micro(s, billing)
+        return READY_MSG, _kb_ready()
     have = _ledger().balance(chat_id)
-    s["step"] = CONFIRM_PRICE
-    s["price_need"] = need
-    save_session(chat_id, s)
-    if not checked:
-        _track(chat_id, s, "price_shown", format_usd(need))
-    if have >= need:
-        await msg.reply_text(
-            PRICE_ENOUGH_MSG.format(need=format_usd(need), have=format_usd(have)),
-            reply_markup=_kb_price(True),
-        )
-        return
-    gap = format_usd(need - have)
-    if checked:
-        # Человек вернулся кнопкой: длинный текст он уже читал, ему нужны
-        # только свежие цифры — и в том же сообщении, без нового экрана.
-        await _edit_or_reply(
-            msg,
-            PRICE_STILL_SHORT_MSG.format(have=format_usd(have), gap=gap),
-            _kb_price(False),
-        )
-        return
-    await msg.reply_text(
-        PRICE_SHORT_MSG.format(
-            need=format_usd(need), have=format_usd(have), gap=gap
-        ),
-        reply_markup=_kb_price(False),
-    )
+    text = READY_MSG + READY_BALANCE_MSG.format(have=format_usd(have))
+    return text, _kb_ready(path_prices(chat_id, s, billing), have)
 
 
 async def _clone_pending_voice(chat_id: int, s: dict, language: str) -> bool:
@@ -1960,6 +2484,12 @@ async def _maybe_send_demo(msg, chat_id: int, s: dict) -> None:
     экрана цены; для платной части он потом переиспользуется как готовый.
     Демо — подарок, а не ворота: любая ошибка здесь молча пропускает шаг,
     разговор продолжается без демо.
+
+    Попытка помечается ДО рендера, а не после успеха. Помеченный только успех
+    означал бы, что после падения HeyGen каждое следующее сообщение в чат
+    запускает платный рендер заново — за наш счёт и без ведома человека.
+    Повторить попытку он может явным действием: другое фото или другая запись
+    голоса дают новый ключ.
     """
     language = _reel_language(s)
     key = _demo_key(s, language)
@@ -1972,6 +2502,8 @@ async def _maybe_send_demo(msg, chat_id: int, s: dict) -> None:
         return
     await msg.reply_text(DEMO_BUILDING_MSG)
     _track(chat_id, s, "demo_started")
+    s["demo"] = {"key": key, "started": True}
+    save_session(chat_id, s)
     photo = (s.get("photo") or {}).get("asset_id")
     try:
         if not await _clone_pending_voice(chat_id, s, language):
@@ -1985,6 +2517,8 @@ async def _maybe_send_demo(msg, chat_id: int, s: dict) -> None:
         # человека ошибкой демо не останавливаем.
         _track(chat_id, s, "error:demo", str(e)[:120])
         log.warning("демо чата %s не собралось: %s", chat_id, e)
+        s["demo"] = {"key": key, "failed": str(e)[:200]}
+        save_session(chat_id, s)
         return
     s["demo"] = {"key": key, "file": str(mp4)}
     save_session(chat_id, s)
@@ -1998,28 +2532,12 @@ async def _maybe_send_demo(msg, chat_id: int, s: dict) -> None:
     _track(chat_id, s, "demo_sent")
 
 
-async def _start_paid_part(msg, chat_id: int, s: dict):
-    """«Поехали» с экрана цены. Кнопка живёт в истории чата, поэтому баланс
-    сверяем заново: между показом экрана и нажатием могло пройти что угодно."""
-    if s.get("step") not in (CONFIRM_PRICE, VIEWING_STAGE):
-        # Тап по старому «Продолжить» после готового ролика заново запустил бы
-        # платную генерацию по прежнему материалу. Отправляем на текущий экран.
-        await _reshow(msg, chat_id, s)
-        return
-    billing = _billing()
-    if billing["enabled"]:
-        need = estimate_material_micro(s, billing)
-        if _ledger().balance(chat_id) < need:
-            await _show_price(msg, chat_id, s)
-            return
-    # Шаг воронки — «денег хватило», а не «оплатил»: у постоянного клиента
-    # баланс уже есть, и он идёт в работу без единого платежа.
-    _track(chat_id, s, "balance_ok")
-    await _start_generation(msg, chat_id, s)
-
-
 async def _start_generation(msg, chat_id: int, s: dict):
-    """Платная часть: голос по записи, затем сценарий Клодом."""
+    """Сценарий по материалу: голос по записи, затем текст Клодом.
+
+    Для человека шаг бесплатный (см. _charge_claude): по написанному тексту он
+    и решает, заказывать ли ролик, — платить за витрину его не просим.
+    """
     language = _reel_language(s)
     _track(chat_id, s, "generation_started")
     if not await _ensure_voice_clone(msg, chat_id, s):
@@ -2028,7 +2546,7 @@ async def _start_generation(msg, chat_id: int, s: dict):
     if not material.strip():
         await _ask_material(msg, chat_id, s, s.get("material_mode", "text"))
         return
-    await msg.reply_text(WORKING)
+    await msg.reply_text(MATERIAL_ACCEPTED_MSG)
     if s.get("material_mode") == "raw":
         try:
             ideas = await asyncio.to_thread(step_ideas, chat_id, material, language)
@@ -2048,30 +2566,29 @@ async def _start_generation(msg, chat_id: int, s: dict):
         await msg.reply_text(f"Не получилось разобрать текст: {e}")
         return
     s["scenario"] = sc
+    s.pop("scenario_approved", None)
     await _show_review(msg, chat_id, s)
 
 
 async def _show_ready_screen(msg, chat_id: int, s: dict):
+    """Единственный экран, где человек видит цену и соглашается платить.
+
+    Сценарий уже написан, значит символы известны точно — это самая верная
+    оценка за весь разговор, и она приходит ровно там, где человек выбирает
+    путь. Раньше цена звучала дважды: до сценария по верхней границе длины и
+    здесь по факту, и второе число не сходилось с первым.
+    """
     s["step"] = READY
+    # Путь выбирается заново каждый раз, когда человек видит этот экран:
+    # прошлый тап по дорогой кнопке не должен считать нехватку за него, если
+    # он вернулся и передумал.
+    s.pop("topup_path", None)
+    # ready_screen может запомнить в сессии долю ведущей, поэтому сохраняем
+    # после неё, а не до.
+    text, kb = ready_screen(chat_id, s)
     save_session(chat_id, s)
-    text = READY_MSG
-    billing = _billing()
-    if billing["enabled"]:
-        # Сценарий уже написан, значит символы известны точно — это самая
-        # верная оценка за весь разговор, и она приходит ровно там, где человек
-        # выбирает путь. Экран цены до этого считал по верхней границе длины и
-        # по дорогому пути: его дело — не пустить в работу с пустым балансом.
-        # Здесь же профиль чата известен, поэтому монтажная цена считается с той
-        # же долей ведущей, что применит очередь: на этом экране человек решает,
-        # платить ли вообще, и завышенная цифра отпугивает не меньше, чем
-        # заниженная подводит.
-        text += READY_PRICE_MSG.format(
-            montage=format_usd(estimate_material_micro(
-                s, billing,
-                avatar_share=island_avatar_share(chat_id, billing))),
-            plain=format_usd(estimate_material_micro(s, billing, montage=False)),
-        )
-    await msg.reply_text(text, reply_markup=_kb_ready())
+    _track(chat_id, s, "price_shown")
+    await msg.reply_text(text, reply_markup=kb)
 
 
 async def _ready_stage(msg, chat_id: int, s: dict):
@@ -2112,8 +2629,6 @@ async def _reshow(msg, chat_id: int, s: dict):
         # Присланное на экране пройденного этапа прежние данные не затирает:
         # замена — только через «Изменить».
         await _show_stage(msg, chat_id, s, _current_stage(s))
-    elif step == CONFIRM_PRICE:
-        await _show_price(msg, chat_id, s, checked=True)
     elif step == CHOOSING_IDEA and s.get("ideas"):
         await _show_ideas(msg, chat_id, s)
     elif step == REVIEW and s.get("scenario"):
@@ -2123,15 +2638,85 @@ async def _reshow(msg, chat_id: int, s: dict):
     elif step == DONE:
         await msg.reply_text(DONE_MSG, reply_markup=_kb_done())
     elif step == BUILD_FAILED:
-        await msg.reply_text(BUILD_FAILED_HINT, reply_markup=_kb_done())
+        целый = bool(s.get("scenario"))
+        # Кнопку продолжения экран отказа обязан отдавать и при повторном
+        # показе: первое сообщение уехало вверх по переписке, а сборка всё ещё
+        # ждёт в своей папке. Клавиатуру собираем тем же кодом, что и worker:
+        # иначе правило вроде «в минусе вместо перезапуска пополнение» живёт в
+        # одном из двух показов одного и того же экрана.
+        await msg.reply_text(
+            BUILD_FAILED_AGAIN_HINT if целый else BUILD_FAILED_HINT,
+            reply_markup=_failed_markup(chat_id),
+        )
+    elif step == AUDIO_REVIEW:
+        await msg.reply_text(AUDIO_REVIEW_WAITING_MSG)
+    elif step == WAIT_FINAL_AUDIO:
+        await msg.reply_text(FINAL_AUDIO_WAITING_MSG)
+    elif step in (AUDIO_PREPARING, BUILDING):
+        # Оплаченная сборка идёт: звать здесь /start нельзя — он отменяет
+        # ждущую job, и человек своей же рукой стирает то, за что заплатил.
+        await msg.reply_text(WORK_IN_PROGRESS_MSG)
     else:
-        # Шаги внутри сборки: там своё расписание, звать заново нечего.
+        # Шаги, которых в продукте больше нет (сессия прежнего порядка).
         await msg.reply_text(NOT_NOW)
+
+
+async def _resume_build(msg, chat_id: int, s: dict, job_id: str) -> None:
+    """Продолжить упавшую сборку с места остановки.
+
+    Мимо `enqueue_build` намеренно: он заводит НОВУЮ папку и заново проверяет
+    баланс на весь ролик — то есть теряет утверждённую озвучку и снятые кадры
+    и просит за них денег второй раз. Здесь та же job возвращается в очередь на
+    свою папку, и worker доделывает её по маркерам пройденных шагов.
+
+    Всё проверяется заново: кнопка живёт в истории чата вечно, и между её
+    показом и нажатием могла начаться другая сборка, кончиться попытки или
+    исчезнуть папка.
+    """
+    if _job_store().active_for_chat(chat_id) is not None:
+        await msg.reply_text(BUSY_MSG)
+        return
+    job = _resume_job(chat_id, job_id)
+    if job is None:
+        # Чужой, устаревший или уже не возобновимый номер: ничего не создаём,
+        # показываем экран текущего шага.
+        await _reshow(msg, chat_id, s)
+        return
+    if _resume_in_debt(chat_id):
+        # Баланс ушёл в минус между показом кнопки и нажатием. Экран отказа
+        # поставит на её место пополнение — платить за прогон нечем.
+        await _reshow(msg, chat_id, s)
+        return
+    if job.status == "qa_failed" or (job.stage or "") == "output":
+        # Ролик до файла дошёл, но не прошёл гейты, — или сборка отчиталась об
+        # успехе, а файла нет (стадия `output`): файл создаёт последний
+        # монтажный шаг, и с целыми маркерами продолжение не делает ничего,
+        # сколько по нему ни тапай. Оба случая чинятся пересборкой монтажа.
+        # Озвучка и клипы ведущей остаются оплаченными один раз — их маркеры
+        # (prepare, plan-early) не снимаются.
+        await asyncio.to_thread(reset_montage_steps, job.workdir)
+    if _job_store().requeue(job.job_id) is None:
+        # Гонка: статус сменился между проверкой и записью.
+        await _reshow(msg, chat_id, s)
+        return
+    s["step"] = BUILDING
+    s["current_job_id"] = job.job_id
+    save_session(chat_id, s)
+    if _job_wakeup is not None:
+        _job_wakeup.set()
+    await msg.reply_text(f"{RESUMING_MSG}\nID: {job.job_id[:8]}")
 
 
 async def _go_back(msg, chat_id: int, s: dict):
     """Шаг назад — на предыдущий экран, ничего не теряя."""
     step = s.get("step", CHOOSING)
+    if step in _JOB_BOUND_STEPS:
+        # «Назад» — единственная ветка навигации без проверки шага: с экрана
+        # доставленного ролика, экрана неудачи и идущей сборки она уводила к
+        # выбору языка и по дороге стирала сценарий и материал. Назад отсюда
+        # некуда: эти шаги принадлежат уже оплаченной job.
+        await _reshow(msg, chat_id, s)
+        return
     if step in (WAIT_EDIT, READY):
         await _show_review(msg, chat_id, s)
     elif step == REVIEW:
@@ -2144,10 +2729,6 @@ async def _go_back(msg, chat_id: int, s: dict):
             await _ask(msg, chat_id, s, WAIT_TEXT, ASK_TEXT)
     elif step == CHOOSING_IDEA:
         await _ask(msg, chat_id, s, WAIT_RAW, ASK_RAW)
-    elif step == CONFIRM_PRICE:
-        # Материал уже принят: возвращаем к его сводке, а не к пустому вводу.
-        # Оттуда «Вперёд →» вернёт сюда же, ничего не пересылая.
-        await _show_stage(msg, chat_id, s, STAGE_MATERIAL)
     elif step == VIEWING_STAGE:
         await _prev_stage(msg, chat_id, s, _current_stage(s))
     elif step in (WAIT_TEXT, WAIT_RAW):
@@ -2302,11 +2883,24 @@ async def on_button(update, context):
     s = load_session(chat_id)
     data = q.data
 
+    if data.startswith(("reel_gender:", "reel_language:", "switch:")) and \
+            _job_store().active_for_chat(chat_id) is not None:
+        # Смена языка — перевод сценария Клодом, смена пола — новый сценарий:
+        # обе платные. Кнопки живут в истории чата, и тап по ним посреди уже
+        # оплаченной сборки тратил деньги на текст, который этой сборке всё
+        # равно не достанется — она собирается по scenario.json из своей папки.
+        await q.message.reply_text(BUSY_MSG)
+        return
+
     if data.startswith("reel_gender:"):
         await _select_reel_gender(q.message, chat_id, s, data.split(":", 1)[1])
+    elif data.startswith("resume:"):
+        await _resume_build(q.message, chat_id, s, data.split(":", 1)[1])
     elif data.startswith("reel_language:"):
         value = data.split(":", 1)[1]
         await _select_reel_language(q.message, chat_id, s, value)
+    elif data.startswith("switch:"):
+        await _apply_switch(q.message, chat_id, s, data)
     elif data == "mismatch:change":
         await _show_language_choice(q.message, chat_id, s)
     elif data == "mismatch:retry":
@@ -2324,13 +2918,17 @@ async def on_button(update, context):
         _track(chat_id, s, "topup_opened")
         await _show_currency_choice(q.message, chat_id, s)
     elif data == "topup:cancel":
-        # Возврат к прежним кнопкам того же сообщения, без новых экранов.
-        text = q.message.text or topup_text(None, _ledger().balance(chat_id))
-        await _edit_or_reply(
-            q.message, text,
-            _kb_price(False) if s.get("step") == CONFIRM_PRICE
-            else _kb_topup_entry(),
-        )
+        # Возврат к прежнему экрану в том же сообщении, без новых. Экран
+        # выбора возвращаем целиком, текстом и кнопками: прежний текст под
+        # его кнопками остался бы от пополнения, и человек читал бы про
+        # баланс, выбирая монтаж.
+        if s.get("step") == READY and s.get("scenario"):
+            text, kb = ready_screen(chat_id, s)
+            save_session(chat_id, s)
+        else:
+            text = topup_text(None, _ledger().balance(chat_id))
+            kb = _kb_topup_entry()
+        await _edit_or_reply(q.message, text, kb)
     elif data.startswith("topup:cur:"):
         currency = data.rsplit(":", 1)[1]
         if currency not in TOPUP_PRESETS:
@@ -2345,22 +2943,34 @@ async def on_button(update, context):
         await _create_topup_order(q.message, chat_id, s, currency, int(amount))
     elif data == "topup:check":
         await _check_topup_order(q.message, chat_id, s)
-    elif data == "pay:go":
-        # Тот же случай: платить за второй ролик, пока идёт первый, нельзя —
-        # это две параллельные генерации на один профиль.
+    elif data in ("pay:go", "pay:check", "screen:current"):
+        # Кнопки убранного экрана цены («Поехали», «Проверить баланс»),
+        # «Продолжить ➡️» из сообщений об оплате и «Вернуться» с экрана
+        # зачисления вне ролика. Все ведут в одно: на текущий экран разговора
+        # со свежими числами.
         if _job_store().active_for_chat(chat_id):
             await q.message.reply_text(BUSY_MSG)
             return
-        await _start_paid_part(q.message, chat_id, s)
-    elif data == "pay:check":
-        # Возврат после пополнения: показываем тот же экран со свежим балансом.
-        await _show_price(q.message, chat_id, s, checked=True)
+        await _reshow(q.message, chat_id, s)
     elif data.startswith("idea:"):
-        idea = (s.get("ideas") or [])[int(data.split(":")[1])]
-        # Экран цены человек уже прошёл, деньги на ролик проверены там. Здесь
-        # ловим только уход в минус: между экраном и выбором идеи баланс мог
-        # просесть на самих идеях.
-        if await _blocked_by_negative_balance(q.message, chat_id):
+        # Кнопка идеи живёт в истории чата вечно, а список идей под ней —
+        # нет: замена материала снимает его целиком. Раньше обработчик падал
+        # на индексе, и человек не получал вообще ничего.
+        if _job_store().active_for_chat(chat_id):
+            await q.message.reply_text(BUSY_MSG)
+            return
+        raw_index = data.split(":", 1)[1]
+        index = int(raw_index) if raw_index.lstrip("-").isdigit() else -1
+        ideas = s.get("ideas") or []
+        if s.get("step") in (DONE, BUILD_FAILED) or not 0 <= index < len(ideas):
+            await _reshow(q.message, chat_id, s)
+            return
+        idea = ideas[index]
+        if s.get("scenario") and s.get("scenario_idea") == index:
+            # Кнопка идеи из истории чата: сценарий по ней уже написан.
+            # Второй прогон Клода дал бы другой текст на тот же выбор и стоил
+            # бы нам ещё раз — показываем написанное.
+            await _after_material(q.message, chat_id, s)
             return
         await q.message.reply_text(WORKING)
         try:
@@ -2371,6 +2981,8 @@ async def on_button(update, context):
             await q.message.reply_text(f"Не получилось собрать сценарий: {e}")
             return
         s["scenario"] = sc
+        s["scenario_idea"] = index
+        s.pop("scenario_approved", None)
         await _show_review(q.message, chat_id, s)
     elif data == "edit":
         await _ask(q.message, chat_id, s, WAIT_EDIT, ASK_EDIT)
@@ -2378,12 +2990,15 @@ async def on_button(update, context):
         language = _reel_language(s)
         scenario_language = (s.get("scenario") or {}).get("language")
         if scenario_language and scenario_language != language:
-            await q.message.reply_text(
-                "Язык сценария не совпадает с выбранным языком ролика. "
-                "Начните новый ролик через /new или вернитесь к тексту."
-            )
+            # Раньше отсюда был текст без единой кнопки: «начните новый ролик
+            # или вернитесь к тексту» — на утверждённом сценарии это тупик.
+            # Переспрос с переводом для этого случая уже написан (смена
+            # языка), и ведём мы ровно в него: «Да» переведёт этот же текст на
+            # язык ролика, «Нет» вернёт туда, где человек стоял.
+            await _confirm_switch(q.message, chat_id, s, "language", language)
             return
         s["scenario"]["language"] = language
+        s["scenario_approved"] = True
         save_session(chat_id, s)
         _track(chat_id, s, "scenario_approved")
         await q.message.reply_text(APPROVED_MSG)
@@ -2395,14 +3010,23 @@ async def on_button(update, context):
             await q.message.reply_text(BUSY_MSG)
             return
         if s.get("step") in (DONE, BUILD_FAILED):
-            # Ролик уже сделан: навигация по его этапам вела бы к экрану цены
-            # и оттуда — к повторной платной генерации по тому же материалу.
+            # Ролик этого цикла уже прошёл сборку. Навигация по его этапам
+            # кончается экраном выбора пути — то есть предложением оплатить
+            # второй ролик по тому же материалу, которого человек не просил.
+            # Выходов отсюда два, и оба явные: новый ролик или, если сценарий
+            # цел, возврат к выбору кнопкой с экрана отказа.
             await _reshow(q.message, chat_id, s)
             return
-        stage = _current_stage(s)
-        if data == "stage:next":
+        parts = data.split(":")
+        action = parts[1]
+        # Этап называет сама кнопка: под карточкой фото «Изменить» обязано
+        # менять фото, а не тот этап, который бот считает текущим. Кнопки
+        # прежних версий этапа не называют — им остаётся текущий.
+        stage = (parts[2] if len(parts) > 2 and parts[2] in STAGE_ORDER
+                 else _current_stage(s))
+        if action == "next":
             await _next_stage(q.message, chat_id, s, stage)
-        elif data == "stage:prev":
+        elif action == "prev":
             await _prev_stage(q.message, chat_id, s, stage)
         else:
             await _ask_stage(q.message, chat_id, s, stage)
@@ -2479,6 +3103,15 @@ async def on_button(update, context):
         if s.get("step") != READY:
             if _job_store().active_for_chat(chat_id):
                 await q.message.reply_text(BUSY_MSG)
+            elif s.get("step") == DONE:
+                # Ролик этого цикла уже в чате. Голый текст «выберите, с чего
+                # начать» был тупиком без кнопок, хотя выход отсюда ровно один
+                # и он есть: новый ролик.
+                await q.message.reply_text(NOT_NOW, reply_markup=_kb_done())
+            elif s.get("step") == BUILD_FAILED:
+                await q.message.reply_text(
+                    NOT_NOW, reply_markup=_failed_markup(chat_id)
+                )
             else:
                 await q.message.reply_text(NOT_NOW)
             return
@@ -2488,8 +3121,29 @@ async def on_button(update, context):
         # Путь выбирает кнопка, а не догадка по состоянию: старый callback
         # `build` живёт в истории чатов вечно и означал монтаж, поэтому и он
         # ведёт в монтаж.
-        s["montage"] = not data.endswith(":plain")
+        montage = not data.endswith(":plain")
+        s["montage"] = montage
+        # Какой путь жали — единственное, из чего можно посчитать нехватку
+        # именно на него: пополнение открывается уже с другого экрана.
+        s["topup_path"] = "montage" if montage else "plain"
         save_session(chat_id, s)
+        billing = _billing()
+        if billing["enabled"]:
+            need = path_prices(chat_id, s, billing)[s["topup_path"]]
+            if _ledger().balance(chat_id) < need:
+                # Кнопка помечена «недостаточно средств» и ведёт на пополнение,
+                # а не в сборку: числа те же, что на ней и написаны.
+                await _show_topup(q.message, chat_id, need=need, ready=True)
+                return
+        # Шаг воронки — «денег хватило», а не «оплатил»: у постоянного клиента
+        # баланс уже есть, и он идёт в сборку без единого платежа.
+        _track(chat_id, s, "balance_ok")
+        # Голос: клон делается на демо, до выбора пути, и только новичку. Кто
+        # прислал новую запись позже, приходит сюда с pending-записью — без
+        # клона профиль неполон, и человек упирался в «профиль не найден»
+        # вместо понятной просьбы.
+        if not await _ensure_voice_clone(q.message, chat_id, s):
+            return
         try:
             save_client_profile(chat_id, s)
         except Exception:
@@ -2499,6 +3153,23 @@ async def on_button(update, context):
             await q.message.reply_text(CLIENT_NOT_FOUND_MSG)
             return
         await _enqueue_build(q.message, chat_id, s)
+    elif data == "ready:show":
+        # Сборка упала, но текст цел: возвращаем к выбору пути, а не гоним
+        # человека писать сценарий заново.
+        if _job_store().active_for_chat(chat_id):
+            await q.message.reply_text(BUSY_MSG)
+            return
+        if s.get("step") == DONE or not s.get("scenario"):
+            # Ролик этого цикла уже доставлен. Кнопка из истории чата открыла
+            # бы экран выбора — то есть предложила оплатить второй ролик по
+            # тому же материалу, которого человек не просил. Выход отсюда
+            # один и явный: «Новый ролик».
+            await _reshow(q.message, chat_id, s)
+            return
+        # Сценарий, дошедший до сборки, человеком утверждён — у сессий,
+        # записанных до появления флага, его просто нечем было пометить.
+        s["scenario_approved"] = True
+        await _show_ready_screen(q.message, chat_id, s)
     elif data == "new_reel":
         if _job_store().active_for_chat(chat_id):
             await q.message.reply_text(BUSY_MSG)
@@ -2568,28 +3239,50 @@ def _tribute_key() -> str:
     return (os.environ.get("TRIBUTE_API_KEY") or "").strip()
 
 
-def topup_text(need: int | None, have: int, *, exhausted: bool = False) -> str:
+def topup_text(need: int | None, have: int) -> str:
     """Экран пополнения. need=None — пользователь открыл его сам, а не упёрся.
-    exhausted=True — баланс ушёл в минус: до оценки стоимости рендера дело ещё
-    не дошло, поэтому need тут не при чём, а строка своя."""
+
+    Цену ролика здесь не называем: она живёт на кнопках экрана выбора пути и
+    звучит для человека ровно один раз. Второе число, да ещё с оговоркой «это
+    ориентировочно», делало из одной цены две. Этот экран отвечает только за
+    баланс и за факт нехватки; сколько именно доложить — считает кнопка
+    «ровно на этот ролик» на экране сумм.
+    """
     lines = [f"Баланс: {format_usd(have)}"]
-    if exhausted:
-        lines.append("Баланс исчерпан, генерация сценария приостановлена.")
-        lines.append("Пополните — и сможете продолжить с того же места.")
-    elif need is not None:
-        lines.append(
-            f"На этот ролик не хватает — нужно примерно {format_usd(need)} "
-            "(это ориентировочно, спишется по факту)."
-        )
+    if need is not None:
+        lines.append("Не хватает средств на сборку ролика.")
     lines.append("")
     lines.append("Пополнить — кнопкой ниже. Баланс обновится сам после оплаты.")
     return "\n".join(lines)
 
 
-def _kb_topup_entry():
+def _kb_topup_entry(back: bool = False):
+    """back=True — экран открыт с выбора пути: «Назад» ведёт прямо туда.
+
+    Возврат есть в любом случае: /balance открывают и посреди разговора, и с
+    одной кнопкой пополнения человек оказывался заперт в экране про деньги —
+    вернуться к ролику было нечем, кроме команды. Без выбора пути за спиной
+    «Назад» ведёт на текущий экран разговора, каким бы он ни был.
+    """
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💳 Пополнить баланс", callback_data="topup:start")],
+        [InlineKeyboardButton(
+            "← Назад", callback_data="ready:show" if back else "screen:current"
+        )],
+    ])
+
+
+def _kb_paid_elsewhere():
+    """Деньги зачислены, но экрана выбора за спиной нет (/balance, счёт из
+    прошлого захода). Кроме пополнения нужен выход на тот шаг разговора, где
+    человек стоит: иначе оплата запирает его в экране про деньги."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("💳 Пополнить баланс", callback_data="topup:start")],
+        [InlineKeyboardButton("← Вернуться", callback_data="screen:current")],
     ])
 
 
@@ -2601,13 +3294,6 @@ def _kb_currency():
         [InlineKeyboardButton("Оплатить в RUB", callback_data="topup:cur:rub")],
         [InlineKeyboardButton("Оплатить в USD", callback_data="topup:cur:usd")],
         [InlineKeyboardButton("← Назад", callback_data="topup:cancel")],
-    ])
-
-
-def _kb_paid_continue():
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Продолжить ➡️", callback_data="pay:go")],
     ])
 
 
@@ -2649,13 +3335,14 @@ def _kb_pay(url: str):
 
 
 async def _show_topup(msg, chat_id: int, *, need: int | None = None,
-                      have: int | None = None, exhausted: bool = False) -> None:
+                      have: int | None = None, ready: bool = False) -> None:
     """Экран пополнения. Принимает telegram-сообщение, а не update/context:
-    зовётся и из обработчика команды, и из _enqueue_build, где есть только msg."""
+    зовётся и из обработчика команды, и с экрана выбора пути, где есть только
+    msg. ready=True — за спиной остался выбор пути, туда и ведёт «Назад»."""
     balance = _ledger().balance(chat_id) if have is None else have
     await msg.reply_text(
-        topup_text(need, balance, exhausted=exhausted),
-        reply_markup=_kb_topup_entry(),
+        topup_text(need, balance),
+        reply_markup=_kb_topup_entry(back=ready),
     )
 
 
@@ -2672,15 +3359,25 @@ def _topup_gap_minor(chat_id: int, s: dict, currency: str) -> int | None:
     """Сколько не хватает на текущий ролик, в минимальных единицах валюты.
 
     None — считать нечего: человек открыл пополнение сам, ролика перед ним нет.
-    Оценку берём заново, а не из сохранённого price_need: пока экран
-    пополнения висел в чате, материал мог смениться.
+    Ролик перед ним стоит ровно на экране выбора пути (READY): раньше цены нет
+    вовсе, позже сборка уже оплачена.
+
+    Считаем от пути, чью кнопку жали (topup_path): за ним человек сюда и
+    пришёл. Если он открыл пополнение с самого экрана, не выбирая пути, берём
+    дешёвый — это нижняя граница, после которой доступен хотя бы один путь, и
+    обещать «ровно на этот ролик» больше неё было бы враньём.
+
+    Оценку берём заново: пока экран пополнения висел в чате, сценарий мог
+    смениться.
     """
-    if (s or {}).get("step") != CONFIRM_PRICE:
+    if (s or {}).get("step") != READY:
         return None
     billing = _billing()
     if not billing["enabled"]:
         return None
-    gap = estimate_material_micro(s, billing) - _ledger().balance(chat_id)
+    prices = path_prices(chat_id, s, billing)
+    need = prices["montage"] if s.get("topup_path") == "montage" else prices["plain"]
+    gap = need - _ledger().balance(chat_id)
     if gap <= 0:
         return None
     return exact_topup_minor(gap, currency, billing["fx"])
@@ -2739,21 +3436,25 @@ async def _create_topup_order(msg, chat_id: int, s: dict, currency: str,
 
 
 def _paid_screen_text_kb(chat_id: int, s: dict):
-    """Экран после зачисления: хватает — «Продолжить», нет — сколько добавить.
+    """Экран после зачисления. Один и тот же вид для обоих путей (вебхук и
+    кнопка проверки), поэтому человек не получает двух сообщений об одной
+    оплате.
 
-    Один и тот же вид для обоих путей (вебхук и кнопка проверки), поэтому
-    человек не получает двух сообщений об одной оплате.
+    Деньги пополняют ради конкретного ролика, поэтому возврат — на тот самый
+    экран выбора пути со свежими числами: и баланс, и обе цены человек читает
+    там, где решает. Прежняя кнопка «Продолжить» вела в шаг, которого больше
+    нет, а её обработчик пускал дальше не всякую сессию — человек уходил в
+    показ текущего экрана вместо обещанного продолжения.
     """
-    have = _ledger().balance(chat_id)
-    billing = _billing()
-    need = estimate_material_micro(s, billing) if billing["enabled"] else 0
-    if not billing["enabled"] or have >= need:
-        return PAID_ENOUGH_MSG.format(have=format_usd(have)), _kb_paid_continue()
+    if s.get("step") == READY and s.get("scenario"):
+        return ready_screen(chat_id, s)
+    # Пополнение вне ролика (/balance, счёт из прошлого захода): экрана выбора
+    # за спиной нет, называть цены нечему. Но выход отсюда обязан быть: с
+    # одной кнопкой «Пополнить баланс» человек оставался в пополнении, хотя
+    # разговор ждёт его совсем на другом шаге.
     return (
-        PRICE_STILL_SHORT_MSG.format(
-            have=format_usd(have), gap=format_usd(need - have)
-        ),
-        _kb_price(False),
+        PAID_ENOUGH_MSG.format(have=format_usd(_ledger().balance(chat_id))),
+        _kb_paid_elsewhere(),
     )
 
 
@@ -2857,24 +3558,6 @@ async def cmd_stats(update, context) -> None:
     await update.message.reply_text(text)
 
 
-async def _blocked_by_negative_balance(msg, chat_id: int) -> bool:
-    """Страховка внутри уже оплаченного цикла (выбор идеи -> step_scenario).
-
-    Основной гейт — экран цены: там сверяется, что баланса хватает на весь
-    ролик, и без этого платная часть не начинается. Здесь порог другой,
-    «строго меньше нуля»: человек уже согласился и заплатил, добивать его
-    вторым экраном на каждой мелочи незачем — ловим только реальный минус.
-    """
-    billing = _billing()
-    if not billing["enabled"]:
-        return False
-    balance = _ledger().balance(chat_id)
-    if balance >= 0:
-        return False
-    await _show_topup(msg, chat_id, have=balance, exhausted=True)
-    return True
-
-
 async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
     """Поставить job в durable FIFO; платный pipeline здесь не запускается."""
     try:
@@ -2884,11 +3567,19 @@ async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
             language=_reel_language(s),
             voice_id=s.get("voice_id"),
             montage=bool(s.get("montage", True)),
+            session=s,
         )
     except InsufficientBalance as exc:
         # Раньше общего except: иначе нехватка баланса покажется как
-        # техническая ошибка, без кнопок пополнения.
-        await _show_topup(msg, chat_id, need=exc.need, have=exc.have)
+        # техническая ошибка, без кнопок пополнения. Перерисовываем тот же
+        # экран выбора: очередь и экран считают одним местом (path_prices),
+        # поэтому кнопка нужного пути придёт уже помеченной нехваткой, а рядом
+        # встанет пополнение. Отдельный экран «пополните» был бы тупиком —
+        # вернуться к выбору с него нечем.
+        log.info("сборка чата %s отклонена по деньгам: нужно %s, есть %s",
+                 chat_id, exc.need, exc.have)
+        text, kb = ready_screen(chat_id, s)
+        await msg.reply_text(text, reply_markup=kb)
         return None
     except Exception as e:
         log.exception("не удалось поставить ролик в очередь для чата %s", chat_id)
@@ -2937,11 +3628,105 @@ def _track_job(job: BuildJob, event: str, detail: str | None = None) -> None:
     _track(job.chat_id, load_session(job.chat_id), event, detail)
 
 
-async def _safe_job_message(bot_api, chat_id: int, text: str) -> None:
+async def _safe_job_message(bot_api, chat_id: int, text: str, markup=None) -> None:
     try:
-        await bot_api.send_message(chat_id=chat_id, text=text)
+        if markup is None:
+            # Кнопок нет — и аргумента нет: статусные сообщения worker'а шлют
+            # голый текст, и лишний reply_markup=None в них только шум.
+            await bot_api.send_message(chat_id=chat_id, text=text)
+        else:
+            await bot_api.send_message(
+                chat_id=chat_id, text=text, reply_markup=markup
+            )
     except Exception as e:
         log.warning("не удалось отправить статус job в чат %s: %s", chat_id, e)
+
+
+def _resume_job(chat_id: int, job_id: str | None = None) -> BuildJob | None:
+    """Упавшая сборка этого чата, которую есть смысл продолжить.
+
+    `job_id` не задан — берём последнюю job разговора: экран отказа
+    показывается и заново (человек написал в чат), а сессия помнит её номер в
+    `last_job_id`.
+
+    Условия все обязательны, и проверяются они дважды — при рисовании кнопки и
+    при нажатии: кнопка остаётся в истории чата навсегда, а состояние за это
+    время меняется.
+    """
+    store = _job_store()
+    last_job_id = load_session(chat_id).get("last_job_id")
+    if not job_id:
+        job_id = last_job_id
+    elif job_id != last_job_id:
+        # Номер с кнопки не тот, которым разговор занят сейчас: человек закрыл
+        # упавший ролик и начал новый, а кнопка осталась висеть в истории.
+        # Продолжать по ней значит вернуть в очередь ПРЕЖНЮЮ сборку — человек
+        # ждёт ролик по новому материалу, а заплатит за рендер старого.
+        return None
+    if not job_id:
+        return None
+    job = store.get(job_id)
+    if job is None or job.chat_id != int(chat_id):
+        # Чужой или уже несуществующий номер сборки с кнопки из истории.
+        return None
+    if job.status not in RESUMABLE_STATUSES:
+        return None
+    if (job.stage or "") in NO_RESUME_STAGES:
+        return None
+    if job.resumes >= MAX_RESUME_ATTEMPTS:
+        return None
+    if not Path(job.workdir).is_dir():
+        # Продолжать физически нечего: озвучка и снятые кадры лежали здесь.
+        return None
+    if store.active_for_chat(chat_id) is not None:
+        # По чату уже идёт сборка — второй прогон это два платных рендера разом.
+        return None
+    return job
+
+
+def _failed_markup(chat_id: int, job_id: str | None = None):
+    """Клавиатура сообщения об отказе: со сценарием на руках предлагаем
+    вернуться к выбору пути, а не начинать ролик с языка. Первой строкой —
+    продолжение упавшей сборки, если продолжать есть что.
+
+    `job_id` передаёт worker: статус job он читает уже ПОСЛЕ finish, поэтому
+    номер нужен, а не снимок job до падения.
+    """
+    job = _resume_job(chat_id, job_id)
+    в_минусе = job is not None and _resume_in_debt(chat_id)
+    return _kb_failed(
+        bool(load_session(chat_id).get("scenario")),
+        None if в_минусе else (job.job_id if job else None),
+        need_topup=в_минусе,
+    )
+
+
+def _resume_in_debt(chat_id: int) -> bool:
+    """Баланс ушёл в минус — платить за продолжение нечем.
+
+    Спрашивается баланс один раз, на выборе пути, и на продолжение эта оценка
+    не распространяется: каждый перезапуск — это ещё один прогон агента и ещё
+    один рендер. Чтение бухгалтерии не должно уметь запереть человека на экране
+    отказа: битый или занятый SQLite оставляет кнопку продолжения на месте.
+    """
+    try:
+        return _ledger().balance(chat_id) < 0
+    except Exception as e:
+        log.warning("не удалось прочитать баланс чата %s: %s", chat_id, e)
+        return False
+
+
+def _resume_hint(markup) -> str:
+    """Обещание продолжения — только когда кнопка продолжения реально есть.
+
+    Обещать «продолжу с этого места» там, где кнопки нет (кончились попытки,
+    папки не осталось, упала сама озвучка), значит соврать человеку.
+    """
+    for row in markup.inline_keyboard:
+        for button in row:
+            if button.text == RESUME_BTN:
+                return f"\n\n{RESUME_PROMISE}"
+    return ""
 
 
 async def _process_audio_job(bot_api, job: BuildJob, preview_fn=None) -> None:
@@ -2974,10 +3759,14 @@ async def _process_audio_job(bot_api, job: BuildJob, preview_fn=None) -> None:
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
         log.error("job %s: озвучка не создалась: %s", job.job_id, error)
+        # Самый дорогой отвал продукта после самой сборки: без своего события
+        # он выглядел в воронке как «человек передумал на озвучке».
+        _track_job(job, "error:audio", error[:120])
         await _safe_job_message(
             bot_api,
             job.chat_id,
             f"{AUDIO_FAILED_MSG}\nID: {job.job_id[:8]}",
+            _failed_markup(job.chat_id, job.job_id),
         )
         return
 
@@ -2992,7 +3781,9 @@ async def _process_audio_job(bot_api, job: BuildJob, preview_fn=None) -> None:
             error=error,
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
-        await _safe_job_message(bot_api, job.chat_id, error)
+        _track_job(job, "error:audio", "файла озвучки нет")
+        await _safe_job_message(bot_api, job.chat_id, error,
+                                _failed_markup(job.chat_id, job.job_id))
         return
 
     try:
@@ -3014,11 +3805,13 @@ async def _process_audio_job(bot_api, job: BuildJob, preview_fn=None) -> None:
             error=str(exc),
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        _track_job(job, "error:audio", str(exc)[:120])
         await _safe_job_message(
             bot_api,
             job.chat_id,
             "Озвучка готова, но Telegram не принял аудиофайл. "
             f"Он сохранён для диагностики.\nID: {job.job_id[:8]}",
+            _failed_markup(job.chat_id, job.job_id),
         )
         return
 
@@ -3092,11 +3885,15 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         # Человеку уходит человеческое, разбор остаётся здесь и в job.result.
         log.error("job %s не собралась (%s): %s", job.job_id,
                   result.get("stage") or "build", error)
+        _track_job(job, "error:build", str(error)[:120])
+        markup = _failed_markup(job.chat_id, job.job_id)
         await _safe_job_message(
             bot_api,
             job.chat_id,
             f"{BUILD_FAILED_MSG}\nID: {job.job_id[:8]}"
-            f"{_charged_but_undelivered_notice(job.job_id)}",
+            f"{_charged_but_undelivered_notice(job.job_id)}"
+            f"{_resume_hint(markup)}",
+            markup,
         )
         return
 
@@ -3111,7 +3908,8 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
         _track_job(job, "error:build", "файла ролика нет")
-        await _safe_job_message(bot_api, job.chat_id, MISSING_FILE_MSG)
+        await _safe_job_message(bot_api, job.chat_id, MISSING_FILE_MSG,
+                                _failed_markup(job.chat_id, job.job_id))
         return
 
     if not result.get("qa_pass"):
@@ -3123,10 +3921,12 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
             error="QA gates failed",
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        _track_job(job, "error:qa", "гейты не пройдены")
         await _safe_job_message(
             bot_api, job.chat_id,
             f"{QA_FAIL_MSG}\nID: {job.job_id[:8]}"
             f"{_charged_but_undelivered_notice(job.job_id)}",
+            _failed_markup(job.chat_id, job.job_id),
         )
         return
 
@@ -3139,14 +3939,20 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
             job.job_id,
             "delivery_failed",
             result=result,
-            stage="delivery",
+            # Своя стадия, а не общая `delivery`: тяжёлый файл и отказ Telegram
+            # — разные случаи. Пересборка веса не изменит, поэтому кнопки
+            # продолжения здесь быть не должно, а отвергнутый Telegram'ом
+            # ролик доставить второй раз как раз дешевле всего.
+            stage="delivery_too_big",
             error=error,
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        _track_job(job, "error:delivery", "больше лимита Telegram")
         await _safe_job_message(
             bot_api,
             job.chat_id,
             error + _charged_but_undelivered_notice(job.job_id),
+            _failed_markup(job.chat_id, job.job_id),
         )
         return
 
@@ -3176,6 +3982,7 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
             "Ролик готов и прошёл QA, но Telegram не принял файл. "
             f"Он сохранён для повторной отправки.\nID: {job.job_id[:8]}"
             f"{_charged_but_undelivered_notice(job.job_id)}",
+            _failed_markup(job.chat_id, job.job_id),
         )
         return
 
@@ -3418,26 +4225,16 @@ async def on_message(update, context):
                 reply_markup=_kb_language_mismatch(),
             )
             return
-        # Текст только запоминаем: Клод к нему подойдёт после экрана цены.
-        s["material_mode"] = "text"
-        s["material_text"] = cleaned
-        s.pop("ideas", None)
+        _replace_material(s, "text", cleaned)
         save_session(chat_id, s)
         _track(chat_id, s, "stage:material", "text")
-        await _show_price(msg, chat_id, s)
+        await _after_material(msg, chat_id, s)
 
     elif step == WAIT_RAW:
-        s["material_mode"] = "raw"
-        s["material_text"] = text
-        s.pop("ideas", None)
+        _replace_material(s, "raw", text)
         save_session(chat_id, s)
         _track(chat_id, s, "stage:material", "raw")
-        await _show_price(msg, chat_id, s)
-
-    elif step == CONFIRM_PRICE:
-        # Человек пишет вместо нажатия — показываем тот же экран со свежим
-        # балансом, а не молчим и не теряем уже принятый материал.
-        await _show_price(msg, chat_id, s, checked=True)
+        await _after_material(msg, chat_id, s)
 
     elif step == WAIT_EDIT:
         language = _reel_language(s)
@@ -3458,6 +4255,8 @@ async def on_message(update, context):
             await msg.reply_text(str(e))
             return
         s["scenario"] = sc
+        # Правка — это новый текст: прежнее утверждение к нему не относится.
+        s.pop("scenario_approved", None)
         await _show_review(msg, chat_id, s)
 
     else:
@@ -3528,8 +4327,11 @@ async def _post_init(app):
     interrupted = await asyncio.to_thread(_job_store().mark_running_interrupted)
     for job in interrupted:
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
+        markup = _failed_markup(job.chat_id, job.job_id)
         await _safe_job_message(
-            app.bot, job.chat_id, f"{INTERRUPTED_MSG}\nID: {job.job_id[:8]}"
+            app.bot, job.chat_id,
+            f"{INTERRUPTED_MSG}\nID: {job.job_id[:8]}{_resume_hint(markup)}",
+            markup,
         )
     recovered_user_audio = await asyncio.to_thread(
         _job_store().recover_user_audio_processing
@@ -3542,6 +4344,11 @@ async def _post_init(app):
             "Проверка голосового прервалась из-за перезапуска сервиса. "
             "Пришлите весь сценарий одним голосовым ещё раз.\n"
             f"ID: {job.job_id[:8]}",
+            # Записать просят весь сценарий — значит его надо дать прочитать.
+            # Без этой клавиатуры человек оставался с просьбой и без текста:
+            # кнопка показа сценария уехала вверх по переписке вместе с
+            # прежним сообщением.
+            _kb_final_audio(job.job_id),
         )
 
     tribute_key = os.environ.get("TRIBUTE_API_KEY")

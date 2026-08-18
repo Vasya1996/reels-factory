@@ -216,3 +216,141 @@ def test_cancel_waiting_отменяет_ждущую_но_щадит_идущу
     store.claim_next()  # queued -> running
     assert store.cancel_waiting(running.job_id) is None
     assert store.get(running.job_id).status == "running"
+
+
+# --- возобновление упавшей сборки -------------------------------------------
+#
+# Упавшую job человек продолжает с места остановки: папка цела, пройденные
+# шаги помечены маркерами, утверждённая озвучка и клипы ведущей на месте.
+# Через enqueue у такой сборки дороги назад нет: workdir UNIQUE не даст завести
+# вторую job на ту же папку, а transition ходит только между активными
+# статусами.
+
+def _упавшая(store, chat_id=7, status="failed", stage="build"):
+    """Job, дошедшая до реальной работы и закончившаяся терминально."""
+    job = store.enqueue(chat_id)
+    store.claim_next()
+    return store.finish(job.job_id, status, stage=stage, error="упало")
+
+
+def test_requeue_возвращает_возобновимую_сборку_в_ту_же_папку(tmp_path):
+    """Без requeue упавшая job — тупик: transition умеет только активные
+    статусы, а второй enqueue на ту же папку отобьёт UNIQUE(workdir). Тогда
+    человеку остаётся новая сборка с нуля — то есть новая оплата озвучки и
+    ведущей за то, что уже лежит готовым в старой папке."""
+    from reels_factory.jobs import RESUMABLE_STATUSES
+
+    assert set(RESUMABLE_STATUSES) == {
+        "failed", "qa_failed", "delivery_failed", "interrupted"
+    }
+
+    for status in RESUMABLE_STATUSES:
+        store = _store(tmp_path / status)
+        упавшая = _упавшая(store, status=status)
+
+        возвращённая = store.requeue(упавшая.job_id)
+
+        assert возвращённая is not None, status
+        assert возвращённая.status == "queued", status
+        assert возвращённая.stage == "build", status
+        # Папка та же: в ней утверждённая озвучка, маркеры шагов и клипы.
+        assert возвращённая.workdir == упавшая.workdir, status
+        взятая = store.claim_next()
+        assert взятая.job_id == упавшая.job_id, status
+        assert взятая.workdir == упавшая.workdir, status
+
+
+def test_requeue_молчит_на_отменённой_и_доставленной(tmp_path):
+    """Отменённую человек остановил сам, доставленную уже получил в чат:
+    возвращать в очередь нечего — второй прогон только потратит деньги."""
+    store = _store(tmp_path)
+    отменённая = _упавшая(store, chat_id=7, status="cancelled")
+    доставленная = _упавшая(store, chat_id=8, status="completed")
+
+    assert store.requeue(отменённая.job_id) is None
+    assert store.requeue(доставленная.job_id) is None
+    assert store.get(отменённая.job_id).status == "cancelled"
+    assert store.get(доставленная.job_id).status == "completed"
+    assert store.claim_next() is None
+
+
+def test_requeue_отсутствующей_job_ничего_не_создаёт(tmp_path):
+    """Номер сборки приходит с кнопки из истории чата — он может быть чужим
+    или уже несуществующим."""
+    store = _store(tmp_path)
+
+    assert store.requeue("нет-такой-job") is None
+    assert store.claim_next() is None
+
+
+def test_повторный_requeue_не_плодит_вторую_сборку(tmp_path):
+    """Кнопка живёт в истории чата вечно, и по ней тапают дважды. Вторая
+    постановка в очередь дала бы два прогона на одной папке разом."""
+    store = _store(tmp_path)
+    упавшая = _упавшая(store)
+
+    первый = store.requeue(упавшая.job_id)
+    второй = store.requeue(упавшая.job_id)
+
+    assert первый is not None and второй is None
+    with store._connect() as conn:
+        всего = conn.execute(
+            "SELECT COUNT(*) AS n FROM build_jobs WHERE chat_id = 7"
+        ).fetchone()["n"]
+    assert всего == 1
+    assert store.claim_next().job_id == упавшая.job_id
+    assert store.claim_next() is None
+
+
+def test_возобновление_увеличивает_число_попыток(tmp_path):
+    """По числу попыток бот решает, показывать ли кнопку продолжения: вечно
+    перезапускать сборку, которая падает каждый раз, незачем."""
+    store = _store(tmp_path)
+    упавшая = _упавшая(store)
+    assert упавшая.attempts == 1
+
+    store.requeue(упавшая.job_id)
+    снова_взята = store.claim_next()
+
+    assert снова_взята.attempts == 2
+
+
+def test_рестарт_не_затирает_настоящую_стадию_прерванной_job(tmp_path):
+    """Стадия — единственное, по чему потом видно, ЧЕМ была занята сборка.
+
+    `mark_running_interrupted` забирает разом и `audio_running`, и `running`, и
+    обоим ставит `stage='restart'`. Настоящая стадия (`audio_preview` у
+    озвучки) при этом теряется, а бот отсекает по ней именно те сборки, где
+    продолжать нечего: с затёртой стадией прерванная озвучка получает кнопку
+    продолжения и уезжает в общую очередь — то есть в монтаж, мимо утверждения
+    озвучки человеком.
+    """
+    store = _store(tmp_path)
+
+    job_id = store.new_id()
+    workdir = store.workdir_for(job_id)
+    workdir.mkdir(parents=True)
+    озвучка = store.enqueue_prepared(
+        7, job_id=job_id, workdir=workdir,
+        initial_status="audio_queued", initial_stage="audio_preview",
+    )
+    сборка = store.enqueue(8)
+    assert store.claim_next().job_id == озвучка.job_id
+    assert store.claim_next().job_id == сборка.job_id
+    # Стадию ставит сам claim_next — это и есть «настоящая».
+    assert store.get(озвучка.job_id).stage == "audio_preview"
+    assert store.get(сборка.job_id).stage == "build"
+
+    прерванные = store.mark_running_interrupted()
+
+    assert {job.job_id for job in прерванные} == {озвучка.job_id, сборка.job_id}
+    assert store.get(озвучка.job_id).status == "interrupted"
+    assert store.get(сборка.job_id).status == "interrupted"
+    assert store.get(озвучка.job_id).stage == "audio_preview"
+    assert store.get(сборка.job_id).stage == "build"
+    # То же самое в списке, который читает бот, — по нему он рисует кнопки.
+    assert {job.job_id: job.stage for job in прерванные} == {
+        озвучка.job_id: "audio_preview", сборка.job_id: "build",
+    }
+    # Причину рестарта человек всё так же должен видеть.
+    assert "повторной оплаты" in store.get(озвучка.job_id).error

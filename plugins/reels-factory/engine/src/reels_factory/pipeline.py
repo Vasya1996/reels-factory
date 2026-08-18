@@ -51,6 +51,10 @@ from reels_factory.compose import apply_caption_fixes, build_caption_fixes
 from reels_factory.hf_render import (
     assemble_hyperframes as _assemble,
     plan_before_avatar as _plan_before_avatar,
+    save_retry_reason as _save_retry_reason,
+    step_done as _step_done,
+    reset_step as _reset_step,
+    run_step as _run_step,
 )
 # Кошелёк сессий агента: один на прогон, общий для раннего плана и сборки.
 from reels_factory.hf_agent import AgentSpend
@@ -76,6 +80,12 @@ from reels_factory.llm import ClaudeCliRunner
 from reels_factory.verify import verify_reel
 
 AVATAR_CACHE_DIRNAME = "avatar_cache"
+
+#: Маркер заказа ведущей на пути «без монтажа». Кэша островов там нет — весь
+#: ролик снимается одним вызовом HeyGen, — и второй прогон на той же папке без
+#: маркера значит второй заказ за те же деньги. В MONTAGE_STEPS его нет
+#: намеренно: пересборка монтажа снятый клип не отменяет.
+PLAIN_AVATAR_STEP = "plain-avatar"
 
 
 def _log(stage: str) -> None:
@@ -115,6 +125,18 @@ def _run_plain_avatar(config: dict, wd, scenario: dict, voice_id,
             "режим без монтажа требует master_audio.enabled=true: нужна одна "
             "утверждённая дорожка на весь ролик"
         )
+    out_mp4 = wd / "reel.mp4"
+    # Продолжение той же папки не заказывает ведущую заново. Минута HeyGen
+    # стоит около трёх долларов, а кнопка продолжения обещает ровно обратное —
+    # «платить за них второй раз не придётся». Маркера мало: он мог остаться от
+    # прогона, чей файл потом удалили, — поэтому смотрим и на сам клип.
+    if _step_done(wd, PLAIN_AVATAR_STEP):
+        if out_mp4.is_file():
+            return out_mp4
+        # Маркер без файла: заказ прошёл, а клип с папки пропал. Продолжать
+        # нечем, поэтому маркер снимаем и заказываем заново.
+        _reset_step(wd, PLAIN_AVATAR_STEP)
+
     approval_path = wd / "audio.approved.json"
     review_required = bool(
         ((config.get("master_audio") or {}).get("review_required", False))
@@ -128,13 +150,18 @@ def _run_plain_avatar(config: dict, wd, scenario: dict, voice_id,
             scenario, config, wd, voice_id=voice_id,
             meter=(meter.elevenlabs if meter is not None else None),
         )
-    out_mp4 = avatar_client.generate(master.wav, wd / "reel.mp4")
-    if meter is not None:
-        meter.heygen(
-            billable_seconds(out_mp4),
-            twin=bool(getattr(avatar_client, "look_id", None)),
-        )
-    return out_mp4
+    def order():
+        mp4 = avatar_client.generate(master.wav, out_mp4)
+        if meter is not None:
+            meter.heygen(
+                billable_seconds(mp4),
+                twin=bool(getattr(avatar_client, "look_id", None)),
+            )
+        return mp4
+
+    # Списание идёт внутри шага: маркер ставится только после ответа HeyGen, и
+    # заказ, оборвавшийся на середине, повторится на продолжении.
+    return _run_step(wd, PLAIN_AVATAR_STEP, order)
 
 
 def run_make(config: dict, workdir,
@@ -539,10 +566,29 @@ def run_make(config: dict, workdir,
             # сборщика и вливаются в общий отчёт, чтобы qa_pass был честным.
             # Проверка плана до заказа аватара идёт первой: её ключи свои
             # (D28, D29), и сборка их не перекрывает.
+            # Гейты готового файла — до слияния: причину пересборки пишем по
+            # ним и по гейтам сборщика, а ранний план в неё не попадает.
+            file_gates = dict(qa["gates"])
             qa["gates"].update(early_gates)
             qa["gates"].update(res.get("gates") or {})
             qa["all_pass"] = all(
                 not str(v).startswith("FAIL") for v in qa["gates"].values())
+            # Причину отказа пишем по ОБЪЕДИНЁННОМУ вердикту сборщика и
+            # готового файла. Сборщик знает только свои гейты
+            # (`hf_render.py:1409`), и когда ролик валят гейты файла
+            # (D1_duration, D5_voice…), его строка выходит пустой и стирает
+            # запись. Продолжение тогда получает то же задание без единого
+            # слова о том, чем прошлый прогон не прошёл, — и отдаёт тот же
+            # ролик за те же деньги. Пустая строка снимает запись: пройденные
+            # проверки не должны гонять агента вечно.
+            #
+            # Гейты раннего плана сюда не идут намеренно: план заморожен
+            # заказом ведущей (`plan.early.json`), пересборка его не меняет, и
+            # такая причина висела бы на папке вечно.
+            retry_gates = {**file_gates, **(res.get("gates") or {})}
+            _save_retry_reason(wd, "; ".join(
+                f"{name}: {verdict}" for name, verdict in retry_gates.items()
+                if str(verdict).startswith("FAIL")))
         except Exception as e:
             return fail("verify", e)
 
