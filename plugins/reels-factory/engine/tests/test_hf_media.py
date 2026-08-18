@@ -511,10 +511,15 @@ def test_имя_превью_не_несёт_запрещённых_windows_си
         Path(path).write_bytes(b"jpg")
         return Path(path)
 
+    # Ключ стока к делу не относится: тест про имя файла, а не про поиск. Без
+    # подмены он проходил только там, где ключ лежит в окружении, и падал на
+    # сервере.
     monkeypatch.setattr(hf_media, "_download", fake_download)
-    monkeypatch.setattr(hf_media, "search_assets", lambda *a, **kw: [
+    # Сток подменён целиком: тест про имя файла превью, а не про поиск, и без
+    # этой подмены он проходил только там, где в окружении лежит ключ Pexels.
+    monkeypatch.setattr(hf_media, "search_pexels", lambda *a, **kw: [
         {"id": "1", "url": "https://example/1.mp4", "width": 1080,
-         "height": 1920, "duration": 8.0,
+         "height": 1920, "duration": 8.0, "preview": "https://example/p1.jpg",
          "previews": ["https://example/p1.jpg"]}])
     monkeypatch.setattr(hf_media, "judge_previews",
                         lambda requests, **kw: {r["key"]: None for r in requests})
