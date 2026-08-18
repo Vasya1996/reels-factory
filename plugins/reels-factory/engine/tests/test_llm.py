@@ -168,6 +168,29 @@ def test_стоимость_нескольких_вызовов_суммируе
     assert round(runner.total_cost_usd, 4) == 0.03
 
 
+def test_прогоны_помнят_токены_и_модель(monkeypatch, tmp_path):
+    """Под подпиской CLI присылает нулевую стоимость, и единственный честный
+    счёт остаётся по токенам — значит `usage` каждого вызова надо сохранить."""
+    monkeypatch.setattr(
+        "reels_factory.llm.subprocess.run",
+        lambda *a, **kw: SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"result": "ок", "total_cost_usd": 0.0,
+                               "model": "claude-sonnet-5",
+                               "usage": {"input_tokens": 700,
+                                         "output_tokens": 2100}}),
+            stderr="",
+        ),
+    )
+    runner = ClaudeSkillRunner(config_dir=tmp_path / "profile")
+    runner.run_skill("script", "p.json")
+    runner.run_skill("judge", "p.json")
+
+    assert runner.total_cost_usd == 0.0
+    assert [run["usage"]["output_tokens"] for run in runner.runs] == [2100, 2100]
+    assert {run["model"] for run in runner.runs} == {"claude-sonnet-5"}
+
+
 def test_невалидный_json_падает_понятной_ошибкой(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "reels_factory.llm.subprocess.run",

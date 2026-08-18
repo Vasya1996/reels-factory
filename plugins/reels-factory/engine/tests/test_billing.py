@@ -106,7 +106,8 @@ def test_разбивка_по_провайдерам(store):
 
 
 from reels_factory.billing import (
-    apply_markup, claude_cost_micro, elevenlabs_cost_micro,
+    apply_markup, claude_cost_micro, claude_run_cost_usd,
+    claude_tokens_cost_usd, elevenlabs_cost_micro,
     estimate_micro, heygen_cost_micro,
 )
 from reels_factory.config import load_billing_config
@@ -167,6 +168,113 @@ def test_оценка_с_долей_аватара_уменьшает_тольк
     assert прочее_без_доли == прочее_с_долей
 
 
+CLAUDE_RATES = {
+    "claude_models_usd_per_mtok": {
+        "claude-sonnet-5": {"input": 3.0, "output": 15.0},
+        "claude-haiku-4-5": {"input": 1.0, "output": 5.0},
+    },
+    "claude_default_model": "claude-sonnet-5",
+    "claude_cache_write_multiplier": 1.25,
+    "claude_cache_write_1h_multiplier": 2.0,
+    "claude_cache_read_multiplier": 0.1,
+}
+
+
+def test_счёт_по_токенам_считает_часовой_кэш_дороже():
+    # Миллион токенов записи в кэш на час по ставке Sonnet 5: 3 × 2.0 = $6.
+    часовой = claude_tokens_cost_usd([{
+        "model": "claude-sonnet-5",
+        "usage": {"cache_creation_input_tokens": 1_000_000,
+                  "cache_creation": {"ephemeral_1h_input_tokens": 1_000_000}},
+    }], CLAUDE_RATES)
+    # Та же запись на пять минут: 3 × 1.25 = $3.75.
+    короткий = claude_tokens_cost_usd([{
+        "model": "claude-sonnet-5",
+        "usage": {"cache_creation_input_tokens": 1_000_000,
+                  "cache_creation": {"ephemeral_5m_input_tokens": 1_000_000}},
+    }], CLAUDE_RATES)
+    assert (часовой, короткий) == (6.0, 3.75)
+
+
+def test_счёт_по_токенам_без_разбивки_берёт_дешёвую_ставку():
+    # Разбивки по сроку нет — вся запись считается пятиминутной.
+    assert claude_tokens_cost_usd([{
+        "model": "claude-sonnet-5",
+        "usage": {"cache_creation_input_tokens": 1_000_000},
+    }], CLAUDE_RATES) == 3.75
+
+
+def test_счёт_по_токенам_узнаёт_модель_с_датой_сборки():
+    # `claude-haiku-4-5-20251001` — та же Haiku, ставка её, а не умолчания.
+    дата = claude_tokens_cost_usd([{
+        "model": "claude-haiku-4-5-20251001",
+        "usage": {"output_tokens": 1_000_000},
+    }], CLAUDE_RATES)
+    assert дата == 5.0
+
+
+def test_стоимость_агента_верит_ответу_cli_а_при_нуле_считает_токены():
+    прогоны = [{"model": "claude-sonnet-5", "usage": {"output_tokens": 1_000_000}}]
+    # CLI назвал стоимость сам — она точнее, в ней учтён тариф на момент вызова.
+    assert claude_run_cost_usd(прогоны, 1.24, CLAUDE_RATES) == 1.24
+    # CLI прислал ноль — считаем по токенам, а не теряем работу агента.
+    assert claude_run_cost_usd(прогоны, 0.0, CLAUDE_RATES) == 15.0
+
+
+def test_стоимость_агента_не_роняет_сборку_на_битых_ставках():
+    # Ставки без нужных ключей: ролик уже оплачен у провайдеров, и ошибка
+    # подсчёта своей работы не должна его уронить.
+    assert claude_run_cost_usd([{"usage": None}], 0.0, None) == 0.0
+
+
+def test_оценка_быстрого_пути_без_работы_агента_монтажа():
+    rates = {**RATES, "claude_montage_usd_per_reel": 1.30}
+    # Тот же ролик: с монтажом дороже ровно на работу агента с наценкой.
+    с_монтажом = estimate_micro(420, rates, 2.0)
+    без_монтажа = estimate_micro(420, rates, 2.0, montage=False)
+    assert с_монтажом - без_монтажа == 2_600_000
+
+
+def test_оценка_закладывает_пересдачу_агента_монтажа():
+    """Агенту положена одна пересдача плана, и пересдача — это второй полный
+    проход: заново план на Sonnet и заново отбор бироллов судьёй. Оценка на
+    один проход обещает человеку меньше, чем спишется, ровно в тот момент,
+    когда пересдача и случилась, — а обещание даётся ДО первого платного шага
+    и назад не берётся.
+
+    Число проходов — своё поле ставок, а не удвоенная цена одного прохода:
+    в журнале списаний видна стоимость одного прохода ($1,24 на прогоне
+    462a1c62), и она должна остаться сверяемой с ней же в конфиге.
+    """
+    один = {**RATES, "claude_montage_usd_per_reel": 1.30,
+            "claude_montage_attempts": 1}
+    с_пересдачей = {**один, "claude_montage_attempts": 2}
+
+    проход = (estimate_micro(420, один, 2.0)
+              - estimate_micro(420, один, 2.0, montage=False))
+    assert проход == 2_600_000          # $1.30 работы агента с наценкой 2.0
+
+    два_прохода = (estimate_micro(420, с_пересдачей, 2.0)
+                   - estimate_micro(420, с_пересдачей, 2.0, montage=False))
+    assert два_прохода == проход * 2
+    # Быстрый путь агента не зовёт вовсе — число проходов его цену не трогает.
+    assert (estimate_micro(420, с_пересдачей, 2.0, montage=False)
+            == estimate_micro(420, один, 2.0, montage=False))
+
+
+def test_дефолтные_ставки_закладывают_не_один_проход_агента(tmp_path, monkeypatch):
+    """Пересдача агента — штатный ход сборки (план не прошёл проверку до
+    заказа аватара), а не авария. Значит она заложена в цену по умолчанию:
+    один проход в дефолтах означал бы, что каждая пересдача уходит в минус
+    фабрике, а человеку об этом сказали цифрой, которая её не покрывает."""
+    import reels_factory.config as cfg_mod
+    monkeypatch.setattr(cfg_mod, "CONFIG_PATH", tmp_path / "config.yaml")
+
+    rates = load_billing_config()["rates"]
+    assert float(rates.get("claude_montage_attempts") or 0) >= 2
+    assert rates["claude_montage_usd_per_reel"] > 0
+
+
 def test_оценка_без_доли_аватара_не_меняется():
     # avatar_share по умолчанию 1.0 — старое поведение для тех, кто его не передаёт.
     assert estimate_micro(420, RATES, 2.0) == estimate_micro(420, RATES, 2.0, avatar_share=1.0)
@@ -184,6 +292,25 @@ def test_конфиг_биллинга_отдаёт_дефолты_без_фай
     assert cfg["rates"]["heygen_usd_per_second"] == 0.05
     assert cfg["rates"]["avatar_visible_share"] == 0.7
     assert cfg["enabled"] is True
+
+
+def test_доля_ведущей_в_оценке_равна_границе_гейта():
+    """Цена на кнопке считается по доле ведущей, а до заказа ту же долю судит
+    гейт бюджета (`D29_avatar_budget`, hf_render.py). Разойдись эти два числа —
+    человеку называют цену плана, который до заказа не доживёт, или наоборот
+    обещают дешевле, чем спишется. Поэтому доля оценки равна ГРАНИЦЕ, а не
+    ориентиру: ориентир 60 % — то, куда целится агент, а заплатить может
+    прийтись за всё, что гейт пропускает.
+
+    Импорт `hf_montage` в самом `config.py` невозможен: их цепочка импортов
+    (`hf_montage` → `hf_layout` → `config`) замкнулась бы, поэтому число там
+    записано числом, а держит его этот тест.
+    """
+    from reels_factory.config import BILLING_DEFAULTS
+    from reels_factory.hf_montage import AVATAR_ON_SCREEN_HARD_MAX
+
+    assert (BILLING_DEFAULTS["rates"]["avatar_visible_share"]
+            == AVATAR_ON_SCREEN_HARD_MAX)
 
 
 def test_конфиг_биллинга_накладывает_значения_поверх_дефолтов(tmp_path, monkeypatch):

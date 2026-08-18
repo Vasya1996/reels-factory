@@ -387,6 +387,71 @@ def test_судья_не_ответил_дважды_роняет_подбор(m
     assert len(calls) == hf_media.JUDGE_ATTEMPTS
 
 
+# ---------- расход судьи ----------
+#
+# Судья бироллов — вторая по деньгам сессия сборки: на прогоне 462a1c62 пять
+# его вызовов стоили $0,79 против $0,45 у планировщика. Своя обёртка ему нужна
+# ради дешёвой модели, поэтому в счёт ролика он попадает через общий кошелёк.
+
+def _fake_судья_cli(monkeypatch, команды):
+    import json
+    from reels_factory import hf_agent
+
+    def fake_run(cmd, **kw):
+        команды.append([str(c) for c in cmd])
+
+        class P:
+            returncode = 0
+            stdout = json.dumps({"result": json.dumps({"s-01": 0}),
+                                 "total_cost_usd": 0.16,
+                                 "usage": {"output_tokens": 900}})
+            stderr = ""
+
+        return P()
+
+    monkeypatch.setattr(hf_agent.subprocess, "run", fake_run)
+
+
+def test_расход_судьи_ложится_в_кошелёк_сборки(monkeypatch, tmp_path):
+    """Свою сессию судья заводит сам, а расход обязан отдать в общий кошелёк —
+    иначе большая половина работы агента ролику ничего не стоит."""
+    from reels_factory import hf_agent
+
+    monkeypatch.setattr(hf_agent.Path, "home", lambda: tmp_path / "нет-профиля")
+    команды: list[list[str]] = []
+    _fake_судья_cli(monkeypatch, команды)
+    кошелёк = hf_agent.AgentSpend()
+
+    hf_media.judge_previews(
+        [{"key": "s-01", "intent": "стол", "speech": "речь",
+          "previews": [["/tmp/a-0.jpg", "/tmp/a-1.jpg"]]}], spend=кошелёк)
+
+    assert [run["model"] for run in кошелёк.runs] == ["claude-haiku-4-5"]
+    assert кошелёк.total_cost_usd == pytest.approx(0.16)
+    # и модель с глубиной рассуждения остались судейскими, а не планировочными
+    assert команды[0][команды[0].index("--model") + 1] == "claude-haiku-4-5"
+    assert "--effort" not in команды[0]
+
+
+def test_кошелёк_доходит_до_судьи_через_подбор(monkeypatch, tmp_path):
+    """Кошелёк заводит сборка, а тратит его судья внутри подбора вставок:
+    проверяем сам провод, а не только его концы."""
+    from reels_factory import hf_agent
+
+    видано = {}
+    кошелёк = hf_agent.AgentSpend()
+
+    with _wire_video(monkeypatch, {"стол": [_vcand("первый")]}) as pool:
+        # _wire_video глушит судью своей заглушкой — подменяем её ловушкой,
+        # которая запоминает, с чем судью позвали.
+        monkeypatch.setattr(hf_media, "judge_previews",
+                            lambda requests, **kw: видано.update(kw) or {"s-01": 0})
+        hf_media._resolve_videos(tmp_path, [_vreq("s-01", "стол")], pool=pool,
+                                 agent_spend=кошелёк)
+
+    assert видано.get("spend") is кошелёк
+
+
 def test_кадры_кандидата_обложка_и_середина():
     """Второй кадр берём из их же раскадровки, без лишних запросов."""
     video = {"image": "https://p/cover.jpg",
@@ -425,3 +490,43 @@ def test_без_папки_путь_не_трогаем(tmp_path, monkeypatch):
     monkeypatch.setattr(config.Path, "home", staticmethod(lambda: tmp_path))
     monkeypatch.setenv("PATH", "/usr/bin")
     assert config.cli_env()["PATH"] == "/usr/bin"
+
+
+def test_имя_превью_не_несёт_запрещённых_windows_символов(tmp_path, monkeypatch):
+    """Живой прогон 17.08 на Windows: ключ сцены бывает составным
+    («s-07::shot0»), а двоеточие в имени файла Windows не принимает — каждое
+    превью падало с «Invalid argument», судья оставался без кадров, и ролик
+    выходил вовсе без вставок. На сервере (Linux) двоеточие законно, поэтому
+    дефект всплыл только локально.
+    """
+    from reels_factory import hf_media
+
+    from pathlib import Path
+
+    сохранено = []
+
+    def fake_download(url, path):
+        сохранено.append(Path(path))
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_bytes(b"jpg")
+        return Path(path)
+
+    monkeypatch.setattr(hf_media, "_download", fake_download)
+    monkeypatch.setattr(hf_media, "search_assets", lambda *a, **kw: [
+        {"id": "1", "url": "https://example/1.mp4", "width": 1080,
+         "height": 1920, "duration": 8.0,
+         "previews": ["https://example/p1.jpg"]}])
+    monkeypatch.setattr(hf_media, "judge_previews",
+                        lambda requests, **kw: {r["key"]: None for r in requests})
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        hf_media._resolve_videos(
+            tmp_path,
+            [{"key": "s-07::shot0", "intent": "руки за ноутбуком",
+              "speech": "и всё это делает программа"}],
+            pool=pool)
+
+    assert сохранено, "превью не скачивались — тест ничего не проверяет"
+    for path in сохранено:
+        assert ":" not in path.name, f"двоеточие в имени файла: {path.name}"

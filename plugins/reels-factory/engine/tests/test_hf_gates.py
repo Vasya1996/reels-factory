@@ -458,3 +458,77 @@ def test_заголовок_страницы_не_считается_заглу�
     (comp / "grid-card-assemble--s-01.html").write_text(page.format("КТО"),
                                                         encoding="utf-8")
     assert check_placeholders(tmp_path)["D22_placeholders"] == "PASS"
+
+
+def test_нарисованная_надпись_блока_не_считается_заглушкой(tmp_path):
+    """Живой прогон 18.08: сборка легла на «в кадр едет заглушка: REC».
+    У камкордерного HUD это не слот, а часть рисунка — заполнять там нечего,
+    и убрать нельзя, не сломав сам блок. Настоящие заглушки гейт ловить
+    обязан по-прежнему.
+    """
+    from reels_factory.hf_gates import check_placeholders
+
+    compositions = tmp_path / "public" / "compositions"
+    compositions.mkdir(parents=True)
+    (compositions / "camcorder-hud.html").write_text(
+        "<div><span>REC</span><h1>Заголовок блока</h1></div>", encoding="utf-8")
+    (compositions / "camcorder-hud--s-01.html").write_text(
+        "<div><span>REC</span><h1>Ролик про аватара</h1></div>",
+        encoding="utf-8")
+
+    assert check_placeholders(tmp_path)["D22_placeholders"] == "PASS"
+
+    # А незаполненный слот того же блока — по-прежнему провал.
+    (compositions / "camcorder-hud--s-02.html").write_text(
+        "<div><span>REC</span><h1>Заголовок блока</h1></div>", encoding="utf-8")
+    assert check_placeholders(tmp_path)["D22_placeholders"].startswith("FAIL")
+
+
+# ---------- D25/D20: просьба о схеме — не доказательство схемы ----------
+#
+# Прогон hf-live2: сцена s-07 ушла в кадр с `needsSchema: true` и без
+# `fallback`, `schema_plan` вернул None, в композицию не встало ничего — и оба
+# гейта сказали PASS, потому что читали флаг. Флаг ставит сам код
+# (`refill_scene`), то есть гейт проверял намерение кода его же намерением.
+
+def _без_ведущей_и_вставки(**over):
+    scenes = _plausible_scenes()
+    scenes[12]["insert"] = None
+    scenes[12].update(over)
+    return scenes
+
+
+def test_просьба_о_схеме_без_запасной_кадр_не_закрывает():
+    scenes = _без_ведущей_и_вставки(needsSchema=True)
+    assert _check(scenes)["D25_empty_frame"].startswith("FAIL")
+
+
+def test_запасная_схема_известной_формы_кадр_закрывает():
+    scenes = _без_ведущей_и_вставки(
+        needsSchema=True,
+        fallback={"form": "steps", "why": "порядок",
+                  "nodes": ["сценарий", "тема", "ролик"]})
+    assert _check(scenes)["D25_empty_frame"] == "PASS"
+
+
+def test_запасная_схема_неизвестной_формы_кадр_не_закрывает():
+    """Форму, которой нет в `hf_schema.FORMS`, не нарисует ни один блок —
+    для кадра она то же самое, что пустое поле."""
+    scenes = _без_ведущей_и_вставки(needsSchema=True,
+                                    fallback={"form": "облако", "items": ["раз"]})
+    assert _check(scenes)["D25_empty_frame"].startswith("FAIL")
+
+
+def test_уголок_ведущей_при_пустой_просьбе_о_схеме_это_чёрный_кадр():
+    """D20 верил тому же флагу: уголок остаётся на пустом фоне."""
+    result = check_frame_filled({"scenes": [
+        _scene(1, 0.0, 2.0, presenter="pip-br", needsSchema=True)]})
+    assert result["D20_frame_filled"].startswith("FAIL")
+
+
+def test_уголок_ведущей_под_запасной_схемой_законен():
+    result = check_frame_filled({"scenes": [
+        _scene(1, 0.0, 2.0, presenter="pip-br", needsSchema=True,
+               fallback={"form": "steps", "why": "порядок",
+                         "nodes": ["раз", "два"]})]})
+    assert result["D20_frame_filled"] == "PASS"

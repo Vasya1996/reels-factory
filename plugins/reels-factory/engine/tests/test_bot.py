@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 
 import pytest
 
@@ -1166,7 +1167,7 @@ def test_утверждение_сценария_ведёт_сразу_к_сбо
     _press("ok", msg)
 
     assert bot.load_session(7)["step"] == bot.READY
-    assert msg.replies[-1] == bot.READY_MSG
+    assert msg.replies[-1].startswith(bot.READY_MSG)
     callbacks = [
         b.callback_data
         for row in msg.markups[-1].inline_keyboard
@@ -1675,6 +1676,56 @@ def test_провал_step_scenario_после_ретраев_всё_равно_
         bot.step_scenario(7, {"idea": "тема"}, "ru")
 
     assert bot._ledger().balance(7) == -_ожидаемое_списание_клода(0.03)
+
+
+def test_подготовка_сценария_под_подпиской_считается_по_токенам(work, monkeypatch):
+    """Под подпиской CLI отдаёт нулевую стоимость: без запасного счёта по
+    токенам работа Клода над сценарием достаётся ролику даром, хотя в оценку
+    на экране цены она заложена."""
+    from reels_factory.billing import claude_tokens_cost_usd
+
+    прогоны = [{"model": "claude-sonnet-5",
+                "usage": {"input_tokens": 20_000, "output_tokens": 4_000}}]
+
+    def fake_run_verbatim_path(workdir, text, runner, language):
+        runner.total_cost_usd = 0.0     # так отвечает CLI под подпиской
+        runner.runs = прогоны
+        return {"scenario": SCENARIO}
+
+    monkeypatch.setattr(bot, "run_verbatim_path", fake_run_verbatim_path)
+
+    bot.step_verbatim(7, "текст", "ru")
+
+    по_токенам = claude_tokens_cost_usd(прогоны, bot._billing()["rates"])
+    assert по_токенам > 0
+    assert bot._ledger().balance(7) == -_ожидаемое_списание_клода(по_токенам)
+
+
+def test_цена_готового_сценария_не_считает_его_же_подготовку(work):
+    """К экрану выбора пути сценарий уже написан и списан своей строкой:
+    вторая надбавка за него обещает человеку больше, чем спишется.
+
+    Работа агента монтажа считается по числу проходов (`claude_montage_attempts`
+    в ставках): пересдача плана — это второй полный проход, план и отбор
+    бироллов заново. Множитель берём из тех же ставок, а не литералом, иначе
+    тест падал бы при каждой правке ставок «не по делу»; само правило «проходов
+    больше одного» проверяет test_billing."""
+    from reels_factory.billing import (apply_markup, elevenlabs_cost_micro,
+                                       heygen_cost_micro, to_micro)
+
+    billing = bot._billing()
+    rates = billing["rates"]
+    chars = sum(len(b["speech"]) for b in SCENARIO["blocks"])
+    сцена = _паспорт(step=bot.READY, scenario=SCENARIO)
+
+    ожидаемая = apply_markup(
+        heygen_cost_micro(chars / rates["chars_per_second"], rates)
+        + elevenlabs_cost_micro(chars, rates)
+        + to_micro(rates["claude_montage_usd_per_reel"]
+                   * rates.get("claude_montage_attempts", 1)),
+        billing["markup"])
+
+    assert bot.estimate_material_micro(сцена, billing) == ожидаемая
 
 
 # --- шаг 7/8: готовность и повторный цикл --------------------------------------
@@ -2248,7 +2299,7 @@ def test_пожелание_к_монтажу_попадает_в_базу(work,
     assert msg.replies[0] == bot.WISH_THANKS
     # и человек не заперт в тупике: снова видит экран сборки
     assert bot.load_session(7)["step"] == bot.READY
-    assert msg.replies[-1] == bot.READY_MSG
+    assert msg.replies[-1].startswith(bot.READY_MSG)
 
 
 def test_пожелание_можно_пропустить(work, клиент):
@@ -2590,7 +2641,10 @@ def test_нехватки_баланса_блокирует_enqueue_build_и_н�
     from reels_factory.billing import estimate_micro
     cfg = bot._billing()
     chars = sum(len(b["speech"]) for b in SCENARIO["blocks"])
-    expected_need = estimate_micro(chars, cfg["rates"], cfg["markup"])
+    # script=False: сценарий на руках, его подготовка списана раньше и в цену
+    # сборки второй раз не входит.
+    expected_need = estimate_micro(chars, cfg["rates"], cfg["markup"],
+                                   script=False)
 
     assert exc.value.need == expected_need
     assert exc.value.have == have
@@ -2598,6 +2652,33 @@ def test_нехватки_баланса_блокирует_enqueue_build_и_н�
 
     # workdir так и не появился — отказ не оставил следов на диске.
     assert not jobs_root.exists()
+
+
+def _оценка_сборки(*, montage: bool = True, share: float | None = None) -> int:
+    """Во сколько очередь оценит сборку SCENARIO: те же аргументы, что берёт
+    enqueue_build (script=False — сценарий уже написан и списан своей строкой).
+
+    share=None — полная цена, share=доля — цена island-пути, где ведущую
+    заказывают не на весь ролик.
+    """
+    from reels_factory.billing import estimate_micro
+    billing = bot._billing()
+    chars = sum(len(b["speech"]) for b in SCENARIO["blocks"])
+    kwargs = {} if share is None else {"avatar_share": share}
+    return estimate_micro(chars, billing["rates"], billing["markup"],
+                          montage=montage, script=False, **kwargs)
+
+
+def _баланс_между_оценками() -> int:
+    """Баланс строго между island-оценкой и полной: с островами сборка
+    проходит, без них тот же баланс не пропускает."""
+    полная = _оценка_сборки()
+    с_островами = _оценка_сборки(
+        share=bot._billing()["rates"]["avatar_visible_share"])
+    assert с_островами < полная
+    баланс = (полная + с_островами) // 2
+    assert с_островами <= баланс < полная
+    return баланс
 
 
 def test_с_islands_оценка_меньше_и_хватает_там_где_без_них_не_хватит(
@@ -2608,7 +2689,12 @@ def test_с_islands_оценка_меньше_и_хватает_там_где_б
     без них тот же баланс не пропускает InsufficientBalance.
     master_audio тоже должен быть включён: run_make берёт island-путь только
     когда оба флага на (см. test_islands_без_master_audio_даёт_полную_оценку
-    на случай, когда это не так)."""
+    на случай, когда это не так).
+
+    Баланс считаем из ставок, а не литералом: цена ролика меняется вместе со
+    ставками (например, числом проходов агента), и подобранное когда-то число
+    перестаёт лежать между двумя оценками — тест зеленел бы или падал не по
+    делу."""
     monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
     monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
     clients_mod.register_client(
@@ -2622,7 +2708,7 @@ def test_с_islands_оценка_меньше_и_хватает_там_где_б
         ),
         voice_id="voice-1", asset_id="asset-1",
     )
-    баланс = 350_000  # между оценкой без островов (~386k) и с ними (~303k)
+    баланс = _баланс_между_оценками()
     for chat_id in (1, 2):
         bot._ledger().credit(
             chat_id, баланс, purchase_id=f"islands-estimate-{chat_id}",
@@ -2645,7 +2731,12 @@ def test_islands_без_master_audio_даёт_полную_оценку(work, tm
     здесь.
     master_audio теперь включён по умолчанию (Задача 11) — здесь он должен
     быть выключен явно, иначе профиль перестаёт представлять сценарий
-    "islands без master_audio", который тест и проверяет."""
+    "islands без master_audio", который тест и проверяет.
+
+    Баланс должен лежать СТРОГО между island-оценкой и полной: прежние 350k
+    не покрывали ни ту, ни другую, и тест зеленел бы, даже если бы код
+    применял долю ведущей без master_audio — то есть ровно на том дефекте,
+    ради которого он написан."""
     monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
     monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
     clients_mod.register_client(
@@ -2655,7 +2746,7 @@ def test_islands_без_master_audio_даёт_полную_оценку(work, tm
         ),
         voice_id="voice-1", asset_id="asset-1",
     )
-    баланс = 350_000  # хватает только на урезанную (islands) оценку, не на полную
+    баланс = _баланс_между_оценками()
     bot._ledger().credit(
         3, баланс, purchase_id="islands-no-master-audio",
         amount_minor=баланс, currency="usd",
@@ -2690,6 +2781,146 @@ def test_битые_avatar_islands_settings_не_ломают_оценку_пр�
 
     with pytest.raises(bot.InsufficientBalance):
         bot.enqueue_build(4, SCENARIO, language="ru", voice_id="voice-1")
+
+
+# --- пункт G: доля ведущей в цене на кнопке ------------------------------------
+
+@pytest.fixture
+def реестр(work, tmp_path, monkeypatch):
+    """Пустой изолированный реестр клиентов: профили заводит сам тест.
+    Без подмены CLIENTS_DIR тесты читали бы профили рабочей машины."""
+    monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
+    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
+    return tmp_path
+
+
+def _цены_экрана_выбора(chat_id: int) -> tuple[str, str]:
+    """Обе цены с экрана выбора пути так, как их видит человек:
+    (с монтажом, без монтажа)."""
+    msg = _Msg(chat_id=chat_id)
+    asyncio.run(bot._show_ready_screen(
+        msg, chat_id, _паспорт(step=bot.READY, scenario=SCENARIO)))
+    цены = re.findall(r"\$\d+\.\d{2}", msg.replies[-1])
+    assert len(цены) == 2, f"экран выбора назвал не две цены: {msg.replies[-1]!r}"
+    return цены[0], цены[1]
+
+
+def _нужно_очереди(chat_id: int, *, montage: bool = True) -> int:
+    """Сколько потребует очередь за ту же сборку. Считаем через отказ по
+    нехватке: другого способа узнать число очереди, не начав платную работу,
+    нет, а именно это число человек и увидит в отказе."""
+    with pytest.raises(bot.InsufficientBalance) as exc:
+        bot.enqueue_build(chat_id, SCENARIO, language="ru", voice_id="voice-1",
+                          montage=montage)
+    return exc.value.need
+
+
+def test_экран_выбора_режет_цену_ведущей_при_островах_и_мастер_звуке(реестр):
+    """Пункт G: очередь считает ведущую по доле в кадре, когда у профиля
+    включены И avatar_islands, И master_audio (enqueue_build). Экран выбора
+    считал полную цену всегда, и человек с островами видел цифру выше той,
+    что спишется, — на единственном экране, где он решает, платить ли вообще.
+
+    Быстрый путь острова не берёт вовсе (montage=False у run_make), поэтому
+    его цена остаётся полной: доля применяется только к монтажной."""
+    clients_mod.register_client(
+        "2",
+        _client_base_cfg(avatar_islands={"enabled": True},
+                         master_audio={"enabled": True}),
+        voice_id="voice-1", asset_id="asset-1",
+    )
+    доля = bot._billing()["rates"]["avatar_visible_share"]
+
+    с_монтажом, без_монтажа = _цены_экрана_выбора(2)
+
+    assert с_монтажом == bot.format_usd(_оценка_сборки(share=доля))
+    assert с_монтажом != bot.format_usd(_оценка_сборки())
+    assert без_монтажа == bot.format_usd(_оценка_сборки(montage=False))
+
+
+def test_экран_выбора_не_режет_цену_без_мастер_звука(реестр):
+    """Условие ровно то же, что у очереди: island-путь берётся только когда
+    включены ОБА флага. С одними островами ролик пойдёт полной ценой, и экран
+    не должен обещать урезанную — иначе человек пополнит ровно по экрану и
+    получит отказ уже от очереди, после того как согласился платить."""
+    clients_mod.register_client(
+        "3",
+        _client_base_cfg(avatar_islands={"enabled": True},
+                         master_audio={"enabled": False}),
+        voice_id="voice-1", asset_id="asset-1",
+    )
+
+    с_монтажом, без_монтажа = _цены_экрана_выбора(3)
+
+    assert с_монтажом == bot.format_usd(_оценка_сборки())
+    assert без_монтажа == bot.format_usd(_оценка_сборки(montage=False))
+
+
+def test_экран_и_очередь_называют_одно_число_с_островами(реестр):
+    """Экран выбора и очередь считают одну и ту же сборку — числа обязаны
+    совпасть до цента, и пополнения ровно по экрану должно хватить очереди.
+    Разойдись они, отказ придёт после того, как человек заплатил."""
+    clients_mod.register_client(
+        "2",
+        _client_base_cfg(avatar_islands={"enabled": True},
+                         master_audio={"enabled": True}),
+        voice_id="voice-1", asset_id="asset-1",
+    )
+
+    с_монтажом, _ = _цены_экрана_выбора(2)
+    нужно = _нужно_очереди(2)
+
+    assert с_монтажом == bot.format_usd(нужно)
+
+    _пополнить(2, нужно)
+    job = bot.enqueue_build(2, SCENARIO, language="ru", voice_id="voice-1")
+    assert job.status == "audio_queued"
+
+
+def test_экран_и_очередь_называют_одно_число_без_островов(реестр):
+    """Тот же контракт для профиля без островов: доля не применяется нигде,
+    оба числа полные. Проверка держит вторую половину пункта G — доля не
+    должна протечь в цену там, где очередь её не применит."""
+    clients_mod.register_client(
+        "1", _client_base_cfg(), voice_id="voice-1", asset_id="asset-1",
+    )
+
+    с_монтажом, без_монтажа = _цены_экрана_выбора(1)
+    нужно = _нужно_очереди(1)
+
+    assert с_монтажом == bot.format_usd(нужно) == bot.format_usd(_оценка_сборки())
+    assert без_монтажа == bot.format_usd(
+        _нужно_очереди(1, montage=False)
+    )
+
+    _пополнить(1, нужно)
+    job = bot.enqueue_build(1, SCENARIO, language="ru", voice_id="voice-1")
+    assert job.status == "audio_queued"
+
+
+def test_битый_и_отсутствующий_профиль_не_роняют_экран_выбора(реестр):
+    """Цена на кнопке считается ДО первого платного шага и не должна падать
+    из-за профиля. Профиля может не быть вовсе: save_client_profile перед этим
+    экраном падает молча (_ready_stage глотает ошибку), а load_client на
+    незаведённом чате поднимает ConfigError. У заведённого профиля настройки
+    avatar_islands могут быть вне допустимого диапазона — avatar_islands_settings
+    поднимает на них голый ValueError, которого load_config не проверяет (тот же
+    дефект, что в test_битые_avatar_islands_settings_не_ломают_оценку).
+    В обоих случаях экран обязан показать полную цену, а не уронить разговор."""
+    clients_mod.register_client(
+        "4",
+        _client_base_cfg(avatar_islands={
+            "enabled": True,
+            "min_request_seconds": 20.0,
+            "max_shot_seconds": 5.0,
+        }),
+        voice_id="voice-1", asset_id="asset-1",
+    )
+
+    for chat_id in (4, 9):      # 4 — битые настройки, 9 — профиля нет вовсе
+        с_монтажом, без_монтажа = _цены_экрана_выбора(chat_id)
+        assert с_монтажом == bot.format_usd(_оценка_сборки())
+        assert без_монтажа == bot.format_usd(_оценка_сборки(montage=False))
 
 
 def test_пресеты_пополнения_в_минимальных_единицах():
@@ -2752,34 +2983,56 @@ def test_пополнение_меняет_кнопки_в_том_же_сооб�
     assert _labels(msg.markups[-1])[1:] == ["1000 ₽", "2500 ₽", "5000 ₽", "← Назад"]
 
 
+def _нехватка_на_ролик(chat_id: int, было: int) -> int:
+    """Сколько не хватает до оценки текущего материала. Считаем из ставок, а не
+    литералом: цена ролика меняется вместе со ставками (например, числом
+    проходов агента), и подпись кнопки не должна ронять тест не по делу."""
+    return bot.estimate_material_micro(bot.load_session(chat_id),
+                                       bot._billing()) - было
+
+
 def test_кнопка_ровно_на_ролик_стоит_первой(work, магазин):
     """Первый номинал $10 отпугивал тех, чей ролик стоит втрое дешевле: сумма,
     которой не хватает именно на этот ролик, стоит выше готовых номиналов."""
+    было = 2_000_000
     bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE,
                                  material_mode="text", material_text="а" * 700))
-    _пополнить(7, 2_000_000)     # ролик стоит $5.24, на балансе $2
+    _пополнить(7, было)
     msg = _Msg()
 
     _press("topup:cur:usd", msg)
 
+    ровно = bot.format_minor(
+        bot.exact_topup_minor(_нехватка_на_ролик(7, было), "usd",
+                              bot._billing()["fx"]),
+        "usd",
+    )
+    assert ровно not in ("$10", "$25", "$50")   # иначе проверка ничего не ловит
     assert _labels(msg.markups[-1]) == [
-        "$3.24 — ровно на этот ролик", "$10", "$25", "$50", "← Назад"
+        f"{ровно} — ровно на этот ролик", "$10", "$25", "$50", "← Назад"
     ]
 
 
 def test_кнопка_ровно_на_ролик_в_рублях_целым_числом(work, магазин):
     """Рубли считаются тем же курсом, каким вебхук зачисляет платёж, и вверх —
     иначе человек заплатит по кнопке и всё равно не доберёт до оценки."""
+    было = 2_000_000
     bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE,
                                  material_mode="text", material_text="а" * 700))
-    _пополнить(7, 2_000_000)
+    _пополнить(7, было)
     msg = _Msg()
 
     _press("topup:cur:rub", msg)
 
-    assert _labels(msg.markups[-1])[0] == "295 ₽ — ровно на этот ролик"
+    рублями = bot.exact_topup_minor(_нехватка_на_ролик(7, было), "rub",
+                                    bot._billing()["fx"])
+    assert рублями % 100 == 0                   # целые рубли, без копеек
+    assert _labels(msg.markups[-1])[0] == f"{рублями // 100} ₽ — ровно на этот ролик"
+    # Кнопка обязана добирать до нехватки, а не оставлять копейки: сумма на
+    # кнопке по курсу зачисления перекрывает недостающее до оценки.
+    нехватка = _нехватка_на_ролик(7, было)
     курс = bot._billing()["fx"]["rub"]
-    assert 295_00 / 100 * курс >= 3.24
+    assert рублями / 100 * курс >= нехватка / 1_000_000
 
 
 def test_кнопка_ровно_на_ролик_создаёт_счёт_на_свою_сумму(work, магазин):
@@ -2808,9 +3061,13 @@ def test_без_ролика_кнопки_ровной_суммы_нет(work, �
 
 
 def test_кнопки_ровной_суммы_нет_когда_баланса_хватает(work, магазин):
+    """Баланс берём с запасом от самой оценки, а не круглой суммой: цена ролика
+    растёт вместе со ставками (например, числом проходов агента), и прежние
+    $10 однажды перестали её покрывать — тест ловил бы уже не своё."""
     bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE,
                                  material_mode="text", material_text="а" * 700))
-    _пополнить(7, 10_000_000)
+    _пополнить(7, bot.estimate_material_micro(bot.load_session(7),
+                                              bot._billing()) + 1_000_000)
     msg = _Msg()
 
     _press("topup:cur:usd", msg)
@@ -2828,10 +3085,14 @@ def test_ровная_сумма_не_ниже_минимума_магазина
 
 
 def test_дешёвый_ролик_показывает_минимальный_платёж(work, магазин):
-    """Ролик за $0.49 дешевле минимального счёта: обещать «ровно на этот
-    ролик» нельзя — человек заплатит больше и должен видеть, за что."""
+    """Не хватает меньше минимального счёта: обещать «ровно на этот ролик»
+    нельзя — человек заплатит больше и должен видеть, за что."""
     bot.save_session(7, _паспорт(step=bot.CONFIRM_PRICE,
                                  material_mode="text", material_text="Коротко."))
+    # Баланс почти покрывает ролик: не хватает копеек, а счёт меньше доллара
+    # платёжный шлюз не примет.
+    _пополнить(7, bot.estimate_material_micro(bot.load_session(7),
+                                              bot._billing()) - 100_000)
     msg = _Msg()
 
     _press("topup:cur:rub", msg)

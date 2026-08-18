@@ -79,6 +79,24 @@ def face_gap(duration: float) -> float:
 #: почти весь ролик.
 AVATAR_ON_SCREEN_MAX = 0.60
 
+#: Граница, выше которой план заворачивают. Числа два, и они разные: 60 % —
+#: ориентир, куда целится агент, 70 % — линия отказа гейта бюджета
+#: (`D29_avatar_budget`, hf_render.py). Между ними план годен и пересдачи не
+#: стоит.
+#:
+#: Почему полоса, а не одно число: расстановка ведущей квантована сценой.
+#: Сплошной перебор расстановок (обычная речь 56,1 с, 1024 плана) дал
+#: соседние планы 27,3 → 34,5 с — ступень в целую сцену, и потолок 60 %
+#: (33,7 с) стоял ровно в провале между ступенями: гейты проходил 1 план из
+#: 1024 при 52, которые заказ собирает без единой жалобы. Пересдача — это
+#: новая сессия планировщика, а секунды ведущей в полосе 60–70 % стоят
+#: центы (~$0,05/с), поэтому за них не пересдают.
+#:
+#: Это же число видит оценка цены до сборки (`avatar_visible_share` в
+#: config.py): считать надо по тому, что гейт пропускает, а не по тому, куда
+#: целится агент.
+AVATAR_ON_SCREEN_HARD_MAX = 0.70
+
 #: Положения, при которых кадр держит вставка, а не ведущая: её нет вовсе либо
 #: она ушла в уголок. `stack`/`split` сюда не входят — там лицо занимает
 #: половину кадра и считается аватарным временем.
@@ -137,21 +155,37 @@ def check_shots(scenes: list[dict]) -> None:
 INSERTS_WANTED = 5
 
 
-def check_inserts(scenes: list[dict]) -> None:
-    """План назвал достаточно моментов под вставку.
+def inserts_wanted(scenes: list[dict]) -> int:
+    """Сколько моментов под вставку обязан назвать план.
 
     Пол считается от числа сцен: на коротком ролике пяти сцен со вставкой
     просто не бывает, и требовать их — требовать невозможного.
     """
-    wanted = min(INSERTS_WANTED, max(2, len(scenes) // 2))
+    return min(INSERTS_WANTED, max(2, len(scenes) // 2))
+
+
+def inserts_shortfall(scenes: list[dict]) -> str:
+    """Чего не хватает плану по вставкам. Пустая строка — хватает.
+
+    Отдельно от `check_inserts`, потому что мест проверки два: до заказа
+    аватара это причина пересдачи (агент ещё может поправить, и деньги целы),
+    а в сборке — отказ. Один и тот же счёт в двух местах разъехался бы.
+    """
+    wanted = inserts_wanted(scenes)
     have = sum(1 for scene in scenes if insert_of(scene))
     if have >= wanted:
-        return
-    raise RuntimeError(
-        f"вставок в плане {have}, а нужно хотя бы {wanted}: часть из них "
-        "снимет отбор серий (две подряд он не ставит), и на оставшихся ролик "
-        "встаёт одним планом. Добавь моменты под вставку там, где реплика "
-        "описывает действие или предмет")
+        return ""
+    return (f"вставок в плане {have}, а нужно хотя бы {wanted}: часть из них "
+            "снимет отбор серий (две подряд он не ставит), и на оставшихся "
+            "ролик встаёт одним планом. Добавь моменты под вставку там, где "
+            "реплика описывает действие или предмет")
+
+
+def check_inserts(scenes: list[dict]) -> None:
+    """План назвал достаточно моментов под вставку."""
+    trouble = inserts_shortfall(scenes)
+    if trouble:
+        raise RuntimeError(trouble)
 
 
 def ordered_gaps(clips: list[dict] | None,
@@ -207,12 +241,53 @@ def same_look(left: dict, right: dict) -> bool:
             and scene_look(left) == scene_look(right))
 
 
-def _schema_scene(scene: dict) -> bool:
-    """Кадр держит схема — своя или запасная."""
-    plan = scene.get("schema")
-    if isinstance(plan, dict) and plan.get("form"):
+def usable_schema(plan: dict | None) -> bool:
+    """Схему такой формы блок действительно нарисует.
+
+    Тот же вопрос и теми же словами задаёт `hf_compose.schema_plan`: форма
+    обязана быть из `hf_schema.FORMS`, иначе собирать нечем. Два места
+    понимали поле `fallback` по-разному — `refill_scene` искал в нём ключи
+    `logo`/`icon` от прошлого контракта, а сборка ждала схему с `form`, — и
+    из-за расхождения запасные схемы прогона hf-live2 (s-04 `pairs`, s-06
+    `steps`) не были нарисованы ни разу.
+    """
+    from reels_factory.hf_schema import FORMS
+
+    return isinstance(plan, dict) and plan.get("form") in FORMS
+
+
+def schema_scene(scene: dict) -> bool:
+    """Кадр держит схема — своя, запасная или уже собранная.
+
+    `needsSchema` сам по себе доказательством не считается: это просьба кода
+    нарисовать схему, и без пригодного `fallback` она остаётся невыполнимой.
+    """
+    if usable_schema(scene.get("schema")):
         return True
-    return bool(scene.get("needsSchema") or scene.get("schemaShown"))
+    if scene.get("needsSchema") and usable_schema(scene.get("fallback")):
+        return True
+    return bool(scene.get("schemaShown"))
+
+
+def frame_filler(scene: dict) -> str:
+    """Чем закрыт кадр этой сцены — одним словом. Пустая строка значит, что
+    зритель увидит фон с титром и прочтёт это обрывом рассказа.
+
+    Список закрытый и общий на всех: по нему судят гейты (D20, D25), по нему же
+    код решает, можно ли снимать вставку. Считать его в двух местах по-разному
+    значит чинить одно, а проверять другое.
+    """
+    if str(scene.get("presenter") or "none") != "none":
+        return "ведущая"
+    if insert_of(scene):
+        return "вставка"
+    if schema_scene(scene):
+        return "схема"
+    if scene.get("icon"):
+        return "значок"
+    if scene.get("overlay"):
+        return "плашка"
+    return ""
 
 
 def positions_for(scene: dict) -> tuple[str, ...]:
@@ -225,7 +300,7 @@ def positions_for(scene: dict) -> tuple[str, ...]:
     """
     if insert_of(scene):
         return ("pip-tr", "pip-tl", "stack", "pip-br", "pip-bl")
-    if _schema_scene(scene):
+    if schema_scene(scene):
         return ("pip-br", "pip-bl")
     return ("full", "punch")
 
@@ -368,9 +443,10 @@ def drop_series(scenes: list[dict], kept: list[str], *,
 def refill_scene(scenes: list[dict], index: int, gaps) -> None:
     """Чем закрыть кадр сцены, оставшейся без вставки.
 
-    Три исхода, по убыванию желательности:
+    Четыре исхода, по убыванию желательности:
 
-    1. Ведущей на этом куске нет физически — кадр остаётся за схемой.
+    1. Ведущей на этом куске нет физически — кадр остаётся за запасной схемой,
+       если она есть. Нет — сцену разбирает `settle_empty_frames`.
     2. Запасная схема из `fallback` закрывает кадр, а ведущая остаётся в
        нижнем уголке: схема стоит в верхней трети, они не спорят. Так у ролика
        сохраняется третье окно ведущей, которого требует приёмка (D14).
@@ -391,12 +467,21 @@ def refill_scene(scenes: list[dict], index: int, gaps) -> None:
     position = str(scene.get("presenter") or "full")
     faceless = in_avatar_gap(float(scene.get("startSec", 0)),
                              float(scene.get("endSec", 0)), gaps)
-    has_fallback = any(str((scene.get("fallback") or {}).get(kind) or "").strip()
-                       for kind in ("logo", "icon"))
+    has_fallback = usable_schema(scene.get("fallback"))
 
     if faceless:
         scene["presenter"] = "none"
-        scene["needsSchema"] = True
+        # `needsSchema` — просьба нарисовать запасную схему, и выставлять её
+        # без пригодного `fallback` значит соврать: `schema_plan` вернёт None,
+        # в кадр не встанет ничего, а гейты прочитают флаг и скажут PASS.
+        # Ровно так прогон hf-live2 отдал зрителю 2,7 с фона с титром и
+        # напечатал при этом «кадр закрывает запасная схема: s-07».
+        if has_fallback or schema_scene(scene):
+            scene["needsSchema"] = True
+        # Кадр остался пустым, и закрыть его на этой сцене нечем: ведущей тут
+        # нет физически, вставка не приехала, схемы агент не дал. Секунды
+        # отдаёт соседке `settle_empty_frames`; сюда сцена приходит внутри
+        # чужого цикла по списку, и удалять её отсюда нельзя.
         return
     if has_fallback and position not in ("full", "punch"):
         scene["needsSchema"] = True
@@ -479,7 +564,7 @@ def absorb_scene(scenes: list[dict], scene: dict) -> bool:
     for neighbour in ([scenes[index - 1]] if index else []) + (
             [scenes[index + 1]] if index + 1 < len(scenes) else []):
         if str(neighbour.get("presenter") or "full") == "none" \
-                and not insert_of(neighbour) and not _schema_scene(neighbour):
+                and not insert_of(neighbour) and not schema_scene(neighbour):
             continue
         length = float(neighbour["endSec"]) - float(neighbour["startSec"])
         if length + (end - start) > MAX_STATIC_SPAN + 0.001:
@@ -497,6 +582,37 @@ def absorb_scene(scenes: list[dict], scene: dict) -> bool:
               "закрыть её кадр было нечем")
         return True
     return False
+
+
+def settle_empty_frames(scenes: list[dict]) -> list[str]:
+    """Сцена, кадр которой закрыть нечем, отдаёт свои секунды соседке.
+
+    Пустой кадр рождает не агент, а код: он снимает серию, не прошедшую отбор
+    (`drop_series`), и снимает вставку, которой не ответил сток
+    (`hf_compose.settle_inserts`). На куске без аватара после этого не остаётся
+    ничего — ни ведущей, ни вставки, ни схемы, — и зритель видит фон с титром.
+    Прогон hf-live2 отдал так 2,7 с (сцена s-07, 25,43–28,13 с).
+
+    Средство то же, каким уже разбирается схема, которой не хватило секунд
+    (`settle_schemas` → `absorb_scene`): секунды никуда не деваются, а кадр эти
+    секунды держит тем, что у соседки уже есть. Отдать некому — сцена остаётся,
+    и её ловят D25 по раскадровке и D26 по собранной композиции; выпустить её
+    молча нельзя, а придумать содержимое кадру код не может.
+
+    Возвращает id разобранных сцен.
+    """
+    settled: list[str] = []
+    index = 0
+    while index < len(scenes):
+        scene = scenes[index]
+        if frame_filler(scene) or not absorb_scene(scenes, scene):
+            index += 1
+            continue
+        settled.append(scene["id"])
+    if settled:
+        print("сцены без содержимого кадра отданы соседкам: "
+              + ", ".join(settled))
+    return settled
 
 
 def dedupe_neighbours(scenes: list[dict], *, clips: list[dict] | None = None,
@@ -520,6 +636,15 @@ def dedupe_neighbours(scenes: list[dict], *, clips: list[dict] | None = None,
     Возвращает описания разведённых пар.
     """
     from reels_factory.hf_rhythm import MAX_STATIC_SPAN
+
+    # Сцены, которым закрывать кадр нечем, разбираются здесь же и первыми.
+    # Место выбрано не по смыслу названия, а по единственному свойству, которое
+    # тут нужно: этот проход зовут после КАЖДОГО шага, где код снимает вставку
+    # (после `drop_series` и после `hf_compose.settle_inserts`, hf_render.py),
+    # и зовут снаружи — значит отсюда сцену можно удалить, не сломав чужой
+    # цикл по списку. Порядок тоже отсюда: слияние меняет соседство, и
+    # сравнивать соседей имеет смысл уже после него.
+    settle_empty_frames(scenes)
 
     gaps = ordered_gaps(clips, duration)
     fixed: list[str] = []

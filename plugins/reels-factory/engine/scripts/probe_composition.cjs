@@ -578,7 +578,12 @@ async function collectSample(page) {
       }));
 
     // Клипы: что движок обязан показать/спрятать по data-start/data-duration.
-    const clips = Array.from(document.querySelectorAll(".clip")).map((element) => {
+    // Плюс значок (`.icon-spot`): он не клип и data-атрибутов не несёт —
+    // видимостью правит наш GSAP-таймлайн через autoAlpha, — но кадр он
+    // закрывает наравне со вставкой и схемой, и гейт содержимого кадра
+    // (D26 в hf_probe.py) обязан его видеть. Собственная видимость считается
+    // тем же правилом, что и у клипов.
+    const clips = Array.from(document.querySelectorAll(".clip, .icon-spot")).map((element) => {
       const style = getComputedStyle(element);
       const box = element.getBoundingClientRect();
       let opacity = 1;

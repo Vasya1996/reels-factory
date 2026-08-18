@@ -167,6 +167,10 @@ def test_неразводимые_куски_склеиваются_в_один(
               _scene(3, 4.0, 6.0, "none", None)]
     for scene in scenes:
         scene["phrases"] = [0, 0]
+    # Кадр обеим закрывает значок: иначе они пусты, и разбирает их раньше
+    # `settle_empty_frames` — про склейку одинаковых кусков тест был бы не о том.
+    for scene in scenes[1:]:
+        scene["icon"] = {"query": "bookmark icon"}
     clips = [{"file": "a.mp4", "start": 0.0, "duration": 2.0}]
     dedupe_neighbours(scenes, clips=clips, duration=6.0)
     assert [scene["id"] for scene in scenes] == ["s-01", "s-02"]
@@ -286,15 +290,27 @@ def test_снятая_серия_возвращает_ведущую_в_кадр
 def test_снятая_серия_на_дыре_не_оставляет_пустого_кадра():
     """Сцена без ведущей теряла серию и показывала голый фон с титром: ветка
     `none` просто пропускалась. Прогон 28 поймал это гейтом D25. `none` здесь
-    законен: аватар на этот кусок не заказывали."""
-    from reels_factory.hf_montage import drop_series
+    законен: аватар на этот кусок не заказывали.
+
+    Закрывалось это `needsSchema` вслепую, и прогон hf-live2 показал цену: без
+    `fallback` флаг ставился всё равно, схема не собиралась, а гейты читали
+    флаг и говорили PASS. Теперь пустую сцену разбирает `settle_empty_frames`
+    в том же порядке шагов, что и сборка (hf_render.py): снять серию — свести
+    последствия."""
+    from reels_factory.hf_montage import dedupe_neighbours, drop_series
 
     scenes = [_scene(0, 0.0, 3.0, "full", None),
               _scene(1, 3.0, 6.0, "none")]
+    for index, scene in enumerate(scenes):
+        scene["phrases"] = [index, index]
     clips = [{"file": "a.mp4", "start": 0.0, "duration": 3.0}]
     drop_series(scenes, kept=[], clips=clips, duration=6.0)
     assert scenes[1]["presenter"] == "none"
-    assert scenes[1]["needsSchema"] is True
+    assert not scenes[1].get("needsSchema")
+
+    dedupe_neighbours(scenes, clips=clips, duration=6.0)
+    assert [scene["id"] for scene in scenes] == ["s-00"]
+    assert scenes[0]["endSec"] == 6.0
 
 
 def test_снятая_серия_на_оплаченном_куске_держит_ведущую():
@@ -304,7 +320,8 @@ def test_снятая_серия_на_оплаченном_куске_держи
 
     scenes = [_scene(0, 0.0, 3.0, "full", None),
               _scene(1, 3.0, 6.0, "none")]
-    scenes[1]["fallback"] = {"logo": "notion", "icon": "checklist icon"}
+    scenes[1]["fallback"] = {"form": "steps", "why": "порядок",
+                             "nodes": ["кто", "что"]}
     clips = [{"file": "a.mp4", "start": 0.0, "duration": 6.0}]
     drop_series(scenes, kept=[], clips=clips, duration=6.0)
     assert scenes[1]["presenter"] in ("pip-br", "pip-bl")
@@ -319,7 +336,8 @@ def test_нижний_уголок_переживает_потерю_бирол�
 
     scenes = [_scene(0, 0.0, 3.0, "full", None),
               _scene(1, 3.0, 6.0, "pip-br")]
-    scenes[1]["fallback"] = {"logo": "notion", "icon": "checklist icon"}
+    scenes[1]["fallback"] = {"form": "steps", "why": "порядок",
+                             "nodes": ["кто", "что"]}
     clips = [{"file": "a.mp4", "start": 0.0, "duration": 6.0}]
     drop_series(scenes, kept=[], clips=clips, duration=6.0)
     assert scenes[1]["presenter"] == "pip-br"
@@ -454,3 +472,86 @@ def test_на_коротком_ролике_пяти_вставок_не_тре�
     check_inserts([_scene(0, 0.0, 3.0, "pip-tr", "рука"),
                    _scene(1, 3.0, 6.0, "pip-tl", "стол"),
                    _scene(2, 6.0, 9.0, "full", None)])
+
+
+# ---------- чем закрыт кадр после того, как код снял вставку ----------
+
+def _запасная(*nodes):
+    """Запасная схема в её нынешней форме — той, которую собирает hf_schema."""
+    return {"form": "steps", "why": "порядок шагов", "nodes": list(nodes)}
+
+
+def test_запасная_схема_агента_идёт_в_дело():
+    """Поле `fallback` было парой {бренд, значок} и стало схемой с `form`, а
+    `refill_scene` до сих пор искал ключи `logo`/`icon` — то есть не находил
+    ничего никогда. В прогоне hf-live2 так молча выброшены обе запасные схемы,
+    которые агент написал (s-04 `pairs`, s-06 `steps`)."""
+    from reels_factory.hf_montage import drop_series
+
+    scenes = [_scene(0, 0.0, 3.0, "full", None),
+              _scene(1, 3.0, 6.0, "pip-br")]
+    scenes[1]["fallback"] = _запасная("кто", "что")
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 6.0}]
+    drop_series(scenes, kept=[], clips=clips, duration=6.0)
+    assert scenes[1]["presenter"] == "pip-br"
+    assert scenes[1]["needsSchema"] is True
+
+
+def test_просьба_о_схеме_без_запасной_не_выставляется():
+    """Ветка дыры ставила `needsSchema` любой безлицой сцене, не глядя, есть ли
+    чем эту схему нарисовать: `schema_plan` возвращал None, в кадр не вставало
+    ничего, а гейты читали флаг и говорили PASS."""
+    from reels_factory.hf_montage import refill_scene
+
+    scenes = [_scene(0, 0.0, 3.0, "full", None),
+              _scene(1, 3.0, 6.0, "none", None)]
+    refill_scene(scenes, 1, [(3.0, 6.0)])
+    assert scenes[1]["presenter"] == "none"
+    assert not scenes[1].get("needsSchema")
+
+
+def test_чем_закрыт_кадр_называется_одним_словом():
+    from reels_factory.hf_montage import frame_filler
+
+    пусто = {"id": "s-07", "presenter": "none", "insert": None}
+    assert frame_filler(пусто) == ""
+    assert frame_filler({**пусто, "presenter": "pip-br"}) == "ведущая"
+    assert frame_filler({**пусто, "insert": {"shots": ["a", "b"]}}) == "вставка"
+    assert frame_filler({**пусто, "needsSchema": True,
+                         "fallback": _запасная("раз", "два")}) == "схема"
+    assert frame_filler({**пусто, "needsSchema": True,
+                         "fallback": {"logo": "notion"}}) == ""
+    assert frame_filler({**пусто, "icon": {"query": "bookmark"}}) == "значок"
+    assert frame_filler({**пусто, "overlay": {"block": "lt-kicker-name"}}) == "плашка"
+
+
+def test_сцена_без_чем_закрыть_кадр_отдаётся_соседке():
+    """Дефект прогона hf-live2 целиком: сцена на дыре аватара потеряла серию
+    (её планы пришли побайтными дублями), закрыть кадр было нечем — и зритель
+    получил 2,7 с фона с титром. Секунды уходят соседке, чей кадр занят."""
+    from reels_factory.hf_montage import dedupe_neighbours
+
+    scenes = [_scene(0, 0.0, 3.0, "full", None),
+              {"id": "s-01", "startSec": 3.0, "endSec": 5.7, "presenter": "none",
+               "insert": None, "phrases": [1, 1]},
+              _scene(2, 5.7, 8.0, "full", None)]
+    scenes[0]["phrases"], scenes[2]["phrases"] = [0, 0], [2, 2]
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 3.0}]
+
+    dedupe_neighbours(scenes, clips=clips, duration=8.0)
+
+    assert [scene["id"] for scene in scenes] == ["s-00", "s-02"]
+    assert scenes[0]["endSec"] == 5.7
+    assert scenes[0]["phrases"] == [0, 1]
+
+
+def test_соседки_нет_и_пустая_сцена_остаётся_гейтам():
+    """Отдать некому — сцена живёт дальше пустой, и это не молчаливый выпуск:
+    её ловят D25 по раскадровке и D26 по собранной композиции."""
+    from reels_factory.hf_montage import dedupe_neighbours, frame_filler
+
+    scenes = [{"id": "s-00", "startSec": 0.0, "endSec": 9.0, "presenter": "none",
+               "insert": None, "phrases": [0, 3]}]
+    dedupe_neighbours(scenes, clips=[], duration=9.0)
+    assert len(scenes) == 1
+    assert frame_filler(scenes[0]) == ""

@@ -31,7 +31,12 @@ from typing import Callable
 from reels_factory.avatar import avatar_cache_key, cached_generate
 from reels_factory.billing import billable_seconds
 from reels_factory.config import FFMPEG
-from reels_factory.editplan import validate_edit_plan
+# `_zone_for` берём у editplan, а не повторяем: зона окна — их канон
+# (editplan.py:1290), и разойдись он с нашей копией, окно после правки
+# рассказывало бы про себя неправду.
+from reels_factory.editplan import (
+    MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S, _zone_for, validate_edit_plan,
+)
 
 FORMAT_VERSION = 1
 RENDER_PLAN_FILENAME = "avatar_render_plan.json"
@@ -98,6 +103,57 @@ def avatar_islands_settings(config: dict | None) -> dict:
 
 def avatar_islands_enabled(config: dict | None) -> bool:
     return avatar_islands_settings(config)["enabled"]
+
+
+def avatar_budget_targets(duration: float, settings: dict) -> dict:
+    """Цель заказа ведущей, ориентир и граница отказа.
+
+    Чисел три, и они разные. `ceiling_seconds` — ориентир: доля хронометража
+    `AVATAR_ON_SCREEN_MAX`. `hard_ceiling_seconds` — граница:
+    `AVATAR_ON_SCREEN_HARD_MAX`, и только выше неё гейт бюджета заворачивает
+    план на пересдачу; между ориентиром и границей план годен.
+    `target_seconds` — ориентир минус ручки, которые код докупает с каждого
+    края каждого куска (`_request_timing`): агент меряет свои сцены сложением
+    длительностей фраз, ручек в этом счёте нет, и, целясь в сам ориентир, он
+    промахивался ровно на них.
+
+    Четвёртое число — `hard_target_seconds`: та же граница, переведённая в
+    мерку агента (граница минус те же ручки). Нужно оно сверке в задании: гейт
+    судит СЕКУНДЫ ЗАКАЗА, а агент складывает длительности фраз, и пункт сверки,
+    названный секундами заказа, пропускал бы планы, которые гейт заворачивает —
+    ровно на ручки. Сплошной перебор (117 740 расстановок на обычной и быстрой
+    речи) не нашёл ни одного плана, который уложился бы в это число, прошёл
+    остальные гейты и был завёрнут бюджетом.
+
+    Кусков считаем столько, сколько их навязывает правило «лицо не пропадает
+    дольше `MAX_FACE_ABSENCE_S` подряд»: между сценами без ведущей обязана
+    стоять сцена с ведущей, значит остров режется на столько кусков, сколько
+    таких промежутков помещается в ролик, плюс один.
+
+    Функция живёт здесь, потому что это единственный модуль, который читают оба
+    — и задание агенту (`hf_brief.py`), и гейт до заказа (`hf_render.py`). Два
+    вычисления одной цели разошлись бы, и агент увидел бы в задании одно число,
+    а в причине пересдачи другое.
+    """
+    duration = float(duration or 0.0)
+    pieces = (math.ceil(duration / MAX_FACE_ABSENCE_S) + 1
+              if duration > 0 else 1)
+    from reels_factory.hf_montage import (AVATAR_ON_SCREEN_HARD_MAX,
+                                          AVATAR_ON_SCREEN_MAX)
+
+    ceiling = AVATAR_ON_SCREEN_MAX * duration
+    hard_ceiling = AVATAR_ON_SCREEN_HARD_MAX * duration
+    handles = 2 * float(settings["handle_seconds"]) * pieces
+    return {
+        "ceiling_seconds": ceiling,
+        "hard_ceiling_seconds": hard_ceiling,
+        "target_seconds": max(0.0, ceiling - handles),
+        "hard_target_seconds": max(0.0, hard_ceiling - handles),
+        "max_ratio": AVATAR_ON_SCREEN_MAX,
+        "hard_max_ratio": AVATAR_ON_SCREEN_HARD_MAX,
+        "pieces": pieces,
+        "handles_seconds": handles,
+    }
 
 
 def validate_photo_avatar_iv_config(config: dict) -> None:
@@ -258,35 +314,309 @@ def _request_timing(
     return _timing(start, end)
 
 
+def _scene_at(scenes: list[dict], moment: float) -> dict | None:
+    """Сцена агента, внутрь которой попадает момент ролика."""
+    for scene in scenes:
+        if (float(scene.get("startSec", 0)) - 0.001 <= moment
+                < float(scene.get("endSec", 0))):
+            return scene
+    return None
+
+
+def _span_timing(phrases: list[dict], key: str) -> dict:
+    start = float((phrases[0].get(key) or {}).get("start", 0.0))
+    end = float((phrases[-1].get(key) or {}).get("end", 0.0))
+    return {"start": start, "end": end, "duration": round(end - start, 6)}
+
+
+def _retarget_window(
+    plan: dict, window: dict, coverage: str, previous: str
+) -> None:
+    """Перевести окно на новое покрытие по канону `editplan._downgrade_window`
+    (editplan.py:2179).
+
+    Одного `coverage` мало: в окне остаётся материал от снятого решения —
+    ассет вставки, эффект графики, разрешение не заказывать HeyGen. Поэтому
+    вместе с покрытием переписываются те же поля и в том же порядке, что у
+    них, включая зону кадра: иначе окно рассказывает про себя две разные
+    вещи, и валидатор ловит это уже после оплаты аватара.
+    """
+    reason = (
+        "агент отдал кадр вставке"
+        if coverage not in _VISIBLE_COVERAGE
+        else "агент вернул в кадр ведущую"
+    )
+    window["coverage"] = coverage
+    window["zone"] = _zone_for(coverage)
+    window["asset"] = None
+    window["material"] = None
+    window["effect"] = {"type": "none"}
+    window["camera"] = {
+        "type": "hold" if window.get("role") == "payoff" else "ken_burns"
+    }
+    window["transition_in"] = "none"
+    window["caption"] = "bottom"
+    window["safe_to_skip_avatar"] = False
+    window["decision_reason"] = f"Решение агента: {reason}"
+    own = set(window.get("phrase_ids") or [])
+    for phrase in plan.get("phrases") or []:
+        if phrase.get("id") in own:
+            phrase["asset"] = None
+            phrase["decision_reason"] = window["decision_reason"]
+    plan.setdefault("revisions", []).append({
+        "window_id": window["id"],
+        "from": previous,
+        "to": coverage,
+        "reason": reason,
+    })
+
+
+def _absorb_window(window: dict, extra: dict, phrase_by_id: dict) -> None:
+    """Забрать фразы соседнего окна себе. Поля остаются у принимающего.
+
+    Принимающее и отдающее окно к этому моменту уже приведены к одному
+    покрытию одной и той же функцией (`_retarget_window`), поэтому спорить их
+    полям не о чем: ассет снят у обоих, эффекта нет ни у одного, зона одна.
+    Роль остаётся у принимающего — это роль его первой фразы, то есть первой
+    фразы склеенного окна.
+    """
+    window["phrase_ids"] = [*window["phrase_ids"], *extra["phrase_ids"]]
+    own = [phrase_by_id[item] for item in window["phrase_ids"]]
+    for key in ("estimated_timing", "final_timing"):
+        if key in window:
+            window[key] = _span_timing(own, key)
+    for phrase in own:
+        phrase["window_id"] = window["id"]
+
+
+def _merge_agent_windows(windows: list[dict], scene_of: dict,
+                         phrase_by_id: dict) -> list[dict]:
+    """Склеить соседние окна внутри одного решения агента.
+
+    Окна `editplan` заводятся пофразно и не склеиваются никогда, а
+    `validate_edit_plan` требует, чтобы окно без ведущей шло не короче
+    `MIN_FULLSCREEN_S` (editplan.py:2544). На быстрой речи фраза идёт около
+    2,4 с — и сцена, которую агент отдал вставке, разваливалась на окна короче
+    порога: сплошной перебор планов не находил НИ ОДНОГО, который прошёл бы и
+    гейты, и валидатор. Единственным принимаемым планом оставалась ведущая на
+    весь ролик, то есть самый дорогой из всех.
+
+    Склейка идёт только внутри одной сцены и только там, где ведущей лишил САМ
+    АГЕНТ (`avatarNeeded: false`): сцена — это и есть единица его решения, и
+    ровно её меряет гейт `D31_faceless_scenes` (hf_render.py). Границ сцен
+    склейка не переходит: тогда окно оказалось бы длиннее того куска, который
+    судили до заказа, и правило говорило бы одно, а валидатор проверял другое.
+    Окна общего пути (`editplan`, ветка «аватар уже заказан») сюда не попадают
+    вовсе — этой функции нет на их дороге.
+    """
+    merged: list[dict] = []
+
+    def scene_key(window: dict):
+        keys = {scene_of.get(item) for item in window["phrase_ids"]}
+        return keys.pop() if len(keys) == 1 else None
+
+    for window in windows:
+        key = scene_key(window)
+        previous = merged[-1] if merged else None
+        if (previous is not None and key is not None
+                and scene_key(previous) == key
+                and previous["coverage"] == window["coverage"]):
+            _absorb_window(previous, window, phrase_by_id)
+            continue
+        merged.append(window)
+    return merged
+
+
+def _restore_short_faceless(plan: dict, previous: dict,
+                            phrase_by_id: dict) -> list[str]:
+    """Вернуть ведущую окну, которое после склейки всё равно короче порога.
+
+    Склейка идёт по одинаковому покрытию, а внутри одной сцены агента фразы
+    могут прийти с разным: ту, где ведущей и так нет (`hyperframes`), отказ не
+    трогает вовсе. Тогда сцена делится на кусок со схемой и кусок вставки, и
+    второй бывает короче `MIN_FULLSCREEN_S` — а такой план `validate_edit_plan`
+    заворачивает уже в `build_avatar_render_plan`, то есть с оплаченной
+    озвучкой. Спросить агента там уже некого, поэтому короткий кусок
+    возвращается тому покрытию, которое у него было до решения: ведущая в кадре
+    стоит денег, падение сборки — всей озвучки.
+
+    Возвращает имена возвращённых окон: их число уезжает в `agent_coverage`,
+    иначе тихая правка чужого решения осталась бы незаметной.
+    """
+    restored: list[str] = []
+    for window in plan.get("windows") or []:
+        if window.get("coverage") in _VISIBLE_COVERAGE:
+            continue
+        own_ids = [item for item in window.get("phrase_ids") or []
+                   if item in previous]
+        if not own_ids:
+            # Окно завёл `editplan` и он же его проверил — не наше дело.
+            continue
+        timing = window.get("final_timing") or {}
+        duration = float(timing.get("end", 0)) - float(timing.get("start", 0))
+        if duration >= MIN_FULLSCREEN_S - 1e-6:
+            continue
+        back = previous[own_ids[0]]
+        for item in window.get("phrase_ids") or []:
+            phrase_by_id[item]["coverage"] = back
+        _retarget_window(plan, window, back, window["coverage"])
+        restored.append(window["id"])
+    return restored
+
+
+def _regroup_windows(plan: dict, scene_of: dict | None = None) -> None:
+    """Разложить окна по границам решения агента.
+
+    Решение агента живёт на фразе, а `validate_edit_plan` судит окно: покрытие
+    окна обязано совпасть с покрытием каждой его фразы (editplan.py:2525).
+    Сцены агента приходят от `hf_phrases.lay_out_scenes` и режут окна
+    посередине, поэтому окно делится, а не подгоняется: границы кадра ставит
+    режиссёр, а не старая раскадровка. Разделив, соседние куски одного решения
+    склеиваем обратно (`_merge_agent_windows`) — иначе порог трёх секунд достаётся
+    каждой фразе.
+
+    `scene_of` — какая сцена, лишившая кадр ведущей, накрыла фразу. Без него
+    склейки не будет вовсе: склеивать окна, о происхождении которых ничего не
+    известно, значит менять чужую раскадровку.
+    """
+    phrase_by_id = {
+        phrase["id"]: phrase for phrase in plan.get("phrases") or []
+    }
+    rebuilt: list[dict] = []
+    for window in plan.get("windows") or []:
+        # Снимок ДО правки: куски режутся от исходного окна, иначе второй
+        # кусок унаследовал бы уже переписанный первый.
+        original = copy.deepcopy(window)
+        runs: list[tuple[str, list[str]]] = []
+        for phrase_id in original.get("phrase_ids") or []:
+            phrase = phrase_by_id.get(phrase_id)
+            if phrase is None:
+                continue
+            coverage = phrase.get("coverage")
+            if runs and runs[-1][0] == coverage:
+                runs[-1][1].append(phrase_id)
+            else:
+                runs.append((coverage, [phrase_id]))
+        for offset, (coverage, phrase_ids) in enumerate(runs):
+            part = window if offset == 0 else copy.deepcopy(original)
+            if offset:
+                part["id"] = f"{original['id']}-a{offset}"
+            part["phrase_ids"] = list(phrase_ids)
+            own = [phrase_by_id[item] for item in phrase_ids]
+            # Роль куска — роль его первой фразы: у хвоста, отрезанного от
+            # хука, роли hook уже нет, а прятать именно hook и cta валидатор
+            # запрещает (editplan.py:2559-2562).
+            part["role"] = own[0].get("role")
+            for key in ("estimated_timing", "final_timing"):
+                if key in part:
+                    part[key] = _span_timing(own, key)
+            for phrase in own:
+                phrase["window_id"] = part["id"]
+            if coverage != original.get("coverage"):
+                _retarget_window(plan, part, coverage, original.get("coverage"))
+            rebuilt.append(part)
+    rebuilt = _merge_agent_windows(rebuilt, scene_of or {}, phrase_by_id)
+    for index, window in enumerate(rebuilt):
+        window["index"] = index
+    plan["windows"] = rebuilt
+
+
 def apply_agent_coverage(edit_plan: dict, scenes: list[dict]) -> dict:
     """Вход островов — решение агента, а не эвристика (работа 9).
 
     Агент-планировщик ставит каждой сцене `avatarNeeded`; фраза наследует
-    решение сцены, в которую попадает её середина. Дальше нарезка на острова
-    идёт прежним кодом (`_islands_from_phrases`) — меняется только вход, как
-    и было задумано. Внутри заказанного острова платятся все секунды, поэтому
+    решение сцены, в которую попадает её середина, окно делится по границам
+    этого решения, а куски одного решения склеиваются обратно в одно окно
+    (`_merge_agent_windows`): порог трёх секунд валидатор меряет на окне, и без
+    склейки на быстрой речи не проходил ни один план. Дальше нарезка на острова
+    идёт прежним кодом
+    (`_islands_from_phrases`) — меняется только вход, как и было задумано.
+    Внутри заказанного острова платятся все секунды, поэтому
     `avatarNeeded: false` — это прямая экономия HeyGen.
 
     Возвращает копию плана; сцены без поля не меняют фразу — эвристика
-    остаётся запасным мнением там, где агент решения не назвал.
+    остаётся запасным мнением там, где агент решения не назвал. Сколько сцен
+    он решил, а сколько промолчал, лежит в `agent_coverage`: по этому числу
+    видно, была ли пересдача осмысленной.
     """
     plan = copy.deepcopy(edit_plan)
     ordered = sorted(scenes or [],
                      key=lambda scene: float(scene.get("startSec", 0)))
+    changed: list[str] = []
+    # Какая сцена без ведущей накрыла фразу и чем эта фраза была до решения
+    # агента: первое нужно склейке окон, второе — возврату слишком короткого
+    # куска обратно ведущей.
+    scene_of: dict[str, int] = {}
+    previous: dict[str, str] = {}
     for phrase in plan.get("phrases") or []:
         timing = phrase.get("final_timing") or {}
         middle = (float(timing.get("start", 0))
                   + float(timing.get("end", 0))) / 2
-        for scene in ordered:
-            if (float(scene.get("startSec", 0)) - 0.001 <= middle
-                    < float(scene.get("endSec", 0))):
-                needed = scene.get("avatarNeeded")
-                if needed is False:
-                    phrase["coverage"] = "broll"
-                elif needed is True:
-                    phrase["coverage"] = "avatar"
-                break
+        scene = _scene_at(ordered, middle)
+        if scene is None:
+            continue
+        needed = scene.get("avatarNeeded")
+        current = phrase.get("coverage")
+        if needed is False:
+            scene_of[phrase["id"]] = id(scene)
+        if needed is True and current not in _VISIBLE_COVERAGE:
+            phrase["coverage"] = "avatar"
+        elif needed is False and current in _VISIBLE_COVERAGE:
+            # Отказ печатается закрытым значением из `EDIT_PLAN_COVERAGE`
+            # (editplan.py:222): имени "broll" валидатор не знает, и заказ по
+            # такому плану не состоялся бы вовсе. Фразу, где ведущей и так
+            # нет (`hyperframes`), отказ не трогает: HeyGen там не заказан,
+            # экономии ноль, а подмена графики пустой вставкой выкинула бы
+            # сам показ.
+            phrase["coverage"] = "full_broll"
+        else:
+            continue
+        previous[phrase["id"]] = current
+        changed.append(phrase["id"])
+    restored: list[str] = []
+    if changed and plan.get("windows"):
+        _regroup_windows(plan, scene_of)
+        phrase_by_id = {item["id"]: item for item in plan.get("phrases") or []}
+        restored = _restore_short_faceless(plan, previous, phrase_by_id)
+    decisions = [scene.get("avatarNeeded") for scene in ordered]
+    plan["agent_coverage"] = {
+        "scenes": len(ordered),
+        "avatar_scenes": sum(1 for item in decisions if item is True),
+        "faceless_scenes": sum(1 for item in decisions if item is False),
+        "undecided_scenes": sum(
+            1 for item in decisions if item is not True and item is not False
+        ),
+        "changed_phrases": len(changed),
+        "changed_phrase_ids": changed,
+        # Окна, которым код вернул ведущую после решения агента: кусок вставки
+        # вышел короче `MIN_FULLSCREEN_S`, а спросить агента заново уже некого.
+        "restored_windows": restored,
+    }
     return plan
+
+
+def _covered_seconds(spans: list[tuple[float, float]]) -> float:
+    """Секунды ролика, за которые заказана ведущая, без двойного счёта.
+
+    Соседние запросы внутри острова перекрываются: с каждого края добавляется
+    `handle_seconds`, а короткий кусок дорастает до `min_request_seconds` за
+    счёт соседнего звука (`_request_timing`). Деньгам это разные запросы, и
+    HeyGen берёт за оба, а доле хронометража — одни и те же секунды, и считать
+    их дважды значит объявить бюджет превышенным на швах, которых в ролике
+    нет.
+    """
+    total = 0.0
+    start = end = None
+    for span_start, span_end in sorted(spans):
+        if end is None or span_start > end:
+            if end is not None:
+                total += end - start
+            start, end = span_start, span_end
+        else:
+            end = max(end, span_end)
+    if end is not None:
+        total += end - start
+    return total
 
 
 def _islands_from_phrases(phrases: list[dict]) -> list[list[dict]]:
@@ -445,9 +775,41 @@ def build_avatar_render_plan(
     visible_seconds = sum(
         island["visible_timing"]["duration"] for island in islands
     )
-    requested_seconds = sum(
+    # Два разных числа про одно и то же. `requested` — сколько секунд ролика
+    # отдано ведущей: перекрытия запросов схлопнуты, поэтому число сравнимо с
+    # хронометражом и годится для бюджета. `billed` — сколько секунд выставит
+    # HeyGen: каждый запрос оплачивается целиком, включая ручки, поэтому в
+    # деньги идёт именно оно.
+    requested_seconds = _covered_seconds([
+        (
+            float(shot["request_timing"]["start"]),
+            float(shot["request_timing"]["end"]),
+        )
+        for shot in shots
+    ])
+    billed_seconds = sum(
         shot["request_timing"]["duration"] for shot in shots
     )
+    # Потолок аватарного времени меряется здесь — на заказе. Показом его
+    # мерить бессмысленно: клипы покупаются раньше плана, и спрятанная в
+    # монтаже ведущая денег не возвращает (hf_montage.AVATAR_ON_SCREEN_MAX).
+    from reels_factory.hf_montage import (AVATAR_ON_SCREEN_HARD_MAX,
+                                          AVATAR_ON_SCREEN_MAX)
+
+    budget_seconds = total * AVATAR_ON_SCREEN_MAX
+    hard_budget_seconds = total * AVATAR_ON_SCREEN_HARD_MAX
+    over_seconds = requested_seconds - hard_budget_seconds
+    # Допуск в полпроцента хронометража: ручки на границах островов дают
+    # промах в доли секунды, и ради него пересдавать план незачем.
+    #
+    # Перерасходом числится только выход за ГРАНИЦУ — ту же, по которой судит
+    # гейт до заказа (`D29_avatar_budget`, hf_render.py). Полоса между
+    # ориентиром и границей планом-нарушителем не считается: иначе принятый
+    # гейтом план приезжал бы в отчёт сборки перерасходом, и два наших
+    # собственных числа спорили бы об одном плане. Переход ориентира виден
+    # отдельным полем — он повод посмотреть на монтаж, а не на счёт.
+    over_target = requested_seconds - budget_seconds > 0.005 * total
+    over_budget = over_seconds > 0.005 * total
     max_shots = max(
         1,
         math.ceil(
@@ -486,33 +848,45 @@ def build_avatar_render_plan(
             "duration_seconds": round(total, 3),
             "avatar_visible_seconds": round(visible_seconds, 3),
             "avatar_requested_seconds": round(requested_seconds, 3),
+            "avatar_billed_seconds": round(billed_seconds, 3),
             "avatar_visible_ratio": round(visible_seconds / total, 4),
             "saved_vs_full_avatar_seconds": round(
                 max(0.0, total - requested_seconds), 3
             ),
             "estimated_cost_usd": round(
-                requested_seconds
+                billed_seconds
                 * settings["estimated_cost_per_second_usd"],
                 2,
             ),
+            "avatar_budget": {
+                "max_ratio": AVATAR_ON_SCREEN_MAX,
+                "hard_max_ratio": AVATAR_ON_SCREEN_HARD_MAX,
+                "budget_seconds": round(budget_seconds, 3),
+                "hard_budget_seconds": round(hard_budget_seconds, 3),
+                "requested_seconds": round(requested_seconds, 3),
+                "requested_ratio": round(requested_seconds / total, 4),
+                "over_target": bool(over_target),
+                "over_budget": bool(over_budget),
+                "over_seconds": round(over_seconds, 3) if over_budget else 0.0,
+            },
             "island_count": len(islands),
             "shot_count": len(shots),
             "max_shot_count": max_shots,
         },
     }
-    # Потолок аватарного времени меряется здесь — на заказе. Показом его
-    # мерить бессмысленно: клипы покупаются раньше плана, и спрятанная в
-    # монтаже ведущая денег не возвращает (hf_montage.AVATAR_ON_SCREEN_MAX).
     # Сам заказ не режем: какие куски отдать бироллу, решает разметка
     # `coverage` по смыслу реплик, и урезать её вслепую значит менять
-    # режиссуру ролика ради круглого числа.
-    from reels_factory.hf_montage import AVATAR_ON_SCREEN_MAX
-
-    if total > 0 and requested_seconds / total > AVATAR_ON_SCREEN_MAX + 0.005:
+    # режиссуру ролика ради круглого числа. Числа промаха лежат в
+    # `summary.avatar_budget` — оттуда их берёт отчёт по сборке; stderr
+    # остаётся для живого прогона в консоли.
+    if over_target:
         print(
             f"аватара заказано {requested_seconds / total * 100:.0f}% "
-            f"хронометража при ориентире {AVATAR_ON_SCREEN_MAX * 100:.0f}% — "
-            f'{plan["summary"]["estimated_cost_usd"]:.2f} $ за генерацию; '
+            f"хронометража при ориентире {AVATAR_ON_SCREEN_MAX * 100:.0f}% и "
+            f"границе {AVATAR_ON_SCREEN_HARD_MAX * 100:.0f}% "
+            + (f"(+{over_seconds:.1f} с сверх границы) — "
+               if over_budget else "(в допуске) — ")
+            + f'{plan["summary"]["estimated_cost_usd"]:.2f} $ за генерацию; '
             "меньше платят там, где кадр отдают бироллу",
             file=sys.stderr,
         )
