@@ -1259,13 +1259,30 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # `check --strict` роняет сборку на любом предупреждении: прогоны 37 и 38
     # встали именно так, при том что на 30 и 31 та же геометрия прошла как
     # `info`. Тем же атрибутом здесь же помечена вспышка (ниже по файлу).
+    # Длительность без `_q`: в clips.json она уже разность квантованных
+    # времён (`hf_render.py:353`), и повторное квантование разности и есть
+    # та ошибка в миллисекунду, что сдвигает конец клипа с сетки кадров.
     videos = "\n".join(
         f'      <video class="clip" id="clip-{index:02d}" src="{clip["file"]}"'
         f' muted playsinline data-layout-allow-overflow="true"'
         f' data-start="{_q(clip["start"]):.4f}"'
-        f' data-duration="{_q(clip["duration"]):.4f}"'
+        f' data-duration="{clip["duration"]:.4f}"'
         f' data-track-index="{TRACK_VIDEO}"></video>'
         for index, clip in enumerate(clips))
+    # Клипы ведущей лежат встык на одной дорожке. Наезд соседей их линт
+    # видит как `overlapping_clips_same_track` и роняет `check --strict`
+    # (допуск 1e-6), а зазор съедает целый кадр: окно видимости у них
+    # полуоткрытое, без допуска. Ловим у себя и называем виновных, а не
+    # ждём чужого отчёта.
+    for index in range(1, len(clips)):
+        before, after = clips[index - 1], clips[index]
+        finish = _q(before["start"]) + float(before["duration"])
+        begin = _q(after["start"])
+        if finish > begin + 1e-6:
+            raise RuntimeError(
+                f"клипы ведущей на дорожке {TRACK_VIDEO} наезжают друг на "
+                f"друга: clip-{index - 1:02d} кончается на {finish:.4f} с, "
+                f"а clip-{index:02d} начинается раньше — на {begin:.4f} с")
     moments = presenter_timeline(scenes, clips, duration)
     first = moments[0][1] if moments else "full"
     initial = next((name for _, name in moments if name != "none"), "full")

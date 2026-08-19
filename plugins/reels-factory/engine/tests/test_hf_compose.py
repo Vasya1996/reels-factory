@@ -1,5 +1,6 @@
 """Композицию собирает код: слои кадра, ведущая, вставки, субтитры, звук."""
 import json
+import re
 
 import pytest
 
@@ -282,6 +283,42 @@ def test_клипы_лежат_слоем_а_не_в_потоке(run):
     html, _ = _build(run)
     layer = html[html.index("#video-wrap video"):]
     assert "position: absolute" in layer[:120] and "inset: 0" in layer[:120]
+
+
+def _clip_tags(html):
+    """Числа с тегов ведущей: сравнивать надо времена, а не строки."""
+    return [(float(re.search(r'data-start="([\d.]+)"', tag).group(1)),
+             float(re.search(r'data-duration="([\d.]+)"', tag).group(1)))
+            for tag in re.findall(r'<video class="clip" id="clip-\d\d"[^>]*>',
+                                  html)]
+
+
+def _build_clips(tmp_path, clips):
+    board = _board(json.loads(json.dumps(SCENES)))
+    with sdk_session() as sdk:
+        build_composition(tmp_path, sdk, storyboard=board, clips=clips,
+                          duration=6.0, words=WORDS, resolved=FOUND, face=None)
+    return (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+
+
+def test_клипы_ведущей_сходятся_встык_на_неудобных_кадрах(run):
+    """Кадры 2 и 4 сетки 1/30: 0.067 + 0.066. Старая формула квантовала уже
+    посчитанную разность и растягивала первый клип до 0.067 — конец уезжал на
+    0.134 и наезжал на соседа, а их линт роняет `check --strict`."""
+    html = _build_clips(run, [
+        {"file": "clips/clip-00.mp4", "start": 0.067, "duration": 0.066},
+        {"file": "clips/clip-01.mp4", "start": 0.133, "duration": 5.867}])
+    (start, length), (next_start, _) = _clip_tags(html)
+    assert length == 0.066
+    assert start + length == pytest.approx(next_start, abs=1e-9)
+
+
+def test_наезд_клипов_ведущей_роняет_сборку(run):
+    """Ловим наезд у себя: их отчёт назвал бы номер правила, а не клип."""
+    with pytest.raises(RuntimeError, match="наезжают друг на друга"):
+        _build_clips(run, [
+            {"file": "clips/clip-00.mp4", "start": 0.0, "duration": 3.1},
+            {"file": "clips/clip-01.mp4", "start": 3.0, "duration": 3.0}])
 
 
 # ---------- титр и общая рамка ----------
