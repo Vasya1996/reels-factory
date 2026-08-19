@@ -2,7 +2,8 @@
 
 `edit_plan.json` — единственный job artifact, который отвечает на вопрос
 «что и когда показывать». `segment_plan.py` больше не планирует независимо, а
-`revideo_adapter.py` только проецирует финальный документ в `tz.json`.
+сборщик `hf_render.assemble_hyperframes` только проецирует финальный документ
+в задание HyperFrames.
 
 ## Lifecycle
 
@@ -16,7 +17,8 @@
    avatar fallback.
 5. Pipeline пропускает HeyGen только для блока с validator-approved
    `safe_to_skip_avatar`.
-6. `edit_plan_to_tz()` выполняет чистую Revideo projection.
+6. `hf_render.assemble_hyperframes()` проецирует финальный план в задание
+   HyperFrames, ничего не перепланируя.
 
 Draft и final сохраняются по одному пути: новый validated snapshot атомарно
 заменяет предыдущую фазу внутри изолированного job workdir. Отдельных

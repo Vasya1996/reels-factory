@@ -162,7 +162,6 @@ from reels_factory.editplan import (
     save_edit_plan,
     validate_edit_plan,
 )
-from reels_factory.revideo_adapter import _keywords_from_config, edit_plan_to_tz
 
 
 def _canonical_scenario():
@@ -215,13 +214,6 @@ def test_kazakh_unicode_keywords_не_теряют_национальные_бу
     assert _norm_word("Қала!") == "қала"
     assert _norm_word("Ғала!") == "ғала"
     assert _norm_word("Қала!") != _norm_word("Ғала!")
-
-    keywords = _keywords_from_config({
-        "product": {"brand_captions": {"Қазақша": ["қазақша"]}},
-        "theme_captions": ["түсінікті"],
-    })
-    assert "қазақша" in keywords
-    assert "түсінікті" in keywords
 
 
 def test_kazakh_language_pack_семантика_и_локализованные_подписи():
@@ -592,7 +584,7 @@ def test_bubble_можно_отключить_в_config():
     assert plan["constraints"]["bubble"]["max_count"] == 0
 
 
-def test_bubble_проецируется_в_revideo_с_face_crop():
+def test_bubble_и_semantic_фиксируются_в_финальном_плане():
     final = build_edit_plan(
         _three_questions_scenario(),
         _canonical_config(),
@@ -609,33 +601,24 @@ def test_bubble_проецируется_в_revideo_с_face_crop():
     final["validation"] = validate_edit_plan(
         final, require_final=True, require_asset_files=False
     )
-
-    tz = edit_plan_to_tz(
-        final,
-        _canonical_config(),
-        face={"cx": 531, "cy": 608, "h": 412},
-    )
+    assert final["validation"]["all_pass"] is True
 
     bubble = next(
-        segment
-        for segment in tz["segments"]
-        if (segment.get("effect") or {}).get("bubble")
+        window
+        for window in final["windows"]
+        if (window.get("effect") or {}).get("bubble")
     )
     assert bubble["coverage"] == "mixed"
     assert bubble["effect"]["bubble"] == {
         "shape": "circle",
         "position": "bottom_left",
-        "face": {"cx": 531, "cy": 608, "h": 412},
-        "face_zoom": 3.1,
-        "face_dy": 45,
     }
     semantic = [
-        segment
-        for segment in tz["segments"]
-        if (segment.get("effect") or {}).get("visual_director")
+        window
+        for window in final["windows"]
+        if (window.get("effect") or {}).get("visual_director")
     ]
     assert len(semantic) == 5
-    assert all(segment["intensity"] == 3 for segment in semantic)
 
 
 def test_validator_защищает_avatar_bubble_contract():
