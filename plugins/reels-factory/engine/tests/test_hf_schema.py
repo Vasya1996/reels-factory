@@ -245,3 +245,46 @@ def test_плитка_знака_не_белая():
     _, _, css, _ = build("brand", {"files": [".media/a.svg"]}, duration=3.0,
                          colors={"bg": "#101018", "ink": "#ffffff"})
     assert "--mk-paper: #101018" in css
+
+
+def test_плитка_карточки_разведена_с_фоном():
+    """`--surface` равнялся `bg` знак в знак, и карточка перечисления читалась
+    одним контуром. У них плитка отличается от подложки всегда
+    (`var(--surface, #141a23)` против `var(--bg, …)`)."""
+    from reels_factory.hf_schema import SURFACE_LIFT, _mix
+
+    colors = {"bg": "#1a1210", "ink": "#ffffff", "accent": "#ff5a36"}
+    css = palette_css("grid-card-assemble", colors)
+    lifted = _mix("#1a1210", "#ffffff", SURFACE_LIFT)
+    assert lifted != "#1a1210"
+    assert f"--surface: {lifted}" in css
+
+
+def test_фон_кадра_блоку_схемы_не_отдаётся():
+    """`--bg` красит корень их перечисления, и объявленный на сцене токен
+    закрыл бы живой фон схемной сцены прямоугольником 1080x980."""
+    css = palette_css("grid-card-assemble", {"bg": "#1a1210", "ink": "#ffffff",
+                                             "accent": "#ff5a36"})
+    assert "--bg:" not in css
+
+
+def test_смешение_цветов_переживает_мусор():
+    """Правило палитры собирается на любых цветах: цвет не в форме `#rrggbb`
+    возвращает исходный, а не роняет сборку."""
+    from reels_factory.hf_schema import _mix
+
+    assert _mix("#000000", "#ffffff", 0.5) == "#808080"
+    assert _mix("не цвет", "#ffffff", 0.5) == "не цвет"
+
+
+def test_корни_блоков_схемы_прозрачны():
+    """Схема стоит на живом фоне сцены (`.aurora` в templates/reel.html), и
+    залитый корень блока закрыл бы его прямоугольником во весь кадр. У четырёх
+    форм из пяти в их же исходнике стоит голое `background: transparent`;
+    пятая (`grid-card-assemble`) красилась по `--bg`, и её копию мы правим."""
+    from reels_factory.hf_catalog import CATALOG_DIR
+
+    for block in FORMS.values():
+        html = (CATALOG_DIR / "registry" / "blocks" / block
+                / f"{block}.html").read_text(encoding="utf-8")
+        assert "var(--bg," not in html, block

@@ -89,7 +89,18 @@
             overflow: hidden;
             container-type: size;
             isolation: isolate;
-            background: var(--bg, transparent);
+            /* Правка нашей копии. У них здесь корень красится по токену
+               `--bg` с запасным `transparent`, и это единственный из пяти
+               блоков схемы, чей корень готов
+               залиться сплошным цветом: у остальных четырёх стоит голое
+               `background: transparent` (mk-progress-stat:15,
+               mk-specs-list:15, hw-pipeline:21, mk-placeholder-grid:15).
+               Сегодня токен `--bg` в нашем проекте не объявлен нигде, и
+               запасное значение спасает; но кадр схемы теперь стоит на живом
+               фоне (`.aurora` в templates/reel.html), и одно объявление
+               `--bg` на сцене погасило бы его прямоугольником 1080x980.
+               Заливку убираем безусловно. */
+            background: transparent;
             color: var(--fg, #f8fafc);
             font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
             pointer-events: none;

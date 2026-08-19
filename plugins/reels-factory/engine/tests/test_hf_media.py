@@ -535,3 +535,181 @@ def test_имя_превью_не_несёт_запрещённых_windows_си
     assert сохранено, "превью не скачивались — тест ничего не проверяет"
     for path in сохранено:
         assert ":" not in path.name, f"двоеточие в имени файла: {path.name}"
+
+
+# ---------- значки ----------
+
+def _wire_icons(monkeypatch, catalog, verdicts=None, judge=None):
+    """Каталог значков без сети. `judge` — своя подмена судьи."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    monkeypatch.setattr(hf_media, "search_assets",
+                        lambda intent, **kw: catalog.get(intent, []))
+    monkeypatch.setattr(hf_media, "_download", lambda url, target: target)
+    monkeypatch.setattr(
+        hf_media, "ingest",
+        lambda public, url, **kw: {"ok": True,
+                                   "path": ".media/icons/"
+                                           + url.rsplit("/", 1)[-1]})
+    monkeypatch.setattr(hf_media, "judge_previews",
+                        judge or (lambda requests, **kw: verdicts or {}))
+    return ThreadPoolExecutor(max_workers=2)
+
+
+def _ireq(key, intent):
+    return {"key": key, "type": "icon", "intent": intent, "speech": "реплика"}
+
+
+def _icand(id_, suffix=".png"):
+    return {"id": id_, "url": f"https://icons/{id_}{suffix}"}
+
+
+def test_значок_отбирает_судья_а_не_первый_из_выдачи(monkeypatch, tmp_path):
+    """Их провайдер значка берёт `results[0]` без всякой оценки
+    (`media-use/scripts/lib/image-provider.mjs:24-42`) — то же самое «без суда
+    в кадр попадает первое, что отдал сток», от которого биролл уже отучен."""
+    with _wire_icons(monkeypatch,
+                     {"plate": [_icand("тарелка-сверху"), _icand("сковорода")]},
+                     verdicts={"s-01::icon": 1}) as pool:
+        found = hf_media._resolve_icons(tmp_path, [_ireq("s-01::icon", "plate")],
+                                        pool=pool)
+    assert found["s-01::icon"]["file"].endswith("сковорода.png")
+
+
+def test_забракованный_значок_не_ставится_вовсе(monkeypatch, tmp_path):
+    with _wire_icons(monkeypatch, {"plate": [_icand("тарелка-сверху")]},
+                     verdicts={"s-01::icon": None}) as pool:
+        found = hf_media._resolve_icons(tmp_path, [_ireq("s-01::icon", "plate")],
+                                        pool=pool)
+    assert "error" in found["s-01::icon"]
+
+
+def test_несудимый_значок_не_подставляется_первым(monkeypatch, tmp_path):
+    """Судья пропустил сцену — это не повод брать первого из выдачи."""
+    with _wire_icons(monkeypatch, {"plate": [_icand("любой")]},
+                     verdicts={}) as pool:
+        found = hf_media._resolve_icons(tmp_path, [_ireq("s-01::icon", "plate")],
+                                        pool=pool)
+    assert "error" in found["s-01::icon"]
+
+
+def test_отказ_судьи_значков_не_роняет_сборку(monkeypatch, tmp_path):
+    """Биролл держит кадр, и его несудимость роняет прогон. Значок только
+    закрывает то, что не закрыто другим: его ошибку разберёт `settle_fillers`,
+    а сцену переберёт `settle_empty_frames`."""
+    def упал(requests, **kw):
+        raise RuntimeError("судья значков не отработал за 2 попытки")
+
+    with _wire_icons(monkeypatch, {"plate": [_icand("любой")]},
+                     judge=упал) as pool:
+        found = hf_media._resolve_icons(tmp_path, [_ireq("s-01::icon", "plate")],
+                                        pool=pool)
+    assert "error" in found["s-01::icon"]
+
+
+def test_один_значок_не_ставится_в_две_сцены(monkeypatch, tmp_path):
+    with _wire_icons(monkeypatch,
+                     {"plate": [_icand("общий")], "fork": [_icand("общий")]},
+                     verdicts={"s-01::icon": 0, "s-02::icon": 0}) as pool:
+        found = hf_media._resolve_icons(
+            tmp_path, [_ireq("s-01::icon", "plate"), _ireq("s-02::icon", "fork")],
+            pool=pool)
+    assert found["s-01::icon"]["file"].endswith("общий.png")
+    assert "error" in found["s-02::icon"]
+
+
+def test_вектор_судье_не_показывают(monkeypatch, tmp_path):
+    """Судья смотрит картинки инструментом Read, а `.svg` он не откроет: такой
+    кандидат до суда не доходит и первым в кадр не подставляется."""
+    показано = {}
+
+    def судья(requests, **kw):
+        показано.update({r["key"]: r["previews"] for r in requests})
+        return {r["key"]: 0 for r in requests}
+
+    with _wire_icons(monkeypatch,
+                     {"plate": [_icand("вектор", ".svg"), _icand("растр")]},
+                     judge=судья) as pool:
+        found = hf_media._resolve_icons(tmp_path, [_ireq("s-01::icon", "plate")],
+                                        pool=pool)
+    assert len(показано["s-01::icon"]) == 1
+    assert found["s-01::icon"]["file"].endswith("растр.png")
+
+
+def test_значок_идёт_своим_путём_а_не_слепым(monkeypatch, tmp_path):
+    """Тип `icon` вышел из слепого ведра `resolve_all`: слепым остаётся то,
+    где выбирать не из чего (знак бренда, звук)."""
+    вызвано = []
+    monkeypatch.setattr(hf_media, "_resolve_one",
+                        lambda *a, **kw: вызвано.append(a) or {"ok": False})
+    monkeypatch.setattr(hf_media.Path, "exists", lambda self: True)
+    with _wire_icons(monkeypatch, {"plate": [_icand("годный")]},
+                     verdicts={"s-01::icon": 0}):
+        found = resolve_all(tmp_path, [_ireq("s-01::icon", "plate")])
+    assert not вызвано
+    assert found["s-01::icon"]["file"].endswith("годный.png")
+
+
+def test_причина_судьи_попадает_в_лог_и_не_мешает_выбору(capsys):
+    """Судья значков отвечает объектом: сначала что видно на значке, потом
+    номер, — как в словаре жестов («`rationale` идёт перед выбором»). Прежде в
+    логе оставалось только «судья забраковал все значки», и было не понять,
+    дело в запросе или в выдаче каталога."""
+    picks = hf_media._picks(
+        {"s-01::icon": {"why": "сверху читается кольцами", "pick": 2},
+         "s-02::icon": {"why": "у всех набор фигур", "pick": None}},
+        subject="значков")
+    assert picks == {"s-01::icon": 2, "s-02::icon": None}
+    лог = capsys.readouterr().out
+    assert "сверху читается кольцами" in лог
+    assert "у всех набор фигур" in лог
+
+
+def test_голый_номер_судьи_разбирается_по_прежнему():
+    """Форма ответа у судьи бироллов своя, и машинка разбора одна на обоих."""
+    assert hf_media._picks({"s-01": 1, "s-02": None},
+                           subject="бироллов") == {"s-01": 1, "s-02": None}
+
+
+def test_неразобранный_номер_не_считается_отказом(capsys):
+    """Отказ судья пишет `null`, и по нему сцена остаётся без значка навсегда.
+    Мусор вместо номера — не отказ: запись выпадает, и `_resolve_icons` назовёт
+    сцену несудимой."""
+    picks = hf_media._picks({"s-01::icon": {"why": "не разобрал", "pick": "да"}},
+                            subject="значков")
+    assert picks == {}
+    assert "номер не разобрать" in capsys.readouterr().out
+
+
+def test_промпт_судьи_значков_размечен_и_с_примерами():
+    """Канон Anthropic: переменный вход отделён тегом от инструкции («XML tags
+    help Claude parse complex prompts unambiguously»), различение показано
+    примерами («Include 3–5 examples for best results»), а вместо списка
+    запретов дана причина («Tell Claude what to do instead of what not to
+    do»)."""
+    prompt = hf_media._ICON_JUDGE_PROMPT
+    assert prompt.count("<instructions>") == 1 and "</instructions>" in prompt
+    assert prompt.count("<example>") >= 3
+    assert "<scenes>\n{scenes}\n</scenes>" in prompt
+    # причина ограничения названа там же, где само ограничение
+    assert "кольца и полосы вместо предмета" in prompt
+    # и переменный вход судьи бироллов размечен тем же тегом
+    assert "<scenes>\n{scenes}\n</scenes>" in hf_media._JUDGE_PROMPT
+
+
+def test_судья_значков_получает_реплику_сцены(monkeypatch, tmp_path):
+    """Промпт обещает судье реплику диктора — значит она обязана доехать: без
+    неё строка про реплику дублировала бы английский запрос."""
+    показано = {}
+
+    def судья(requests, **kw):
+        показано.update({r["key"]: r.get("speech") for r in requests})
+        return {r["key"]: 0 for r in requests}
+
+    with _wire_icons(monkeypatch, {"plate": [_icand("годный")]},
+                     judge=судья) as pool:
+        hf_media._resolve_icons(
+            tmp_path,
+            [{"key": "s-01::icon", "type": "icon", "intent": "plate",
+              "speech": "тарелка на столе"}], pool=pool)
+    assert показано["s-01::icon"] == "тарелка на столе"

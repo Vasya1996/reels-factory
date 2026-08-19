@@ -147,10 +147,28 @@ TRACK_OVERLAY = 40
 #: Дорожка схем. Отдельная от накладок: схема занимает кадр целиком и с
 #: плашкой в одной сцене не встречается, а на одной дорожке клипы пересекаться
 #: не могут — их линтер зовёт это `overlapping_clips_same_track`.
+#:
+#: Ротации по дорожкам здесь нет и не нужно: их счётчик плотности
+#: `timeline_track_too_dense` пропускает маунты первой же строкой цикла —
+#: `if (isCompositionRootOrMount(tag.raw)) continue;`
+#: (packages/lint/src/rules/composition.ts:394 на пине v0.7.84, признак —
+#: `data-composition-id` или `data-composition-src`, там же:106-110). Схема
+#: выезжает именно маунтом, то есть до счётчика не доходит. У вставок ротация
+#: законна: их слой — обычный `div` с `data-start`, не маунт.
 TRACK_SCHEMA = 30
 
 #: Дорожка слоя читаемости под накладкой без своей подложки.
 TRACK_SCRIM = 38
+
+#: Дрейф фоновых полей под схемой — числа их компонента `aurora-drift`
+#: (registry/components/aurora-drift/aurora-drift.html, массив `paths`):
+#: смещение фазы, амплитуда по X в `cqw`, амплитуда по Y в `cqh`. Оформление
+#: вмержено сниппетом в `templates/reel.html` — почему именно так, написано там
+#: же. Один полный оборот синуса за сцену: у них «the phase proxy advances
+#: through exactly one whole sine cycle during HOLD», и поза на границах сцены
+#: совпадает.
+AURORA_PATHS = ((0.0, 4.6, 3.2), (2.0944, 4.1, 3.8), (4.1888, 3.6, 3.0))
+AURORA_CYCLE = 6.2832
 
 #: Значок: длительность входа и потолок свечения. Обе цифры их —
 #: `POP_DUR 0.4–0.7s` (rules/spring-pop-entrance.md:90) и «peak opacity stays
@@ -322,12 +340,41 @@ def collect_intents(storyboard: dict) -> list[dict]:
                                                          or "full")),
                                  "required": scene.get("presenter") == "none",
                                  "seconds": round(span / need, 3)})
+    return requests
+
+
+def icon_intents(scenes: list[dict]) -> list[dict]:
+    """Значки — вторым заходом, после `settle_inserts`, и только тем сценам,
+    где значок в кадр действительно встанет.
+
+    Значок объявлен запасом: приехала вставка — значка нет. Пока запросы
+    собирались вместе со вставками, за него платили независимо от этого — на
+    каждую сцену со вставкой шёл поиск по каталогу, скачивание до
+    `JUDGE_CANDIDATES` превью и доля платной сессии судьи, — и всё под выброс,
+    потому что задание требует запаса у КАЖДОЙ сцены со вставкой. Хуже платы:
+    выброшенный значок успевал занять `id` каталога в `taken`
+    (`hf_media._resolve_icons`) и отбирал его у сцены, которой закрыть кадр
+    больше нечем.
+
+    Тем же вторым заходом идёт запасная схема (`schema_intents`): к этому
+    моменту известно, что сток ответил, а что нет.
+    """
+    requests = []
+    for scene in scenes:
         icon = scene.get("icon")
-        if (isinstance(icon, dict) and str(icon.get("query") or "").strip()
-                and icon_fits(str(scene.get("presenter") or "none"))):
-            requests.append({"key": f'{scene["id"]}::icon', "type": "icon",
-                             "intent": str(icon["query"]).strip(),
-                             "rect": None, "required": False, "seconds": 0})
+        if not (isinstance(icon, dict) and str(icon.get("query") or "").strip()):
+            continue
+        # Вставка и раскладка ведущей здесь уже настоящие: `settle_inserts`
+        # обнуляет `insert` у сцен, чья серия не собралась, и переводит их на
+        # полнокадровую ведущую. Оба условия сборка перепроверит ещё раз перед
+        # постановкой — здесь они решают только, за что платить.
+        if insert_of(scene):
+            continue
+        if not icon_fits(str(scene.get("presenter") or "none")):
+            continue
+        requests.append({"key": f'{scene["id"]}::icon', "type": "icon",
+                         "intent": str(icon["query"]).strip(),
+                         "rect": None, "required": False, "seconds": 0})
     return requests
 
 
@@ -871,7 +918,12 @@ def settle_fillers(board: dict, resolved: dict[str, dict]) -> list[str]:
         name = str(scene.get("id"))
         if scene.get("icon") and not (
                 resolved.get(f"{name}::icon") or {}).get("file"):
-            print(f"{name}: значок снят — подбор не дал файла")
+            # Двух причин две записи в логе: у сцены со вставкой значка нет по
+            # правилу (его и не подбирали — `icon_intents`), у остальных не
+            # ответил подбор.
+            print(f"{name}: значок снят — "
+                  + ("вставка приехала, а значок ей запас, а не довесок"
+                     if insert_of(scene) else "подбор не дал файла"))
             scene.pop("icon", None)
             touched.append(name)
         overlay = scene.get("overlay")
@@ -1183,6 +1235,18 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                   f'{scene.get("presenter")!r} занимает его место в кадре')
             scene.pop("icon", None)
             continue
+        # Значок — ЗАПАС, и ведёт себя как запас: приехала вставка — значка
+        # нет. Прежде он стоял безусловно, и в боевом ролике круглая плашка с
+        # тарелкой легла поверх руки со сковородой — два раза про одно и то же
+        # в одном кадре. Кадр от этого не пустеет: `hf_montage.frame_filler`
+        # называет такую сцену вставкой, а не значком, — счёт гейтов D20/D25
+        # не меняется. Судим по собранной серии, а не по полю `insert`:
+        # именно она решает, что зритель увидит.
+        if series.get(scene["id"]):
+            print(f'{scene["id"]}: значок снят — вставка приехала, '
+                  "а значок ей запас, а не довесок")
+            scene.pop("icon", None)
+            continue
         start = _q(scene["startSec"])
         end = _q(scene["endSec"])
         name = f'icon-{scene["id"]}'
@@ -1228,6 +1292,10 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # знак бренда. Каждую форму собирает их же блок, вписанный в вертикаль
     # (`hf_schema`); прежде здесь стоял одинокий значок на белом кружке, и в
     # кадре он читался эмблемой, а не сценой.
+    #
+    # Все схемы ролика лежат на одной дорожке: по времени они не пересекаются
+    # (каждая занимает свою сцену целиком), а счёт плотности их линтера схему
+    # не видит вовсе — маунт он пропускает (см. `TRACK_SCHEMA`).
     for scene in scenes:
         plan = schema_plan(scene)
         if not plan:
@@ -1274,6 +1342,71 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         values = (" data-variable-values='"
                   + json.dumps(config, ensure_ascii=False).replace("'", "&#39;")
                   + "'") if elastic else ""
+        # ── живой фон под схемой ─────────────────────────────────────────
+        # Корень схемы прозрачен у всех пяти блоков, а на схемной сцене под ним
+        # нет ни ведущей, ни вставки: в кадре оставался ровный цвет из
+        # frame.md. Фон ставит КОД — как титр и скрим под накладкой: агент о
+        # нём не знает, средств в его таблице по-прежнему пять.
+        #
+        # НЕ клип и без `data-start`: их счётчик плотности дорожки считает
+        # только элементы с `data-start` (rules/composition.ts:396), а гейт
+        # пустого кадра — только идентификаторы из `FRAME_CONTENT_PREFIXES`.
+        # Фон не должен попасть ни туда, ни туда.
+        #
+        # `data-layout-allow-overflow` — про выезд полей за края кадра: он и
+        # есть их геометрия (`left:-18cqw`, `right:-28cqw`, `bottom:-34cqh` в
+        # шаблоне), а `.aurora` этот выезд срезает своим `overflow:hidden`. Их
+        # аудит раскладки видит ровно это — `container_overflow` на каждом
+        # поле, — и сам называет выход: «mark intentional overflow with
+        # data-layout-allow-overflow». Атрибут стоит на обёртке, а не на трёх
+        # полях: отказ они ищут через `closest()`
+        # (packages/cli/src/commands/layout-audit.browser.js:104-106). Тем же
+        # атрибутом здесь помечены ведущая и вспышка — и по той же причине:
+        # одиночную выборку аудит считает `info`, но две похожие сливает в
+        # находку `warning`, а `check --strict` роняет сборку на любом
+        # предупреждении.
+        aurora = f'bg-aurora-{scene["id"]}'
+        body.append(
+            f'    <div id="{aurora}" class="aurora"'
+            f' data-layout-allow-overflow="true">'
+            f'<div class="ad-base"></div>'
+            f'<div class="ad-blob ad-blob-a"></div>'
+            f'<div class="ad-blob ad-blob-b"></div>'
+            f'<div class="ad-blob ad-blob-c"></div>'
+            f'<div class="ad-vignette"></div></div>')
+        drift = f'aurora_{scene["id"].replace("-", "_")}'
+        at_start, at_end = markup_time(start), markup_time(end)
+        # Вне своей сцены фон снимается `display: none`, а не прозрачностью.
+        # Каждый фон — пять полей с `filter: blur` и радиальными градиентами, и
+        # у них про такие элементы записано: «Presence alone matters: opacity:0
+        # and visibility:hidden overlays still contribute to the capture-layer
+        # regression… The only escape hatch is `display: none`»
+        # (packages/lint/src/rules/composition.ts:1186-1191). Порог их
+        # предупреждения — 25 таких элементов, наблюдённый дефект — сплошной
+        # чёрный кадр на первой половине рендера при сорока. Пять схемных сцен
+        # дают ровно 25, так что `autoAlpha` (то есть `visibility:hidden`) нас
+        # бы не спас. Заодно снятый фон не даёт аудиту раскладки выборок вне
+        # своей сцены: невидимый элемент он не меряет (isVisibleElement,
+        # layout-audit.browser.js:192-197).
+        timeline += [
+            f'tl.set({_js("#" + aurora)}, {{ display: "none" }}, 0);',
+            f'tl.set({_js("#" + aurora)}, {{ display: "block" }}, {at_start});',
+            f'const {drift} = {{ p: 0 }};',
+            f'const {drift}_b = document.querySelectorAll('
+            f'{_js("#" + aurora + " .ad-blob")});',
+            f'const {drift}_paths = '
+            + json.dumps([list(path) for path in AURORA_PATHS]) + ';',
+            # Оборот замыкается ровно на 2π, и их же оговорка: на конце берём
+            # литеральный ноль, иначе остаётся мусор с плавающей точки.
+            f'tl.to({drift}, {{ p: {AURORA_CYCLE}, '
+            f'duration: {round(at_end - at_start, 4)}, ease: "none", '
+            f'onUpdate: () => {{ const f = {drift}.p === {AURORA_CYCLE} '
+            f'? 0 : {drift}.p; {drift}_paths.forEach((path, i) => '
+            f'window.gsap.set({drift}_b[i], {{ '
+            f'x: Math.sin(f + path[0]) * path[1] + "cqw", '
+            f'y: Math.sin(f + path[0] + Math.PI / 2) * path[2] + "cqh" }})); '
+            f'}} }}, {at_start});',
+            f'tl.set({_js("#" + aurora)}, {{ display: "none" }}, {at_end});']
         body.append(
             f'    <div class="ovl">'
             f'<div id="schema-{scene["id"]}" class="clip"'

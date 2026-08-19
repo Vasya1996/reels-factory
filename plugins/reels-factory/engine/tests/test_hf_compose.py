@@ -6,7 +6,7 @@ import pytest
 
 from reels_factory import hf_compose
 from reels_factory.hf_compose import (
-    build_composition, collect_intents, complete_storyboard,
+    build_composition, collect_intents, complete_storyboard, icon_intents,
     presenter_timeline, settle_inserts,
 )
 from reels_factory.hf_sdk import sdk_session
@@ -733,6 +733,44 @@ def test_значок_снимается_если_ведущая_заняла_е
     assert "icon" not in board["scenes"][1]
 
 
+def test_значок_уступает_приехавшей_вставке(run):
+    """Значок объявлен запасом и ведёт себя как запас. Прежде он стоял
+    безусловно, и круглая плашка с тарелкой легла поверх руки со сковородой —
+    два раза про одно и то же в одном кадре."""
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["icon"] = {"query": "handshake deal icon"}
+    resolved = dict(FOUND, **{"s-02::icon": {"file": ".media/i.png"}})
+    html, board = _build(run, scenes=scenes, resolved=resolved)
+    assert 'id="ins-s-02-0"' in html
+    assert 'id="icon-s-02"' not in html
+    assert "icon" not in board["scenes"][1]
+
+
+def test_потерянная_вставка_возвращает_значок_в_кадр(run):
+    """Ровно тот случай, ради которого запас и называется: серия не собралась,
+    и кадр закрывает значок."""
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "pip-br"
+    scenes[1]["icon"] = {"query": "handshake deal icon"}
+    # серия неполная: один план из двух — вся серия снимается
+    resolved = {"s-02::shot0": {"file": ".media/images/a.jpg"},
+                "s-02::icon": {"file": ".media/i.png"}}
+    html, board = _build(run, scenes=scenes, resolved=resolved)
+    assert 'id="ins-s-02-0"' not in html
+    assert 'id="icon-s-02" class="icon-spot">' in html
+    assert board["scenes"][1]["icon"] == {"query": "handshake deal icon"}
+
+
+def test_снятый_значок_не_делает_кадр_пустым():
+    """Гейты D20/D25 считают кадр закрытым по `frame_filler`, и сцена, у
+    которой значок уступил вставке, называется вставкой, а не пустотой."""
+    from reels_factory.hf_montage import frame_filler
+
+    scene = {"id": "s-02", "presenter": "none",
+             "insert": {"shots": ["раз", "два"], "kind": "video"}}
+    assert frame_filler(scene) == "вставка"
+
+
 def _with_schema_block(run, form="pairs"):
     """Блок схемы в проекте: его ставит `hyperframes add` перед сборкой."""
     from reels_factory.hf_schema import FORMS
@@ -810,6 +848,162 @@ def test_перечисление_получает_содержимое_штат
     assert "1920px" not in copy
 
 
+def test_схема_стоит_на_живом_фоне_а_не_на_ровном_цвете(run):
+    """Под схемной сценой нет ни ведущей, ни вставки, а корни блоков схемы
+    прозрачны: в кадре оставался ровный цвет из frame.md. Фон ставит код их
+    компонентом `aurora-drift`, вмерженным сниппетом."""
+    _with_schema_block(run)
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = None
+    scenes[1]["schema"] = {"form": "pairs", "why": "у пунктов свои значения",
+                           "rows": [{"label": "раз", "value": "первое"},
+                                    {"label": "два", "value": "второе"}]}
+    html, _ = _build(run, scenes=scenes, resolved={})
+    assert 'id="bg-aurora-s-02" class="aurora"' in html
+    assert html.count('class="ad-blob ') == 3
+    # фон живёт ровно свою сцену и дрейфует один оборот синуса
+    assert 'tl.set("#bg-aurora-s-02", { display: "block" }, 3.0333);' in html
+    assert 'tl.set("#bg-aurora-s-02", { display: "none" }, 6.0);' in html
+    assert "6.2832" in html and "cqw" in html
+
+
+def test_фон_схемы_снимается_display_а_не_прозрачностью(run):
+    """Каждый фон — пять полей с `filter: blur` и радиальными градиентами, а у
+    них про такие записано: «Presence alone matters: opacity:0 and
+    visibility:hidden overlays still contribute to the capture-layer
+    regression… The only escape hatch is `display: none`»
+    (packages/lint/src/rules/composition.ts:1186-1191). Порог их
+    предупреждения — 25 элементов, наблюдённый дефект — чёрный кадр на первой
+    половине рендера; пять схемных сцен дают ровно 25."""
+    _with_schema_block(run)
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = None
+    scenes[1]["schema"] = {"form": "pairs", "why": "у пунктов свои значения",
+                           "rows": [{"label": "раз", "value": "первое"},
+                                    {"label": "два", "value": "второе"}]}
+    html, _ = _build(run, scenes=scenes, resolved={})
+    фон = [line for line in html.splitlines() if "#bg-aurora-s-02" in line
+           and "tl.set(" in line]
+    assert len(фон) == 3, "фон включают и гасят три `set`"
+    assert not [line for line in фон if "autoAlpha" in line]
+    assert 'tl.set("#bg-aurora-s-02", { display: "none" }, 0);' in html
+
+
+def test_выезд_полей_фона_помечен_разрешённым(run):
+    """Выезд заложен в геометрию полей (`-18cqw`, `-28cqw`, `-34cqh`), а
+    `.aurora` его срезает — их аудит раскладки зовёт это `container_overflow` и
+    сам называет выход: «mark intentional overflow with
+    data-layout-allow-overflow». Атрибут стоит на обёртке: отказ они ищут через
+    `closest()` (packages/cli/src/commands/layout-audit.browser.js:104-106),
+    одним атрибутом накрыты все три поля."""
+    _with_schema_block(run)
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = None
+    scenes[1]["schema"] = {"form": "pairs", "why": "у пунктов свои значения",
+                           "rows": [{"label": "раз", "value": "первое"},
+                                    {"label": "два", "value": "второе"}]}
+    html, _ = _build(run, scenes=scenes, resolved={})
+    обёртка = next(line for line in html.splitlines()
+                   if 'id="bg-aurora-s-02"' in line)
+    assert 'data-layout-allow-overflow="true"' in обёртка
+    # поля лежат внутри обёртки, то есть `closest()` их находит
+    assert обёртка.count('class="ad-blob ') == 3
+
+
+def test_фона_нет_там_где_схема_не_встала(run):
+    """Фон — оформление схемы, а не самостоятельный слой: снятая схема уносит
+    его с собой, иначе сцена осталась бы с одним крашеным кадром."""
+    _with_schema_block(run, form="brand")
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = None
+    scenes[1]["schema"] = {"form": "brand", "brands": ["notion"]}
+    html, _ = _build(run, scenes=scenes, resolved={})
+    assert "bg-aurora" not in html
+
+
+def test_фон_схемы_лежит_между_декором_и_вставкой(run):
+    """Слой 8: выше фоновых глоу ролика (5) и ниже вставки (10). А имя его —
+    вне списка `hf_probe.FRAME_CONTENT_PREFIXES`, иначе фон объявлял бы
+    занятым пустой кадр."""
+    from reels_factory.hf_probe import FRAME_CONTENT_PREFIXES
+
+    template = (hf_compose.TEMPLATE).read_text(encoding="utf-8")
+    layer = template[template.index(".aurora {"):]
+    assert "z-index: 8;" in layer[:400]
+    assert not "bg-aurora-s-02".startswith(FRAME_CONTENT_PREFIXES)
+
+
+def test_фон_схемы_красится_нашей_палитрой_а_не_их_холодной_базой(run):
+    """Их база зашита в скрипте компонента (`deep: { base: "#050711" }`), и
+    углы кадра уходили в почти чёрный вместо тёплого bg из frame.md."""
+    _with_schema_block(run)
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = None
+    scenes[1]["schema"] = {"form": "pairs", "why": "у пунктов свои значения",
+                           "rows": [{"label": "раз", "value": "первое"},
+                                    {"label": "два", "value": "второе"}]}
+    theme = {"colors": {"bg": "#1a1210", "ink": "#ffffff",
+                        "accent": "#ff5a36"}}
+    board = _board(json.loads(json.dumps(scenes)))
+    with sdk_session() as sdk:
+        build_composition(run, sdk, storyboard=board, clips=CLIPS,
+                          duration=6.0, words=WORDS, resolved={}, theme=theme)
+    html = (run / "public" / "index.html").read_text(encoding="utf-8")
+    rule = html[html.index(".aurora {"):html.index(".aurora .ad-base,")]
+    assert "--ad-base: #1a1210" in rule
+    assert "--ad-color: #ff5a36" in rule
+    # виньетка гасит углы своим же цветом кадра, а не их чёрным
+    vignette = html[html.rindex(".aurora .ad-vignette {"):]
+    assert "rgb(0 0 0" not in vignette[:300]
+    assert "var(--ad-base) 100%" in vignette[:300]
+
+
+def test_все_схемы_ролика_лежат_на_одной_дорожке(run):
+    """Ротации у схем нет и не нужно: их счётчик плотности пропускает маунты
+    первой же строкой цикла — `if (isCompositionRootOrMount(tag.raw))
+    continue;` (packages/lint/src/rules/composition.ts:394 на пине v0.7.84,
+    признак — `data-composition-id` или `data-composition-src`). Схема выезжает
+    именно маунтом, то есть `timeline_track_too_dense` её не видит; по времени
+    схемы не пересекаются никогда, каждая занимает свою сцену целиком."""
+    _with_schema_block(run)
+    scenes = []
+    for index in range(5):
+        start = round(index * 4.0, 3)
+        scenes.append({"id": f"s-{index:02d}", "intent": "и",
+                       "startSec": start, "endSec": round(start + 4.0, 3),
+                       "presenter": "none", "insert": None,
+                       "schema": {"form": "pairs", "why": "свои значения",
+                                  "rows": [{"label": "раз", "value": "первое"},
+                                           {"label": "два", "value": "второе"}]}})
+    board = _board(json.loads(json.dumps(scenes)))
+    board["composition"]["durationSeconds"] = 20.0
+    board["videoTrack"]["endSec"] = 20.0
+    with sdk_session() as sdk:
+        build_composition(run, sdk, storyboard=board, clips=CLIPS,
+                          duration=20.0, words=WORDS, resolved={})
+    html = (run / "public" / "index.html").read_text(encoding="utf-8")
+    assert html.count('id="schema-s-') == 5
+    tracks, маунты = [], 0
+    for scene in scenes:
+        tag = html[html.index(f'id="schema-{scene["id"]}"'):][:400]
+        tracks.append(tag.split('data-track-index="')[1].split('"')[0])
+        маунты += "data-composition-src=" in tag
+    assert маунты == 5, "схема перестала быть маунтом — счёт плотности её увидит"
+    assert set(tracks) == {str(hf_compose.TRACK_SCHEMA)}
+    # дорожка схем ни с чем не делится
+    занятые = {str(hf_compose.TRACK_VIDEO), str(hf_compose.TRACK_INSERT),
+               str(hf_compose.TRACK_SCRIM), str(hf_compose.TRACK_OVERLAY),
+               str(hf_compose.TRACK_OVERLAY + 1), str(hf_compose.TRACK_CAPTION),
+               str(hf_compose.TRACK_FX), str(hf_compose.TRACK_SFX),
+               str(hf_compose.TRACK_AUDIO)}
+    assert not set(tracks) & занятые
+
+
 def test_схема_короче_своей_анимации_не_ставится(run):
     """Форме нужно время, чтобы досказать вход: сцена короче — блок покажет
     себя недорисованным, а это хуже, чем не показать вовсе."""
@@ -841,11 +1035,12 @@ def test_схема_бренда_без_знака_не_рисуется(run):
 def test_запрос_иконки_попадает_в_намерения():
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = None
     scenes[1]["icon"] = {"query": "fire flame icon"}
-    requests = collect_intents(_board(scenes))
-    icons = [r for r in requests if r["type"] == "icon"]
+    icons = icon_intents(scenes)
     assert icons and icons[0]["key"] == "s-02::icon"
     assert icons[0]["intent"] == "fire flame icon"
+    assert icons[0]["type"] == "icon"
 
 
 def test_значок_на_полнокадровой_ведущей_даже_не_ищется():
@@ -854,6 +1049,31 @@ def test_значок_на_полнокадровой_ведущей_даже_н
     scenes = json.loads(json.dumps(SCENES))
     scenes[0]["presenter"] = "full"
     scenes[0]["icon"] = {"query": "fire flame icon"}
+    assert not icon_intents(scenes)
+
+
+def test_значок_сцены_со_вставкой_не_подбирается_вовсе():
+    """Значок — запас: приехала вставка, и в кадр он не встанет. Пока запросы
+    шли вместе со вставками, за такой значок платили поиском по каталогу,
+    скачиванием превью и долей платной сессии судьи — и он же занимал `id`
+    каталога, отбирая его у сцены, которой закрыть кадр больше нечем."""
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "pip-br"
+    scenes[1]["icon"] = {"query": "fire flame icon"}
+    assert scenes[1]["insert"], "сцена без вставки — тест ничего не проверяет"
+    assert not icon_intents(scenes)
+    # А потеряла вставку (`settle_inserts` обнулил) — значок нужен.
+    scenes[1]["insert"] = None
+    assert [r["key"] for r in icon_intents(scenes)] == ["s-02::icon"]
+
+
+def test_значки_не_идут_первым_заходом():
+    """Первый заход — только вставки: чем закрыт кадр, к этому моменту ещё не
+    известно."""
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = None
+    scenes[1]["icon"] = {"query": "fire flame icon"}
     assert not [r for r in collect_intents(_board(scenes))
                 if r["type"] == "icon"]
 

@@ -34,6 +34,74 @@
         width: 130%; height: 52%; will-change: transform;
         background: radial-gradient(ellipse 50% 50% at 50% 50%,
           __ACCENT__1f 0%, __ACCENT__00 64%); }
+      /* Живой фон схемной сцены — их компонент `aurora-drift`
+         (hyperframes-ref/registry/components/aurora-drift/aurora-drift.html).
+         Взят СНИППЕТОМ, вмерженным в композицию-хозяина, а не отдельным
+         файлом: у них компонент «has no standalone timeline… merge directly
+         into an existing composition» и «inherits the host composition's
+         dimensions and duration» (skills/hyperframes-registry/references/
+         wiring-components.md:3,38). Отдельным файлом он валит их же линтер:
+         размеров на корне у него нет вовсе (их контракт для компонента), а
+         правило `root_missing_dimensions` — error
+         (packages/lint/src/rules/core.ts:299). Папка `compositions/components/`
+         их линтером пропускается (packages/lint/src/project.ts:176) именно
+         потому, что там лежит ИСХОДНИК сниппета, а не то, что монтируется:
+         смонтировать оттуда всё равно нечего — `data-composition-src` ведёт
+         сабкомпозицию, а у компонента своего таймлайна нет.
+         Слой 8: выше декора кадра (5), ниже вставки (10). Это фон СЦЕНЫ, а не
+         фон ролика. Идентификатор нарочно начинается с `bg-` — вне списка
+         `hf_probe.FRAME_CONTENT_PREFIXES`, иначе фон объявлял бы занятым
+         пустой кадр.
+         `overflow: hidden` здесь обязателен: поля нарочно выходят за края
+         кадра (`-18cqw`, `-28cqw`, `-34cqh` ниже), и без обрезки они лезли бы
+         за границы сцены. Выезд помечен `data-layout-allow-overflow` на самой
+         обёртке — атрибут ставит `hf_compose`, там же написано почему. */
+      .aurora { position: absolute; inset: 0; z-index: 8; overflow: hidden;
+        container-type: size; isolation: isolate; pointer-events: none;
+        /* База у них зашита холодной: `deep: { base: "#050711" … }` в скрипте
+           компонента, и наш тёплый bg из frame.md туда не доходит — в превью
+           нижние углы кадра вышли почти чёрными. Базу задаём своим цветом,
+           поля силы и виньетки берём их числами (0.42 и 0.62). Токены
+           `--accent`/`--accent-2` компонент подмешивает в два блоба; отдаём
+           ему наш акцент — тем же способом, что и блокам схемы
+           (`hf_schema.palette_css`). */
+        --ad-base: __BG__; --ad-color: __ACCENT__;
+        --ad-strength: 0.42; --ad-vignette: 0.62;
+        --accent: __ACCENT__; --accent-2: __ACCENT__; }
+      .aurora .ad-base, .aurora .ad-vignette { position: absolute; inset: 0; }
+      .aurora .ad-base { background:
+        radial-gradient(ellipse at 50% 42%,
+          color-mix(in srgb, var(--ad-color) 8%, var(--ad-base)) 0%,
+          var(--ad-base) 68%), var(--ad-base); }
+      .aurora .ad-blob { --ad-blob-opacity: 1; position: absolute;
+        display: block; border-radius: 50%;
+        filter: blur(12cqmin) saturate(0.84) opacity(var(--ad-blob-opacity));
+        mix-blend-mode: screen; opacity: var(--ad-strength);
+        will-change: transform; }
+      .aurora .ad-blob-a { width: 76cqw; height: 72cqh; left: -18cqw;
+        top: -22cqh; background: radial-gradient(ellipse at center,
+          color-mix(in srgb, var(--ad-color) 88%, white) 0%,
+          color-mix(in srgb, var(--ad-color) 42%, transparent) 48%,
+          transparent 76%); }
+      .aurora .ad-blob-b { width: 84cqw; height: 78cqh; right: -28cqw;
+        top: -2cqh; --ad-blob-opacity: 0.82;
+        background: radial-gradient(ellipse at center,
+          color-mix(in srgb, var(--ad-color) 72%, var(--accent)) 0%,
+          color-mix(in srgb, var(--ad-color) 36%, transparent) 52%,
+          transparent 78%); }
+      .aurora .ad-blob-c { width: 72cqw; height: 74cqh; left: 18cqw;
+        bottom: -34cqh; --ad-blob-opacity: 0.68;
+        background: radial-gradient(ellipse at center,
+          color-mix(in srgb, var(--ad-color) 72%, var(--accent-2)) 0%,
+          color-mix(in srgb, var(--ad-color) 32%, transparent) 50%,
+          transparent 76%); }
+      /* Виньетка у них залита ЧЁРНЫМ (`rgb(0 0 0 / …)`) — это она вместе с
+         холодной базой и утащила углы кадра в #050509. Форму и силу берём их,
+         краску — свою: к краям кадр возвращается к цвету из frame.md, а не к
+         чёрному. */
+      .aurora .ad-vignette { opacity: var(--ad-vignette);
+        background: radial-gradient(ellipse at center,
+          transparent 35%, var(--ad-base) 100%); }
       /* Порядок слоёв держит z-index, а не `data-track-index`: тот у них
          «display-only; render never reads it»
          (packages/core/src/runtime/timeline.ts:599). Снизу вверх:
