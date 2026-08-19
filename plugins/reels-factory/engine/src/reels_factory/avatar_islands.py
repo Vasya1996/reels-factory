@@ -194,7 +194,11 @@ def _motion_family(prompt: str) -> str:
     value = str(prompt or "").lower()
     families = (
         ("lean", ("lean",)),
-        ("invite", ("open-hand", "open hand", "inviting")),
+        # "still" стоит раньше "gesture": строка покоя из GESTURE_VOCABULARY
+        # ("No hand gestures, ...") иначе попадает к активным жестам по слову
+        # "gesture" и роднится с ними при кластеризации островов.
+        ("still", ("no hand gesture", "hands still", "barely move")),
+        ("invite", ("open-hand", "open hand", "open arms", "inviting")),
         ("nod", ("nod",)),
         ("smile", ("smile",)),
         ("gesture", ("gesture", "hand")),

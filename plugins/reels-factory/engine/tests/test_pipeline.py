@@ -923,11 +923,9 @@ def test_per_phrase_performance_llm_обогащает_canonical_plan(
                 "phrases": [
                     {
                         "phrase_id": f"phrase-{index:03d}",
-                        "expressiveness": "medium",
-                        "motion_prompt": (
-                            "Looks at the camera and nods gently, calm and clear."
-                        ),
                         "rationale": "Matches the approved phrase.",
+                        "gesture": "nod_gentle",
+                        "expressiveness": "medium",
                     }
                     for index in range(4)
                 ]
