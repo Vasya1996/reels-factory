@@ -37,7 +37,7 @@ DEFAULT_STABILITY = 0.6
 # «Natural», тот же дефолт, что и в legacy synth_voice для v3.
 DEFAULT_STABILITY_V3 = 0.5
 DEFAULT_SIMILARITY_BOOST = 0.8
-DEFAULT_STYLE = 0.5
+DEFAULT_STYLE = 0.0
 DEFAULT_USE_SPEAKER_BOOST = False
 
 # Модель под язык ролика. Multilingual v2 НЕ поддерживает казахский, поэтому для
