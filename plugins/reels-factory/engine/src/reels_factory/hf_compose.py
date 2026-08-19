@@ -58,6 +58,7 @@ from __future__ import annotations
 import functools
 import hashlib
 import json
+import math
 import re
 import shutil
 from pathlib import Path
@@ -240,6 +241,34 @@ def _q(value: float) -> float:
     return quantize(float(value))
 
 
+def markup_time(seconds: float) -> float:
+    """Время, каким оно уходит в разметку и в позиции твинов.
+
+    `quantize` округляет до трёх знаков, и напечатанное время выходит БОЛЬШЕ
+    настоящей границы кадра: 2/30 = 0,0666667 печатается как «0.067». Рантайм
+    показывает элемент при `currentTime >= start` без допуска, а сикает ровно
+    в `frameIndex/fps` — и треть времён встаёт на кадр позже задуманного.
+    Поэтому берём НАИБОЛЬШЕЕ четырёхзначное число, не превышающее границу
+    своего кадра: floor, а не round, потому что `:.4f` от 0,0666667 даёт
+    «0.0667» — всё ещё за границей кадра, то есть тот же опоздавший кадр.
+
+    Числа на диске (`clips.json`, раскадровка, планы, гейты) остаются
+    трёхзначными и читаемыми: опаздывала только разметка.
+
+    Длительность печатать ПАРНО — `markup_time(start + duration) -
+    markup_time(start)`, а не `markup_time(duration)`: наивная форма даёт
+    расхождение 1e-4 при допуске их линта 1e-6 и возвращает наезд клипов.
+
+    Мимо этой функции идут ровно два числа, и оба намеренно: корневая
+    длительность ролика (она задаёт число кадров и обрезку звука) и старт
+    вспышки (на кадр стыка привязан её пик, а не старт). Причины — у самих
+    мест. Гейты тоже судят по сырым числам: функция монотонна, и наезд, не
+    видный на сырых, не появится и на напечатанных.
+    """
+    frame = round(float(seconds) * FPS)
+    return math.floor(frame / FPS * 10000) / 10000
+
+
 def _rect_style(rect: dict) -> str:
     return (f'left:{rect["left"]}px;top:{rect["top"]}px;'
             f'width:{rect["width"]}px;height:{rect["height"]}px')
@@ -365,6 +394,9 @@ def _insert_tag(scene: dict, rect: dict, source: str, *, start: float,
     kind = str((insert_of(scene) or {}).get("kind") or "photo").lower()
     fit = "contain" if kind in _CONTAIN_KINDS else "cover"
     box = _rect_style(rect)
+    # Время в разметку — только через `markup_time`, длительность парно.
+    start, duration = (markup_time(start),
+                       markup_time(start + duration) - markup_time(start))
     if source.lower().split("?")[0].endswith(_IMAGE_SUFFIXES):
         return (f'    <div id="{name}" class="ins clip" style="{box}"'
                 f' data-start="{start:.4f}" data-duration="{duration:.4f}"'
@@ -407,6 +439,9 @@ def _entry(target: str, beat: str, at: float) -> list[str]:
     `fromTo`, не `from`: их правило — начальное состояние явно, иначе холодная
     перемотка рисует элемент до входа (transitions/overview.md:22).
     """
+    # Позиция твина — время на шкале, значит через `markup_time`. Длительности
+    # твинов оставлены как есть: GSAP интерполирует непрерывно.
+    at = markup_time(at)
     if beat == "outro":
         return [f'tl.fromTo({_js(target)}, {{ autoAlpha: 0, '
                 f'filter: "blur(20px)" }}, {{ autoAlpha: 1, '
@@ -425,6 +460,7 @@ def _exit(target: str, next_beat: str, at: float) -> list[str]:
     разгоняясь, — «the exit's opacity completes at ~25-30% of its travel»
     (cut-catalog.md:145-149). Выход `power4.in` зеркален входу `power4.out`.
     """
+    at = markup_time(at)
     if next_beat == "outro":
         return [f'tl.to({_js(target)}, {{ autoAlpha: 0, duration: 0.5, '
                 f'ease: "sine.inOut" }}, {at});']
@@ -708,7 +744,8 @@ def _zoom_timeline(plans: list[dict]) -> list[str]:
     lines: list[str] = []
     target = _js("#video-wrap video")
     for plan in plans:
-        at = _q(plan["start"])
+        # Позиция ступени — время на шкале: `markup_time`, а не `_q`.
+        at = markup_time(plan["start"])
         if plan["kind"] == "push":
             lines.append(
                 f'tl.fromTo({target}, {{ scale: {plan["scale_from"]} }}, '
@@ -730,6 +767,7 @@ def _presenter_move(position: str, at: float) -> list[str]:
     раздавил бы кадр. А эталонным рилсам переезд и не нужен — там смена
     положения всегда на стыке.
     """
+    at = markup_time(at)
     if position == "none":
         return [f'tl.set("#video-wrap", {{ autoAlpha: 0 }}, {at});']
     rect = _presenter_rect(position)
@@ -1092,11 +1130,14 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         # их же: «Glass without legibility gradient = white-on-white
         # catastrophe over bright video. Always pair them»
         # (talking-head-recut/references/layouts/overlay.html:52-68).
+        # Время в разметку — `markup_time`, длительность парно.
+        at, span = (markup_time(start),
+                    markup_time(start + length) - markup_time(start))
         if _block_backing().get(str(overlay["block"])) == "none" \
                 and insert_of(scene):
             body.append(
                 f'    <div class="ovl-scrim" id="scrim-{scene["id"]}"'
-                f' data-start="{start:.4f}" data-duration="{length:.4f}"'
+                f' data-start="{at:.4f}" data-duration="{span:.4f}"'
                 f' data-track-index="{TRACK_SCRIM}"></div>')
         body.append(
             f'    <div class="ovl" style="{box}">'
@@ -1106,7 +1147,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             f' data-layout-allow-overflow="true"'
             f' data-composition-id="{unique}"'
             f' data-composition-src="compositions/{unique}.html"'
-            f' data-start="{start:.4f}" data-duration="{length:.4f}"'
+            f' data-start="{at:.4f}" data-duration="{span:.4f}"'
             f' data-track-index="{TRACK_OVERLAY + staged_overlays % 2}"'
             f' data-width="{canvas[0]}" data-height="{canvas[1]}"></div>'
             f"</div></div>")
@@ -1158,16 +1199,19 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         phase = f"phase_{scene['id'].replace('-', '_')}"
         breathe = max(0.0, end - start - bloom)
         cycles = max(1, int(breathe / 5.2))
+        # Позиции твинов — через `markup_time`; длительности (`bloom`, дыхание)
+        # остаются как есть, GSAP интерполирует непрерывно.
+        at_start, at_end = markup_time(start), markup_time(end)
         timeline += [
             f'tl.set({spot}, {{ autoAlpha: 0 }}, 0);',
-            f'tl.set({spot}, {{ autoAlpha: 1 }}, {start});',
+            f'tl.set({spot}, {{ autoAlpha: 1 }}, {at_start});',
             f'tl.fromTo({glow}, {{ opacity: 0, scale: 0.82 }}, '
             f'{{ opacity: {ICON_GLOW_PEAK}, scale: 1, duration: {bloom}, '
-            f'ease: "power2.out" }}, {start});',
+            f'ease: "power2.out" }}, {at_start});',
             f'tl.fromTo({plate}, {{ scale: 0, opacity: 0 }}, '
             f'{{ scale: 1, opacity: 1, duration: {bloom}, '
-            f'ease: "power3.out" }}, {start});',
-            f'tl.set({spot}, {{ autoAlpha: 0 }}, {end});']
+            f'ease: "power3.out" }}, {at_start});',
+            f'tl.set({spot}, {{ autoAlpha: 0 }}, {at_end});']
         if breathe > 1.0:
             timeline += [
                 f'const {phase} = {{ p: 0 }};',
@@ -1177,7 +1221,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 f'() => {{ const s = Math.sin({phase}.p); '
                 f'{phase}_el.style.opacity = String({ICON_GLOW_PEAK} + s * 0.09); '
                 f'{phase}_el.style.transform = `scale(${{1 + s * 0.05}})`; }} '
-                f'}}, {round(start + bloom, 4)});']
+                f'}}, {markup_time(start + bloom)});']
 
     # ── схема ─────────────────────────────────────────────────────────────
     # То, что нельзя снять камерой: цифра, список шагов, связь двух понятий и
@@ -1235,7 +1279,8 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             f'<div id="schema-{scene["id"]}" class="clip"'
             f' data-composition-id="{unique}"'
             f' data-composition-src="compositions/{unique}.html"'
-            f' data-start="{start:.4f}" data-duration="{end - start:.4f}"'
+            f' data-start="{markup_time(start):.4f}"'
+            f' data-duration="{markup_time(end) - markup_time(start):.4f}"'
             f' data-track-index="{TRACK_SCHEMA}"'
             f' data-width="{OUT_W}" data-height="{height}"'
             f' style="position:absolute;left:0;top:0;'
@@ -1259,21 +1304,30 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # `check --strict` роняет сборку на любом предупреждении: прогоны 37 и 38
     # встали именно так, при том что на 30 и 31 та же геометрия прошла как
     # `info`. Тем же атрибутом здесь же помечена вспышка (ниже по файлу).
-    # Длительность без `_q`: в clips.json она уже разность квантованных
-    # времён (`hf_render.py:353`), и повторное квантование разности и есть
-    # та ошибка в миллисекунду, что сдвигает конец клипа с сетки кадров.
-    videos = "\n".join(
-        f'      <video class="clip" id="clip-{index:02d}" src="{clip["file"]}"'
-        f' muted playsinline data-layout-allow-overflow="true"'
-        f' data-start="{_q(clip["start"]):.4f}"'
-        f' data-duration="{clip["duration"]:.4f}"'
-        f' data-track-index="{TRACK_VIDEO}"></video>'
-        for index, clip in enumerate(clips))
+    # Длительность НЕ квантуем в одиночку: в clips.json она уже разность
+    # квантованных времён (`hf_render.py:353`), и своя обработка разности и
+    # есть та ошибка в миллисекунду, что сдвигает конец клипа с сетки кадров.
+    # В разметку она идёт парно — `markup_time(конец) - markup_time(начало)`.
+    tags = []
+    for index, clip in enumerate(clips):
+        begin = markup_time(clip["start"])
+        finish = markup_time(_q(clip["start"]) + float(clip["duration"]))
+        tags.append(
+            f'      <video class="clip" id="clip-{index:02d}"'
+            f' src="{clip["file"]}"'
+            f' muted playsinline data-layout-allow-overflow="true"'
+            f' data-start="{begin:.4f}"'
+            f' data-duration="{finish - begin:.4f}"'
+            f' data-track-index="{TRACK_VIDEO}"></video>')
+    videos = "\n".join(tags)
     # Клипы ведущей лежат встык на одной дорожке. Наезд соседей их линт
     # видит как `overlapping_clips_same_track` и роняет `check --strict`
     # (допуск 1e-6), а зазор съедает целый кадр: окно видимости у них
     # полуоткрытое, без допуска. Ловим у себя и называем виновных, а не
     # ждём чужого отчёта.
+    # Судим по исходным числам, а не по напечатанным: `markup_time` монотонна,
+    # поэтому если не наезжают сырые, то не наезжают и напечатанные, — а на
+    # сырых виден и наезд короче полукадра, который округление съело бы в ноль.
     for index in range(1, len(clips)):
         before, after = clips[index - 1], clips[index]
         finish = _q(before["start"]) + float(before["duration"])
@@ -1324,6 +1378,9 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         if flash_start < 0 or flash_length < FLASH_HIT * FLASH_NATIVE + 0.2:
             continue
         unique, _, _ = _stage_overlay(public, FLASH_BLOCK, f"fx{order}")
+        # Единственное время мимо `markup_time`: на кадр стыка привязан не
+        # старт вспышки, а её пик (`flash_start = hit - FLASH_HIT *
+        # FLASH_NATIVE`), и любой сдвиг старта уводит пик со стыка.
         scale = OUT_H / 1080.0
         left = -round((1920 * scale - OUT_W) / 2)
         # Растянутый канвас блока шире кадра: обёртка режет его по краю, а
@@ -1368,6 +1425,11 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     for name, value in (("__W__", str(OUT_W)), ("__H__", str(OUT_H)),
                         ("__FPS__", str(FPS)),
                         ("__CAPTION_BOTTOM__", str(CAPTION_BOTTOM)),
+                        # Корневая длительность идёт мимо `markup_time`: она не
+                        # время на шкале, а число кадров ролика, и по нему же
+                        # их сборка режет звук (`frameCount/fps`). Запас вверх
+                        # даёт лишний пустой кадр, нехватка — отрезанный хвост
+                        # живой речи; берём запас.
                         ("__DURATION__", f"{duration:.4f}"),
                         ("__BG__", colors["bg"]),
                         ("__INK__", colors["ink"]),
