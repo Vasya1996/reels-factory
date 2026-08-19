@@ -88,7 +88,7 @@ def test_биролл_встаёт_серией_из_двух_планов(run):
     assert 'src=".media/images/b.jpg"' in html
     # обёртка несёт время, медиа внутри — только картинку: клип обязан быть
     # прямым потомком корня композиции
-    assert 'data-start="3.0330"' in html
+    assert 'data-start="3.0333"' in html
 
 
 def test_вставка_под_ведущей_в_углу_занимает_весь_кадр(run):
@@ -173,7 +173,7 @@ def test_уходящий_план_живёт_дольше_на_время_шв�
     html, _ = _build(run)
     # сцена 3.033–6.0, шов посередине, первый план продлён на 0.3
     first = html[html.index('id="ins-s-02-0"'):]
-    assert 'data-start="3.0330"' in first[:400]
+    assert 'data-start="3.0333"' in first[:400]
     # соседние планы на разных дорожках — пересечение на шве легально
     assert 'data-track-index="3"' in html and 'data-track-index="4"' in html
 
@@ -302,15 +302,74 @@ def _build_clips(tmp_path, clips):
 
 
 def test_клипы_ведущей_сходятся_встык_на_неудобных_кадрах(run):
-    """Кадры 2 и 4 сетки 1/30: 0.067 + 0.066. Старая формула квантовала уже
+    """Кадры 2 и 4 сетки 1/30: 0.0666 + 0.0667. Старая формула квантовала уже
     посчитанную разность и растягивала первый клип до 0.067 — конец уезжал на
     0.134 и наезжал на соседа, а их линт роняет `check --strict`."""
     html = _build_clips(run, [
         {"file": "clips/clip-00.mp4", "start": 0.067, "duration": 0.066},
         {"file": "clips/clip-01.mp4", "start": 0.133, "duration": 5.867}])
     (start, length), (next_start, _) = _clip_tags(html)
-    assert length == 0.066
+    assert length == 0.0667
     assert start + length == pytest.approx(next_start, abs=1e-9)
+
+
+def test_время_в_разметке_не_перебирает_границу_кадра(run):
+    """Суть правки: напечатанное время НЕ больше границы своего кадра.
+
+    Рантайм показывает элемент при `currentTime >= start` без допуска, а сикает
+    ровно в `frameIndex/fps`. Перебор вверх хотя бы на 1e-6 — и элемент выходит
+    кадром позже задуманного; то же и с концом, `start + duration`. Неудобные
+    кадры вроде 2/30 = 0.0666667 старое трёхзначное «0.067» перебирало.
+
+    Кадр здесь полный: накладка со скримом, схема, серия вставок, значок и
+    клипы ведущей на стыке неудобных кадров.
+    """
+    _with_schema_block(run)
+    (run / "public" / "compositions" / "lt-kicker-name.html").write_text(
+        '<div data-composition-id="lt-kicker-name" data-duration="2.5"'
+        ' data-width="1920" data-height="1080"></div>', encoding="utf-8")
+    scenes = [
+        {"id": "s-01", "intent": "хук", "startSec": 0, "endSec": 0.533,
+         "presenter": "full", "insert": None},
+        {"id": "s-02", "intent": "разбор", "startSec": 0.533, "endSec": 3.567,
+         "presenter": "pip-br",
+         "insert": _shots("переговоры в офисе", "рука листает бумаги"),
+         # накладка без своей подложки — под неё встаёт ещё и скрим
+         "overlay": {"block": "lt-kicker-name", "text": {}}},
+        {"id": "s-03", "intent": "довод", "startSec": 3.567, "endSec": 4.033,
+         "presenter": "none", "insert": None,
+         "icon": {"query": "bookmark save icon"}},
+        {"id": "s-04", "intent": "итог", "startSec": 4.033, "endSec": 6.0,
+         "presenter": "none", "insert": None,
+         "schema": {"form": "pairs", "why": "у пунктов свои значения",
+                    "rows": [{"label": "раз", "value": "первое"},
+                             {"label": "два", "value": "второе"}]}},
+    ]
+    resolved = dict(_found("s-02", ".media/images/a.jpg", ".media/images/b.jpg"))
+    resolved["s-03::icon"] = {"file": ".media/images/icon_001.png"}
+    board = _board(json.loads(json.dumps(scenes)))
+    with sdk_session() as sdk:
+        build_composition(run, sdk, storyboard=board, clips=[
+            {"file": "clips/clip-00.mp4", "start": 0.067, "duration": 0.066},
+            {"file": "clips/clip-01.mp4", "start": 0.133, "duration": 5.867}],
+            duration=6.0, words=WORDS, resolved=resolved, face=None)
+    html = (run / "public" / "index.html").read_text(encoding="utf-8")
+
+    # Звук из счёта вон: он микшируется в секундах через `atrim`/`adelay`,
+    # сетки кадров у него нет. Вспышка тоже: на кадр стыка у неё привязан пик,
+    # а не старт, поэтому она идёт мимо `markup_time` (см. `build_composition`).
+    visual = re.sub(r"<audio[^>]*>|<div id=\"fx-\d+\"[^>]*>", "", html)
+    times = [(float(start), float(length)) for start, length in re.findall(
+        r'data-start="([\d.]+)" data-duration="([\d.]+)"', visual)]
+    # накладка, скрим под ней, два плана серии, схема и два клипа ведущей
+    assert len(times) == 7, f"кадр вышел не тем: {times}"
+    for start, length in times:
+        # Оба числа напечатаны с четырьмя знаками, поэтому их точная сумма —
+        # тоже четырёхзначная: `round` снимает мусор двоичного сложения.
+        for value in (start, round(start + length, 4)):
+            assert value <= round(value * 30) / 30, (
+                f"{value} стоит за границей своего кадра — "
+                f"элемент выйдет кадром позже (start={start}, dur={length})")
 
 
 def test_наезд_клипов_ведущей_роняет_сборку(run):
