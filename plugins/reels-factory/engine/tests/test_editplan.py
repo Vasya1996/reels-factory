@@ -146,8 +146,12 @@ import pytest
 
 from reels_factory.editplan import (
     EDIT_PLAN_FILENAME,
+    GESTURE_KEYS,
+    GESTURE_VOCABULARY,
+    PERFORMANCE_BY_ROLE,
     _chart_variables,
     _language_rules,
+    _motion_prompt_error,
     _norm_word,
     apply_performance_recommendations,
     apply_visual_recommendations,
@@ -159,6 +163,7 @@ from reels_factory.editplan import (
     enrich_visuals_with_llm,
     ensure_assetless_visual_coverage,
     finalize_edit_plan,
+    performance_analysis_prompt,
     save_edit_plan,
     validate_edit_plan,
 )
@@ -1065,13 +1070,11 @@ class _PerformanceRunner:
             "phrases": [
                 {
                     "phrase_id": phrase["id"],
+                    "rationale": "Matches the phrase intent.",
+                    "gesture": "nod_gentle",
                     "expressiveness": (
                         "high" if phrase["role"] == "hook" else "medium"
                     ),
-                    "motion_prompt": (
-                        "Looks at the camera and nods gently, calm and clear."
-                    ),
-                    "rationale": "Matches the phrase intent.",
                 }
                 for phrase in plan["phrases"]
             ]
@@ -1082,7 +1085,7 @@ class _PerformanceRunner:
         return self.reply
 
 
-def test_llm_enrichment_требует_рекомендацию_для_каждой_фразы(tmp_path):
+def test_llm_enrichment_проставляет_рекомендацию_каждой_фразе(tmp_path):
     draft = _build_canonical(tmp_path)
     runner = _PerformanceRunner(draft)
 
@@ -1096,10 +1099,21 @@ def test_llm_enrichment_требует_рекомендацию_для_кажд�
     hook = next(phrase for phrase in enriched["phrases"] if phrase["role"] == "hook")
     assert hook["avatar_performance"]["expressiveness"] == "high"
 
-    incomplete = json.loads(runner.reply)
-    incomplete["phrases"].pop()
-    with pytest.raises(ValueError, match="phrase IDs"):
-        apply_performance_recommendations(draft, incomplete)
+
+def test_пропущенная_фраза_не_роняет_сборку_а_берёт_жест_по_роли(tmp_path):
+    draft = _build_canonical(tmp_path)
+    incomplete = json.loads(_PerformanceRunner(draft).reply)
+    dropped = incomplete["phrases"].pop()["phrase_id"]
+
+    enriched = apply_performance_recommendations(draft, incomplete)
+    phrase = next(item for item in enriched["phrases"] if item["id"] == dropped)
+    role_default = PERFORMANCE_BY_ROLE[phrase["role"]]
+
+    assert phrase["avatar_performance"]["source"] == "role_default"
+    assert (
+        phrase["avatar_performance"]["motion_prompt"]
+        == role_default["motion_prompt"]
+    )
 
 
 def test_llm_enrichment_не_перезаписывает_явный_avatar_config(tmp_path):
@@ -1119,15 +1133,87 @@ def test_llm_enrichment_не_перезаписывает_явный_avatar_conf
     )
 
 
-def test_performance_recommendations_отклоняют_неподдерживаемый_prompt(tmp_path):
+def test_жест_вне_словаря_даёт_ролевой_дефолт_и_не_роняет_сборку(tmp_path, capsys):
     draft = _build_canonical(tmp_path)
     recommendations = json.loads(_PerformanceRunner(draft).reply)
-    recommendations["phrases"][0]["motion_prompt"] = (
-        "Walk outside while the camera zooms in."
-    )
+    recommendations["phrases"][0]["gesture"] = "raises_four_fingers"
 
-    with pytest.raises(ValueError, match="неподдерживаемым объектом"):
-        apply_performance_recommendations(draft, recommendations)
+    enriched = apply_performance_recommendations(draft, recommendations)
+    first = enriched["phrases"][0]
+    role_default = PERFORMANCE_BY_ROLE[first["role"]]
+
+    assert first["avatar_performance"]["source"] == "role_default"
+    assert first["avatar_performance"]["gesture"] == role_default["gesture"]
+    assert (
+        first["avatar_performance"]["motion_prompt"]
+        == role_default["motion_prompt"]
+    )
+    assert "raises_four_fingers" in capsys.readouterr().err
+    # остальные фразы разобраны как обычно — брак одной не задел соседей
+    assert enriched["phrases"][1]["avatar_performance"]["source"] == "llm"
+
+
+def test_валидный_ключ_подставляет_строку_словаря_а_не_текст_модели(tmp_path):
+    draft = _build_canonical(tmp_path)
+    recommendations = json.loads(_PerformanceRunner(draft).reply)
+    recommendations["phrases"][0]["gesture"] = "open_arms_invite"
+    # модель прислала и свой текст — он не должен доехать до HeyGen
+    recommendations["phrases"][0]["motion_prompt"] = "Raises four fingers."
+
+    enriched = apply_performance_recommendations(draft, recommendations)
+    performance = enriched["phrases"][0]["avatar_performance"]
+
+    assert performance["source"] == "llm"
+    assert performance["gesture"] == "open_arms_invite"
+    assert (
+        performance["motion_prompt"]
+        == GESTURE_VOCABULARY["open_arms_invite"]["motion_prompt"]
+    )
+    assert "four fingers" not in json.dumps(performance)
+
+
+def test_сбой_модели_не_роняет_сборку(tmp_path, capsys):
+    draft = _build_canonical(tmp_path)
+
+    class Broken:
+        def run(self, prompt):
+            raise RuntimeError("claude -p failed (code 1)")
+
+    enriched = enrich_performance_with_llm(draft, Broken())
+
+    assert enriched["validation"]["all_pass"] is True
+    assert all(
+        phrase["avatar_performance"]["source"] == "role_default"
+        for phrase in enriched["phrases"]
+    )
+    assert "по ролям" in capsys.readouterr().err
+
+
+def test_промпт_несёт_словарь_и_обходится_без_запретов(tmp_path):
+    prompt = performance_analysis_prompt(_build_canonical(tmp_path))
+
+    assert all(key in prompt for key in GESTURE_KEYS)
+    for tag in ("<instructions>", "<gestures>", "<examples>", "<example>",
+                "<phrases>"):
+        assert tag in prompt
+    # rationale объявлен раньше выбора жеста
+    assert prompt.index('"rationale"') < prompt.index('"gesture"')
+    for forbidden in ("must not", "subtle", "camera motion", "scene/location",
+                      "props", "walking", "background", "lighting"):
+        assert forbidden not in prompt
+
+
+def test_каждая_строка_словаря_жестов_валидна():
+    for key, entry in GESTURE_VOCABULARY.items():
+        assert _motion_prompt_error(entry["motion_prompt"]) is None, key
+        assert entry["definition"].strip()
+    assert "hands_still" in GESTURE_VOCABULARY
+    for role, profile in PERFORMANCE_BY_ROLE.items():
+        assert profile["gesture"] in GESTURE_VOCABULARY, role
+        assert (
+            profile["motion_prompt"]
+            == GESTURE_VOCABULARY[profile["gesture"]]["motion_prompt"]
+        )
 
 
 def _timed_two_blocks():

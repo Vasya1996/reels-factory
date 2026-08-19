@@ -14,14 +14,32 @@ class LLMRunner(Protocol):
 
 
 class ClaudeCliRunner:
-    def __init__(self, timeout_s: int = 600, extra_args: list | None = None):
+    """`claude -p` с необязательным принуждением формы ответа.
+
+    `json_schema` уезжает в флаг `--json-schema` (`claude --help`: "JSON Schema
+    for structured output validation", только в print-режиме) — SDK сам
+    валидирует ответ и переспрашивает модель при несовпадении. Так выбор из
+    закрытого списка (enum жестов) держится на стороне CLI, а не на проверке
+    постфактум. Схема задаётся на конструкторе, а не в `run`, чтобы подпись
+    `LLMRunner.run` осталась прежней и тестовые фейки не переписывались.
+    """
+
+    def __init__(self, timeout_s: int = 600, extra_args: list | None = None,
+                 json_schema: dict | None = None):
         self.timeout_s = timeout_s
         self.extra_args = list(extra_args or [])
+        self.json_schema = json_schema
         self.exe = shutil.which("claude") or "claude"
 
     def run(self, prompt: str) -> str:
+        args = [self.exe, "-p", "--output-format", "text"]
+        if self.json_schema is not None:
+            args += [
+                "--json-schema",
+                json.dumps(self.json_schema, ensure_ascii=False),
+            ]
         p = subprocess.run(
-            [self.exe, "-p", "--output-format", "text", *self.extra_args],
+            [*args, *self.extra_args],
             input=prompt, capture_output=True, text=True, encoding="utf-8",
             timeout=self.timeout_s,
         )

@@ -30,6 +30,7 @@ import json
 import math
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 from reels_factory import broll_library as broll_lib
@@ -431,41 +432,125 @@ _LANGUAGE_RULES = {
     },
 }
 
-# HeyGen рекомендует короткий prompt: одно видимое движение + выражение лица,
-# максимум две короткие части. Ролевые defaults намеренно консервативны:
-# ``high`` не используется автоматически, чтобы не провоцировать переигрывание.
-PERFORMANCE_BY_ROLE = {
-    "hook": {
-        "expressiveness": "medium",
-        "motion_prompt": (
-            "Looks at the camera and leans in slightly, confident and engaged."
+# Закрытый словарь жестов. Модель выбирает ключ, английскую строку для HeyGen
+# подставляет наш код: сочинённые моделью жесты («Raises four fingers») HeyGen
+# не умеет, и ведущая говорила «четвёртое», показывая три пальца.
+#
+# Каждое английское слово взято из документированного словаря HeyGen
+# (help.heygen.com/en/articles/12805098): руки — wave, point, thumbs up, hand on
+# heart, peace sign, crossed arms, OK sign, namaste, open arms, fist pump,
+# salute, clapping, shrug; мимика — calm, enthusiastic, serious, warm,
+# confident, sincere, sad, intense; поза — lean in, grounded, warm and open,
+# composed; взгляд — look at camera, look away, look off-camera; покой — no hand
+# gestures, hands still, barely move. Форма строки — их канон
+# «[body part] + [action] + [emotion]», не больше двух коротких частей, поэтому
+# в строке ровно одна запятая (её же считает ``_motion_prompt_error``).
+GESTURE_VOCABULARY = {
+    "look_at_camera_calm": {
+        "motion_prompt": "Looks at the camera, calm and composed.",
+        "definition": (
+            "Нейтральный кадр: взгляд в камеру, руки не работают. "
+            "Годится для пояснений, где жест только отвлекает."
         ),
     },
-    "context": {
-        "expressiveness": "low",
-        "motion_prompt": (
-            "Looks at the camera with a calm expression and subtle natural gestures."
+    "lean_in_confident": {
+        "motion_prompt": "Leans in toward the camera, confident and engaged.",
+        "definition": (
+            "Корпус подаётся вперёд — сокращает дистанцию. "
+            "Для захода и для места, где нужно поймать внимание."
         ),
     },
-    "development": {
-        "expressiveness": "medium",
-        "motion_prompt": (
-            "Looks at the camera and gestures lightly with one hand, confident and clear."
+    "nod_gentle": {
+        "motion_prompt": "Nods gently, sincere and confident.",
+        "definition": (
+            "Короткий кивок без рук — подтверждение сказанного. "
+            "Для вывода и согласия, не для нового тезиса."
         ),
     },
-    "payoff": {
-        "expressiveness": "low",
-        "motion_prompt": (
-            "Looks at the camera and nods gently, sincere and confident."
+    "open_arms_invite": {
+        "motion_prompt": "Open arms toward the camera, warm and sincere.",
+        "definition": (
+            "Обе руки раскрываются к зрителю — приглашение. "
+            "Для призыва к действию и приветственных фраз."
         ),
     },
-    "cta": {
-        "expressiveness": "medium",
-        "motion_prompt": (
-            "Looks at the camera and makes one inviting open-hand gesture, warm and direct."
+    "point_forward": {
+        "motion_prompt": "Right hand points forward, confident and clear.",
+        "definition": (
+            "Одна рука указывает вперёд — выделяет один тезис. "
+            "Для акцента на конкретном утверждении, не для перечисления."
+        ),
+    },
+    "hand_on_heart": {
+        "motion_prompt": "Right hand rests on the heart, sincere and warm.",
+        "definition": (
+            "Ладонь на груди — личное признание, честность. "
+            "Для фраз про себя и про доверие."
+        ),
+    },
+    "thumbs_up": {
+        "motion_prompt": "Right hand gives a thumbs up, enthusiastic and warm.",
+        "definition": (
+            "Большой палец вверх — явное одобрение. "
+            "Для хорошего результата, не для нейтрального факта."
+        ),
+    },
+    "wave_hello": {
+        "motion_prompt": "Right arm raises in a wave, enthusiastic and warm.",
+        "definition": (
+            "Приветственный взмах рукой. "
+            "Только для первой фразы обращения, дальше выглядит навязчиво."
+        ),
+    },
+    "shrug_light": {
+        "motion_prompt": "Shoulders lift in a light shrug, calm and sincere.",
+        "definition": (
+            "Пожатие плечами — «очевидно» или «а что тут поделать». "
+            "Для риторического вопроса и мягкого возражения."
+        ),
+    },
+    "crossed_arms_serious": {
+        "motion_prompt": "Arms cross at the chest, serious and composed.",
+        "definition": (
+            "Скрещённые руки — закрытая, весомая поза. "
+            "Для жёсткого утверждения и предупреждения."
+        ),
+    },
+    "look_away_thoughtful": {
+        "motion_prompt": "Looks away from the camera, calm and serious.",
+        "definition": (
+            "Взгляд уходит в сторону — размышление, пауза. "
+            "Для оговорки и для перехода к следующей мысли."
+        ),
+    },
+    "hands_still": {
+        "motion_prompt": "No hand gestures, grounded and composed.",
+        "definition": (
+            "Выход «жест не нужен»: руки стоят, работает только лицо. "
+            "Для плотного текста, цифр и перечислений."
         ),
     },
 }
+
+#: Ключи словаря — источник enum-а в схеме ответа и в промпте.
+GESTURE_KEYS = tuple(GESTURE_VOCABULARY)
+
+# Ролевые defaults намеренно консервативны: ``high`` не назначается
+# автоматически, чтобы не провоцировать переигрывание. Прежние три формулировки
+# («subtle natural gestures», «gestures lightly with one hand», «inviting
+# open-hand gesture») HeyGen не документирует — заменены словарными ключами.
+PERFORMANCE_BY_ROLE = {
+    "hook": {"expressiveness": "medium", "gesture": "lean_in_confident"},
+    "context": {"expressiveness": "low", "gesture": "hands_still"},
+    "development": {"expressiveness": "medium", "gesture": "point_forward"},
+    "payoff": {"expressiveness": "low", "gesture": "nod_gentle"},
+    "cta": {"expressiveness": "medium", "gesture": "open_arms_invite"},
+}
+for _role_profile in PERFORMANCE_BY_ROLE.values():
+    _role_profile["motion_prompt"] = (
+        GESTURE_VOCABULARY[_role_profile["gesture"]]["motion_prompt"]
+    )
+del _role_profile
 DEFAULT_PERFORMANCE = PERFORMANCE_BY_ROLE["development"]
 
 _QUERY_STOP = {
@@ -481,9 +566,13 @@ _QUERY_STOP = {
     ).split()),
 }
 _NUM_RE = re.compile(r"(?<![\d.,])(\d{1,4})(?![\d.,])")
+# Страховка на строки, которые отправляем мы сами: словарь может протухнуть,
+# и тогда в HeyGen уедет то, чем Avatar IV не управляет. Модель сюда больше не
+# пишет — она выбирает ключ. `seconds?` убран: регулярка ловила порядковое
+# «second» и роняла сборку на честной фразе.
 _FORBIDDEN_MOTION = re.compile(
     r"\b(zoom|pan|dolly|lighting|background|walk|walking|"
-    r"seconds?|kitchen|outside|pick(?:s|ing)? up|phone|coffee|prop)\b",
+    r"kitchen|outside|pick(?:s|ing)? up|phone|coffee|prop)\b",
     re.IGNORECASE,
 )
 
@@ -625,6 +714,9 @@ def _draft_phrases(canonical: dict, scenario: dict, config: dict) -> list[dict]:
             performance = {
                 "expressiveness": explicit_expressiveness
                 or default["expressiveness"],
+                # Свой prompt из конфига жестом словаря не является — тогда
+                # ключа нет, и по нему видно, что строка пришла снаружи.
+                "gesture": None if explicit_prompt else default["gesture"],
                 "motion_prompt": explicit_prompt or default["motion_prompt"],
                 "prompt_language": "en",
                 "source": "config" if explicit_prompt or explicit_expressiveness
@@ -2708,8 +2800,53 @@ def covered_block_indexes(plan: dict) -> set[int]:
     }
 
 
+def performance_response_schema() -> dict:
+    """JSON-схема ответа для `claude -p --json-schema`.
+
+    Жест — `enum` по ключам словаря: выбор из закрытого списка принуждается на
+    стороне CLI, а не проверкой постфактум. `rationale` объявлен раньше
+    `gesture` — модель сначала пишет причину, потом выбирает, как в их
+    классификаторе.
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "phrases": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "phrase_id": {"type": "string"},
+                        "rationale": {"type": "string"},
+                        "gesture": {"type": "string", "enum": list(GESTURE_KEYS)},
+                        "expressiveness": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high"],
+                        },
+                    },
+                    "required": [
+                        "phrase_id", "rationale", "gesture", "expressiveness",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["phrases"],
+        "additionalProperties": False,
+    }
+
+
 def performance_analysis_prompt(plan: dict) -> str:
-    """Prompt отдельного LLM-анализа после approval и до TTS/HeyGen."""
+    """Prompt отдельного LLM-анализа после approval и до TTS/HeyGen.
+
+    Написан по канону Anthropic (platform.claude.com/docs/en/build-with-claude/
+    prompt-engineering/claude-prompting-best-practices): блоки размечены XML,
+    вместо списка запретов дана причина ограничения и определения доступных
+    жестов («Tell Claude what to do instead of what not to do»), примеры только
+    положительные, `rationale` идёт перед выбором.
+
+    Модель выбирает ключ, английскую строку для HeyGen подставляет наш код.
+    """
     payload = [
         {
             "phrase_id": phrase["id"],
@@ -2718,19 +2855,84 @@ def performance_analysis_prompt(plan: dict) -> str:
         }
         for phrase in plan.get("phrases") or []
     ]
+    gestures = "\n".join(
+        f'  <gesture key="{key}">{item["definition"]} '
+        f'Кадр: {item["motion_prompt"]}</gesture>'
+        for key, item in GESTURE_VOCABULARY.items()
+    )
     return (
-        "You are directing a realistic HeyGen Photo Avatar IV performance for a "
-        "short vertical video. For every phrase, recommend expressiveness and one "
-        "short motion prompt. expressiveness must be low, medium, or high. The "
-        "motion_prompt must be plain English, describe one visible face/body/hand "
-        "action plus an optional emotion, contain at most two short clauses, and "
-        "must not specify timing, camera motion, scene/location, props, walking, "
-        "background, or lighting. Prefer subtle stable motion; use high only when "
-        "the phrase clearly needs it. Return JSON only: "
-        "{\"phrases\":[{\"phrase_id\":\"phrase-000\",\"expressiveness\":\"medium\","
-        "\"motion_prompt\":\"Looks at the camera and nods gently, confident and "
-        "clear.\",\"rationale\":\"...\"}]}.\n\nPHRASES:\n"
+        "<instructions>\n"
+        "Ты режиссируешь подачу ведущей в HeyGen Photo Avatar IV для короткого "
+        "вертикального ролика. На каждую фразу выбери один ключ жеста из "
+        "<gestures> и уровень выразительности: low, medium или high.\n"
+        "\n"
+        "Почему выбор такой узкий. Photo Avatar IV оживляет по звуку только "
+        "лицо и руки на неподвижном портрете. Камера, план, свет, фон и всё, "
+        "что попало в кадр вместе с фотографией, остаются ровно такими, какими "
+        "были сняты, а момент жеста движок берёт из звуковой дорожки — задать "
+        "его нам нечем. Поэтому вся режиссура сводится к двум решениям: какой "
+        "из перечисленных жестов ведущая делает и насколько энергично говорит. "
+        "Жесты из списка движок рисует узнаваемо; всё остальное выходит "
+        "случайной формой руки, которая спорит со словами. Ключ и нужен затем, "
+        "чтобы английскую строку для HeyGen подставил наш код.\n"
+        "\n"
+        "Сначала напиши rationale, потом выбери жест, к которому он привёл. "
+        "Держись low и medium, high оставь фразе, на которой у сценария "
+        "эмоциональный пик.\n"
+        "</instructions>\n"
+        "\n"
+        "<gestures>\n" + gestures + "\n</gestures>\n"
+        "\n"
+        "<examples>\n"
+        "<example>\n"
+        "  <phrase role=\"hook\">Почему твоя реклама не окупается?</phrase>\n"
+        "  <output>{\"phrase_id\":\"phrase-000\",\"rationale\":\"Заход-вопрос, "
+        "нужно поймать внимание: корпус вперёд сокращает дистанцию, руки в "
+        "кадре тут только отвлекут.\",\"gesture\":\"lean_in_confident\","
+        "\"expressiveness\":\"medium\"}</output>\n"
+        "</example>\n"
+        "<example>\n"
+        "  <phrase role=\"development\">Деньги теряются на одном шаге — на "
+        "заявке.</phrase>\n"
+        "  <output>{\"phrase_id\":\"phrase-004\",\"rationale\":\"Один "
+        "конкретный тезис, который надо выделить: указующая рука ставит акцент "
+        "ровно на нём.\",\"gesture\":\"point_forward\","
+        "\"expressiveness\":\"medium\"}</output>\n"
+        "</example>\n"
+        "<example>\n"
+        "  <phrase role=\"development\">Четвёртое — правильная "
+        "экономика.</phrase>\n"
+        "  <output>{\"phrase_id\":\"phrase-007\",\"rationale\":\"Числительное "
+        "просится на счётный жест пальцами, но такого жеста в словаре нет, и "
+        "движок показал бы произвольное число пальцев мимо слова. Пункт "
+        "перечисления держится голосом, руки оставляем в "
+        "покое.\",\"gesture\":\"hands_still\",\"expressiveness\":\"medium\"}"
+        "</output>\n"
+        "</example>\n"
+        "<example>\n"
+        "  <phrase role=\"payoff\">Именно так это и работает.</phrase>\n"
+        "  <output>{\"phrase_id\":\"phrase-009\",\"rationale\":\"Вывод, "
+        "который подтверждает сказанное раньше: кивок закрывает мысль, а новый "
+        "жест рукой начал бы новую.\",\"gesture\":\"nod_gentle\","
+        "\"expressiveness\":\"low\"}</output>\n"
+        "</example>\n"
+        "<example>\n"
+        "  <phrase role=\"cta\">Сохрани видео и приходи за разбором.</phrase>\n"
+        "  <output>{\"phrase_id\":\"phrase-011\",\"rationale\":\"Прямое "
+        "обращение к зрителю: раскрытые руки читаются как приглашение и "
+        "поддерживают призыв.\",\"gesture\":\"open_arms_invite\","
+        "\"expressiveness\":\"medium\"}</output>\n"
+        "</example>\n"
+        "</examples>\n"
+        "\n"
+        "Ответь одним JSON-объектом, по записи на каждую фразу, в том же "
+        "порядке полей: {\"phrases\":[{\"phrase_id\":\"phrase-000\","
+        "\"rationale\":\"...\",\"gesture\":\"nod_gentle\","
+        "\"expressiveness\":\"medium\"}]}\n"
+        "\n"
+        "<phrases>\n"
         + json.dumps(payload, ensure_ascii=False)
+        + "\n</phrases>"
     )
 
 
@@ -3336,12 +3538,41 @@ def enrich_visuals_with_llm(plan: dict, runner) -> dict:
     return ensure_assetless_visual_coverage(enriched)
 
 
+def _performance_warn(message: str) -> None:
+    print(f"[performance] {message}", file=sys.stderr)
+
+
+def role_default_performance(role: str | None, rationale: str) -> dict:
+    """Пластика по роли — тот же профиль, что кладёт черновик плана.
+
+    Используется как единственный откат: брак рекомендации стоит одной ровной
+    фразы, а не всей сборки.
+    """
+    default = PERFORMANCE_BY_ROLE.get(role, DEFAULT_PERFORMANCE)
+    return {
+        "expressiveness": default["expressiveness"],
+        "gesture": default["gesture"],
+        "motion_prompt": default["motion_prompt"],
+        "prompt_language": "en",
+        "source": "role_default",
+        "rationale": rationale,
+        "engine_scope": "photo_avatar_iv",
+    }
+
+
 def apply_performance_recommendations(
     plan: dict,
     recommendations: dict | list,
     *,
     source: str = "llm",
 ) -> dict:
+    """Разложить рекомендации по фразам. Брак не роняет сборку.
+
+    Неизвестный ключ жеста, пропущенная фраза, кривая выразительность и вовсе
+    отсутствующий список — всё это откатывается на ролевой default с
+    предупреждением в stderr. Фатальным остаётся только неразбираемый ответ
+    (его ловит `_extract_json_object` выше по стеку).
+    """
     result = copy.deepcopy(plan)
     items = (
         recommendations.get("phrases")
@@ -3349,33 +3580,71 @@ def apply_performance_recommendations(
         else recommendations
     )
     if not isinstance(items, list):
-        raise ValueError("performance recommendations.phrases должен быть списком")
-    by_id = {item.get("phrase_id"): item for item in items if isinstance(item, dict)}
-    expected = {phrase["id"] for phrase in result.get("phrases") or []}
-    if len(by_id) != len(items) or set(by_id) != expected:
-        missing = sorted(expected - set(by_id))
-        extra = sorted(set(by_id) - expected)
-        raise ValueError(
-            "performance phrase IDs не совпадают или дублируются; "
-            f"missing={missing}, extra={extra}"
+        _performance_warn(
+            "в ответе нет списка phrases — вся пластика берётся по ролям"
         )
+        items = []
+    by_id: dict = {}
+    for item in items:
+        if isinstance(item, dict):
+            by_id[item.get("phrase_id")] = item
+    expected = {phrase["id"] for phrase in result.get("phrases") or []}
+    extra = sorted(key for key in by_id if key not in expected)
+    if extra:
+        _performance_warn(f"рекомендации на неизвестные фразы пропущены: {extra}")
     for phrase in result["phrases"]:
         current = phrase.get("avatar_performance") or {}
         if current.get("source") == "config":
             continue
-        item = by_id[phrase["id"]]
-        expressiveness = str(item.get("expressiveness") or "").lower()
-        prompt = str(item.get("motion_prompt") or "").strip()
-        if expressiveness not in EXPRESSIVENESS_VALUES:
-            raise ValueError(
-                f"{phrase['id']}: expressiveness должен быть low|medium|high"
+        role = phrase.get("role")
+        item = by_id.get(phrase["id"])
+        if not isinstance(item, dict):
+            _performance_warn(
+                f"{phrase['id']}: рекомендации нет — жест по роли "
+                f"{role or 'unknown'}"
             )
-        prompt_error = _motion_prompt_error(prompt)
+            phrase["avatar_performance"] = role_default_performance(
+                role, "Модель не прислала рекомендацию для этой фразы."
+            )
+            continue
+        gesture = str(item.get("gesture") or "").strip()
+        entry = GESTURE_VOCABULARY.get(gesture)
+        if entry is None:
+            _performance_warn(
+                f"{phrase['id']}: жест {gesture or '<пусто>'!r} не из словаря — "
+                f"взят жест по роли {role or 'unknown'}"
+            )
+            phrase["avatar_performance"] = role_default_performance(
+                role,
+                f"Модель выбрала жест вне словаря ({gesture or '<пусто>'}); "
+                "взят ролевой default.",
+            )
+            continue
+        # Страховка на протухший словарь: строку шлём мы, и она обязана
+        # проходить тот же контроль, что и любая другая.
+        prompt_error = _motion_prompt_error(entry["motion_prompt"])
         if prompt_error:
-            raise ValueError(f"{phrase['id']}: {prompt_error}")
+            _performance_warn(
+                f"{phrase['id']}: строка жеста {gesture} не проходит проверку "
+                f"({prompt_error}) — взят жест по роли {role or 'unknown'}"
+            )
+            phrase["avatar_performance"] = role_default_performance(
+                role, f"Строка словаря для {gesture} невалидна: {prompt_error}."
+            )
+            continue
+        expressiveness = str(item.get("expressiveness") or "").strip().lower()
+        if expressiveness not in EXPRESSIVENESS_VALUES:
+            fallback = PERFORMANCE_BY_ROLE.get(role, DEFAULT_PERFORMANCE)
+            _performance_warn(
+                f"{phrase['id']}: expressiveness "
+                f"{expressiveness or '<пусто>'!r} не low|medium|high — взят "
+                f"уровень по роли {role or 'unknown'}"
+            )
+            expressiveness = fallback["expressiveness"]
         phrase["avatar_performance"] = {
             "expressiveness": expressiveness,
-            "motion_prompt": prompt,
+            "gesture": gesture,
+            "motion_prompt": entry["motion_prompt"],
             "prompt_language": "en",
             "source": source,
             "rationale": str(item.get("rationale") or "").strip(),
@@ -3386,7 +3655,13 @@ def apply_performance_recommendations(
 
 def enrich_performance_with_llm(plan: dict, runner) -> dict:
     """Вызвать injected LLM runner. Тесты используют FakeRunner; сеть не нужна."""
-    reply = runner.run(performance_analysis_prompt(plan))
+    try:
+        reply = runner.run(performance_analysis_prompt(plan))
+    except Exception as exc:  # сеть, таймаут, упавший CLI
+        _performance_warn(
+            f"модель не ответила ({exc}) — пластика всех фраз берётся по ролям"
+        )
+        reply = "{\"phrases\":[]}"
     enriched = apply_performance_recommendations(
         plan, _extract_json_object(reply), source="llm"
     )

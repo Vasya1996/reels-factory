@@ -66,6 +66,7 @@ from reels_factory.editplan import (
     enrich_visuals_with_llm,
     ensure_assetless_visual_coverage,
     finalize_edit_plan as _finalize_edit_plan,
+    performance_response_schema,
     save_edit_plan,
 )
 from reels_factory.avatar_islands import (
@@ -310,7 +311,10 @@ def run_make(config: dict, workdir,
         )
         if performance_cfg.get("enabled"):
             runner = performance_runner or ClaudeCliRunner(
-                timeout_s=int(performance_cfg.get("timeout_s") or 600)
+                timeout_s=int(performance_cfg.get("timeout_s") or 600),
+                # Жест выбирается из enum-а, а не сочиняется: форму ответа
+                # держит сам CLI (`--json-schema`).
+                json_schema=performance_response_schema(),
             )
             edit_plan = enrich_performance_with_llm(edit_plan, runner)
         save_edit_plan(edit_plan, wd)
