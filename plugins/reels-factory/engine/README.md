@@ -3,7 +3,7 @@
 Generic-порт движка `reels-saas` без игровой/Vael-специфики. Собирает вертикальный
 рилс 1080×1920@30 из голоса ведущего (ElevenLabs) и видеоряда пользователя:
 сценарий → одна master narration → alignment → визуальный HeyGen →
-Revideo → QA-gate.
+HyperFrames → QA-gate.
 
 ## Установка
 
@@ -121,7 +121,7 @@ avatar_islands:
 `avatar.heygen_asset_id`; `heygen_look_id`/Avatar V отклоняется до платных
 стадий. Из final edit plan создаются производные `avatar_render_plan.json`
 и `avatar_render_manifest.json`. HeyGen получает только видимые islands,
-Revideo trim-ит handles на exact master timeline и удаляет provider audio.
+сборщик trim-ит handles на exact master timeline и удаляет provider audio.
 Content-addressed cache применяется ко всем shots. Подробный контракт и
 офлайн-таймлайны 30/60/90: `docs/AVATAR-ISLANDS.md`.
 
@@ -235,7 +235,7 @@ python -m reels_factory verify --workdir demo1            # перепровер
 «Создать ролик», пока job создаёт/проверяет аудио, ждёт пользовательскую запись
 или рендерится, не создаёт вторую платную сборку.
 
-Все изменяемые данные Revideo находятся внутри job:
+Все изменяемые данные сборки находятся внутри job:
 
 ```text
 work/jobs/<job_id>/
@@ -258,21 +258,18 @@ work/jobs/<job_id>/
 │       └── audio_manifest.json
 ├── edit_plan.json
 ├── avatar_*.mp4
-├── reel.mp4
-└── revideo/
-    ├── src/tz.json
-    ├── src/words.json
-    ├── public/base.mp4
-    ├── public/voice_master.wav
-    ├── public/<broll>.mp4
-    └── output/reel.mp4
+├── plan.json
+├── storyboard.json
+├── public/
+├── reel.raw.mp4
+└── reel.mp4
 ```
 
 `audio.approved.json` хранит source, artifact directory и SHA-256 канонического
 WAV. Render stage повторно проверяет hash и сценарий; без этого маркера bot-job
 не может вызвать HeyGen.
 
-Общими и read-only остаются код Revideo и `node_modules`. При старте queued
+Общими и read-only остаются код сборщика и `node_modules`. При старте queued
 jobs продолжают выполняться. Job, которая имела статус `audio_running` или
 `running` во время рестарта, переводится в `interrupted` и **не повторяется автоматически**:
 до внедрения provider idempotency/job-id такой повтор мог бы дважды списать

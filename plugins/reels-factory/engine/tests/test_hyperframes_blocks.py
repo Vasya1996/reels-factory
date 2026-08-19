@@ -4,7 +4,6 @@ from pathlib import Path
 import pytest
 
 from reels_factory import hyperframes_blocks as hb
-from reels_factory import revideo_render as rr
 
 
 def test_build_task_list_html_содержит_пункты_и_длительность():
@@ -60,68 +59,6 @@ def test_render_block_падение_рендера_пробрасывается
     with pytest.raises(RuntimeError):
         hb.render_block("task_list", {"title": "T", "items": ["a"]}, 5.0,
                         tmp_path / "c.mp4", runner=broken)
-
-
-# ---- интеграция в revideo_render ----
-
-def _hf_seg():
-    return {"id": 7, "start": 17.0, "end": 23.0, "caption": "hidden",
-            "effect": {"type": "chart_bars", "title": "T", "items": [],
-                       "hyperframes": {"block": "task_list",
-                                       "variables": {"title": "T", "items": ["a", "b", "c"]}}}}
-
-
-def test_resolve_hyperframes_конвертит_в_fullscreen_broll(tmp_path):
-    seg = _hf_seg()
-
-    def fake_render(block, variables, duration, out_path):
-        out_path.write_bytes(b"mp4")
-        return out_path
-
-    rr._resolve_hyperframes_segment(seg, tmp_path, hf_render=fake_render)
-    eff = seg["effect"]
-    assert eff["type"] == "broll" and eff["style"] == "fullscreen"
-    assert eff["src"] == "hf_7.mp4"
-    assert seg["caption"] == "hidden"
-    assert (tmp_path / "hf_7.mp4").exists()
-
-
-def test_resolve_hyperframes_сохраняет_avatar_bubble(tmp_path):
-    seg = _hf_seg()
-    seg["effect"]["bubble"] = {
-        "shape": "circle",
-        "position": "bottom_left",
-        "face": {"cx": 531, "cy": 669, "h": 313},
-        "face_zoom": 3.1,
-        "face_dy": 45,
-    }
-
-    def fake_render(block, variables, duration, out_path):
-        out_path.write_bytes(b"mp4")
-        return out_path
-
-    rr._resolve_hyperframes_segment(seg, tmp_path, hf_render=fake_render)
-
-    assert seg["effect"]["type"] == "broll"
-    assert seg["effect"]["bubble"]["shape"] == "circle"
-    assert seg["effect"]["bubble"]["face"]["cx"] == 531
-
-
-def test_resolve_hyperframes_фолбэк_на_ошибке(tmp_path):
-    seg = _hf_seg()
-
-    def broken(block, variables, duration, out_path):
-        raise RuntimeError("нет node")
-
-    rr._resolve_hyperframes_segment(seg, tmp_path, hf_render=broken)
-    # эффект НЕ тронут — chart_bars остаётся как фолбэк
-    assert seg["effect"]["type"] == "chart_bars"
-
-
-def test_resolve_hyperframes_игнорит_обычные_сегменты(tmp_path):
-    seg = {"id": 1, "start": 0, "end": 3, "effect": {"type": "none"}, "caption": "bottom"}
-    rr._resolve_hyperframes_segment(seg, tmp_path, hf_render=lambda *a: None)
-    assert seg["effect"]["type"] == "none"
 
 
 # ---- stat_number / before_after билдеры ----
