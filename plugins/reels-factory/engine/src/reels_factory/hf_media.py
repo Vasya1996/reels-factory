@@ -460,11 +460,84 @@ _JUDGE_PROMPT = """Ты отбираешь видео-бироллы для ве
 хуже отказа. Ролик смотрят подряд, и два одинаковых кадра зритель видит
 как один.
 
+<scenes>
 {scenes}
+</scenes>
 
 Ответь ТОЛЬКО JSON без пояснений: {{"<id сцены>": <номер кандидата или null>, …}}
 """
 
+
+#: Промпт судьи значков. Написан по их же канону
+#: (platform.claude.com/docs/en/build-with-claude/prompt-engineering/
+#: claude-prompting-best-practices): блоки размечены XML («XML tags help Claude
+#: parse complex prompts unambiguously… especially when your prompt mixes
+#: instructions, context, examples, and variable inputs»), вместо списка
+#: запретов дана причина ограничения («Tell Claude what to do instead of what
+#: not to do» и «Providing context or motivation behind your instructions…
+#: helps Claude better understand your goals»), различение показано примерами
+#: («Examples are one of the most reliable ways to steer Claude's output»,
+#: 3–5 штук), а причина выбора идёт ПЕРЕД номером — та же форма ответа, что у
+#: словаря жестов (`editplan.performance_analysis_prompt`).
+#:
+#: Причина в ответе не украшение: судит `claude-haiku-4-5` с выключенной
+#: глубиной, и это единственное место, где видно, за что он забраковал значок.
+#: Прежде в логе оставалось только «судья забраковал все значки».
+_ICON_JUDGE_PROMPT = """<instructions>
+Ты отбираешь значки для вертикального рилса.
+
+Тема ролика: {domain}
+Чего в ролике быть не должно: {anti}
+
+В <scenes> — сцены ролика. У каждой реплика диктора, английский запрос, под
+который значок ищется, и кандидаты каталога: у значка кадр один — сама
+картинка. Посмотри картинки инструментом Read и выбери каждой сцене ОДИН
+значок.
+
+Почему выбор такой узкий. Значок стоит в круге 380 px поверх видео, и сам
+рисунок занимает в круге чуть больше половины — около 200 px, поверх движущейся
+картинки, на пару секунд. Зритель успевает прочесть один силуэт, поэтому годится
+кандидат, в котором предмет узнаётся по контуру: ракурс сбоку или под углом,
+один предмет, крупные заливки. Вид сверху даёт кольца и полосы вместо предмета —
+так в ролик приехала тарелка, которую зритель прочёл как два кольца поверх
+сковороды. По той же причине силуэт съедают тонкая штриховка (на плашке она
+сливается в серое пятно), надписи и цифры (на таком размере не читаются),
+фотография вместо значка (спорит с видео под собой) и набор предметов там, где
+назван один (читается орнаментом).
+
+Значок, повторяющий выбранный для другой сцены, не бери: ролик смотрят подряд,
+и два одинаковых значка зритель видит как один.
+
+Сначала напиши, что видно на значке, потом назови его номер. Если по контуру не
+узнаётся ни один кандидат — назови номером null: пустое место в кадре честнее
+непонятного пятна.
+</instructions>
+
+<examples>
+<example>Запрос «restaurant plate». Кандидат 0 — круглая тарелка строго сверху, кандидат 1 — та же тарелка под углом, видны борт и тень.
+{{"why": "под углом читается тарелкой, сверху — два кольца", "pick": 1}}</example>
+<example>Запрос «stopwatch». Кандидат 0 — секундомер сбоку, крупный корпус и стрелка; кандидат 1 — тот же секундомер с цифрами «60» на циферблате.
+{{"why": "цифры на плашке в 200 px не прочесть", "pick": 0}}</example>
+<example>Запрос «chat bubble». Кандидат 0 — фотография переписки на телефоне, кандидат 1 — облачко в одну тонкую линию, кандидат 2 — облачко сплошной заливкой.
+{{"why": "заливка держит силуэт, контур сливается", "pick": 2}}</example>
+<example>Запрос «team synergy». У всех кандидатов несколько фигур и стрелки между ними, одного предмета нет ни у одного.
+{{"why": "у всех набор фигур, силуэта одного предмета нет", "pick": null}}</example>
+</examples>
+
+<scenes>
+{scenes}
+</scenes>
+
+Ответь ТОЛЬКО JSON, по записи на сцену:
+{{"<id сцены>": {{"why": "<до 12 слов: что видно на значке>", "pick": <номер кандидата или null>}}, …}}
+"""
+
+#: Расширения, при которых кандидата можно ПОКАЗАТЬ судье: он смотрит картинки
+#: инструментом Read, а вектор тот открыть не может. Их провайдер значков сам
+#: пишет, что каталог отдаёт png («catalog icons are .png, not .svg»,
+#: media-use/scripts/lib/image-provider.mjs:32), так что отсев здесь пустой в
+#: обычном прогоне и спасает от несудимого значка в необычном.
+_ICON_PREVIEW_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
 
 #: Сколько раз зовём судью. Первая попытка падает от сети и таймаута чаще,
 #: чем от плохого запроса, — вторая обычно проходит. Третьей нет: она стоит
@@ -478,12 +551,46 @@ JUDGE_ATTEMPTS = 2
 JUDGE_TIMEOUT_S = 600
 
 
+def _picks(verdicts: dict, *, subject: str) -> dict[str, int | None]:
+    """Ответ судьи в номера кандидатов.
+
+    Две формы разом: голый номер (судья бироллов) и объект `{"why", "pick"}`
+    (судья значков — причина идёт перед выбором, как в словаре жестов). Причину
+    печатаем: без неё в логе оставалось только «судья забраковал все значки», и
+    было не понять, дело в запросе или в выдаче каталога.
+
+    Мусор вместо номера — не отказ: отказ судья пишет `null`, и по нему сцена
+    остаётся без значка навсегда. Неразобранная запись просто выпадает, а
+    дальше `_resolve_icons` назовёт её несудимой.
+    """
+    picks: dict[str, int | None] = {}
+    for key, value in verdicts.items():
+        pick, why = ((value.get("pick"), str(value.get("why") or ""))
+                     if isinstance(value, dict) else (value, ""))
+        if why:
+            print(f"судья {subject}: {key} — {why}")
+        if pick is None:
+            picks[str(key)] = None
+            continue
+        try:
+            picks[str(key)] = int(pick)
+        except (TypeError, ValueError):
+            print(f"судья {subject}: {key} — номер не разобрать ({pick!r})")
+    return picks
+
+
 def judge_previews(requests: list[dict], *, domain: str = "", anti: str = "",
-                   runner=None, spend=None) -> dict[str, int | None]:
+                   runner=None, spend=None, prompt: str = _JUDGE_PROMPT,
+                   subject: str = "бироллов") -> dict[str, int | None]:
     """Один суд на весь ролик: дешёвая сессия смотрит кадры и выбирает.
 
     `requests` — `[{"key", "intent", "speech", "previews": [[кадры кандидата]]}]`.
     Возвращает `{key: индекс выбранного | None}`.
+
+    `prompt` и `subject` — что именно судится. Машинка одна на все виды: у
+    значка тот же вопрос «какая из этих картинок про эту реплику», меняются
+    только признаки отказа. Собственного судьи значку не заводим — его отказ
+    разбирается там же, где отказ биролла.
 
     `spend` — кошелёк сборки (`AgentSpend`): судья платный, на прогоне 462a1c62
     пять его сессий стоили $0,79 против $0,45 у планировщика. Своя обёртка ему
@@ -505,9 +612,9 @@ def judge_previews(requests: list[dict], *, domain: str = "", anti: str = "",
             shots = [frames] if isinstance(frames, str) else list(frames)
             lines.append(f"- кандидат {index}: " + ", ".join(shots))
         blocks.append("\n".join(lines))
-    prompt = _JUDGE_PROMPT.format(domain=domain or "не указана",
-                                  anti=anti or "не указано",
-                                  scenes="\n\n".join(blocks))
+    prompt = prompt.format(domain=domain or "не указана",
+                           anti=anti or "не указано",
+                           scenes="\n\n".join(blocks))
 
     trouble = ""
     for attempt in range(JUDGE_ATTEMPTS):
@@ -533,13 +640,12 @@ def judge_previews(requests: list[dict], *, domain: str = "", anti: str = "",
                 except json.JSONDecodeError as error:
                     trouble = f"JSON не разбирается: {error}"
                 else:
-                    return {str(key): (int(value) if value is not None else None)
-                            for key, value in verdicts.items()}
+                    return _picks(verdicts, subject=subject)
         left = JUDGE_ATTEMPTS - attempt - 1
-        print(f"судья бироллов не отработал ({trouble})"
+        print(f"судья {subject} не отработал ({trouble})"
               + (f" — пересдача, попыток осталось {left}" if left else ""))
     raise RuntimeError(
-        f"судья бироллов не отработал за {JUDGE_ATTEMPTS} попытки "
+        f"судья {subject} не отработал за {JUDGE_ATTEMPTS} попытки "
         f"({trouble}). Собирать вслепую нельзя: без суда в кадр попадает "
         "первое, что отдал сток")
 
@@ -859,6 +965,114 @@ def _resolve_videos(public: Path, requests: list[dict], *,
     return resolved
 
 
+def _resolve_icons(public: Path, requests: list[dict], *, domain: str = "",
+                   anti: str = "", judge_runner=None, agent_spend=None,
+                   pool: ThreadPoolExecutor) -> dict[str, dict]:
+    """Значки: кандидаты их каталога, суд моделью, заморозка их `resolve`.
+
+    Прежде значок шёл слепым каскадом (`_resolve_one` → их `resolve.mjs`), а
+    провайдер значков берёт `results[0]` без всякой оценки
+    (`media-use/scripts/lib/image-provider.mjs:24-42`) — ровно то, от чего
+    видео-биролл мы уже отучили: «без суда в кадр попадает первое, что отдал
+    сток». На запрос `restaurant plate fine dining` так приехала тарелка
+    сверху — два кольца поверх руки со сковородой.
+
+    Суд тот же и судья тот же, дешевле его тут ничего нет: `asset search` для
+    типа `icon` не отдаёт даже поля `score` (их же комментарий,
+    image-provider.mjs:26), а «узнаётся ли предмет на круглой плашке» по
+    метаданным не спросишь. Дешевизна в другом: у значка кадр один — сама
+    картинка, — и превью для него не рендерятся, а все значки ролика судятся
+    одним вызовом, тогда как у бироллов вызов на каждую серию.
+
+    Отказ судьи здесь НЕ роняет сборку, в отличие от бироллов: биролл держит
+    кадр, а значок только закрывает то, что не закрыто другим. Ошибку разберёт
+    `hf_compose.settle_fillers` — он и так снимает значок без файла, а дальше
+    сцену переберёт `settle_empty_frames`.
+    """
+    resolved: dict[str, dict] = {}
+    found = dict(zip(
+        [r["key"] for r in requests],
+        pool.map(lambda r: search_assets(r["intent"], kind="icon"), requests)))
+
+    previews_dir = public / ".icon-previews"
+    safe = lambda value: re.sub(r'[:<>"/\|?*]', "-", str(value))  # noqa: E731
+    jobs = []
+    for request in requests:
+        for index, cand in enumerate(
+                (found.get(request["key"]) or [])[:JUDGE_CANDIDATES]):
+            url = str(cand.get("url") or "")
+            suffix = Path(urllib.parse.urlparse(url).path).suffix.lower()
+            if not url or suffix not in _ICON_PREVIEW_SUFFIXES:
+                continue
+            jobs.append((request["key"], index, url, suffix))
+    paths = dict(zip(
+        [(key, index) for key, index, _, _ in jobs],
+        pool.map(lambda job: _download(
+            job[2], previews_dir / f"{safe(job[0])}-{job[1]}{job[3]}"), jobs)))
+
+    shown_maps: dict[str, list[int]] = {}
+    with_previews = []
+    for request in requests:
+        shown, mapping = [], []
+        for index in range(min(JUDGE_CANDIDATES,
+                               len(found.get(request["key"]) or []))):
+            path = paths.get((request["key"], index))
+            if path is None:
+                continue
+            shown.append([str(path)])
+            mapping.append(index)
+        if shown:
+            shown_maps[request["key"]] = mapping
+            with_previews.append({**request, "previews": shown})
+
+    judged: dict[str, int | None] = {}
+    if with_previews:
+        try:
+            judged = judge_previews(with_previews, domain=domain, anti=anti,
+                                    runner=judge_runner, spend=agent_spend,
+                                    prompt=_ICON_JUDGE_PROMPT,
+                                    subject="значков")
+        except RuntimeError as error:
+            print(f"значки остались неподобранными: {error}")
+
+    taken: set[str] = set()
+    for request in requests:
+        key = request["key"]
+        candidates = found.get(key) or []
+        if not candidates:
+            resolved[key] = {
+                "error": f"каталог не дал значков: «{request['intent']}»"}
+            continue
+        raw = judged.get(key, "unjudged")
+        mapping = shown_maps.get(key) or []
+        if raw is None:
+            resolved[key] = {
+                "error": f"судья забраковал все значки: «{request['intent']}»"}
+            continue
+        if not (isinstance(raw, int) and 0 <= raw < len(mapping)):
+            # Кадры не скачались, судья пропустил сцену или назвал номер, за
+            # которым никого нет. Брать первого из выдачи нельзя — это и есть
+            # слепой подбор, ради ухода от которого суд заведён.
+            resolved[key] = {
+                "error": f"значок не судили: «{request['intent']}»"}
+            continue
+        pick = candidates[mapping[raw]]
+        if str(pick.get("id")) in taken:
+            # Один значок на две сцены читается повтором так же, как один
+            # биролл: там это держит `taken`, здесь тем же счётом.
+            resolved[key] = {
+                "error": f"значок уже занят другой сценой: «{request['intent']}»"}
+            continue
+        answer = ingest(public, str(pick.get("url") or ""), kind="icon")
+        if not answer.get("ok") or not answer.get("path"):
+            resolved[key] = {"error": answer.get("error")
+                             or "значок не заморозился"}
+            continue
+        taken.add(str(pick.get("id")))
+        resolved[key] = {"file": answer["path"], "intent": request["intent"]}
+    return resolved
+
+
 def resolve_all(public, requests: list[dict], *, context: dict | None = None,
                 judge_runner=None, agent_spend=None) -> dict[str, dict]:
     """Подобрать все вставки: поиск и заморозка параллельно, выбор по порядку.
@@ -884,8 +1098,12 @@ def resolve_all(public, requests: list[dict], *, context: dict | None = None,
 
     videos = [r for r in requests if r.get("type") == "video"]
     searchable = [r for r in requests if r.get("type", "image") == "image"]
+    # Значок вышел из слепого ведра: у него есть свой поиск кандидатов и свой
+    # суд (`_resolve_icons`). Слепым остаётся то, где выбирать не из чего, —
+    # знак бренда идёт каскадом, звук берётся из их встроенной библиотеки.
+    icons = [r for r in requests if r.get("type") == "icon"]
     blind = [r for r in requests
-             if r.get("type", "image") not in ("image", "video")]
+             if r.get("type", "image") not in ("image", "video", "icon")]
 
     resolved: dict[str, dict] = {}
 
@@ -893,6 +1111,13 @@ def resolve_all(public, requests: list[dict], *, context: dict | None = None,
         if videos:
             resolved.update(_resolve_videos(
                 public, videos,
+                domain=str((context or {}).get("domain") or ""),
+                anti=str((context or {}).get("anti") or ""),
+                judge_runner=judge_runner, agent_spend=agent_spend,
+                pool=pool))
+        if icons:
+            resolved.update(_resolve_icons(
+                public, icons,
                 domain=str((context or {}).get("domain") or ""),
                 anti=str((context or {}).get("anti") or ""),
                 judge_runner=judge_runner, agent_spend=agent_spend,

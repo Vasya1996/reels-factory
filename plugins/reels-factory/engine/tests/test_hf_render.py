@@ -1237,6 +1237,45 @@ def test_судья_получает_реплику_своей_сцены(tmp_pa
     assert seen and seen[0].strip(), "реплика сцены до судьи не доехала"
 
 
+def test_значки_подбираются_вторым_заходом_после_вставок(tmp_path, monkeypatch):
+    """Значок — запас, и что он закрывает, известно только после
+    `settle_inserts`. Пока запросы шли первым заходом вместе со вставками, на
+    сцену со вставкой всё равно тратились поиск по каталогу, скачивание превью
+    и доля платной сессии судьи, а занятый ею `id` каталога отбирался у сцены,
+    которой закрыть кадр больше нечем."""
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [GOOD])
+    порядок = []
+    monkeypatch.setattr(
+        hf_render, "settle_inserts",
+        lambda board, found, clips, duration, public=None: (
+            порядок.append("вставки разобраны") or []))
+    monkeypatch.setattr(
+        hf_render, "icon_intents",
+        lambda scenes: [{"key": "s-01::icon", "type": "icon",
+                         "intent": "stopwatch", "rect": None,
+                         "required": False, "seconds": 0}])
+    заявки = []
+    monkeypatch.setattr(
+        hf_render, "resolve_all",
+        lambda public, requests, **kw: (
+            порядок.append([r["key"] for r in requests])
+            or заявки.extend(requests) or {}))
+
+    hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    заход = next(i for i, item in enumerate(порядок)
+                 if isinstance(item, list) and "s-01::icon" in item)
+    assert порядок.index("вставки разобраны") < заход
+    # и реплика сцены доезжает до судьи так же, как у вставок: промпт обещает
+    # ему реплику, а не один только английский запрос
+    значок = next(r for r in заявки if r["key"] == "s-01::icon")
+    assert "speech" in значок
+
+
 def test_нерегистрированный_сабтаймлайн_роняет_рендер(tmp_path, monkeypatch):
     """Их предупреждение о сабтаймлайнах — это mp4 без слоя субтитров.
 

@@ -33,8 +33,8 @@ from reels_factory.hf_catalog import (
 )
 from reels_factory.hf_compose import (
     CAPTION_BAND_TOP, build_composition, clear_generated, collect_intents,
-    complete_storyboard, needed_blocks, schema_intents, settle_fillers,
-    settle_inserts,
+    complete_storyboard, icon_intents, needed_blocks, schema_intents,
+    settle_fillers, settle_inserts,
 )
 from reels_factory.hf_fonts import inject_fonts
 from reels_factory.hf_frame import read_frame
@@ -1257,14 +1257,17 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                 # на серии ключ стал `s-02::shot0`, точное сравнение перестало
                 # совпадать хоть с чем-нибудь, и реплика молча уходила пустой —
                 # судья с прогона 24 судил по самому запросу.
-                requests = collect_intents(board)
-                for request in requests:
-                    owner = str(request["key"]).split("::")[0]
-                    scene = next((s for s in board.get("scenes") or []
-                                  if str(s.get("id")) == owner), {})
-                    request["speech"] = speech_between(
-                        phrases, float(scene.get("startSec", 0)),
-                        float(scene.get("endSec", 0)))
+                def with_speech(requests: list[dict]) -> list[dict]:
+                    for request in requests:
+                        owner = str(request["key"]).split("::")[0]
+                        scene = next((s for s in board.get("scenes") or []
+                                      if str(s.get("id")) == owner), {})
+                        request["speech"] = speech_between(
+                            phrases, float(scene.get("startSec", 0)),
+                            float(scene.get("endSec", 0)))
+                    return requests
+
+                requests = with_speech(collect_intents(board))
                 with sdk_session() as sdk:
                     found = resolve_all(public, requests,
                                         context=board.get("brollContext"),
@@ -1274,6 +1277,18 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     if lost:
                         print(f"вставка не нашлась у сцен: {', '.join(lost)} — "
                               "ведущая там встала во весь кадр")
+                    # Значки — вторым заходом, как и запасная схема: значок
+                    # запас, и сцене с приехавшей вставкой он в кадр не
+                    # встанет. Пока запросы шли вместе со вставками, за такой
+                    # значок платили поиском, скачиванием превью и долей
+                    # платной сессии судьи — и он же занимал `id` каталога,
+                    # отбирая его у сцены, которой закрыть кадр больше нечем.
+                    icons = with_speech(
+                        icon_intents(board.get("scenes") or []))
+                    if icons:
+                        found.update(resolve_all(
+                            public, icons, context=board.get("brollContext"),
+                            agent_spend=spend))
                     # Значок без файла и плашку с непригодным блоком
                     # снимаем здесь же: раньше их снимала сама сборка, то
                     # есть после разбора пустых сцен, и сцена, стоявшая на

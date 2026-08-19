@@ -195,6 +195,39 @@ def port_block(html: str, *, duration: float, config: dict,
     return html
 
 
+#: Насколько плитка карточки светлее подложки кадра. Их собственное значение —
+#: `var(--surface, #141a23)` против `var(--bg, …)`: плитка у них отличается от
+#: фона всегда. У нас `--surface` равнялся `bg` знак в знак, и карточка
+#: читалась одним контуром. Доля мала нарочно: сверху блок кладёт свою
+#: световую полосу (`linear-gradient(180deg, rgba(255,255,255,0.055), …)` в
+#: `.gca-card`, grid-card-assemble.html:127), и вместе они дают плоскость, а не
+#: светлое пятно.
+SURFACE_LIFT = 0.14
+
+
+def _mix(base: str, toward: str, share: float) -> str:
+    """Цвет `base`, сдвинутый к `toward` на долю `share`. Оба — `#rrggbb`.
+
+    Считаем сами, а не через `color-mix`: правило палитры уезжает в блок
+    строкой, а их подстановщик слотов вырезает строки с шестнадцатеричным
+    кодом внутри функции, приняв их за мёртвый селектор (см. `port_block`).
+    """
+    def channels(value: str) -> list[int] | None:
+        raw = str(value or "").strip().lstrip("#")
+        if len(raw) != 6:
+            return None
+        try:
+            return [int(raw[index:index + 2], 16) for index in (0, 2, 4)]
+        except ValueError:
+            return None
+
+    left, right = channels(base), channels(toward)
+    if left is None or right is None:
+        return base
+    return "#" + "".join(
+        f"{round(a + (b - a) * share):02x}" for a, b in zip(left, right))
+
+
 def palette_css(block: str, colors: dict) -> str:
     """Правило палитры и шрифта для корня блока.
 
@@ -224,7 +257,12 @@ def palette_css(block: str, colors: dict) -> str:
         # Токены карточек перечисления: их значения по умолчанию — тёмная
         # сине-серая тема их промо, поверх нашей палитры она читается чужой.
         f" --brand: {accent}; --accent: {accent}; --accent-2: {accent};"
-        f" --fg: {ink}; --muted: {ink}99; --surface: {bg}; --border: {ink}33; }}"
+        # `--surface` разведён с фоном: плитка светлее подложки на
+        # `SURFACE_LIFT` в сторону чернил, иначе её видно только по контуру.
+        # `--bg` не объявляем нарочно: корень их блока красится по нему, и
+        # прямоугольник 1080x980 закрыл бы живой фон схемной сцены.
+        f" --fg: {ink}; --muted: {ink}99;"
+        f" --surface: {_mix(bg, ink, SURFACE_LIFT)}; --border: {ink}33; }}"
     )
 
 
