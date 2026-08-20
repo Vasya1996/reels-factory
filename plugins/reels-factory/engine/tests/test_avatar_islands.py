@@ -13,12 +13,14 @@ from reels_factory.avatar_islands import (
     RENDER_PLAN_FILENAME,
     apply_agent_coverage,
     build_avatar_render_plan,
+    load_frozen_avatar_order,
     render_avatar_islands,
     validate_avatar_render_plan,
 )
 from reels_factory.editplan import (
     EDIT_PLAN_COVERAGE,
     EDIT_PLAN_FORMAT_VERSION,
+    save_edit_plan,
     validate_edit_plan,
 )
 
@@ -1165,3 +1167,145 @@ def test_цель_бюджета_ниже_потолка_на_ручки_кус�
     короткий = avatar_budget_targets(1.0, {"handle_seconds": 1.0})
     assert короткий["target_seconds"] == 0.0
     assert короткий["hard_target_seconds"] == 0.0
+
+
+def _заказанная_папка(tmp_path) -> tuple[Path, dict, str]:
+    """Папка задания после успешного заказа ведущей.
+
+    В ней лежит всё, на что смотрит заморозка: `avatar_render_plan.json`,
+    `avatar_render_manifest.json`, `edit_plan.json` и снятые клипы.
+    """
+    edit_plan = _final_edit_plan(30)
+    job = tmp_path / "job"
+    master = tmp_path / "voice_master.wav"
+    master.write_bytes(b"offline-master-audio")
+    master_sha = hashlib.sha256(master.read_bytes()).hexdigest()
+    plan = build_avatar_render_plan(
+        edit_plan, _config(), master_audio_sha256=master_sha
+    )
+    render_avatar_islands(
+        master,
+        plan,
+        _FakePhotoAvatarIV(),
+        job,
+        tmp_path / "cache",
+        edit_plan=edit_plan,
+        run_cmd=_fake_run_slices,
+    )
+    save_edit_plan(edit_plan, job)
+    return job, edit_plan, master_sha
+
+
+def test_готовый_заказ_переиспользуется_вместо_нового_вызова_heygen(
+    tmp_path, capsys
+):
+    """Пересборка той же папки берёт снятые клипы как есть.
+
+    Ключ кэша считается от байтов нарезки и жеста, а границы шотов и жесты
+    выбираются LLM-проходами заново на каждом прогоне: без заморозки второй
+    прогон промахивается мимо кэша и платит второй раз.
+    """
+    job, edit_plan, master_sha = _заказанная_папка(tmp_path)
+    plan = json.loads(
+        (job / RENDER_PLAN_FILENAME).read_text(encoding="utf-8"))
+
+    заказ = load_frozen_avatar_order(
+        job, _config(), master_audio_sha256=master_sha
+    )
+
+    assert заказ is not None
+    assert заказ["plan"]["shots"] == plan["shots"]
+    assert заказ["edit_plan"] == edit_plan
+    assert len(заказ["clips"]) == len(plan["shots"])
+    assert all(clip.is_file() for clip in заказ["clips"])
+    # Заморозка видна в логе: сколько шотов и сколько денег не потрачено
+    # заново. Молчаливое переиспользование от молчаливого перезаказа в
+    # консоли не отличить.
+    строка = capsys.readouterr().err
+    assert "заказ ведущей переиспользован" in строка
+    assert f"{len(plan['shots'])} шотов" in строка
+    assert f"{plan['summary']['estimated_cost_usd']:.2f} $" in строка
+
+
+def test_другой_мастер_звук_отменяет_заморозку(tmp_path, capsys):
+    job, _edit_plan, _master_sha = _заказанная_папка(tmp_path)
+
+    assert load_frozen_avatar_order(
+        job, _config(),
+        master_audio_sha256=hashlib.sha256(b"another-master").hexdigest(),
+    ) is None
+    assert "мастер-звук" in capsys.readouterr().err
+
+
+def test_смена_аватара_или_look_или_разрешения_отменяет_заморозку(tmp_path):
+    job, _edit_plan, master_sha = _заказанная_папка(tmp_path)
+
+    другой_аватар = _config()
+    другой_аватар["avatar"]["heygen_asset_id"] = "другой-аватар"
+    другой_look = _config()
+    другой_look["avatar"]["heygen_look_id"] = "look-1"
+    другое_разрешение = _config()
+    другое_разрешение["avatar"]["resolution"] = "720p"
+
+    for config in (другой_аватар, другой_look, другое_разрешение):
+        assert load_frozen_avatar_order(
+            job, config, master_audio_sha256=master_sha
+        ) is None
+
+
+def test_пропавший_клип_отменяет_заморозку(tmp_path, capsys):
+    """Манифест помнит заказ, а файла на диске нет: собирать нечем."""
+    job, _edit_plan, master_sha = _заказанная_папка(tmp_path)
+    manifest = json.loads(
+        (job / RENDER_MANIFEST_FILENAME).read_text(encoding="utf-8"))
+    Path(manifest["shots"][0]["clip_path"]).unlink()
+
+    assert load_frozen_avatar_order(
+        job, _config(), master_audio_sha256=master_sha
+    ) is None
+    assert "нет на диске" in capsys.readouterr().err
+
+
+def test_правка_edit_plan_отменяет_заморозку(tmp_path, capsys):
+    """Монтаж и заказ обязаны говорить об одном плане."""
+    job, edit_plan, master_sha = _заказанная_папка(tmp_path)
+    изменённый = copy.deepcopy(edit_plan)
+    изменённый["phrases"][0]["visual_intent"] = "Другое окно."
+    save_edit_plan(изменённый, job)
+
+    assert load_frozen_avatar_order(
+        job, _config(), master_audio_sha256=master_sha
+    ) is None
+    assert "разошёлся" in capsys.readouterr().err
+
+
+def test_недоснятый_шот_отменяет_заморозку(tmp_path, capsys):
+    job, _edit_plan, master_sha = _заказанная_папка(tmp_path)
+    path = job / RENDER_MANIFEST_FILENAME
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["shots"][-1]["status"] = "failed"
+    path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+    assert load_frozen_avatar_order(
+        job, _config(), master_audio_sha256=master_sha
+    ) is None
+    assert "не доснят" in capsys.readouterr().err
+
+
+def test_первая_сборка_папки_молчит_и_не_замораживает(tmp_path, capsys):
+    """Заказа ещё не было — говорить не о чем, и в лог ничего не идёт."""
+    job = tmp_path / "job"
+    job.mkdir()
+
+    assert load_frozen_avatar_order(job, _config(),
+                                    master_audio_sha256="a" * 64) is None
+    assert capsys.readouterr().err == ""
+
+
+def test_план_заказа_помнит_look_аватара(tmp_path):
+    """Без записанного look'а его смена прошла бы мимо заморозки."""
+    edit_plan = _final_edit_plan(30)
+    plan = build_avatar_render_plan(
+        edit_plan, _config(), master_audio_sha256="a" * 64
+    )
+    assert plan["avatar"]["heygen_look_id"] == ""
