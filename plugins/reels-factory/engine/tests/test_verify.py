@@ -162,3 +162,24 @@ def test_d7_левенштейн_подозрение_не_фейлит(tmp_path
     )
     assert report["all_pass"] is True
     assert not report["gates"]["D7_captions"].startswith("FAIL")
+
+
+def _d3(tmp_path, lufs):
+    return verify_reel(
+        _prep(tmp_path), _scenario(25.0),
+        dur_fn=lambda f: 24.5, wh_fn=lambda f: (1080, 1920),
+        lufs_fn=lambda f: lufs, fps_fn=lambda f: 30.0, volume_fn=_vol_ok,
+    )["gates"]["D3_loudness"]
+
+
+def test_ролик_чуть_тише_цели_приёмку_не_валит(tmp_path):
+    """Боевой ролик вышел -15.93 и падал на 0.43 дБ мимо старого допуска: на
+    слух неразличимо, а площадки нормализуют звук при загрузке."""
+    assert _d3(tmp_path, -15.93).startswith("PASS")
+    assert _d3(tmp_path, -12.0).startswith("PASS")
+
+
+def test_почти_тишина_и_перегруз_валят_громкость(tmp_path):
+    """Ради этого гейт и держим: -34.9 был прогон почти без звука."""
+    assert _d3(tmp_path, -34.9).startswith("FAIL")
+    assert _d3(tmp_path, -5.0).startswith("FAIL")

@@ -21,7 +21,8 @@ import re
 import subprocess
 from pathlib import Path
 
-from reels_factory.config import FFMPEG, FFPROBE, OUT_W, OUT_H, FPS, LUFS_TARGET
+from reels_factory.config import (
+    FFMPEG, FFPROBE, OUT_W, OUT_H, FPS, LUFS_TARGET, LUFS_TOLERANCE)
 from reels_factory.compose import build_caption_fixes, _split_edges, _pause_after
 from reels_factory.render import load_words_file, media_dur, probe_wh, measure_lufs
 
@@ -128,7 +129,7 @@ def verify_reel(mp4: Path, scenario: dict, dur_fn=None, wh_fn=None, lufs_fn=None
                               else f"FAIL({w}x{h}@{fps:.2f})")
 
     lufs = lufs_fn(str(mp4))
-    d3_ok = lufs is not None and abs(lufs - LUFS_TARGET) <= 1.5
+    d3_ok = lufs is not None and abs(lufs - LUFS_TARGET) <= LUFS_TOLERANCE
     gates["D3_loudness"] = f"PASS({lufs})" if d3_ok else f"FAIL({lufs})"
 
     caps_path = mp4.parent / "caps.ass"

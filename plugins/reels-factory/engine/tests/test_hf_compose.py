@@ -216,6 +216,30 @@ def test_ранняя_кульминация_обходится_без_вспы�
     assert "editorial-flash-overlay" not in html
 
 
+def test_список_вспышек_в_camera_json_это_разметка_а_не_замысел(run):
+    """Гейт `D26_flash` меряет яркость по этому списку, значит в нём стоит
+    ровно то, что встало в кадр."""
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["beat"] = "climax"
+    html, _ = _build(run, scenes=scenes)
+    camera = json.loads((run / "camera.json").read_text(encoding="utf-8"))
+    assert re.findall(r'id="fx-(\d+)"', html) == ["0"]
+    assert camera["flash"] == [3.033]
+
+
+def test_невлезшая_вспышка_выпадает_из_списка_и_называет_причину(run, capsys):
+    """Стык раньше 2,32 с: вспышку не поставить, и обещать её гейту нельзя —
+    он пойдёт мерить яркость там, где ничего не стоит (прогон 3ecf2289)."""
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[0]["beat"] = "climax"          # стык на 0,0 с
+    html, _ = _build(run, scenes=scenes)
+    camera = json.loads((run / "camera.json").read_text(encoding="utf-8"))
+    assert 'id="fx-' not in html
+    assert camera["flash"] == []
+    assert ("вспышка на 0.00 с снята — разгон блока 2.32 с не влезает "
+            "в начало ролика") in capsys.readouterr().out
+
+
 # ---------- ведущая ----------
 
 def test_положение_ведущей_называет_план(run):
