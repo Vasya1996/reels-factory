@@ -2792,6 +2792,18 @@ def save_edit_plan(plan: dict, workdir: Path | str) -> Path:
     return path
 
 
+def load_edit_plan(workdir: Path | str) -> dict:
+    """Прочитать ``edit_plan.json`` из папки задания.
+
+    Нужен пересборке: два платных LLM-прохода (визуальный директор и жесты)
+    свои решения кладут только в этот документ, и повторная сборка, которая
+    переиспользует уже заказанную ведущую, обязана взять их с диска, а не
+    считать заново — иначе решения разойдутся с оплаченными клипами.
+    """
+    path = Path(workdir) / EDIT_PLAN_FILENAME
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def covered_block_indexes(plan: dict) -> set[int]:
     return {
         int(block["index"])

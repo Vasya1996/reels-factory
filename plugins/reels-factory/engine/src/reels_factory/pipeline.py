@@ -28,6 +28,13 @@ HyperFrames получает тот же документ: по нему пиш�
 ``avatarNeeded`` на фразы, и только по размеченному плану режутся острова.
 Сессии агента считаются одним кошельком на прогон, и он списывается в
 ``finally``: деньги за них потрачены независимо от того, чем прогон кончился.
+
+Заказ ведущей замораживается папкой задания. Лежат в ней годные
+``avatar_render_plan.json`` с ``avatar_render_manifest.json`` и снятые клипы —
+пересборка берёт их как есть: ни один из двух LLM-проходов (визуальный
+директор и жесты) не зовётся, границы шотов не двигаются, HeyGen не вызывается.
+Условия годности перечислены в ``avatar_islands.load_frozen_avatar_order``,
+байты мастер-звука сверяются здесь же, когда дорожка построена или загружена.
 """
 import hashlib
 import json
@@ -55,6 +62,7 @@ from reels_factory.hf_render import (
     step_done as _step_done,
     reset_step as _reset_step,
     run_step as _run_step,
+    EARLY_PLAN_STEP,
 )
 # Кошелёк сессий агента: один на прогон, общий для раннего плана и сборки.
 from reels_factory.hf_agent import AgentSpend
@@ -73,6 +81,7 @@ from reels_factory.avatar_islands import (
     apply_agent_coverage,
     avatar_islands_enabled,
     build_avatar_render_plan as _build_avatar_render_plan,
+    load_frozen_avatar_order,
     render_avatar_islands as _render_avatar_islands,
     save_avatar_render_plan,
     validate_photo_avatar_iv_config,
@@ -283,12 +292,16 @@ def run_make(config: dict, workdir,
     # injected precut_fn допускается только как источник legacy hints для
     # совместимости тестов/CLI; решения всё равно нормализует editplan.py.
     _log("plan")
-    try:
+    # Заказ ведущей, уже лежащий в папке задания. Не None — пересборка идёт по
+    # нему: ни границы шотов, ни жесты не пересчитываются, HeyGen не зовётся.
+    frozen_order = None
+
+    def построить_план():
+        """Свежий edit plan: разметка и два платных LLM-прохода."""
         legacy_plan = None
         if precut_fn is not None and fmt == "avatar":
             legacy_plan = precut_fn(scenario, config)
-        edit_plan_fn = edit_plan_fn or _build_edit_plan
-        edit_plan = edit_plan_fn(
+        plan = (edit_plan_fn or _build_edit_plan)(
             scenario,
             config,
             legacy_broll_plan=legacy_plan,
@@ -301,11 +314,11 @@ def run_make(config: dict, workdir,
             runner = visual_runner or ClaudeCliRunner(
                 timeout_s=int(visual_cfg.get("timeout_s") or 600)
             )
-            edit_plan = enrich_visuals_with_llm(edit_plan, runner)
+            plan = enrich_visuals_with_llm(plan, runner)
         # Даже при выключенном/недоступном Visual LLM длинный участок без
         # подходящего B-roll не должен оставаться одной talking head сценой.
         # Функция идемпотентна и заполняет только свободные avatar-only окна.
-        edit_plan = ensure_assetless_visual_coverage(edit_plan)
+        plan = ensure_assetless_visual_coverage(plan)
         performance_cfg = (
             ((config.get("edit_plan") or {}).get("performance_llm") or {})
         )
@@ -316,10 +329,13 @@ def run_make(config: dict, workdir,
                 # держит сам CLI (`--json-schema`).
                 json_schema=performance_response_schema(),
             )
-            edit_plan = enrich_performance_with_llm(edit_plan, runner)
-        save_edit_plan(edit_plan, wd)
-        for line in edit_plan.get("log") or []:
+            plan = enrich_performance_with_llm(plan, runner)
+        save_edit_plan(plan, wd)
+        for line in plan.get("log") or []:
             print(f"[plan] {line}", file=sys.stderr)
+        return plan
+
+    try:
         use_avatar_islands = avatar_islands_enabled(config)
         if use_avatar_islands:
             if fmt not in ("split", "avatar"):
@@ -331,6 +347,19 @@ def run_make(config: dict, workdir,
                     "avatar islands требует master_audio.enabled=true"
                 )
             validate_photo_avatar_iv_config(config)
+            # Ведущая, снятая прошлым прогоном этой папки, покупается один
+            # раз. Оба LLM-прохода выбирают заново и границы шотов, и жесты, а
+            # от них зависит и нарезка мастер-звука, и ключ кэша
+            # (`avatar.avatar_cache_key`): пересчитав план, мы бы промахнулись
+            # мимо снятых клипов и заплатили второй раз. Поэтому при годном
+            # заказе план берётся с диска целиком — вместе с решениями обоих
+            # проходов, других их читателей нет. Мастер-звук сверяется ниже,
+            # когда он построен или загружен.
+            frozen_order = load_frozen_avatar_order(wd, config)
+        if frozen_order is not None:
+            edit_plan = frozen_order["edit_plan"]
+        else:
+            edit_plan = построить_план()
     except Exception as e:
         return fail("plan", e)
 
@@ -407,19 +436,65 @@ def run_make(config: dict, workdir,
                     )
                     block_wavs.append(wav)
 
+            # Последнее условие заморозки: те ли байты мастер-звука. Раньше их
+            # не проверить — дорожка либо синтезируется, либо грузится именно
+            # здесь. Разошлись — заказ не годен, и план считается честно, со
+            # всеми проходами: клипы сняты под другой звук.
+            if frozen_order is not None:
+                master_sha256 = hashlib.sha256(
+                    Path(master.wav).read_bytes()).hexdigest()
+                заказан_под = frozen_order["plan"].get("master_audio_sha256")
+                if заказан_под != master_sha256:
+                    print(
+                        "[make] заказ ведущей пересобирается: мастер-звук "
+                        "сменился после заказа",
+                        file=sys.stderr,
+                    )
+                    frozen_order = None
+                    edit_plan = построить_план()
+
             if master is not None:
-                finalize_edit_plan_fn = finalize_edit_plan_fn or _finalize_edit_plan
-                edit_plan = finalize_edit_plan_fn(
-                    edit_plan,
-                    master.timed_scenario,
-                    list(master.words),
-                )
-                save_edit_plan(edit_plan, wd)
+                if frozen_order is None:
+                    finalize_edit_plan_fn = (
+                        finalize_edit_plan_fn or _finalize_edit_plan
+                    )
+                    edit_plan = finalize_edit_plan_fn(
+                        edit_plan,
+                        master.timed_scenario,
+                        list(master.words),
+                    )
+                    save_edit_plan(edit_plan, wd)
+                # Замороженный план уже финализирован и уже размечен решением
+                # агента — тем самым, по которому куплены клипы. Второй проход
+                # `finalize_edit_plan` тут только рисковал бы сдвинуть окна
+                # мимо оплаченного заказа.
                 covered_blocks = (
                     covered_block_indexes(edit_plan) if fmt == "avatar" else set()
                 )
 
-            if use_avatar_islands:
+            if use_avatar_islands and frozen_order is not None:
+                avatar_render_plan = frozen_order["plan"]
+                avatar_render_manifest = frozen_order["manifest"]
+                avatar_mp4s = list(frozen_order["clips"])
+                # Гейты раннего плана — часть отчёта по сборке, и на
+                # пересборке они те же: план заморожен заказом. Считаются они
+                # из `plan.early.json` без единой сессии агента, но только при
+                # маркере шага; без него `plan_before_avatar` пошёл бы
+                # спрашивать агента заново, а это деньги.
+                ранний_план_есть = (
+                    _step_done(wd, EARLY_PLAN_STEP)
+                    and (wd / "plan.json").is_file()
+                )
+                if ранний_план_есть:
+                    early_gates = _plan_before_avatar(
+                        wd,
+                        master.timed_scenario,
+                        alignment_words=apply_caption_fixes(
+                            list(master.words), caption_fixes),
+                        config=config,
+                        agent_spend=agent_spend,
+                    ).get("gates") or {}
+            elif use_avatar_islands:
                 avatar_plan_fn = avatar_plan_fn or _build_avatar_render_plan
                 avatar_render_fn = avatar_render_fn or _render_avatar_islands
                 # Работа 9: сперва план агента, и только потом заказ ведущей.

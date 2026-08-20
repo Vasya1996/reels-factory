@@ -35,7 +35,8 @@ from reels_factory.config import FFMPEG
 # (editplan.py:1290), и разойдись он с нашей копией, окно после правки
 # рассказывало бы про себя неправду.
 from reels_factory.editplan import (
-    MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S, _zone_for, validate_edit_plan,
+    MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S, _zone_for, load_edit_plan,
+    validate_edit_plan,
 )
 
 FORMAT_VERSION = 1
@@ -830,6 +831,12 @@ def build_avatar_render_plan(
         "avatar": {
             "heygen_asset_id":
                 str((config.get("avatar") or {}).get("heygen_asset_id")),
+            # Look сейчас всегда пустой: `validate_photo_avatar_iv_config`
+            # запрещает Avatar V на островах. Пишем его всё равно — по этому
+            # полю пересборка решает, тем ли аватаром заказаны клипы, и без
+            # него смена look'а прошла бы незамеченной, когда запрет снимут.
+            "heygen_look_id":
+                str((config.get("avatar") or {}).get("heygen_look_id") or ""),
             "engine": "avatar_iv",
             "resolution":
                 str((config.get("avatar") or {}).get("resolution") or "1080p"),
@@ -1030,6 +1037,131 @@ def _save_json_atomic(path: Path, value) -> Path:
 
 def save_avatar_render_plan(plan: dict, workdir: Path | str) -> Path:
     return _save_json_atomic(Path(workdir) / RENDER_PLAN_FILENAME, plan)
+
+
+def _order_rejected(reason: str) -> None:
+    print(f"[make] заказ ведущей пересобирается: {reason}", file=sys.stderr)
+
+
+def load_frozen_avatar_order(
+    workdir: Path | str,
+    config: dict,
+    *,
+    master_audio_sha256: str | None = None,
+) -> dict | None:
+    """Готовый заказ ведущей из папки задания — или None, если он не годен.
+
+    Ведущая — самые дорогие секунды ролика, и пересборка той же папки не
+    вправе покупать их второй раз. Кэш от второго заказа не спасает: его ключ
+    считается от байтов нарезки, `motion_prompt` и настроек клиента
+    (`avatar.avatar_cache_key`), а границы шотов и жесты на каждом прогоне
+    заново выбирают два LLM-прохода — любое расхождение даёт новый ключ и
+    платный заказ. Поэтому переиспользуется не кэш, а сам заказ: план, манифест
+    и снятые клипы.
+
+    Заказ считается годным, когда ВСЁ перечисленное верно:
+
+    * в папке лежат `avatar_render_plan.json`, `avatar_render_manifest.json` и
+      `edit_plan.json` нынешнего формата;
+    * `master_audio_sha256` (если он известен вызывающему) совпадает и в
+      плане, и в манифесте: клипы сняты под конкретные байты мастер-звука;
+    * аватар, его look и разрешение в плане — те же, что в конфиге задания;
+    * `edit_plan.json` тот самый, по которому считался план (сверка sha256):
+      иначе монтаж рассказывал бы про ведущую не то, что заказано;
+    * каждый шот плана есть в манифесте со `status: ready`, тем же
+      `idempotency_key`, и файл клипа лежит на диске.
+
+    Не сошлось хоть что-то — возвращаем None, и прогон честно пересчитывает
+    план и заказывает заново. Причина уходит в stderr: молчаливый перезаказ
+    выглядит как та же сборка, только со списанием.
+    """
+    workdir = Path(workdir)
+    plan_path = workdir / RENDER_PLAN_FILENAME
+    manifest_path = workdir / RENDER_MANIFEST_FILENAME
+    if not plan_path.is_file() or not manifest_path.is_file():
+        # Первая сборка этой папки: замораживать нечего, и говорить не о чем.
+        return None
+    try:
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        edit_plan = load_edit_plan(workdir)
+    except (OSError, ValueError) as error:
+        _order_rejected(f"файлы заказа не читаются ({error})")
+        return None
+    if (
+        plan.get("format_version") != FORMAT_VERSION
+        or manifest.get("format_version") != FORMAT_VERSION
+    ):
+        _order_rejected("формат заказа не нынешний")
+        return None
+    if master_audio_sha256 is not None:
+        for name, saved in (
+            ("плане", plan.get("master_audio_sha256")),
+            ("манифесте", manifest.get("master_audio_sha256")),
+        ):
+            if str(saved or "") != str(master_audio_sha256):
+                _order_rejected(
+                    f"мастер-звук в {name} не тот, под который сняты клипы"
+                )
+                return None
+    avatar_cfg = config.get("avatar") or {}
+    saved_avatar = plan.get("avatar") or {}
+    for field, want, title in (
+        ("heygen_asset_id", avatar_cfg.get("heygen_asset_id"), "аватар"),
+        ("heygen_look_id", avatar_cfg.get("heygen_look_id") or "",
+         "look аватара"),
+        ("resolution", avatar_cfg.get("resolution") or "1080p",
+         "разрешение"),
+    ):
+        if str(saved_avatar.get(field) or "") != str(want or ""):
+            _order_rejected(f"сменилось: {title}")
+            return None
+    if plan.get("edit_plan_sha256") != _canonical_hash(edit_plan):
+        _order_rejected("edit_plan.json разошёлся с планом заказа")
+        return None
+    if manifest.get("edit_plan_sha256") != plan.get("edit_plan_sha256"):
+        _order_rejected("манифест снят по другому плану монтажа")
+        return None
+    shots = plan.get("shots") or []
+    if not shots:
+        _order_rejected("в плане заказа нет шотов")
+        return None
+    saved_shots = {
+        str(item.get("shot_id")): item for item in manifest.get("shots") or []
+    }
+    clips: list[Path] = []
+    for shot in shots:
+        item = saved_shots.get(str(shot.get("id")))
+        if item is None:
+            _order_rejected(f"в манифесте нет шота {shot.get('id')}")
+            return None
+        if item.get("status") != "ready":
+            _order_rejected(
+                f"шот {shot.get('id')} не доснят ({item.get('status')})"
+            )
+            return None
+        if item.get("idempotency_key") != shot.get("idempotency_key"):
+            _order_rejected(f"шот {shot.get('id')} снят по другому заданию")
+            return None
+        clip = Path(str(item.get("clip_path") or ""))
+        if not clip.is_file():
+            _order_rejected(f"клипа {item.get('clip_path')} нет на диске")
+            return None
+        clips.append(clip)
+    summary = plan.get("summary") or {}
+    billed = float(summary.get("avatar_billed_seconds") or 0.0)
+    cost = float(summary.get("estimated_cost_usd") or 0.0)
+    print(
+        f"[make] заказ ведущей переиспользован: {len(shots)} шотов, "
+        f"{billed:.1f} с — {cost:.2f} $ у HeyGen второй раз не просим",
+        file=sys.stderr,
+    )
+    return {
+        "plan": plan,
+        "manifest": manifest,
+        "edit_plan": edit_plan,
+        "clips": tuple(clips),
+    }
 
 
 def _slice_audio(

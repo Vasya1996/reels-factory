@@ -1740,3 +1740,260 @@ def test_провал_гейтов_готового_файла_доезжает_
     третий = прогон()
     assert третий["qa_pass"] is True
     assert last_retry_reason(wd) is None
+
+
+def _islands_master(scenario, config, workdir, voice_id=None, meter=None):
+    """Мастер-звук островного теста: одни и те же байты на каждом прогоне.
+
+    Так и ведёт себя утверждённая дорожка (`load_approved_master_audio`), а
+    заморозка заказа держится именно на её sha256.
+    """
+    master_wav = Path(workdir) / "voice_master.wav"
+    master_wav.write_bytes(b"master-islands")
+    block_wavs, words = [], []
+    timed = json.loads(json.dumps(scenario))
+    for index, block in enumerate(timed["blocks"]):
+        block["start"] = index * 2.0
+        block["end"] = (index + 1) * 2.0
+        wav = Path(workdir) / f"voice_{index}.wav"
+        wav.write_bytes(b"legacy-slice")
+        block_wavs.append(wav)
+        words.append({
+            "start": index * 2.0 + 0.2,
+            "end": (index + 1) * 2.0 - 0.2,
+            "text": block["speech"],
+            "block_index": index,
+        })
+    timed["total"] = 8.0
+    return SimpleNamespace(
+        wav=master_wav,
+        block_wavs=tuple(block_wavs),
+        words=tuple(words),
+        timed_scenario=timed,
+    )
+
+
+def _islands_render(заказы):
+    """Фейк заказа островов, оставляющий на диске то же, что и настоящий:
+    клипы и `avatar_render_manifest.json` со статусами шотов."""
+    import hashlib
+
+    from reels_factory.avatar_islands import (
+        FORMAT_VERSION, RENDER_MANIFEST_FILENAME,
+    )
+
+    def fake_render(master_wav, plan, client, workdir, cache_dir, *, edit_plan,
+                    meter=None):
+        заказы.append(plan)
+        wd = Path(workdir)
+        manifest = {
+            "format_version": FORMAT_VERSION,
+            "engine_scope": "photo_avatar_iv",
+            "edit_plan_sha256": plan["edit_plan_sha256"],
+            "master_audio_sha256": hashlib.sha256(
+                Path(master_wav).read_bytes()).hexdigest(),
+            "shots": [],
+        }
+        clips = []
+        for shot in plan["shots"]:
+            clip = wd / f"{shot['id']}.mp4"
+            clip.write_bytes(b"offline-avatar-iv")
+            clips.append(clip)
+            manifest["shots"].append({
+                "shot_id": shot["id"],
+                "idempotency_key": shot["idempotency_key"],
+                "cache_key": shot["idempotency_key"][:16],
+                "status": "ready",
+                "clip_path": str(clip),
+                "clip_sha256": hashlib.sha256(clip.read_bytes()).hexdigest(),
+                "error": None,
+            })
+        (wd / RENDER_MANIFEST_FILENAME).write_text(
+            json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        return SimpleNamespace(clips=tuple(clips), plan=plan,
+                               manifest=manifest)
+
+    return fake_render
+
+
+class _СчитающийRunner:
+    """LLM-проход, который считает, сколько раз его позвали."""
+
+    def __init__(self, ответ):
+        self.ответ = ответ
+        self.вызовы = 0
+
+    def run(self, prompt):
+        self.вызовы += 1
+        return self.ответ
+
+
+def _островной_прогон(monkeypatch, tmp_path):
+    """Островная сборка с обоими LLM-проходами и записью заказа на диск."""
+    calls, captured = [], {}
+    fs, fa = _fakes(monkeypatch, tmp_path, calls, captured=captured)
+    _fake_early_plan(monkeypatch, calls)
+    avatar = _FakeAvatar()
+    avatar.engine = "avatar_iv"
+    wd = _wd_with_scenario(tmp_path)
+    заказы = []
+    визуальный = _СчитающийRunner(json.dumps({"visuals": []}))
+    жесты = _СчитающийRunner(json.dumps({"phrases": []}))
+    cfg = _cfg("avatar")
+    cfg["master_audio"] = {"enabled": True}
+    cfg["avatar_islands"] = {"enabled": True}
+    cfg["edit_plan"] = {
+        "visual_director": {"llm": {"enabled": True}},
+        "performance_llm": {"enabled": True},
+    }
+
+    def прогон(master_audio_fn=_islands_master):
+        return pipeline.run_make(
+            cfg,
+            wd,
+            avatar_client=avatar,
+            synth_fn=fs,
+            assemble_fn=fa,
+            master_audio_fn=master_audio_fn,
+            avatar_render_fn=_islands_render(заказы),
+            visual_runner=визуальный,
+            performance_runner=жесты,
+        )
+
+    return SimpleNamespace(прогон=прогон, wd=wd, avatar=avatar, заказы=заказы,
+                           визуальный=визуальный, жесты=жесты,
+                           captured=captured, calls=calls)
+
+
+def _ранних_планов(calls) -> int:
+    return sum(1 for call in calls if call[0] == "plan_before_avatar")
+
+
+def test_пересборка_не_заказывает_ведущую_второй_раз(monkeypatch, tmp_path,
+                                                    capsys):
+    """Заказ ведущей замораживается папкой задания.
+
+    Ключ кэша HeyGen считается от байтов нарезки и жеста
+    (`avatar.avatar_cache_key`), а границы шотов и жесты выбирают два
+    LLM-прохода заново на каждом прогоне — любое расхождение промахивается
+    мимо кэша и платит второй раз. Боевой случай: задание
+    56731177d8154034a3ba37cc27286140 заказало ведущую дважды, и второй
+    комплект за $4.26 в кадр не попал.
+    """
+    среда = _островной_прогон(monkeypatch, tmp_path)
+
+    первый = среда.прогон()
+    assert первый["ok"] is True, первый["error"]
+    клипы_первого = list(среда.captured["avatar_mp4s"])
+    assert среда.визуальный.вызовы == 1
+    assert среда.жесты.вызовы == 1
+
+    второй = среда.прогон()
+
+    assert второй["ok"] is True, второй["error"]
+    # Ни одного нового заказа: ни островного, ни поблочного.
+    assert len(среда.заказы) == 1
+    assert среда.avatar.calls == []
+    # Ни одного нового LLM-прохода: это и деньги, и источник расхождения.
+    assert среда.визуальный.вызовы == 1
+    assert среда.жесты.вызовы == 1
+    # В монтаж уехали ТЕ ЖЕ клипы и тот же план.
+    assert list(среда.captured["avatar_mp4s"]) == клипы_первого
+    assert второй["avatar_summary"] == первый["avatar_summary"]
+    assert второй["avatar_render_manifest"] == первый["avatar_render_manifest"]
+    assert "заказ ведущей переиспользован" in capsys.readouterr().err
+    # Раннего плана в этой папке нет (маркер шага не ставился), и звать
+    # агента ради гейтов замороженного плана — платить за уже принятое
+    # решение.
+    assert _ранних_планов(среда.calls) == 1
+
+
+def test_гейты_раннего_плана_переживают_заморозку_без_сессии_агента(
+    monkeypatch, tmp_path
+):
+    """План заморожен заказом, но его гейты — часть отчёта по сборке.
+
+    Считаются они из `plan.early.json` без единой сессии агента
+    (`hf_render.plan_before_avatar`, ветка возобновления), поэтому на
+    пересборке спрашиваются заново — но только при маркере шага.
+    """
+    from reels_factory.hf_render import EARLY_PLAN_STEP, run_step
+
+    среда = _островной_прогон(monkeypatch, tmp_path)
+    первый = среда.прогон()
+    assert первый["ok"] is True, первый["error"]
+
+    def ранний_план(rdir, timed_scenario, **kw):
+        среда.calls.append(("plan_before_avatar", Path(rdir), None, None))
+        return {"board": {}, "scenes": [],
+                "gates": {"D29_avatar_budget": "PASS 40%"}}
+
+    monkeypatch.setattr(pipeline, "_plan_before_avatar", ранний_план)
+    # Так выглядит папка, где ведущая заказана по плану агента.
+    run_step(среда.wd, EARLY_PLAN_STEP, lambda: None)
+    (среда.wd / "plan.json").write_text("{}", encoding="utf-8")
+
+    второй = среда.прогон()
+
+    assert len(среда.заказы) == 1
+    assert _ранних_планов(среда.calls) == 2
+    assert второй["gates"]["D29_avatar_budget"] == "PASS 40%"
+
+
+def test_смена_мастер_звука_возвращает_честный_заказ(monkeypatch, tmp_path,
+                                                    capsys):
+    """Другая дорожка — другой ролик: план считается заново, обоими
+    проходами, и ведущая заказывается честно."""
+    среда = _островной_прогон(monkeypatch, tmp_path)
+    первый = среда.прогон()
+    assert первый["ok"] is True, первый["error"]
+
+    def другой_мастер(scenario, config, workdir, voice_id=None, meter=None):
+        master = _islands_master(scenario, config, workdir,
+                                 voice_id=voice_id, meter=meter)
+        Path(master.wav).write_bytes(b"master-islands-v2")
+        return master
+
+    capsys.readouterr()
+    второй = среда.прогон(другой_мастер)
+
+    assert второй["ok"] is True, второй["error"]
+    assert len(среда.заказы) == 2
+    assert среда.визуальный.вызовы == 2
+    assert среда.жесты.вызовы == 2
+    assert "мастер-звук" in capsys.readouterr().err
+
+
+def test_пересдача_монтажа_не_тянет_за_собой_перезаказ_ведущей(
+    monkeypatch, tmp_path
+):
+    """`reset_montage_steps` снимает ровно то, что считается на нашей машине.
+
+    Заказ ведущей к этому не относится: он уже оплачен, и пересборка монтажа
+    обязана лечь на те же клипы.
+    """
+    from reels_factory.hf_render import (
+        MONTAGE_STEPS, reset_montage_steps, run_step, save_retry_reason,
+        step_done,
+    )
+
+    среда = _островной_прогон(monkeypatch, tmp_path)
+    первый = среда.прогон()
+    assert первый["ok"] is True, первый["error"]
+    клипы_первого = list(среда.captured["avatar_mp4s"])
+
+    # Так выглядит папка после дошедшей до файла сборки: маркеры монтажа
+    # стоят. Пересдача их снимает и пишет причину.
+    for step in MONTAGE_STEPS:
+        run_step(среда.wd, step, lambda: None)
+    reset_montage_steps(среда.wd)
+    save_retry_reason(среда.wd, "D7_rhythm: FAIL мало смен картинки")
+    assert not any(step_done(среда.wd, step) for step in MONTAGE_STEPS)
+
+    второй = среда.прогон()
+
+    assert второй["ok"] is True, второй["error"]
+    assert len(среда.заказы) == 1
+    assert среда.avatar.calls == []
+    assert среда.визуальный.вызовы == 1
+    assert list(среда.captured["avatar_mp4s"]) == клипы_первого
