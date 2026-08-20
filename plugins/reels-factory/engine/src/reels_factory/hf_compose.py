@@ -1498,18 +1498,27 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     climax = next((_q(scene["startSec"]) for scene in scenes
                    if _beat(scene) == "climax"), None)
     flashes = flash_moments(plans, climax=climax, duration=duration)
-    # Планы камеры и моменты вспышек уезжают на диск: после рендера их меряют
-    # по готовому файлу. Правило Юли — «зум проверять числами, а не глазами:
-    # спикер сам наклоняется к камере, и на стоп-кадрах это читается как
-    # наезд» (broll-zoom-toolkit/README.md, грабля 2).
-    (Path(rdir) / "camera.json").write_text(
-        json.dumps({"origin": origin, "plans": plans, "flash": flashes},
-                   ensure_ascii=False, indent=1), encoding="utf-8")
+    # Что из задуманного реально встало в разметку. Пишется в `camera.json`
+    # вместо `flashes`: гейт `D26_flash` (`hf_zoom.py`) идёт мерить яркость по
+    # этому списку, и обещание вспышки, которой в разметке нет, роняло приёмку
+    # впустую — прогон 3ecf2289 обещал 1.974 и 45.533, а в кадре стоял один
+    # `fx-1`.
+    staged: list[float] = []
     for order, hit in enumerate(flashes):
         flash_start = round(hit - FLASH_HIT * FLASH_NATIVE, 4)
         flash_length = min(FLASH_NATIVE, duration - flash_start)
         if flash_start < 0 or flash_length < FLASH_HIT * FLASH_NATIVE + 0.2:
+            # Пропуск больше не молчит: раньше вспышка исчезала без следа, и
+            # разойтись список с разметкой мог незаметно. Подрезать разгон
+            # блока здесь нечем — это отдельная работа.
+            print(f"вспышка на {hit:.2f} с снята — "
+                  + (f"разгон блока {FLASH_HIT * FLASH_NATIVE:.2f} с не "
+                     f"влезает в начало ролика"
+                     if flash_start < 0 else
+                     f"до конца ролика ({duration:.2f} с) не остаётся места "
+                     f"на саму вспышку"))
             continue
+        staged.append(hit)
         unique, _, _ = _stage_overlay(public, FLASH_BLOCK, f"fx{order}")
         # Единственное время мимо `markup_time`: на кадр стыка привязан не
         # старт вспышки, а её пик (`flash_start = hit - FLASH_HIT *
@@ -1537,6 +1546,17 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 f' data-start="{max(0.0, hit - 0.15):.4f}"'
                 f' data-duration="0.6" data-track-index="{TRACK_SFX}"'
                 f' data-volume="0.5"></audio>')
+
+    # Планы камеры и моменты вспышек уезжают на диск: после рендера их меряют
+    # по готовому файлу. Правило Юли — «зум проверять числами, а не глазами:
+    # спикер сам наклоняется к камере, и на стоп-кадрах это читается как
+    # наезд» (broll-zoom-toolkit/README.md, грабля 2).
+    #
+    # Пишется ПОСЛЕ разметки и только тем, что в неё встало: файл — отчёт о
+    # сделанном, а не замысел.
+    (Path(rdir) / "camera.json").write_text(
+        json.dumps({"origin": origin, "plans": plans, "flash": staged},
+                   ensure_ascii=False, indent=1), encoding="utf-8")
 
     # ── субтитры ──────────────────────────────────────────────────────────
     # Титр идёт весь ролик и больше не гасится: гасить его было нужно, пока
