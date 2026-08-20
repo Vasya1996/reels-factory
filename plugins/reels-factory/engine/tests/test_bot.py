@@ -3341,8 +3341,32 @@ def test_пополнение_меняет_кнопки_в_том_же_сооб�
     _press("topup:cur:rub", msg)
 
     assert bot.load_session(7)["pay_currency"] == "rub"
+    assert msg.kinds[-1] == "edit"
     assert "Выберите сумму для пополнения" in msg.replies[-1]
     assert _labels(msg.markups[-1])[1:] == ["1000 ₽", "2500 ₽", "5000 ₽", "← Назад"]
+
+
+def test_прогулка_по_пополнению_живёт_одним_сообщением(work, магазин):
+    """Вся прогулка — валюта, суммы и «Назад» с обеих — правит одно сообщение.
+
+    Суммы новым сообщением оставляли в чате прежний экран с живыми кнопками,
+    а «Назад» правил уже не его: человек получал два экрана выбора валюты
+    подряд (в боевой базе это двойное `topup_opened`)."""
+    bot.save_session(7, _паспорт(step=bot.READY, scenario=SCENARIO,
+                                 scenario_approved=True))
+    msg = _Msg("Всё на месте: сценарий, фото и голос…")
+
+    _press("topup:start", msg)          # экран выбора пути → валюта
+    _press("topup:cur:rub", msg)        # валюта → суммы
+    _press("topup:start", msg)          # «← Назад» с сумм → валюта
+    _press("topup:cancel", msg)         # «← Назад» с валюты → выбор пути
+
+    assert msg.kinds == ["edit"] * 4                    # ни одного нового
+    # Экран выбора пути вернулся целиком, а не одной кнопкой пополнения.
+    подписи = _labels(msg.markups[-1])
+    assert подписи[0].startswith("🎬 С монтажом — $")
+    assert подписи[1].startswith("🎥 Без монтажа — $")
+    assert подписи[-2:] == ["💳 Пополнить баланс", "← Назад"]
 
 
 def _нехватка_на_ролик(chat_id: int, было: int) -> int:
@@ -3728,6 +3752,46 @@ def test_нехватка_баланса_видна_только_на_выбор
     assert подписи[0].endswith(bot.NO_FUNDS_SUFFIX)
     assert подписи[1].endswith(bot.NO_FUNDS_SUFFIX)
     assert подписи[-2:] == ["💳 Пополнить баланс", "← Назад"]
+
+
+def test_второе_утверждение_не_повторяет_ни_слов_ни_воронки(work, monkeypatch):
+    """Кнопка «Утвердить» живёт в истории чата, и второй тап по ней —
+    хоть подряд, хоть через неделю — утверждает уже утверждённое: два
+    «Сценарий утверждён» подряд и лишний шаг в воронке."""
+    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
+    bot.save_session(7, _паспорт(step=bot.REVIEW, scenario=SCENARIO))
+    msg = _Msg()
+
+    _press("ok", msg)
+    _press("ok", msg)
+
+    assert msg.replies.count(bot.APPROVED_MSG) == 1
+    assert _события().count("scenario_approved") == 1
+    # И это не тупик: экран выбора пути с полным набором кнопок на месте.
+    assert msg.replies[-1].startswith(bot.READY_MSG)
+    подписи = _labels(msg.markups[-1])
+    assert подписи[0].startswith("🎬 С монтажом — $")
+    assert подписи[1].startswith("🎥 Без монтажа — $")
+
+
+def test_после_правки_сценарий_утверждается_снова(work, monkeypatch):
+    """Защита от второго утверждения не должна запирать новый текст: правка
+    снимает признак, и «Утвердить» работает как в первый раз."""
+    monkeypatch.setattr(bot, "save_client_profile", lambda chat_id, s: None)
+    bot.save_session(7, _паспорт(step=bot.REVIEW, scenario=SCENARIO))
+    msg = _Msg()
+    _press("ok", msg)
+
+    _press("edit", msg)
+    правка = _Msg("Продажи начинаются раньше. Сохрани себе на потом.")
+    asyncio.run(bot.on_message(_Update(правка), None))
+    assert "scenario_approved" not in bot.load_session(7)
+
+    _press("ok", правка)
+
+    assert правка.replies.count(bot.APPROVED_MSG) == 1
+    assert bot.load_session(7)["scenario_approved"] is True
+    assert правка.replies[-1].startswith(bot.READY_MSG)
 
 
 def test_кнопка_пути_без_денег_ведёт_на_пополнение_а_не_в_сборку(work, клиент):

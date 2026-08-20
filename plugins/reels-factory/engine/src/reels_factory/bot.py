@@ -2987,6 +2987,17 @@ async def on_button(update, context):
     elif data == "edit":
         await _ask(q.message, chat_id, s, WAIT_EDIT, ASK_EDIT)
     elif data == "ok":
+        if s.get("step") == READY and _scenario_approved(s):
+            # Второй тап по «Утвердить»: два таких подряд давали два
+            # «Сценарий утверждён» и два экрана выбора пути, а воронка
+            # считала одно утверждение за два. Утверждать нечего — этот же
+            # текст уже утверждён, — поэтому просто показываем текущий экран
+            # со свежими числами: все кнопки на месте, тупика нет.
+            # Новый текст утверждается как обычно: признак снимается вместе
+            # со сценарием — правка, перевод, смена рода, другой материал,
+            # другая идея.
+            await _reshow(q.message, chat_id, s)
+            return
         language = _reel_language(s)
         scenario_language = (s.get("scenario") or {}).get("language")
         if scenario_language and scenario_language != language:
@@ -3384,14 +3395,20 @@ def _topup_gap_minor(chat_id: int, s: dict, currency: str) -> int | None:
 
 
 async def _show_amounts(msg, chat_id: int, s: dict, currency: str) -> None:
+    """Номиналы встают на место выбора валюты в том же сообщении.
+
+    Вся прогулка по пополнению живёт одним сообщением: выбор пути → валюта →
+    суммы и обратно. Новым сообщением суммы оставляли в чате прежний экран с
+    кнопками, и «Назад» правил уже не его — человек получал два живых экрана
+    выбора валюты подряд (в боевой базе это двойное `topup_opened`).
+    """
     s["pay_currency"] = currency
     save_session(chat_id, s)
     have = format_usd(_ledger().balance(chat_id))
-    await msg.reply_text(
+    await _edit_or_reply(
+        msg,
         ASK_AMOUNT_MSG.format(have=have),
-        reply_markup=_kb_amounts(
-            currency, _topup_gap_minor(chat_id, s, currency)
-        ),
+        _kb_amounts(currency, _topup_gap_minor(chat_id, s, currency)),
     )
 
 
