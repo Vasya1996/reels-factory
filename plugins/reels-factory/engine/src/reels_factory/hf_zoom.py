@@ -29,7 +29,6 @@ PROBE_W, PROBE_H = 540, 960
 ZOOM_TOLERANCE = 0.02
 
 #: Во сколько раз вспышка поднимает среднюю яркость кадра.
-FLASH_RISE = 1.35
 
 
 def _frame(mp4, at: float):
@@ -115,12 +114,14 @@ def _eased_ratio(plan: dict, first: float, second: float) -> float:
     return at(second) / at(first)
 
 
-def brightness(mp4, at: float) -> float:
-    return float(_frame(mp4, at).mean())
-
-
 def zoom_gates(mp4, camera: dict | None) -> dict[str, str]:
-    """D27 — наезды доехали, D26 — вспышки видны в кадре.
+    """D27 — наезды доехали.
+
+    Вспышку здесь судили гейтом `D26_flash`: он требовал прироста яркости в
+    1,35 раза. Снят как невыполнимый по построению — на светлом входе прирост
+    упирается в потолок 255. Боевой прогон 3ecf2289: вход 184, пик 243, нужно
+    было 248. Вспышку рисует их блок, её видно на кадре, а мерить её
+    отношением к уже светлой картинке нечем.
 
     Ключ был `D25` и совпадал с плановым `D25_empty_frame` (hf_gates.py):
     зумовый вердикт мержится после рендера (hf_render.py) и молча затирал
@@ -173,19 +174,6 @@ def zoom_gates(mp4, camera: dict | None) -> dict[str, str]:
     else:
         gates["D27_zoom"] = f"PASS: наездов {len(pushes)}, все по замеру"
 
-    flashes = [float(at) for at in camera.get("flash") or []]
-    if not flashes:
-        gates["D26_flash"] = "PASS: вспышек нет"
-    else:
-        dark = []
-        for at in flashes:
-            before = brightness(mp4, max(0.0, at - 0.25))
-            peak = max(brightness(mp4, at), brightness(mp4, at + 0.03))
-            if peak < before * FLASH_RISE:
-                dark.append(f"{at:.1f} с: яркость {before:.0f} → {peak:.0f}")
-        gates["D26_flash"] = ("FAIL: вспышка не видна — " + "; ".join(dark)
-                              if dark else
-                              f"PASS: вспышек {len(flashes)}, все видны")
     return gates
 
 
