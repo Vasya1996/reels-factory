@@ -168,8 +168,20 @@ def caption_snippet(sdk, public, *, track_index: int, duration: float) -> str:
                   root, count=1)
     root = root.replace('data-width="1920"', f'data-width="{OUT_W}"')
     root = root.replace('data-height="1080"', f'data-height="{OUT_H}"')
+    # Полосу титра мы сами объявляем запретной их гейтом `--caption-zone` с
+    # `severity=error` (`hf_render.py`), а слова титра стоят ровно в ней:
+    # отступ 620 px от низа, полоса начинается на 998,4. Без пометки
+    # требование невыполнимо по построению — сборка держалась только на том,
+    # что гейт снимает один кадр `t = duration`, где последняя группа уже
+    # погашена (запас 37 мс на боевых данных). `data-layout-allow-caption-zone`
+    # — их штатный выход: сборщик кандидатов ищет его через `closest()` и
+    # такой текст не отдаёт вовсе
+    # (packages/cli/src/commands/layout-audit.browser.js:108-110,1403 на пине
+    # 0.7.84), а сама находка проверяет атрибут ещё раз
+    # (packages/cli/src/utils/checkPipeline.ts:265).
     root = root.replace('data-composition-id="caption-highlight"',
                         f'data-composition-id="caption-highlight"'
+                        f' data-layout-allow-caption-zone="true"'
                         f' data-track-index="{track_index}"')
     if DATA_HOOK not in script:
         raise RuntimeError(

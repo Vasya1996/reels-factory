@@ -442,8 +442,9 @@ def _restore_short_faceless(plan: dict, previous: dict,
     второй бывает короче `MIN_FULLSCREEN_S` — а такой план `validate_edit_plan`
     заворачивает уже в `build_avatar_render_plan`, то есть с оплаченной
     озвучкой. Спросить агента там уже некого, поэтому короткий кусок
-    возвращается тому покрытию, которое у него было до решения: ведущая в кадре
-    стоит денег, падение сборки — всей озвучки.
+    возвращается тому покрытию, которое у него было до решения, а если решения
+    на нём не было вовсе — ведущей: ведущая в кадре стоит денег, падение
+    сборки — всей озвучки.
 
     Возвращает имена возвращённых окон: их число уезжает в `agent_coverage`,
     иначе тихая правка чужого решения осталась бы незаметной.
@@ -452,16 +453,17 @@ def _restore_short_faceless(plan: dict, previous: dict,
     for window in plan.get("windows") or []:
         if window.get("coverage") in _VISIBLE_COVERAGE:
             continue
-        own_ids = [item for item in window.get("phrase_ids") or []
-                   if item in previous]
-        if not own_ids:
-            # Окно завёл `editplan` и он же его проверил — не наше дело.
-            continue
         timing = window.get("final_timing") or {}
         duration = float(timing.get("end", 0)) - float(timing.get("start", 0))
         if duration >= MIN_FULLSCREEN_S - 1e-6:
             continue
-        back = previous[own_ids[0]]
+        own_ids = [item for item in window.get("phrase_ids") or []
+                   if item in previous]
+        # Кусок, чьё покрытие совпало с исходным, до `previous` не доходит:
+        # его фразу агент не трогал, а короче порога кусок стал от разреза
+        # окна. Запасное покрытие тогда берётся из канона окна: ведущая в
+        # кадре стоит денег, падение сборки — всей озвучки.
+        back = previous[own_ids[0]] if own_ids else "avatar"
         for item in window.get("phrase_ids") or []:
             phrase_by_id[item]["coverage"] = back
         _retarget_window(plan, window, back, window["coverage"])

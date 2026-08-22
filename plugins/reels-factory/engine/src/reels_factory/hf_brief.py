@@ -27,7 +27,7 @@ from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.editplan import MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S
 from reels_factory.hf_gates import min_scenes
 from reels_factory.hf_montage import (
-    SERIES_MAX, SERIES_MIN, face_gap, inserts_wanted,
+    SERIES_MAX, SERIES_MIN, face_gap, inserts_wanted, survives_series,
 )
 from reels_factory.hf_montage_skill import number, seconds, write_montage_skill
 from reels_factory.hf_phrases import faceless_phrases
@@ -292,6 +292,22 @@ def _shown_scenes(groups: list[tuple[list[int], bool]], phrases: list[dict], *,
     return shown, blind
 
 
+def _series_fit(scene: dict, length: float) -> bool:
+    """Доживёт ли вставка этой сцены образца до кадра.
+
+    Считаем тем же, чем считает гейт до заказа (`survives_series` в
+    hf_montage.py): он кредитует только вставки, которые влезут в окно серии
+    или лягут на сцену без ведущей. Образец сильнее правила, стоящего рядом с
+    ним, поэтому раздавать вставки штуками, а требовать по длине — учить плану,
+    который заворачивает `D34_inserts`.
+
+    Секунд у сцен образца ещё нет: их ставит код после сдачи плана
+    (`lay_out_scenes` в hf_phrases.py). Длину подставляем из фраз сцены
+    (`_scene_lengths`).
+    """
+    return survives_series({**scene, "startSec": 0.0, "endSec": length})
+
+
 def _sample_plan(phrases: list[dict], faceless: set[int], *,
                  duration: float, bar: float = 1.0,
                  avatar_ordered: bool = True) -> str:
@@ -368,6 +384,7 @@ def _sample_plan(phrases: list[dict], faceless: set[int], *,
     # образце оказываются три разных окна — `full`, `punch` и уголок, — и ни
     # одно не выведено из чётности номера сцены.
     corner_at = middle[1] if len(middle) > 1 else None
+    lengths = _scene_lengths(shown, phrases)
     scenes = []
     for index, ((block, _), blind) in enumerate(zip(shown, blinds)):
         last = index == len(shown) - 1
@@ -379,7 +396,7 @@ def _sample_plan(phrases: list[dict], faceless: set[int], *,
         if not avatar_ordered:
             scene["avatarNeeded"] = not blind
         scene["insert"] = None
-        if blind or index == corner_at:
+        if blind or (index == corner_at and _series_fit(scene, lengths[index])):
             scene["presenter"] = "none" if blind else "pip-tr"
             scene["insert"] = {
                 "shots": ["hand writing checklist in notebook",
@@ -407,12 +424,21 @@ def _sample_plan(phrases: list[dict], faceless: set[int], *,
     # гейт до заказа (`D34_inserts`): образец сильнее правила, и план, срисован­
     # ный с него, иначе заворачивают. Недостающие берут сцены из середины —
     # ведущая уезжает в верхнюю половину кадра, вставка занимает нижнюю.
+    # Счёт тут ровно гейтовский (`_series_fit`): вставка на сцене длиннее окна
+    # серии до кадра не доживает, и кредитовать её образцу нечем. На медленной
+    # речи пара фраз даёт сцену длиннее окна, и таких сцен образец не берёт
+    # вовсе — лучше показать меньше моментов, чем показать момент, который
+    # `D34_inserts` не засчитает.
     нужно = inserts_wanted(scenes)
     for index in range(1, len(scenes) - 1):
-        if sum(1 for scene in scenes if scene.get("insert")) >= нужно:
+        if sum(1 for at, scene in enumerate(scenes)
+               if scene.get("insert") and _series_fit(scene, lengths[at])
+               ) >= нужно:
             break
         scene = scenes[index]
         if scene.get("insert") or scene.get("schema"):
+            continue
+        if not _series_fit(scene, lengths[index]):
             continue
         scene["presenter"] = "stack"
         scene["insert"] = {"shots": ["hands sorting papers on a desk",
@@ -787,11 +813,21 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
         # «между ними план годен» обязательна — она и есть допуск.
         #
         # Сколько сцен без ведущей нужно, чтобы набрать эти секунды: каждая
-        # живёт от пола сцены без ведущей до предела без лица. Вилка названа
-        # потому, что мерка агента — целая сцена, а не секунда. На ролике, где
-        # отдавать нечего (цель длиннее самого ролика), абзаца нет вовсе:
-        # «отдай не меньше 0 с» — не требование.
-        least_scenes = math.ceil(give / MAX_FACE_ABSENCE_S) if give else 0
+        # живёт от пола сцены без ведущей до её потолка `_BLIND_ROOF`. Вилка
+        # названа потому, что мерка агента — целая сцена, а не секунда. На
+        # ролике, где отдавать нечего (цель длиннее самого ролика), абзаца нет
+        # вовсе: «отдай не меньше 0 с» — не требование.
+        #
+        # Пол вилки считается по тому же потолку, что назван агенту строкой
+        # ниже, а не по пределу без лица: предел десять секунд, потолок сцены
+        # восемь (`MAX_STATIC_SPAN`), и счёт по десяти обещал требование,
+        # которого этим числом сцен не выполнить. На 60-секундном ролике
+        # выходило «отдай 26,8 с тремя сценами по 8 с» — 24 с потолка против
+        # 26,8 с требования. Требование, невыполнимое по построению, — это
+        # сгоревшая пересдача: агент обязан получать выполнимое указание
+        # («Tell Claude what to do instead of what not to do»,
+        # https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices).
+        least_scenes = math.ceil(give / _BLIND_ROOF) if give else 0
         most_scenes = int(give // MIN_FULLSCREEN_S) if give else 0
         # Сколько фраз подряд набирают самую короткую сцену без ведущей на
         # ЭТОМ материале. На быстрой речи (фразы по 2,4 с) одной фразы не
@@ -813,7 +849,10 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
             f"{least_scenes} до {most_scenes} сцен с "
             "`avatarNeeded: false`, каждая длиной от "
             f"{seconds(MIN_FULLSCREEN_S)} до {seconds(_BLIND_ROOF)}, и "
-            "между двумя такими сценами стоит сцена с ведущей."
+            "между двумя такими сценами стоит сцена с ведущей. Потолок "
+            f"{seconds(_BLIND_ROOF)} — это предел куска без смены картинки "
+            "(`D19_static_span`), поэтому вилка сцен начинается там, где "
+            "этого потолка хватает на все отданные секунды."
             + floor_note
             + " Реши это разом, до того как распишешь сцены: сколько кусков "
             "ролика идут без лица и где они стоят — одно решение на весь "

@@ -1282,6 +1282,42 @@ def test_повторный_прогон_не_списывает_работу_а
     assert sum(len(прогоны) for прогоны, _ in meter.agent_calls) == 1
 
 
+def test_быстрый_путь_отчитывается_непроверенным(monkeypatch, tmp_path):
+    """F9: на быстром пути (`montage=False`) не считается ни один гейт приёмки
+    — ни D1..D7 из `verify_reel`, ни монтажные. Отчёт при этом нёс один
+    `qa_pass: True`, и непроверенный ролик выглядел в нём точно так же, как
+    ролик, прошедший все проверки."""
+    calls = []
+    fs, fa = _fakes(monkeypatch, tmp_path, calls)
+    wd = _wd_with_scenario(tmp_path)
+    master_wav = wd / "voice_master.wav"
+    master_wav.write_bytes(b"")
+
+    def fake_master(scenario, config, workdir, *, voice_id=None, meter=None):
+        return SimpleNamespace(wav=master_wav)
+
+    cfg = _cfg("avatar")
+    cfg["montage"] = False
+    cfg["master_audio"] = {"enabled": True}
+
+    res = pipeline.run_make(cfg, wd, avatar_client=_FakeAvatar(),
+                            synth_fn=fs, assemble_fn=fa,
+                            master_audio_fn=fake_master)
+
+    assert "verify" not in [call[0] for call in calls]
+    assert res["gates"] is None
+    assert res["qa_checked"] is False, (
+        "непроверенный ролик отчитывается как прошедший приёмку")
+
+    # Полный путь гейты считает — и говорит об этом тем же полем, иначе
+    # различить два случая по отчёту нечем.
+    (tmp_path / "full").mkdir()
+    полный = pipeline.run_make(
+        _cfg("avatar"), _wd_with_scenario(tmp_path / "full"),
+        avatar_client=_FakeAvatar(), synth_fn=fs, assemble_fn=fa)
+    assert полный["qa_checked"] is True
+
+
 def test_без_монтажа_один_проход_heygen(monkeypatch, tmp_path):
     """montage=False: единая master-дорожка -> один вызов HeyGen, без edit_plan,
     assemble, verify и поблочной озвучки."""

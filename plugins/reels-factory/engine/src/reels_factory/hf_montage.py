@@ -164,6 +164,29 @@ def inserts_wanted(scenes: list[dict]) -> int:
     return min(INSERTS_WANTED, max(2, len(scenes) // 2))
 
 
+def survives_series(scene: dict) -> bool:
+    """Доживёт ли названный агентом момент до кадра серией биролла.
+
+    Дозаказный счёт обязан мерить тем же, чем режет отбор (`pick_series`), а
+    режет он по ДЛИНЕ: сцена короче `SERIES_MIN` или длиннее `SERIES_MAX` серию
+    не несёт. Пока счёт шёл штуками, план из длинных сцен проходил проверку
+    целиком и терял в отборе все вставки — четыре сцены по 7,0 с давали ноль
+    серий из четырёх, и это всплывало гейтом D15 уже после покупки клипов
+    HeyGen.
+
+    Вне очереди отбор берёт только сцену на дыре аватара: там биролл
+    обязателен, иначе кадр чёрный. До заказа дыр ещё нет, поэтому решение о
+    ведущей читается из плана (`avatarNeeded: false`), а в сборке то же самое
+    уже стоит полем `presenter`.
+    """
+    if scene.get("avatarNeeded") is False:
+        return True
+    if str(scene.get("presenter") or "") == "none":
+        return True
+    size = float(scene.get("endSec", 0)) - float(scene.get("startSec", 0))
+    return SERIES_MIN - 0.001 <= size <= SERIES_MAX + 0.001
+
+
 def inserts_shortfall(scenes: list[dict]) -> str:
     """Чего не хватает плану по вставкам. Пустая строка — хватает.
 
@@ -172,13 +195,20 @@ def inserts_shortfall(scenes: list[dict]) -> str:
     а в сборке — отказ. Один и тот же счёт в двух местах разъехался бы.
     """
     wanted = inserts_wanted(scenes)
-    have = sum(1 for scene in scenes if insert_of(scene))
+    named = sum(1 for scene in scenes if insert_of(scene))
+    have = sum(1 for scene in scenes
+               if insert_of(scene) and survives_series(scene))
     if have >= wanted:
         return ""
-    return (f"вставок в плане {have}, а нужно хотя бы {wanted}: часть из них "
-            "снимет отбор серий (две подряд он не ставит), и на оставшихся "
+    lost = ("" if named == have else
+            f" (названо {named}, но {named - have} из них отбор снимет по "
+            "длине)")
+    return (f"вставок в плане {have}, а нужно хотя бы {wanted}{lost}: часть из "
+            "них снимет отбор серий (две подряд он не ставит), и на оставшихся "
             "ролик встаёт одним планом. Добавь моменты под вставку там, где "
-            "реплика описывает действие или предмет")
+            "реплика описывает действие или предмет, и держи такую сцену "
+            f"длиной от {SERIES_MIN:g} до {SERIES_MAX:g} с — серия из двух "
+            "планов в другую длину не встаёт")
 
 
 def check_inserts(scenes: list[dict]) -> None:
@@ -512,7 +542,7 @@ def drop_schema(scenes: list[dict], scene: dict) -> None:
     scene["presenter"] = pick_position(scenes, scenes.index(scene))
 
 
-def settle_schemas(scenes: list[dict]) -> list[str]:
+def settle_schemas(scenes: list[dict], gaps=()) -> list[str]:
     """Схема, которой не хватит секунд, разбирается ДО сборки.
 
     Пол формы известен заранее — он считается по числу её элементов
@@ -525,13 +555,25 @@ def settle_schemas(scenes: list[dict]) -> list[str]:
     Сначала пробуем отдать короткую сцену соседке — секунды никуда не
     деваются, а кадр держит то, что у соседки уже есть. Не вышло — снимаем
     схему и закрываем кадр ведущей.
+
+    Меряем ту схему, которую сборка действительно нарисует (`schema_plan`), а
+    не одно поле `schema`. Пока считалось только оно, запасная схема из
+    `fallback` доезжала до `build_composition` неизмеренной: её пол там тот же
+    (`steps` на три узла — 4,0 с, hf_schema.py:68), сцена на дыре без аватара
+    короче этого теряла схему уже в кадре, и закрыть его было нечем — D25 и
+    D26 валили сборку за то, чего агент не делал, а отказ D25 велел заполнить
+    `fallback`, который заполнен.
+
+    `gaps` уезжает в `absorb_scene`: соседка по ту сторону границы острова
+    секунды не принимает.
     """
+    from reels_factory.hf_compose import schema_plan
     from reels_factory.hf_schema import min_seconds
 
     settled: list[str] = []
     for scene in list(scenes):
-        plan = scene.get("schema")
-        if not (isinstance(plan, dict) and plan.get("form")):
+        plan = schema_plan(scene)
+        if not plan:
             continue
         count = len(plan.get("items") or plan.get("rows")
                     or plan.get("nodes") or plan.get("brands") or [1])
@@ -539,32 +581,55 @@ def settle_schemas(scenes: list[dict]) -> list[str]:
         length = float(scene["endSec"]) - float(scene["startSec"])
         if length >= need - 0.05:
             continue
-        if absorb_scene(scenes, scene):
+        if absorb_scene(scenes, scene, gaps):
             settled.append(f'{scene["id"]} → соседке')
             continue
         drop_schema(scenes, scene)
-        settled.append(f'{scene["id"]}: схема снята')
+        settled.append(f'{scene["id"]}: схема «{plan["form"]}» снята — сцене '
+                       f"{length:.1f} с, а форме нужно {need:.1f}")
     if settled:
         print("схемы, которым не хватало секунд: " + ", ".join(settled))
     return settled
 
 
-def absorb_scene(scenes: list[dict], scene: dict) -> bool:
+def absorb_scene(scenes: list[dict], scene: dict, gaps=()) -> bool:
     """Отдать секунды сцены соседке, которой есть чем занять кадр.
 
     Берём предыдущую, а при её отсутствии — следующую: у предыдущей уже
     сыгран вход, и продление читается спокойнее, чем ранний старт следующей.
     Слияние не должно рождать кусок длиннее `MAX_STATIC_SPAN` — иначе ролик
     встанет одним планом, и это поймает D19 уже на готовом файле.
+
+    Через границу острова соседку не растягиваем. Соседка с живой ведущей,
+    доросшая до куска, где аватара нет физически, законного положения не имеет
+    вовсе: с ведущей её валит D12 (`_faceless_problems` — перекрытие с дырой
+    больше 1/30 с), без ведущей — D25 (кадр закрывать нечем). Прогон отдал так
+    5 из 7 с растянутой сцены под купленный клип, а оба значения `presenter`
+    давали FAIL. Поэтому секунды принимает только соседка по ту же сторону
+    границы: обе на дыре либо обе на купленном куске. Не нашлось такой —
+    возвращаем False, и вызывающий чинит своим средством (`drop_schema`) или
+    оставляет находку гейту.
+
+    `gaps` — дыры между островами аватара (`hf_layout.avatar_gaps`). Пустой
+    список значит, что про заказ вызывающий ничего не сказал: границ тогда нет
+    и делить нечего.
     """
     from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 
     index = scenes.index(scene)
     start, end = float(scene["startSec"]), float(scene["endSec"])
+
+    def on_gap(item: dict) -> bool:
+        return in_avatar_gap(float(item["startSec"]), float(item["endSec"]),
+                             list(gaps))
+
+    faceless = on_gap(scene)
     for neighbour in ([scenes[index - 1]] if index else []) + (
             [scenes[index + 1]] if index + 1 < len(scenes) else []):
         if str(neighbour.get("presenter") or "full") == "none" \
                 and not insert_of(neighbour) and not schema_scene(neighbour):
+            continue
+        if on_gap(neighbour) != faceless:
             continue
         length = float(neighbour["endSec"]) - float(neighbour["startSec"])
         if length + (end - start) > MAX_STATIC_SPAN + 0.001:
@@ -584,7 +649,7 @@ def absorb_scene(scenes: list[dict], scene: dict) -> bool:
     return False
 
 
-def settle_empty_frames(scenes: list[dict]) -> list[str]:
+def settle_empty_frames(scenes: list[dict], gaps=()) -> list[str]:
     """Сцена, кадр которой закрыть нечем, отдаёт свои секунды соседке.
 
     Пустой кадр рождает не агент, а код: он снимает серию, не прошедшую отбор
@@ -599,13 +664,17 @@ def settle_empty_frames(scenes: list[dict]) -> list[str]:
     и её ловят D25 по раскадровке и D26 по собранной композиции; выпустить её
     молча нельзя, а придумать содержимое кадру код не может.
 
+    `gaps` уезжает в `absorb_scene`: соседка по ту сторону границы острова
+    секунды не принимает — растянутая через границу сцена законного положения
+    ведущей не имеет вовсе.
+
     Возвращает id разобранных сцен.
     """
     settled: list[str] = []
     index = 0
     while index < len(scenes):
         scene = scenes[index]
-        if frame_filler(scene) or not absorb_scene(scenes, scene):
+        if frame_filler(scene) or not absorb_scene(scenes, scene, gaps):
             index += 1
             continue
         settled.append(scene["id"])
@@ -644,9 +713,9 @@ def dedupe_neighbours(scenes: list[dict], *, clips: list[dict] | None = None,
     # и зовут снаружи — значит отсюда сцену можно удалить, не сломав чужой
     # цикл по списку. Порядок тоже отсюда: слияние меняет соседство, и
     # сравнивать соседей имеет смысл уже после него.
-    settle_empty_frames(scenes)
-
     gaps = ordered_gaps(clips, duration)
+    settle_empty_frames(scenes, gaps)
+
     fixed: list[str] = []
     index = 0
     while index < len(scenes) - 1:

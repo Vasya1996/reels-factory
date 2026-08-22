@@ -148,19 +148,45 @@ def _gate_face(samples: list[dict], face: dict | None) -> str:
 #: (`docs/goal-hyperframes-speed.md`, пункт 2 приёмки).
 MIN_PRESENTER_POSITIONS = 3
 
+#: Что открывает ведущей уголки. Уголок закрывает кадр только поверх вставки
+#: или схемы (`hf_montage.positions_for`), и в композиции они видны под этими
+#: идентификаторами (`hf_compose._insert_tag`, схема — `schema-…`).
+PRESENTER_FREEING_PREFIXES = ("ins-", "schema-")
+
+
+def _reachable_positions(samples: list[dict]) -> int:
+    """Сколько разных окон ведущей этот ролик вообще позволяет.
+
+    Планку ставит приёмка, а выбор положений — `positions_for`: уголки и
+    половина открываются только там, где кадр держит вставка или схема. Не
+    дожила до кадра ни одна — у ведущей остаются `full` и `punch`, то есть два
+    положения (разница 87 px при пороге 54, `hf_layout.VIDEO_RECTS`), а третьего
+    взять неоткуда: `pip-*` без вставки роняет D20. Требовать в этом случае
+    трёх значит валить сборку за невозможное, и чинить это агенту нечем.
+    """
+    from reels_factory.hf_montage import positions_for
+
+    for sample in samples:
+        for clip in sample.get("clips") or []:
+            if clip.get("visible") and str(clip.get("id") or "").startswith(
+                    PRESENTER_FREEING_PREFIXES):
+                return MIN_PRESENTER_POSITIONS
+    return len(positions_for({}))
+
 
 def _gate_presenter_moves(samples: list[dict]) -> str:
     rects = [sample["videoRect"] for sample in samples
              if sample.get("videoRect") and sample["videoRect"].get("visible")]
     if not rects:
         return "FAIL: ведущей нет на экране ни на одной выборке"
+    need = min(MIN_PRESENTER_POSITIONS, _reachable_positions(samples))
     distinct = _distinct_positions(rects)
-    if len(distinct) >= MIN_PRESENTER_POSITIONS:
+    if len(distinct) >= need:
         return f"PASS: положений {len(distinct)}"
     shown = "; ".join(f'{int(r["left"])},{int(r["top"])} '
                       f'{int(r["width"])}x{int(r["height"])}' for r in distinct)
     return (f"FAIL: у ведущей за ролик {len(distinct)} положения вместо "
-            f"{MIN_PRESENTER_POSITIONS} — {shown}. Положение называешь ты "
+            f"{need} — {shown}. Положение называешь ты "
             "полем `presenter` каждой сцены: раскидай её по кадру — во весь "
             "кадр, в угол, в половину")
 
@@ -218,8 +244,15 @@ def _gate_inserts_visible(samples: list[dict]) -> str:
             if clip.get("visible"):
                 visible.add(name)
     if not seen:
+        # Текст обращён к коду, а не к агенту: вставки из кадра убирает отбор
+        # серий (`hf_montage.pick_series`) и неответивший сток
+        # (`hf_compose.settle_inserts`), а не план. Агенту тут чинить нечего —
+        # чинится это дозаказным счётом, который меряет вставки той же длиной,
+        # что и отбор (`hf_montage.survives_series`).
         return ("FAIL: в композиции нет ни одной вставки — кадр весь ролик "
-                "занимают ведущая и титр")
+                "занимают ведущая и титр. Все названные планом моменты снял "
+                "отбор серий либо подбор медиа: смотри `dropped` в отчёте "
+                "`pick_series` и число вставок в дозаказном гейте D34")
     blind = sorted(seen - visible)
     if blind:
         return (f"FAIL: вставки объявлены, но в кадре не появились: "

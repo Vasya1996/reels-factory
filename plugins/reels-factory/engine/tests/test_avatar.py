@@ -3,8 +3,9 @@ from pathlib import Path
 import pytest
 
 from reels_factory.avatar import (DEFAULT_MOTION_PROMPT, MOTION_PROMPT_BY_ROLE,
-                                  UPLOAD_URL, HeyGenClient, cached_generate,
-                                  upload_photo_asset)
+                                  POLL_MAX_ITERATIONS, UPLOAD_URL,
+                                  HeyGenClient, HeyGenRenderTimeout,
+                                  cached_generate, upload_photo_asset)
 
 
 class _Resp:
@@ -475,3 +476,37 @@ def test_кэш_различает_роли(monkeypatch, tmp_path):
     p_hook = cached_generate(c, audio, cache_dir, role="hook")
 
     assert p_cta != p_hook
+
+
+class _ВечноРендерит:
+    """HeyGen принял заказ и рендерит дольше нашего терпения."""
+
+    def __init__(self):
+        self.опросов = 0
+
+    def post(self, url, json=None, headers=None, timeout=None, files=None):
+        if "assets" in url:
+            return _Resp({"data": {"asset_id": "aud1"}})
+        return _Resp({"data": {"video_id": "vid-долгий"}})
+
+    def get(self, url, headers=None, timeout=None):
+        self.опросов += 1
+        return _Resp({"data": {"status": "processing", "video_url": None}})
+
+
+def test_ожидание_heygen_полчаса_и_таймаут_отличим_от_отказа(tmp_path):
+    """P6-09: потолок ожидания был 10 минут, а таймаут приходил тем же
+    `RuntimeError`, что и отказ рендера. Заказ на их стороне жив и оплачен —
+    отличить его от несостоявшегося было нечем, и обе ветки вели к повторному
+    заказу за те же деньги."""
+    http = _ВечноРендерит()
+    спал = []
+    c = HeyGenClient(api_key="k", avatar_id="a1", motion_prompt="m",
+                     http=http, sleep=спал.append)
+
+    with pytest.raises(HeyGenRenderTimeout) as отказ:
+        c.generate(_wav(tmp_path / "a.wav"), tmp_path / "out.mp4")
+
+    assert отказ.value.video_id == "vid-долгий"
+    assert sum(спал) >= 1800, "ждём заказ не меньше получаса"
+    assert http.опросов == POLL_MAX_ITERATIONS

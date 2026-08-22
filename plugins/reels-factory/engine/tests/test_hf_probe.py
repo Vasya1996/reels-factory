@@ -139,6 +139,23 @@ def test_ведущей_нет_нигде_валится():
         "D14_presenter_moves"].startswith("FAIL")
 
 
+def test_планка_считается_от_достижимого():
+    """Ни одна вставка и ни одна схема до кадра не дожили — уголок ведущей
+    роняет D20 (`fills_frame`), и `positions_for` оставляет ей `full` и
+    `punch`. Третьего положения взять неоткуда, и требовать его значит валить
+    сборку за невозможное; чинить это агенту нечем. Пол в одно положение при
+    этом остаётся: неподвижная ведущая — по-прежнему провал."""
+    PUNCH = {"left": -87, "top": -170, "width": 1254, "height": 2229,
+             "visible": True}
+    двух = [_sample(0.0, clips=()), _sample(3.0, video=PUNCH, clips=())]
+    assert gates_from_report(_report(двух), FACE)[
+        "D14_presenter_moves"].startswith("PASS")
+
+    одного = [_sample(0.0, clips=()), _sample(3.0, clips=())]
+    assert gates_from_report(_report(одного), FACE)[
+        "D14_presenter_moves"].startswith("FAIL")
+
+
 # ---------- D15: вставки видны ----------
 
 def test_композиция_без_вставок_валится():

@@ -14,6 +14,8 @@ D7 captions   — автогейт по words (транскрипт после c
                 слово точно совпадает с известным вариантом бренд-словаря, но не
                 с display (регресс проводки apply_caption_fixes). Левенштейн-
                 подозрения не фейлят — собираются в warn-список внутри PASS.
+                SKIP — когда сверять не с чем: нет слов или в словаре нет ни
+                одного однословного варианта.
 
 dur_fn/wh_fn/lufs_fn/fps_fn/volume_fn — DI для тестов (дефолты — реальные замеры).
 """
@@ -52,11 +54,19 @@ def _word_core(text) -> str:
 
 
 def _d7_captions(words, caption_fixes: dict) -> str:
+    # Сверять не с чем — это пропуск, а не пройденная проверка. Без слов и без
+    # однословных вариантов ни одно слово не может ни упасть, ни попасть в
+    # предупреждение: гейт вырождается в вечный PASS и выдаёт за проверенные
+    # субтитры, которых никто не смотрел. Пустой словарь — не редкость:
+    # многословная тема без явного `theme_captions` даёт его по построению
+    # (`build_caption_fixes`, compose.py:97).
     if not words:
-        return "PASS(нет слов)"
+        return "SKIP(нет слов)"
     displays_low = {str(d).lower() for d in caption_fixes}
     variants_low = {str(v).lower() for variants in caption_fixes.values() for v in variants
                     if " " not in str(v)}
+    if not variants_low:
+        return "SKIP(в словаре нет однословных вариантов)"
     lev_variants = [v for v in variants_low if len(v) >= 4]
 
     bad, warn = [], []

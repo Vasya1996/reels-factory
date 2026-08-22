@@ -18,7 +18,8 @@ from pathlib import Path
 from reels_factory import hf_captions
 from reels_factory.compose import VENC
 from reels_factory.config import (
-    FFMPEG, FPS, LUFS_TARGET, OUT_H, OUT_W, TP_TARGET, cli_env,
+    FFMPEG, FPS, LUFS_TARGET, MAX_DELIVERY_BYTES, OUT_H, OUT_W, TP_TARGET,
+    cli_env,
 )
 from reels_factory.editplan import MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S
 from reels_factory.face_detect import face_box_for, load_face
@@ -46,7 +47,8 @@ from reels_factory.hf_media import resolve_all
 from reels_factory.hf_montage import (
     check_inserts, check_shots, dedupe_neighbours, drop_series,
     inserts_shortfall, inserts_wanted,
-    merge_adjacent_series, pick_series, settle_schemas, show_ordered_avatar,
+    merge_adjacent_series, ordered_gaps, pick_series, settle_schemas,
+    show_ordered_avatar,
 )
 from reels_factory.hf_montage_skill import SKILL_NAME, seconds
 from reels_factory.hf_phrases import (
@@ -57,6 +59,7 @@ from reels_factory.hf_rhythm import rhythm_gates
 from reels_factory.hf_sdk import sdk_session
 from reels_factory.hf_zoom import read_camera, zoom_gates
 from reels_factory.hyperframes_blocks import _HF_VERSION
+from reels_factory.render import media_dur
 
 #: Качество финального рендера остаётся прежним. Черновой прогон включается
 #: переменной окружения — на нём проверяют монтаж, а не картинку.
@@ -315,14 +318,59 @@ def _normalize_words(words: list[dict]) -> list[dict]:
     return result
 
 
+#: Битрейт звука первого прохода. Из него же считается доля веса, которая
+#: остаётся картинке.
+_AUDIO_BITRATE = 192_000
+
+#: Запас на заголовки контейнера и на перелёт регулятора битрейта: целимся не
+#: в сам потолок, а чуть ниже.
+_SIZE_HEADROOM = 0.93
+
+
+def _fit_delivery_size(mp4: Path) -> Path:
+    """Ужать ролик под потолок доставки, если он в него не влез.
+
+    Картинка до сих пор шла `-c:v copy`, то есть с битрейтом рендера, и вес
+    готового ролика не ограничивался ничем. Замер: 44 925 764 Б за 59,10 с —
+    6,08 Мбит/с, то есть 50 МБ набегают к 69-й секунде. Верхней границы
+    длительности при этом нет ни у сценария, ни у пути «дословно»
+    (`split_verbatim` в scenario.py берёт любой текст), и дальше полностью
+    оплаченный ролик становится невыдаваемым: Telegram его не берёт, а
+    пересборка веса не меняет — кнопки продолжения на этой стадии нет вовсе
+    (`delivery_too_big` в bot.py).
+
+    Второй проход идёт ТОЛЬКО когда файл в потолок не влез: обычный ролик
+    уезжает зрителю ровно тем же файлом, что и раньше. Звук копируется —
+    он уже выровнен первым проходом, и второе сжатие ему ни к чему.
+    """
+    if mp4.stat().st_size <= MAX_DELIVERY_BYTES:
+        return mp4
+    duration = media_dur(str(mp4))
+    # Нижняя граница — против ролика такой длины, на котором честная доля уже
+    # отрицательна: считать битрейт по ней бессмысленно, а такой вес всё равно
+    # поймает проверка на доставке.
+    video_bitrate = max(300_000, int(
+        MAX_DELIVERY_BYTES * 8 * _SIZE_HEADROOM / duration) - _AUDIO_BITRATE)
+    fitted = mp4.with_name(mp4.name + ".fit.mp4")
+    subprocess.run(
+        [FFMPEG, "-y", "-i", str(mp4),
+         "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+         "-b:v", str(video_bitrate), "-maxrate", str(video_bitrate),
+         "-bufsize", str(video_bitrate * 2),
+         "-c:a", "copy", "-movflags", "+faststart", str(fitted)],
+        check=True, capture_output=True)
+    os.replace(fitted, mp4)
+    return mp4
+
+
 def _normalize_loudness(src: Path, dst: Path) -> Path:
     subprocess.run(
         [FFMPEG, "-y", "-i", str(src),
          "-af", f"loudnorm=I={LUFS_TARGET}:TP={TP_TARGET}:LRA=11",
-         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+         "-c:v", "copy", "-c:a", "aac", "-b:a", f"{_AUDIO_BITRATE // 1000}k",
          "-movflags", "+faststart", str(dst)],
         check=True, capture_output=True)
-    return dst
+    return _fit_delivery_size(dst)
 
 
 def _place_clips(public: Path, avatar_mp4s: list, avatar_render_plan: dict | None,
@@ -511,7 +559,19 @@ def _scene_midpoints(board: dict) -> list[float]:
     вход: середина попадает в его незавершённый твин, и аудит честно видит
     там наложение текстов (content_overlap на lt-kicker-name, прогон 23) —
     но это кадр перехода, а не кадр, который видит зритель большую часть
-    сцены. Их же конвейер по той же причине не бьёт по границам твинов.
+    сцены.
+
+    Сдвиг закрывает только находки редкой сетки — `text_box_overflow`,
+    `clipped_text`, `text_occluded`: их считают по выборкам из `--at`
+    (`__hyperframesLayoutAudit`, layout-audit.browser.js:1440-1449).
+    `content_overlap` он НЕ закрывает: их конвейер пересчитывает его отдельным
+    проходом по плотной сетке 8 кадров в секунду на всю длительность,
+    независимо от `--at` (`collectMotionOverlapSamples`,
+    packages/cli/src/utils/checkPipeline.ts:437-465 на пине 0.7.84). Шаг такой
+    сетки — 1/8 с, то есть 125 мс: наложение, попавшее в две её выборки,
+    остаётся предупреждением (а под `--strict` это падение), и с 500 мс
+    поднимается до ошибки (layoutAudit.ts:185-186,265-313). Сдвинуть точку
+    замера от такого наложения нельзя — его чинят кадром, а не выборкой.
     """
     times = set()
     for scene in board.get("scenes") or []:
@@ -1232,8 +1292,10 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                               duration=duration)
             # Схема, которой не хватит секунд, разбирается здесь, до сборки:
             # иначе она снималась уже в кадре, и сцена без ведущей оставалась
-            # с одним фоном.
-            settle_schemas(board["scenes"])
+            # с одним фоном. Дыры отдаём вместе со сценами: секунды принимает
+            # только соседка по ту же сторону границы острова (`absorb_scene`).
+            settle_schemas(board["scenes"],
+                           ordered_gaps(saved_clips, duration))
             print(f'серий бироллов {series["series"]}, доля аватара '
                   f'{series["avatar_share"] * 100:.0f}%'
                   + (("; выброшены — " + "; ".join(series["dropped"]))
@@ -1300,6 +1362,14 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     # есть после разбора пустых сцен, и сцена, стоявшая на
                     # одном значке, доезжала до зрителя фоном с титром.
                     settle_fillers(board, found)
+                    # Запасную схему назначает `settle_inserts` — то есть уже
+                    # после первого прохода по схемам, — и её пол секунд до
+                    # сих пор мерила одна сборка. Схема снималась там, когда
+                    # чинить кадр было уже нечем: сцена на дыре без аватара
+                    # оставалась с фоном и титром, и D25 с D26 валили сборку
+                    # за то, чего агент не делал.
+                    settle_schemas(board.get("scenes") or [],
+                                   ordered_gaps(saved_clips, duration))
                     # Потеря вставки перекраивает кадр так же, как снятая
                     # серия, — и так же плодит пары одинаковых кусков.
                     # `dedupe_neighbours` заодно разбирает сцены, кадр
@@ -1412,6 +1482,16 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                 break
             reason = "; ".join(failed)
             if attempt == MAX_COMPOSE_ATTEMPTS - 1:
+                # Причину кладём в папку ДО отказа. Отсюда сборка уходит
+                # исключением, `pipeline` возвращает `fail("assemble", …)` и
+                # запись не делает вовсе — а продолжение (`reset_montage_steps`
+                # в bot.py) маркер `plan` не снимает. Без записи круг пересдачи
+                # не сходится: продолжение читает `plan.json`, пересобирает тот
+                # же завёрнутый план и получает тот же отказ, заплатив за суд
+                # бироллов и подбор медиа. Из тех гейтов, что сюда доходят,
+                # D21, D24 и D25 меняются только вместе с планом — снять
+                # `plan` может лишь эта запись (около 1176).
+                save_retry_reason(rdir, reason)
                 raise RuntimeError("сборка не прошла проверки — " + reason)
 
     # Снимки композиции перед рендером — обязательный шаг их же конвейера

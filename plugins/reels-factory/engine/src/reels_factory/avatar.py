@@ -99,7 +99,11 @@ DEFAULT_RESOLUTION = "1080p"
 _ENGINES_WITH_PERFORMANCE_CONTROLS = ("avatar_iv",)
 
 POLL_INTERVAL_S = 10
-POLL_MAX_ITERATIONS = 60  # 60 * 10с = 600с (10 мин)
+# 180 * 10с = 1800с (30 мин). Прежние 10 минут бросали заказ, за который уже
+# заплачено: HeyGen считает деньги за принятый рендер, а не за наше ожидание,
+# и на их стороне длинный клип идёт дольше десяти минут. Ждать дольше нам
+# ничего не стоит — опрос идёт раз в десять секунд.
+POLL_MAX_ITERATIONS = 180
 
 _FALLBACK_STATUSES = (403, 404)
 _CACHE_LOCKS: dict[str, threading.Lock] = {}
@@ -108,6 +112,23 @@ _CACHE_LOCKS_GUARD = threading.Lock()
 
 class _Unavailable(Exception):
     pass
+
+
+class HeyGenRenderTimeout(RuntimeError):
+    """Ждать перестали мы, а не HeyGen отказал.
+
+    Отдельный тип, потому что случаи стоят разного. Отказ рендера
+    (`status: failed`) — заказ не состоялся, и повторять его придётся. Наш
+    таймаут — заказ на их стороне жив и оплачен, и на пересборке его можно
+    дождаться, а не заказывать второй раз. Пока оба случая приходили одним
+    `RuntimeError`, отличить их вызывающему было нечем.
+
+    `video_id` — по нему заказ и находится у HeyGen.
+    """
+
+    def __init__(self, message: str, video_id: str):
+        super().__init__(message)
+        self.video_id = video_id
 
 
 def upload_photo_asset(image_path, api_key=None, http=None) -> str:
@@ -335,9 +356,11 @@ class HeyGenClient:
             if status == "failed":
                 raise RuntimeError(f"HeyGen video generation failed (video_id={video_id})")
             self.sleep(POLL_INTERVAL_S)
-        raise RuntimeError(
+        raise HeyGenRenderTimeout(
             f"HeyGen video generation timed out after {POLL_MAX_ITERATIONS} poll attempts "
-            f"(video_id={video_id})"
+            f"({POLL_MAX_ITERATIONS * POLL_INTERVAL_S} с, video_id={video_id}); "
+            "заказ на стороне HeyGen жив и оплачен",
+            video_id,
         )
 
 

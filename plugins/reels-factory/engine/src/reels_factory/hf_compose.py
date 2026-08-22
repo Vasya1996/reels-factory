@@ -157,8 +157,19 @@ TRACK_OVERLAY = 40
 #: законна: их слой — обычный `div` с `data-start`, не маунт.
 TRACK_SCHEMA = 30
 
-#: Дорожка слоя читаемости под накладкой без своей подложки.
-TRACK_SCRIM = 38
+#: Первая дорожка слоя читаемости под накладкой без своей подложки. Скрим —
+#: обычный `div` с `data-start`, а не маунт, поэтому счётчик плотности
+#: `timeline_track_too_dense` его считает, и четвёртый скрим на одной дорожке
+#: дал бы предупреждение (composition.ts:17,409), а под `--strict` — падение.
+#: Раскладываем по дорожкам ротацией, как вставки. Полоса 31..39: ниже сидит
+#: схема (30), выше — накладки (40, 41). Девять дорожек по три — 27 скримов;
+#: плашке нужно не меньше своего пола (~3,4 с), и в ролике их столько не
+#: помещается.
+TRACK_SCRIM = 31
+
+#: Сколько скримов кладём на одну дорожку. Порог их линтера тот же, что у
+#: вставок.
+SCRIMS_PER_TRACK = INSERTS_PER_TRACK
 
 #: Дрейф фоновых полей под схемой — числа их компонента `aurora-drift`
 #: (registry/components/aurora-drift/aurora-drift.html, массив `paths`):
@@ -699,6 +710,47 @@ def zoom_origin(face: dict | None) -> str:
             f'{float(face["cy"]) / OUT_H * 100:.1f}%')
 
 
+#: Порог их гейта `--frame-check`: выезд медиа за корень композиции меньше
+#: max(120 px, 6 % короткой стороны канваса) находкой не считается
+#: (packages/cli/src/utils/checkPipeline.ts:75-76,314-317 на пине 0.7.84). На
+#: 1080x1920 доля даёт 64,8 — работает пиксельный порог.
+FRAME_BREACH_FLOOR = 120.0
+
+
+def frame_safe_scale(position: str, face: dict | None) -> float:
+    """Потолок наезда, при котором окно ведущей не роняет `frame_out_of_frame`.
+
+    Гейт меряет `getBoundingClientRect` тега `<video>` против корня композиции
+    и не видит ни `overflow:hidden` обёртки, ни `data-layout-allow-overflow`:
+    в их сборщике кандидатов проверки флагов нет вовсе
+    (packages/cli/src/commands/layout-audit.browser.js:1411-1415), а сама
+    находка читает только severity (checkPipeline.ts:310-330). Штатной пометки
+    у правила нет — значит держим геометрию.
+
+    Окно, кроющее ≥95 % канваса по ОБЕИМ сторонам, их проверка пропускает
+    (`candidateIsSized`, checkPipeline.ts:222-228): это `full`, `punch` и
+    `overlay`, им потолка нет. Остальным считаем, насколько можно вырасти,
+    пока выезд за каждый край меньше порога: прирост стороны делит точка
+    отсчёта, а к краю кадра прибавляется зазор, который у окна уже есть.
+    Округляем вниз — на самом пороге находка ещё срабатывает.
+    """
+    rect = _presenter_rect(position)
+    if rect["width"] >= 0.95 * OUT_W and rect["height"] >= 0.95 * OUT_H:
+        return math.inf
+    ox, oy = (float(part.rstrip("%")) / 100
+              for part in zoom_origin(face).split())
+    room = []
+    for share, size, before, after in (
+            (ox, rect["width"], rect["left"],
+             OUT_W - rect["left"] - rect["width"]),
+            (oy, rect["height"], rect["top"],
+             OUT_H - rect["top"] - rect["height"])):
+        for part, gap in ((share, before), (1 - share, after)):
+            if part * size > 0:
+                room.append((FRAME_BREACH_FLOOR + gap) / (part * size))
+    return math.floor((1.0 + min(room)) * 1000) / 1000 if room else math.inf
+
+
 #: Кадрирование по умолчанию — то же, что `object-fit: cover` делает сам.
 DEFAULT_FIT = "50% 50%"
 
@@ -758,12 +810,17 @@ def crop_fractions(face: dict | None) -> tuple[float, float]:
 
 
 def camera_plans(moments: list[tuple], words: list[dict],
-                 duration: float) -> list[dict]:
+                 duration: float, *, face: dict | None = None) -> list[dict]:
     """Планы камеры на всё аватарное время, со ступенями масштаба.
 
     Куски с ведущей режутся на планы по паузам речи (`hf_montage`), и каждому
     плану достаётся ступень: соседние отличаются не меньше чем на 8 %, наезд —
     не чаще каждого третьего плана и только там, где окно большое.
+
+    Ступень подрезается потолком окна (`frame_safe_scale`): у окна, которое
+    кадр не кроет, наезд выносит `<video>` за край кадра, и их `--frame-check`
+    зовёт это `frame_out_of_frame`. Числа пишутся сюда же, в `camera.json`, —
+    гейт наездов меряет готовый файл по ним.
     """
     plans: list[dict] = []
     for index, (start, position) in enumerate(moments):
@@ -774,7 +831,10 @@ def camera_plans(moments: list[tuple], words: list[dict],
             continue
         cut = cut_into_plans(words, float(start), float(end))
         big = [position in _BIG_PRESENTER] * len(cut)
-        plans += [dict(plan, position=position)
+        cap = frame_safe_scale(position, face)
+        plans += [dict(plan, position=position,
+                       scale_from=min(plan["scale_from"], cap),
+                       scale_to=min(plan["scale_to"], cap))
                   for plan in zoom_ladder(cut, big=big, offset=len(plans))]
     return plans
 
@@ -1127,7 +1187,15 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             scene.pop("overlay", None)
             continue
         marked.append(scene)
-    staged_overlays = 0
+    # Сколько дорожек отвести скримам — по тому же счёту, что у вставок:
+    # больше трёх с `data-start` на одной дорожке их линтер зовёт
+    # `timeline_track_too_dense`. Считаем до цикла и с запасом: сцена может
+    # ещё потерять накладку по времени, лишняя дорожка ничего не стоит.
+    scrim_tracks = max(1, -(-sum(
+        1 for scene in marked
+        if _block_backing().get(str(scene["overlay"]["block"])) == "none"
+        and insert_of(scene)) // SCRIMS_PER_TRACK))
+    staged_overlays = staged_scrims = 0
     for position, scene in enumerate(marked):
         overlay = scene["overlay"]
         start = _q(scene["startSec"])
@@ -1185,12 +1253,25 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         # Время в разметку — `markup_time`, длительность парно.
         at, span = (markup_time(start),
                     markup_time(start + length) - markup_time(start))
+        # `class="clip"` обязателен: элемент со временем, но без этого токена
+        # их линтер валит ошибкой `timed_element_missing_clip_class`
+        # (packages/lint/src/rules/composition.ts:544-576 на пине 0.7.84,
+        # severity error), а ошибка обрывает `check` до браузерной части.
+        # Причина ровно эта, одна: видимость рантайм держит по атрибуту, а не
+        # по классу — `syncTimedElementVisibility` обходит
+        # `document.querySelectorAll("[data-start]")`
+        # (packages/core/src/runtime/init.ts:1921-1923), и класса `clip` не
+        # проверяет нигде. Их же линтер обещает обратное («will be visible for
+        # the entire composition», composition.ts:570) — это их текст, не наш
+        # опыт: в кадре весь ролик градиент не стоял.
         if _block_backing().get(str(overlay["block"])) == "none" \
                 and insert_of(scene):
             body.append(
-                f'    <div class="ovl-scrim" id="scrim-{scene["id"]}"'
+                f'    <div class="ovl-scrim clip" id="scrim-{scene["id"]}"'
                 f' data-start="{at:.4f}" data-duration="{span:.4f}"'
-                f' data-track-index="{TRACK_SCRIM}"></div>')
+                f' data-track-index='
+                f'"{TRACK_SCRIM + staged_scrims % scrim_tracks}"></div>')
+            staged_scrims += 1
         body.append(
             f'    <div class="ovl" style="{box}">'
             f'<div data-layout-allow-overflow="true" style="position:absolute;'
@@ -1482,7 +1563,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     for time, position in moments[1:]:
         timeline += _presenter_move(position, _q(time))
 
-    plans = camera_plans(moments, words, duration)
+    plans = camera_plans(moments, words, duration, face=face)
     timeline += _zoom_timeline(plans)
     origin = zoom_origin(face)
 
