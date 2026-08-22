@@ -12,6 +12,101 @@ def test_fake_runner_отдаёт_по_очереди_и_копит_промпт
     assert r.prompts == ["p1", "p2"]
 
 
+def test_вызов_движка_идёт_в_изоляции(monkeypatch, tmp_path):
+    """Чужой профиль машины не должен ронять сборку.
+
+    22.08 на проде `claude -p` падал кодом 1 на любом промпте: в общем профиле
+    лежало правило `Write(//root/ward/**)` от соседнего проекта. Сценарий,
+    визуальный директор и жесты ходят через этот раннер.
+    """
+    captured = {}
+
+    def fake_run(cmd, **kw):
+        captured["cmd"] = cmd
+        captured["env"] = kw.get("env")
+        return SimpleNamespace(returncode=0, stdout="ок", stderr="")
+
+    monkeypatch.setattr("reels_factory.llm.subprocess.run", fake_run)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-платный")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "тоже-платный")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "токен-подписки")
+
+    profile = tmp_path / "profile"
+    assert ClaudeCliRunner(config_dir=profile).run("промпт") == "ок"
+
+    cmd, env = captured["cmd"], captured["env"]
+    assert cmd[cmd.index("--tools") + 1] == ""
+    assert cmd[cmd.index("--setting-sources") + 1] == ""
+    assert "--strict-mcp-config" in cmd
+    assert env["CLAUDE_CONFIG_DIR"] == str(profile)
+    assert env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] == "1"
+    # Платный ключ приоритетнее подписки — иначе вызовы уедут на API...
+    assert "ANTHROPIC_API_KEY" not in env
+    assert "ANTHROPIC_AUTH_TOKEN" not in env
+    # ...а токен подписки приходит окружением и обязан дожить до CLI.
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "токен-подписки"
+    assert profile.is_dir()
+
+
+def test_токен_подписки_берётся_из_файла_когда_переменной_нет(monkeypatch, tmp_path):
+    """Чистый профиль не хранит вход: без токена CLI отвечает «OAuth session
+    expired». На проде переменная приходит из bot.env, на машине разработчика
+    её нет — тогда годовой токен читается из файла (как в hf_agent.py:171)."""
+    captured = {}
+
+    def fake_run(cmd, **kw):
+        captured["env"] = kw.get("env")
+        return SimpleNamespace(returncode=0, stdout="ок", stderr="")
+
+    monkeypatch.setattr("reels_factory.llm.subprocess.run", fake_run)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    файл = tmp_path / "oauth-token"
+    файл.write_text("годовой-токен\n", encoding="utf-8")
+    monkeypatch.setattr("reels_factory.llm.OAUTH_TOKEN_FILE", файл)
+
+    ClaudeCliRunner(config_dir=tmp_path / "p").run("промпт")
+    assert captured["env"]["CLAUDE_CODE_OAUTH_TOKEN"] == "годовой-токен"
+
+
+def test_схема_ответа_переживает_изоляцию(monkeypatch, tmp_path):
+    """Жест выбирается из enum-а: `--json-schema` едет вместе с флагами."""
+    captured = {}
+
+    def fake_run(cmd, **kw):
+        captured["cmd"] = cmd
+        return SimpleNamespace(returncode=0, stdout='{"жест": "точка"}', stderr="")
+
+    monkeypatch.setattr("reels_factory.llm.subprocess.run", fake_run)
+    schema = {"type": "object", "properties": {"жест": {"enum": ["точка"]}}}
+
+    ClaudeCliRunner(json_schema=schema, config_dir=tmp_path / "p").run("промпт")
+
+    cmd = captured["cmd"]
+    assert json.loads(cmd[cmd.index("--json-schema") + 1]) == schema
+    assert cmd[cmd.index("--tools") + 1] == ""
+
+
+@pytest.mark.parametrize("вывод, кусок_причины", [
+    ("Failed to authenticate: OAuth session expired",
+     "CLAUDE_CODE_OAUTH_TOKEN"),
+    ("Permission allow rule (settings.json): Write(//root/ward/**) is not "
+     "matched by file permission checks",
+     "чужого профиля"),
+    ("error: unknown option '--tools'", "claude --help"),
+])
+def test_отказ_называет_причину(monkeypatch, tmp_path, вывод, кусок_причины):
+    """В журнале службы должно быть видно, что чинить, а не «code 1»."""
+    monkeypatch.setattr(
+        "reels_factory.llm.subprocess.run",
+        # ошибки входа CLI печатает в stdout, а не в stderr
+        lambda *a, **kw: SimpleNamespace(returncode=1, stdout=вывод, stderr=""),
+    )
+    with pytest.raises(RuntimeError) as exc:
+        ClaudeCliRunner(config_dir=tmp_path / "p").run("промпт")
+    assert кусок_причины in str(exc.value)
+    assert вывод[:40] in str(exc.value)
+
+
 @pytest.mark.slow
 def test_claude_cli_живой_вызов():
     r = ClaudeCliRunner(timeout_s=120)
