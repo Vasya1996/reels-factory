@@ -13,6 +13,70 @@ class LLMRunner(Protocol):
     def run(self, prompt: str) -> str: ...
 
 
+# Отдельный профиль Claude Code для вызовов движка: и скилл, и наш промпт
+# должны работать в чистой комнате, без личных CLAUDE.md, хуков, плагинов и
+# памяти разработчика.
+SKILL_PROFILE_DIR = Path.home() / ".reels-factory" / "claude"
+
+#: Годовой токен подписки для headless (`claude setup-token`), запасной вход.
+#: На проде он приходит из bot.env; на машине разработчика переменной нет, и
+#: без файла чистый профиль отвечает «OAuth session expired» — так же, как у
+#: агента-сборщика (hf_agent.py:171).
+OAUTH_TOKEN_FILE = Path.home() / ".reels-factory" / "oauth-token"
+
+
+def _isolated_env(config_dir) -> dict:
+    """Окружение вызова в чистой комнате, но с сохранённой подпиской.
+
+    CLAUDE_CONFIG_DIR уводит вызов из личного профиля машины: настройки,
+    история и плагины берутся оттуда (docs: settings, «To keep the
+    home-directory files somewhere else, set CLAUDE_CONFIG_DIR»).
+    ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN вычищаются: в print-режиме ключ
+    приоритетнее подписки всегда («In non-interactive mode (-p), the key is
+    always used when present», docs/en/env-vars) — вызовы молча уехали бы на
+    платный API. Токен подписки живёт в CLAUDE_CODE_OAUTH_TOKEN (bot.env) и
+    остаётся: он приходит окружением, а не настройками, и чистый профиль его
+    не теряет.
+    """
+    env = dict(os.environ)
+    env.pop("ANTHROPIC_API_KEY", None)
+    env.pop("ANTHROPIC_AUTH_TOKEN", None)
+    env["CLAUDE_CONFIG_DIR"] = str(config_dir)
+    env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
+    if not env.get("CLAUDE_CODE_OAUTH_TOKEN") and OAUTH_TOKEN_FILE.exists():
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = OAUTH_TOKEN_FILE.read_text(
+            encoding="utf-8").strip()
+    return env
+
+
+#: Узнаваемые причины отказа `claude -p`. Разбирать чужие тексты ошибок в
+#: общем виде не пытаемся: цель — чтобы в журнале службы было видно, что
+#: чинить, а не пересказать CLI. По одному коду 1 протухший вход не отличить
+#: от снятого флага, и обе поломки лечатся по-разному.
+_ПРИЧИНЫ_ОТКАЗА = (
+    (("oauth session expired", "failed to authenticate", "invalid api key",
+      "please run /login", "credit balance"),
+     "подписка не пускает: CLAUDE_CODE_OAUTH_TOKEN протух или не задан — "
+     "перевыпустить `claude setup-token` и положить в bot.env"),
+    (("permission allow rule", "permission deny rule", "invalid settings",
+      "settings file"),
+     "CLI не принял правила прав из файла настроек; наш вызов идёт с "
+     'CLAUDE_CONFIG_DIR и --setting-sources "", значит настройки чужого '
+     "профиля всё-таки прочитались — проверить флаги изоляции"),
+    (("unknown option", "unknown or unexpected option", "error: option"),
+     "этой версии CLI неизвестен флаг из нашей строки вызова — сверить с "
+     "`claude --help` после обновления claude"),
+)
+
+
+def _объяснить_отказ(текст: str) -> str:
+    низ = (текст or "").lower()
+    for маркеры, причина in _ПРИЧИНЫ_ОТКАЗА:
+        if any(маркер in низ for маркер in маркеры):
+            return причина
+    return ""
+
+
 class ClaudeCliRunner:
     """`claude -p` с необязательным принуждением формы ответа.
 
@@ -22,13 +86,20 @@ class ClaudeCliRunner:
     закрытого списка (enum жестов) держится на стороне CLI, а не на проверке
     постфактум. Схема задаётся на конструкторе, а не в `run`, чтобы подпись
     `LLMRunner.run` осталась прежней и тестовые фейки не переписывались.
+
+    Изоляция — та же чистая комната, что у ClaudeSkillRunner, и по той же
+    причине: 22.08 на проде вызов падал кодом 1 на любом промпте, потому что в
+    общем профиле машины лежало правило `Write(//root/ward/**)` от чужого
+    проекта, а свежий CLI требует `Edit(...)`. Через этот раннер идут сценарий,
+    визуальный директор и жесты — чужая настройка роняла любую сборку.
     """
 
     def __init__(self, timeout_s: int = 600, extra_args: list | None = None,
-                 json_schema: dict | None = None):
+                 json_schema: dict | None = None, config_dir=None):
         self.timeout_s = timeout_s
         self.extra_args = list(extra_args or [])
         self.json_schema = json_schema
+        self.config_dir = Path(config_dir) if config_dir else SKILL_PROFILE_DIR
         self.exe = shutil.which("claude") or "claude"
 
     def run(self, prompt: str) -> str:
@@ -38,13 +109,41 @@ class ClaudeCliRunner:
                 "--json-schema",
                 json.dumps(self.json_schema, ensure_ascii=False),
             ]
+        args += [
+            # Инструментов не даём ни одного: наши три вызова шлют промпт и
+            # читают текст обратно, файлов не трогают. `--tools` — именно про
+            # доступный набор, а не про разрешения («Restrict which built-in
+            # tools Claude can use. Use "" to disable all»,
+            # code.claude.com/docs/en/cli-reference); `--allowedTools` из
+            # ClaudeSkillRunner решает другую задачу — что пускать без
+            # вопроса. Проверено вживую 22.08 на claude 2.1.231: `--tools ""`
+            # уживается с `--json-schema`, ответ приходит по схеме.
+            # Исключение одно и оно мёртвое: broll_index.make_llm_describer
+            # кладёт в промпт пути к кадрам и ждёт, что модель их прочитает —
+            # вызывающего кода у него нет, а появится, ему нужен будет Read.
+            "--tools", "",
+            # Ни user, ни project, ни local настроек: ни CLAUDE.md, ни хуков,
+            # ни чужих плагинов, ни правил прав из общего профиля.
+            "--setting-sources", "",
+            # Ноль MCP-серверов (своего --mcp-config мы не передаём).
+            "--strict-mcp-config",
+        ]
+        self.config_dir.mkdir(parents=True, exist_ok=True)
         p = subprocess.run(
             [*args, *self.extra_args],
             input=prompt, capture_output=True, text=True, encoding="utf-8",
-            timeout=self.timeout_s,
+            timeout=self.timeout_s, env=_isolated_env(self.config_dir),
         )
         if p.returncode != 0:
-            raise RuntimeError(f"claude -p failed (code {p.returncode}): {p.stderr[:500]}")
+            # Ошибки входа CLI печатает в stdout, а не в stderr — берём оба
+            # потока, иначе в журнале остаётся пустая строка.
+            err = (p.stderr or "").strip() or (p.stdout or "").strip()
+            причина = _объяснить_отказ(err)
+            raise RuntimeError(
+                f"claude -p failed (code {p.returncode})"
+                + (f" — {причина}" if причина else "")
+                + f": {err[:500]}"
+            )
         return p.stdout
 
 
@@ -61,10 +160,6 @@ class FakeRunner:
 class SkillRunner(Protocol):
     def run_skill(self, skill: str, payload_path) -> str: ...
 
-
-# Отдельный профиль Claude Code для вызовов движка: скилл должен работать в
-# чистой комнате, без личных CLAUDE.md, хуков, плагинов и памяти разработчика.
-SKILL_PROFILE_DIR = Path.home() / ".reels-factory" / "claude"
 
 #: Права скилла: только чтение. Скиллы сценария держат свои правила в
 #: справочниках рядом с SKILL.md и читают их по ходу; в чистой комнате
@@ -111,12 +206,8 @@ class ClaudeSkillRunner:
         self.runs: list[dict] = []
 
     def _env(self) -> dict:
-        env = dict(os.environ)
-        env.pop("ANTHROPIC_API_KEY", None)
-        env.pop("ANTHROPIC_AUTH_TOKEN", None)
-        env["CLAUDE_CONFIG_DIR"] = str(self.config_dir)
-        env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
-        return env
+        # Метод остаётся: на него опирается _PromptRunner в bot.py.
+        return _isolated_env(self.config_dir)
 
     @staticmethod
     def _extract_json(stdout: str) -> dict:
