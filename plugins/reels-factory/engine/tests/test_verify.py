@@ -164,6 +164,34 @@ def test_d7_левенштейн_подозрение_не_фейлит(tmp_path
     assert not report["gates"]["D7_captions"].startswith("FAIL")
 
 
+def test_d7_без_слов_это_пропуск_а_не_пройденная_проверка(tmp_path):
+    """F8: пустой список слов давал `PASS(нет слов)`. Отчёт при этом говорил,
+    что субтитры проверены, хотя не смотрели ни одного слова."""
+    report = verify_reel(
+        _prep(tmp_path), _scenario(25.0),
+        dur_fn=lambda f: 24.5, wh_fn=lambda f: (1080, 1920),
+        lufs_fn=lambda f: -14.2, fps_fn=lambda f: 30.0, volume_fn=_vol_ok,
+        words=[], hypothesis={"theme": "кофе", "theme_spoken": "кофе"},
+    )
+    assert report["gates"]["D7_captions"].startswith("SKIP")
+    assert report["all_pass"] is True  # пропуск провалом не считается
+
+
+def test_d7_на_многословной_теме_без_словаря_это_пропуск(tmp_path):
+    """F8: у многословной темы авто-словоформы не заводятся
+    (`build_caption_fixes`, compose.py:97), и без явного `theme_captions`
+    сверять не с чем — гейт вырождался в вечный PASS на любых субтитрах."""
+    words = [{"start": 0.0, "end": 0.3, "text": "какая"},
+             {"start": 0.3, "end": 0.6, "text": "угодно"}]
+    report = verify_reel(
+        _prep(tmp_path), _scenario(25.0),
+        dur_fn=lambda f: 24.5, wh_fn=lambda f: (1080, 1920),
+        lufs_fn=lambda f: -14.2, fps_fn=lambda f: 30.0, volume_fn=_vol_ok,
+        words=words, hypothesis={"theme": "домашний кофе"},
+    )
+    assert report["gates"]["D7_captions"].startswith("SKIP")
+
+
 def _d3(tmp_path, lufs):
     return verify_reel(
         _prep(tmp_path), _scenario(25.0),

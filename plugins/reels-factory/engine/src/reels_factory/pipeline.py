@@ -277,7 +277,14 @@ def run_make(config: dict, workdir,
             "workdir": str(wd),
             # str, а не Path: результат уходит через json.dumps в _cmd_make
             "mp4": str(out_mp4),
+            # Ролик отдаём — он оплачен и собран, — но приёмку он не проходил:
+            # композиции здесь нет, субтитров нет, звук идёт прямо из HeyGen без
+            # нашей нормализации, и ни один гейт D1..D7 не считался. Прежде
+            # отчёт нёс один `qa_pass: True`, и непроверенный ролик выглядел в
+            # нём ровно как прошедший все проверки. Читатель отчёта различает
+            # эти случаи по `qa_checked`.
             "qa_pass": True,
+            "qa_checked": False,
             "gates": None,
             "avatar_summary": None,
             "avatar_render_manifest": None,
@@ -676,6 +683,7 @@ def run_make(config: dict, workdir,
             "workdir": str(wd),
             "mp4": mp4,
             "qa_pass": qa["all_pass"],
+            "qa_checked": True,
             "gates": qa["gates"],
             "avatar_summary": (
                 avatar_render_plan.get("summary")

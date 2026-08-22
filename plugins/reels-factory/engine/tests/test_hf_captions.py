@@ -144,6 +144,20 @@ def test_корень_подогнан_под_наш_кадр(tmp_path):
     assert 'data-track-index="8"' in snippet
 
 
+def test_корень_титра_помечен_разрешением_полосы(tmp_path):
+    """Полосу титра мы сами объявляем запретной их гейтом `--caption-zone` с
+    `severity=error` (`hf_render.py`), а слова титра стоят ровно в ней: отступ
+    620 px от низа при полосе от 998,4. Без пометки требование невыполнимо по
+    построению, и сборка держалась на том, что гейт снимает один кадр
+    `t = duration`, где последняя группа уже погашена. `closest()` находит
+    атрибут на корне для каждого слова
+    (layout-audit.browser.js:108-110,1403)."""
+    public = _public(tmp_path)
+    write_caption_data(public, words=WORDS, duration=10.0)
+    snippet = _snippet(public)
+    assert 'data-layout-allow-caption-zone="true"' in snippet
+
+
 def test_демо_вместо_движка_роняет_сборку(tmp_path):
     """11.08.2026 их `add` привёз версию компонента, где движок заменён
     демонстрацией: свои `WORDS` в коде, `window.__HF_CAPTION__` не читается.

@@ -295,6 +295,33 @@ def test_кадрирование_клипа_считается_по_замер�
     assert "transform-origin: 48.7% 36.8%" in html
 
 
+def test_наезд_в_невысоком_окне_не_выносит_видео_за_кадр():
+    """Их `--frame-check` меряет `getBoundingClientRect` тега `<video>` против
+    корня композиции и ни `overflow:hidden` обёртки, ни
+    `data-layout-allow-overflow` не знает — штатной пометки у правила нет
+    вовсе (layout-audit.browser.js:1411-1415, checkPipeline.ts:310-330).
+    Окно, кроющее ≥95 % канваса по обеим сторонам, проверка пропускает сама
+    (`candidateIsSized`, checkPipeline.ts:222-228) — это `full` и `punch`.
+    `stack` (1080x844) не кроет: при лице на 37,4 % ширины наезд 1,18 выносит
+    правый край на 121,7 px, а их порог — 120."""
+    import math
+
+    from reels_factory.hf_compose import camera_plans, frame_safe_scale
+
+    face = {"cx": 404, "cy": 776, "h": 260}
+    assert frame_safe_scale("full", face) == math.inf
+    assert frame_safe_scale("punch", face) == math.inf
+    assert frame_safe_scale("stack", face) == 1.177
+    # лицо посередине — резать нечего, наезд идёт полным
+    assert frame_safe_scale("stack", None) > 1.18
+
+    words = [{"start": 0.0, "end": 1.0, "text": "раз"},
+             {"start": 1.0, "end": 3.0, "text": "два"}]
+    plans = camera_plans([(0.0, "stack")], words, 3.0, face=face)
+    assert [plan["kind"] for plan in plans] == ["push"]
+    assert plans[0]["scale_to"] == 1.177
+
+
 def test_без_замера_лица_клип_режется_от_центра(run):
     """Ненайденное лицо — не лицо: гадать, где макушка, не по чему."""
     html, _ = _build(run)
@@ -672,6 +699,88 @@ def test_плашка_остаётся_над_полосой_титра(run):
     html, _ = _build(run, scenes=scenes)
     layer = html[html.index('<div class="ovl"'):]
     assert "left:0;top:372px" in layer[:80] and "scale(0.5625)" in layer[:400]
+
+
+def _scrim_scenes(count: int, span: float = 4.0):
+    """Ролик из `count` сцен, у каждой накладка без подложки и вставка."""
+    scenes, resolved = [], {}
+    for index in range(count):
+        start = round(index * span, 3)
+        name = f"s-{index:02d}"
+        scenes.append({"id": name, "intent": "и", "startSec": start,
+                       "endSec": round(start + span, 3), "presenter": "pip-br",
+                       "insert": _shots("переговоры", "бумаги"),
+                       "overlay": {"block": "lt-clean-bar",
+                                   "text": {"name": "М"}}})
+        resolved.update(_found(name, ".media/images/a.jpg",
+                               ".media/images/b.jpg"))
+    return scenes, resolved
+
+
+def _build_scrims(run, monkeypatch, count):
+    _with_lt(run)
+    monkeypatch.setattr(hf_compose, "_block_backing",
+                        lambda: {"lt-clean-bar": "none"})
+    scenes, resolved = _scrim_scenes(count)
+    duration = round(count * 4.0, 3)
+    board = _board(json.loads(json.dumps(scenes)))
+    board["composition"]["durationSeconds"] = duration
+    board["videoTrack"]["endSec"] = duration
+    with sdk_session() as sdk:
+        build_composition(run, sdk, storyboard=board, clips=CLIPS,
+                          duration=duration, words=WORDS, resolved=resolved)
+    return (run / "public" / "index.html").read_text(encoding="utf-8")
+
+
+def test_скрим_под_накладкой_несёт_клип(run, monkeypatch):
+    """Элемент со временем, но без токена `clip` — ошибка их линтера
+    `timed_element_missing_clip_class` (composition.ts:544-580, severity
+    error), а ошибка обрывает `check` ещё до браузерной части. И это же
+    видимость: без `.clip` рантайм держит тёмный градиент весь ролик."""
+    html = _build_scrims(run, monkeypatch, 1)
+    scrim = html[html.index('id="scrim-s-00"') - 60:][:200]
+    assert 'class="ovl-scrim clip"' in scrim
+    assert "data-start=" in scrim and "data-duration=" in scrim
+
+
+def test_скримы_раскладываются_по_дорожкам(run, monkeypatch):
+    """Скрим — обычный `div` с `data-start`, а не маунт, и их счётчик
+    плотности его считает: больше трёх на дорожке — `timeline_track_too_dense`
+    (composition.ts:17,409), под `--strict` это падение."""
+    html = _build_scrims(run, monkeypatch, 5)
+    tracks = [html[html.index(f'id="scrim-s-{index:02d}"'):][:200]
+              .split('data-track-index="')[1].split('"')[0]
+              for index in range(5)]
+    assert len(tracks) == 5, "скримы встали не под каждую накладку"
+    counts = {track: tracks.count(track) for track in set(tracks)}
+    assert max(counts.values()) <= 3, f"дорожка перегружена: {counts}"
+    # Полоса скримов ни с чем не делится: ниже схема, выше накладки.
+    assert all(hf_compose.TRACK_SCHEMA < int(track) < hf_compose.TRACK_OVERLAY
+               for track in tracks)
+
+
+def test_таймлайн_открывается_настоящим_твином(run):
+    """Их правило `gsap_timeline_set_initial_hide` (warning, под `--strict`
+    падение) смотрит только на `tl.set(..., 0)`, стоящие ДО первого твина в
+    порядке исходника: `firstTweenIndex` и `windows.slice(0, firstTweenIndex)`
+    (packages/lint/src/rules/gsap.ts:2377-2380). Наши гасящие `set` — фон
+    схемы и окно ведущей — идут после дыхания глоу, поэтому в выборку не
+    попадают. Тест держит именно этот порядок."""
+    _with_schema_block(run)
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = None
+    scenes[1]["schema"] = {"form": "pairs", "why": "у пунктов свои значения",
+                           "rows": [{"label": "раз", "value": "первое"},
+                                    {"label": "два", "value": "второе"}]}
+    html, _ = _build(run, scenes=scenes, resolved={})
+    script = html[html.index("tl.to(\"#bg-glow\""):]
+    assert script.startswith('tl.to("#bg-glow", { scale: 1.12, duration: 6')
+    hides = [html.index(line) for line in re.findall(r"tl\.set\([^\n]*", html)
+             if ('display: "none" }, 0)' in line
+                 or "autoAlpha: 0 }, 0)" in line)]
+    assert hides, "в кадре не осталось ни одного гасящего set — тест пуст"
+    assert min(hides) > html.index('tl.to("#bg-glow"')
 
 
 def test_накладке_у_края_ролика_не_хватает_времени(run):

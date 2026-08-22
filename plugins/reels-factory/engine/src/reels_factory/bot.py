@@ -52,7 +52,8 @@ from reels_factory.billing import (
     LedgerStore, claude_cost_micro, claude_run_cost_usd, estimate_micro,
 )
 from reels_factory.config import (
-    OUT_H, OUT_W, WORK_ROOT, load_billing_config, load_config,
+    MAX_DELIVERY_BYTES, OUT_H, OUT_W, WORK_ROOT, load_billing_config,
+    load_config,
 )
 from reels_factory.feedback import FeedbackStore
 from reels_factory.hf_render import reset_montage_steps
@@ -492,7 +493,11 @@ NO_RESUME_STAGES = frozenset({
     "delivery_too_big",
 })
 
-MAX_TG_VIDEO_BYTES = 50 * 1024 * 1024  # лимит Bot API на видео/документ
+# Лимит Bot API на видео/документ. Число одно на весь движок: под него же
+# сборка ужимает тяжёлый ролик (`_fit_delivery_size` в hf_render.py), и разъехаться
+# этим двум местам нельзя — иначе сборка целится не в тот потолок, о который
+# спотыкается доставка.
+MAX_TG_VIDEO_BYTES = MAX_DELIVERY_BYTES
 
 
 def render_scenario(sc: dict) -> str:

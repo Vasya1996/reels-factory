@@ -1449,6 +1449,35 @@ def test_средство_которого_не_будет_снимается_д
     assert order[order.index("снять"):] == ["снять", "разобрать"]
 
 
+def test_запасную_схему_меряют_до_разбора_пустых_сцен(tmp_path, monkeypatch):
+    """Запасную схему назначает `settle_inserts` — уже после первого прохода по
+    схемам, — и её пол секунд мерила одна сборка. Схема снималась там, где
+    чинить кадр нечем: сцена на дыре без аватара оставалась фоном с титром, и
+    D25 с D26 валили сборку за то, чего агент не делал. Проход обязан стоять
+    между снятием средств и разбором пустых сцен."""
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [GOOD])
+    order = []
+    fillers = hf_render.settle_fillers
+    schemas, dedupe = hf_render.settle_schemas, hf_render.dedupe_neighbours
+    monkeypatch.setattr(hf_render, "settle_fillers",
+                        lambda *a, **k: (order.append("снять"),
+                                         fillers(*a, **k))[1])
+    monkeypatch.setattr(hf_render, "settle_schemas",
+                        lambda *a, **k: (order.append("схемы"),
+                                         schemas(*a, **k))[1])
+    monkeypatch.setattr(hf_render, "dedupe_neighbours",
+                        lambda *a, **k: (order.append("разобрать"),
+                                         dedupe(*a, **k))[1])
+    hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert "снять" in order
+    assert order[order.index("снять"):] == ["снять", "схемы", "разобрать"]
+
+
 # --- пересборка монтажа на уже оплаченной папке ------------------------------
 
 def test_сброс_монтажных_маркеров_щадит_оплаченное(tmp_path):
@@ -1543,6 +1572,42 @@ def test_пересборка_после_провала_проверок_нес�
         "план, что проверки уже завернули")
     assert "меняется реже" in _причина(планы[1]), (
         "композитор не узнал, чем не прошёл прошлый план")
+
+
+def test_отказ_гейтов_раскадровки_оставляет_причину_в_папке(
+        tmp_path, monkeypatch):
+    """Круг пересдачи по D21, D24 и D25 не сходился. Эти гейты валят сборку
+    ИСКЛЮЧЕНИЕМ, `pipeline` возвращает `fail("assemble", …)` и причину никуда
+    не пишет, а продолжение снимает монтажные маркеры, оставляя `plan` целым.
+    Без записи в папке следующий прогон читает `plan.json`, пересобирает тот
+    самый план, который проверки уже завернули, и получает тот же отказ —
+    заплатив за суд бироллов и подбор медиа. Снять `plan` может только запись
+    причины (`assemble_hyperframes` около 1176).
+    """
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [])
+
+    def агент(rdir, *, runner=None):
+        rdir = Path(rdir)
+        board = json.loads(json.dumps(GOOD))
+        for name in ("storyboard.json", "plan.json"):
+            (rdir / name).write_text(json.dumps(board), encoding="utf-8")
+        return board
+
+    monkeypatch.setattr(hf_render, "plan_with_agent", агент)
+    monkeypatch.setattr(hf_render, "check_storyboard", lambda board, **k: {
+        "D25_empty_frame": "FAIL: s-03: ведущей нет, вставка не встала"})
+
+    with pytest.raises(RuntimeError, match="сборка не прошла проверки"):
+        hf_render.assemble_hyperframes(
+            tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+            master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    причина = hf_render.last_retry_reason(tmp_path)
+    assert причина and "D25_empty_frame" in причина, (
+        "причина отказа не пережила прогон — продолжение пересоберёт тот же "
+        "завёрнутый план")
 
 
 #: Ставки счёта — только чтобы работа моделей вообще получила цену.
@@ -1673,3 +1738,82 @@ def test_продолжение_на_островах_спрашивает_аг�
         "композитор не узнал, чем не прошёл прошлый прогон")
     assert hf_render.step_done(tmp_path, hf_render.EARLY_PLAN_STEP) is True, (
         "снят маркер раннего плана — по нему куплена ведущая")
+
+
+def test_сдвиг_точки_замера_не_обещает_закрыть_наложение_текстов():
+    """Докстрока `_scene_midpoints` обосновывала сдвиг на `start + 3.6` тем,
+    что их конвейер по той же причине не бьёт по границам твинов. Для
+    `content_overlap` это прямо неверно: его пересчитывают отдельным проходом
+    по плотной сетке 8 кадров в секунду на всю длительность, независимо от
+    `--at` (`collectMotionOverlapSamples`, checkPipeline.ts:437-465 на пине
+    0.7.84). Сдвиг закрывает только находки редкой сетки, и докстрока обязана
+    называть именно их — иначе следующий читатель будет чинить наложение
+    выборкой."""
+    from reels_factory.hf_render import _scene_midpoints
+
+    doc = _scene_midpoints.__doc__ or ""
+    for code in ("text_box_overflow", "clipped_text", "text_occluded"):
+        assert code in doc, f"докстрока не называет {code}"
+    assert "content_overlap" in doc and "НЕ закрывает" in doc, (
+        "докстрока снова обещает закрыть content_overlap сдвигом выборки")
+
+    board = {"scenes": [
+        {"id": "s-01", "startSec": 0.0, "endSec": 6.0},
+        {"id": "s-02", "startSec": 6.0, "endSec": 14.0,
+         "overlay": {"block": "lt-clean-bar"}}]}
+    assert _scene_midpoints(board) == [3.0, 9.6]
+
+
+#: Потолок доставки на время теста. Настоящие 50 МБ пришлось бы писать на диск,
+#: а вся арифметика ужатия — это отношение веса к длительности.
+ПОТОЛОК_В_ТЕСТЕ = 6 * 1024 * 1024
+
+
+def _громкость_без_ffmpeg(monkeypatch, tmp_path, вес_первого: int):
+    """Оба прохода `_normalize_loudness` без ffmpeg: команды пишем в список, а
+    файл — заданного веса."""
+    from reels_factory import hf_render
+
+    команды = []
+
+    def fake_run(cmd, **kw):
+        команды.append([str(part) for part in cmd])
+        out = Path(cmd[-1])
+        out.write_bytes(b"x" * (вес_первого if len(команды) == 1 else 10))
+        return None
+
+    monkeypatch.setattr(hf_render.subprocess, "run", fake_run)
+    monkeypatch.setattr(hf_render, "media_dur", lambda src: 90.0)
+    monkeypatch.setattr(hf_render, "MAX_DELIVERY_BYTES", ПОТОЛОК_В_ТЕСТЕ)
+    src = tmp_path / "reel.raw.mp4"
+    src.write_bytes(b"raw")
+    return hf_render._normalize_loudness(src, tmp_path / "reel.mp4"), команды
+
+
+def test_ролик_тяжелее_потолка_доставки_ужимается_сборкой(monkeypatch, tmp_path):
+    """P6-02: картинка шла `-c:v copy`, и вес ролика не ограничивался ничем —
+    на замеренных 6,08 Мбит/с 50 МБ набегают к 69-й секунде. Дальше полностью
+    оплаченный ролик становился невыдаваемым: Telegram его не берёт, а
+    пересборка веса не меняет и кнопки продолжения на этой стадии нет."""
+    из_потолка = ПОТОЛОК_В_ТЕСТЕ
+
+    mp4, команды = _громкость_без_ffmpeg(monkeypatch, tmp_path, из_потолка + 1)
+
+    assert len(команды) == 2, "тяжёлый ролик уехал зрителю как есть"
+    ужатие = команды[1]
+    assert ужатие[ужатие.index("-c:v") + 1] != "copy", (
+        "картинку снова скопировали — вес остался прежним")
+    битрейт = int(ужатие[ужатие.index("-b:v") + 1])
+    assert битрейт * 90.0 / 8 <= из_потолка, (
+        "целевой битрейт не влезает в потолок доставки")
+    assert mp4.stat().st_size <= из_потолка
+    # Звук уже выровнен первым проходом — второй раз его не жмут.
+    assert ужатие[ужатие.index("-c:a") + 1] == "copy"
+
+
+def test_обычный_ролик_второй_раз_не_кодируется(monkeypatch, tmp_path):
+    """Второй проход — только для тех роликов, что в потолок не влезли:
+    лишнее пережатие стоило бы качества каждому ролику."""
+    _, команды = _громкость_без_ffmpeg(monkeypatch, tmp_path, ПОТОЛОК_В_ТЕСТЕ)
+
+    assert len(команды) == 1

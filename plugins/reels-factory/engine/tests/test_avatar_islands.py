@@ -1094,6 +1094,70 @@ def test_короткий_кусок_вставки_возвращается_в�
     assert report["all_pass"] is True, report["errors"]
 
 
+def test_обрезанный_кусок_схемы_теряет_встроенную_графику_и_ведущую_возвращает():
+    """P6-01: разрез окна посередине оставлял короткий кусок с чужой графикой.
+
+    Кусок, чьё покрытие совпало с исходным, мимо `_retarget_window` не идёт и
+    уносит с собой `effect.visual_director` и `caption: hidden`. Стал он короче
+    порога не сам по себе — его укоротил разрез, — а `_restore_short_faceless`
+    такой кусок не трогал: фразы его агент не менял, и в `previous` их нет.
+    Валидатор выдавал на одном окне сразу два требования (fullscreen короче
+    3,0 с и built-in visual 3,0–9,5 с), и падало это в
+    `build_avatar_render_plan` — после оплаченной озвучки.
+    """
+    edit_plan = _fast_edit_plan(
+        hidden={2, 3}, durations=[2.4, 2.4, 2.0, 3.5, 2.4, 2.4, 2.4, 2.4])
+    # Одно окно на две фразы схемы со встроенной графикой: графика живёт на
+    # окне, а не на фразе, и делить её разрез не умеет.
+    windows = edit_plan["windows"]
+    merged = windows[2]
+    merged["phrase_ids"] = ["phrase-002", "phrase-003"]
+    merged["caption"] = "hidden"
+    merged["effect"] = {
+        "type": "concept_nodes",
+        "title": "ТРИ ВОПРОСА",
+        "items": ["КОМУ", "ЧТО", "КАК"],
+        "hyperframes": {
+            "block": "concept_nodes",
+            "variables": {"title": "ТРИ ВОПРОСА",
+                          "items": ["КОМУ", "ЧТО", "КАК"]},
+        },
+        "visual_director": {"template": "concept_nodes", "source": "rules"},
+    }
+    for key in ("estimated_timing", "final_timing"):
+        merged[key] = {"start": 4.8, "end": 10.3, "duration": 5.5}
+    del windows[3]
+    for phrase in edit_plan["phrases"]:
+        if phrase["id"] == "phrase-003":
+            phrase["window_id"] = merged["id"]
+    for index, window in enumerate(windows):
+        window["index"] = index
+    assert validate_edit_plan(edit_plan, require_final=True,
+                              require_asset_files=False)["all_pass"] is True
+
+    # Агент вернул ведущую только второй фразе окна: первая (2,0 с) остаётся
+    # схемой и после разреза уже короче `MIN_FULLSCREEN_S`.
+    scenes = [{"id": "s-00", "startSec": 0.0, "endSec": 6.8},
+              {"id": "s-01", "startSec": 6.8, "endSec": 10.3,
+               "presenter": "full", "avatarNeeded": True},
+              {"id": "s-02", "startSec": 10.3, "endSec": 19.9}]
+
+    out = apply_agent_coverage(edit_plan, scenes)
+
+    короткий = _window_of(out, "phrase-002")
+    assert короткий["coverage"] == "avatar", (
+        "кусок 2,0 с остался без ведущей — валидатор заворачивает такой план "
+        "уже после оплаты озвучки")
+    assert короткий["effect"] == {"type": "none"}, (
+        "встроенная графика уехала на кусок, который для неё слишком короток")
+    assert короткий["caption"] == "bottom"
+    assert короткий["id"] in out["agent_coverage"]["restored_windows"]
+    report = validate_edit_plan(out, require_final=True,
+                                require_asset_files=False)
+    assert report["all_pass"] is True, report["errors"]
+    build_avatar_render_plan(out, _config(), master_audio_sha256="sha")
+
+
 def test_схема_в_сцене_с_ведущей_не_считается_пропажей_лица():
     """Хвост между гейтом D32 и валидатором: гейт считает пропажу лица по
     сценам, а `validate_edit_plan` ведёт отсчёт и по окнам `hyperframes`

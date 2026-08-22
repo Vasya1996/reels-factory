@@ -299,18 +299,23 @@ def test_снятая_серия_на_дыре_не_оставляет_пуст�
     последствия."""
     from reels_factory.hf_montage import dedupe_neighbours, drop_series
 
-    scenes = [_scene(0, 0.0, 3.0, "full", None),
-              _scene(1, 3.0, 6.0, "none")]
+    # Клип кончается на 2,0 с: дальше дыра, и обе сцены на ней. Секунды
+    # опустевшей уходят соседке по ту же сторону границы — ведущую на дыру не
+    # растягивают.
+    scenes = [_scene(0, 0.0, 2.0, "full", None),
+              _scene(1, 2.0, 4.0, "none"),
+              _scene(2, 4.0, 6.0, "none")]
     for index, scene in enumerate(scenes):
         scene["phrases"] = [index, index]
-    clips = [{"file": "a.mp4", "start": 0.0, "duration": 3.0}]
-    drop_series(scenes, kept=[], clips=clips, duration=6.0)
-    assert scenes[1]["presenter"] == "none"
-    assert not scenes[1].get("needsSchema")
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 2.0}]
+    drop_series(scenes, kept=["s-01"], clips=clips, duration=6.0)
+    assert scenes[2]["presenter"] == "none"
+    assert not scenes[2].get("needsSchema")
 
     dedupe_neighbours(scenes, clips=clips, duration=6.0)
-    assert [scene["id"] for scene in scenes] == ["s-00"]
-    assert scenes[0]["endSec"] == 6.0
+    assert [scene["id"] for scene in scenes] == ["s-00", "s-01"]
+    assert scenes[1]["endSec"] == 6.0
+    assert scenes[0]["endSec"] == 2.0, "ведущую растянули на дыру"
 
 
 def test_снятая_серия_на_оплаченном_куске_держит_ведущую():
@@ -446,6 +451,41 @@ def test_схема_снимается_когда_соседки_нет():
     assert scenes[0]["presenter"] in ("full", "punch")
 
 
+def test_запасной_схеме_меряют_секунды_как_своей():
+    """Пол формы `steps` на три узла — 4,0 с (hf_schema.py:68). Пока проход
+    смотрел одно поле `schema`, запасная схема из `fallback` доезжала
+    неизмеренной до `build_composition` и снималась уже там — после всех
+    чинящих проходов. Сцена на дыре без аватара оставалась с фоном и титром, и
+    D25 валил сборку за то, чего агент не делал: `fallback` у него заполнен."""
+    from reels_factory.hf_montage import settle_schemas
+
+    scenes = [{"id": "s-01", "startSec": 0.0, "endSec": 3.0,
+               "presenter": "full", "phrases": [0, 1], "insert": None},
+              {"id": "s-02", "startSec": 3.0, "endSec": 5.1,
+               "presenter": "none", "phrases": [2, 2], "insert": None,
+               "needsSchema": True,
+               "fallback": _запасная("раз", "два", "три")}]
+
+    assert settle_schemas(scenes) == ["s-02 → соседке"]
+    assert [scene["id"] for scene in scenes] == ["s-01"]
+
+
+def test_снятая_запасная_схема_называет_причину(capsys):
+    """Отдать секунды некому — схему снимаем, и в логе стоит, чего не хватило:
+    та же строка, что печатала сборка."""
+    from reels_factory.hf_montage import settle_schemas
+
+    scenes = [{"id": "s-01", "startSec": 0.0, "endSec": 2.0,
+               "presenter": "none", "phrases": [0, 0], "insert": None,
+               "needsSchema": True,
+               "fallback": _запасная("раз", "два", "три")}]
+    settle_schemas(scenes)
+
+    assert "needsSchema" not in scenes[0]
+    сказано = capsys.readouterr().out
+    assert "steps" in сказано and "4.0" in сказано
+
+
 def test_план_с_четырьмя_вставками_возвращается_на_доработку():
     """Пересборка 462a1c62: план назвал четыре момента вместо пяти, до кадра
     дошли две вставки, и ролик встал одним планом на 8,1 с при пределе 8.
@@ -462,6 +502,53 @@ def test_план_с_четырьмя_вставками_возвращаетс�
 
     scenes[4]["insert"] = {"shots": ["стол", "стол крупно"], "kind": "video"}
     check_inserts(scenes)
+
+
+def test_дозаказный_счёт_вставок_смотрит_длину_сцены():
+    """Отбор серий режет кандидатов по длине (окно 2,4–6,0 с), а дозаказный
+    счёт считал их штуками. План из сцен по 7,0 с проходил проверку целиком,
+    терял в `pick_series` все четыре вставки и всплывал гейтом D15 — уже после
+    того, как клипы у HeyGen куплены."""
+    from reels_factory.hf_montage import check_inserts, pick_series
+
+    scenes = [_scene(index, index * 7.0, index * 7.0 + 7.0,
+                     "stack" if index < 4 else "full",
+                     "рука" if index < 4 else None)
+              for index in range(8)]
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 56.0}]
+
+    kept, _ = pick_series(scenes, clips, 56.0)
+    assert kept == [], "сцену длиннее серии отбор не берёт"
+
+    with pytest.raises(RuntimeError, match="отбор снимет по длине"):
+        check_inserts(scenes)
+
+    # Та же длина, но аватара на этих секундах не заказывали: отбор берёт такую
+    # сцену вне очереди — иначе кадр там чёрный, — и счёт обязан её кредитовать.
+    for scene in scenes[:4]:
+        scene["avatarNeeded"] = False
+    check_inserts(scenes)
+
+
+def test_секунды_дыры_не_растягивают_соседку_с_ведущей():
+    """Соседка с живой ведущей, доросшая до куска, где аватара нет физически,
+    законного положения не имеет вовсе: с ведущей её валит D12, без ведущей —
+    D25. Поэтому секунды пустой сцены на дыре она не принимает, и сцена
+    остаётся гейтам."""
+    from reels_factory.hf_layout import avatar_gaps
+    from reels_factory.hf_montage import settle_empty_frames
+
+    scenes = [_scene(0, 0.0, 3.0, "full", None),
+              {"id": "s-01", "startSec": 3.0, "endSec": 5.0,
+               "presenter": "none", "insert": None, "phrases": [1, 1]}]
+    scenes[0]["phrases"] = [0, 0]
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 3.0}]
+
+    settled = settle_empty_frames(scenes, avatar_gaps(clips, 5.0))
+
+    assert settled == []
+    assert [scene["id"] for scene in scenes] == ["s-00", "s-01"]
+    assert scenes[0]["endSec"] == 3.0, "ведущую растянули через границу острова"
 
 
 def test_на_коротком_ролике_пяти_вставок_не_требуют():
@@ -528,21 +615,24 @@ def test_чем_закрыт_кадр_называется_одним_слово
 def test_сцена_без_чем_закрыть_кадр_отдаётся_соседке():
     """Дефект прогона hf-live2 целиком: сцена на дыре аватара потеряла серию
     (её планы пришли побайтными дублями), закрыть кадр было нечем — и зритель
-    получил 2,7 с фона с титром. Секунды уходят соседке, чей кадр занят."""
+    получил 2,7 с фона с титром. Секунды уходят соседке, чей кадр занят — и
+    соседка эта по ту же сторону границы острова: клип кончается на 3,0 с, и
+    принять секунды дыры может только та, что сама на дыре."""
     from reels_factory.hf_montage import dedupe_neighbours
 
     scenes = [_scene(0, 0.0, 3.0, "full", None),
               {"id": "s-01", "startSec": 3.0, "endSec": 5.7, "presenter": "none",
                "insert": None, "phrases": [1, 1]},
-              _scene(2, 5.7, 8.0, "full", None)]
+              _scene(2, 5.7, 8.0, "none")]
     scenes[0]["phrases"], scenes[2]["phrases"] = [0, 0], [2, 2]
     clips = [{"file": "a.mp4", "start": 0.0, "duration": 3.0}]
 
     dedupe_neighbours(scenes, clips=clips, duration=8.0)
 
     assert [scene["id"] for scene in scenes] == ["s-00", "s-02"]
-    assert scenes[0]["endSec"] == 5.7
-    assert scenes[0]["phrases"] == [0, 1]
+    assert scenes[0]["endSec"] == 3.0, "ведущую растянули на дыру"
+    assert scenes[1]["startSec"] == 3.0
+    assert scenes[1]["phrases"] == [1, 2]
 
 
 def test_соседки_нет_и_пустая_сцена_остаётся_гейтам():

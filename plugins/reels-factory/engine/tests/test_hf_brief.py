@@ -11,7 +11,7 @@ import re
 from reels_factory.avatar_islands import DEFAULTS as ISLAND_DEFAULTS
 from reels_factory.editplan import MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S
 from reels_factory.hf_brief import FONTS, write_brief
-from reels_factory.hf_montage import SERIES_MIN
+from reels_factory.hf_montage import SERIES_MAX, SERIES_MIN
 # Написание секунд одно на оба текста, и тесты обязаны искать ровно его:
 # «29,05 с» печатается как «29 с», и поиск по `f"{x:.1f}"` находил бы пустоту.
 from reels_factory.hf_montage_skill import seconds as _секунды
@@ -1707,10 +1707,32 @@ def _план_из_образца(text: str, phrases: list[dict]) -> list[dict]:
                              scenes[0]["phrases"][-1] + 1)))
     следующая = scenes[-1]["phrases"][-1] + 1
     ведущая = bool(scenes[-1].get("avatarNeeded", True))
+    длина = {p["id"]: float(p["end"]) - float(p["start"]) for p in phrases}
+    роль = {p["id"]: p.get("role") for p in phrases}
+
+    def _длина_сцены(первая, край):
+        return sum(длина[pid] for pid in range(первая, край + 1))
+
     хвост = []
     while следующая <= last:
-        край = min(следующая + размер - 1, last)
         ведущая = not ведущая
+        # Момент под вставку несёт и сцена с ведущей: моментов план обязан
+        # набрать столько, сколько требует `D34_inserts`, а счёт кредитует
+        # теперь только те, что доживут до кадра — влезут в окно серии или
+        # лягут на дыру аватара (`hf_montage.survives_series`). Слепых сцен на
+        # это не хватает: они идут через одну, а края ролика ведёт лицо.
+        # Сцену под серию режем по окну: пара фраз обычной речи даёт 7,0 с,
+        # серия живёт до 6,0 с.
+        размер_сцены = размер
+        if ведущая and _длина_сцены(
+                следующая, min(следующая + размер - 1, last)) > SERIES_MAX:
+            размер_сцены = 1
+        край = min(следующая + размер_сцены - 1, last)
+        # Хук и призыв ролик говорит лицом (`D30_avatar_roles`), и чередование
+        # их не отменяет.
+        if any(роль.get(pid) in ("hook", "cta")
+               for pid in range(следующая, край + 1)):
+            ведущая = True
         сцена = {"id": f"s-tail{len(хвост)}", "beat": "point",
                  "phrases": [следующая, край],
                  "presenter": "full" if ведущая else "none",
@@ -1726,11 +1748,18 @@ def _план_из_образца(text: str, phrases: list[dict]) -> list[dict]:
                                  "items": [{"label": "кому", "icon": "человек"},
                                            {"label": "что", "icon": "документ"},
                                            {"label": "как", "icon": "поиск"}]}
+        elif _длина_сцены(следующая, край) <= SERIES_MAX + 0.001:
+            сцена["presenter"] = "stack"
+            сцена["insert"] = {"shots": ["hands sorting papers on a desk"],
+                               "kind": "video"}
         хвост.append(сцена)
         следующая = край + 1
     if хвост:
-        # Финал ведёт лицо — так подписан хвост образца.
+        # Финал ведёт лицо во весь кадр — так подписан хвост образца. Серию он
+        # не несёт: сцену, отданную ведущей, вставка покидает (`refill_scene`).
         хвост[-1].update(avatarNeeded=True, presenter="punch", beat="climax")
+        хвост[-1].pop("insert", None)
+        хвост[-1].pop("fallback", None)
         for scene in scenes:
             if scene.get("beat") == "climax":
                 scene["beat"] = "point"
@@ -2074,6 +2103,42 @@ def test_граница_бюджета_названа_и_в_счёте_аген�
             f"а сложение фраз меряется {мера}")
 
 
+#: Требование «отдай вставке столько-то» вместе с вилкой сцен и их длиной.
+ДЕЙСТВИЕМ = re.compile(
+    r"отдай не меньше ([\d,]+) с, а целься в ([\d,]+) с\.\*\* Это от (\d+) до "
+    r"(\d+) сцен .*?каждая длиной от ([\d,]+) с до ([\d,]+) с")
+
+
+def test_вилка_сцен_без_ведущей_набирает_названные_секунды(tmp_path):
+    """Блок «То же требование действием» предъявлял требование, невыполнимое по
+    построению: пол вилки считался по пределу без лица (10 с), а потолок сцены
+    назывался тут же и равен 8 с. На 56-секундном ролике выходило «отдай 25,2 с
+    тремя сценами по 8 с» — 24 с потолка против 25,2 с требования. Требование,
+    которого этим числом сцен не выполнить, — это сгоревшая пересдача.
+    """
+    for имя, phrases, duration in МАТЕРИАЛЫ:
+        text = _text(tmp_path / f"g{имя}", phrases=phrases, clips=[],
+                     duration=duration, avatar_ordered=False)
+        найдено = ДЕЙСТВИЕМ.search(text)
+        assert найдено, f"{имя}: блока «То же требование действием» нет"
+
+        def _число(part):
+            return float(part.replace(",", "."))
+
+        пол, цель, мало, много, коротко, потолок = (
+            _число(найдено.group(1)), _число(найдено.group(2)),
+            int(найдено.group(3)), int(найдено.group(4)),
+            _число(найдено.group(5)), _число(найдено.group(6)))
+
+        assert мало * потолок >= цель - 1e-6, (
+            f"{имя}: {мало} сцен по {потолок} с не набирают названной цели "
+            f"{цель} с — задание требует невозможного")
+        assert мало * потолок >= пол - 1e-6, (
+            f"{имя}: {мало} сцен по {потолок} с не набирают даже пола {пол} с")
+        assert много * коротко >= пол - 1e-6 and много >= мало, (
+            f"{имя}: вилка сцен вывернута — от {мало} до {много}")
+
+
 def test_план_под_границей_счёта_агента_бюджет_пропускает(tmp_path):
     """Число из сверки проверяется тем же гейтом, которым судят план: план,
     уложившийся в него и прошедший остальные проверки, бюджет обязан брать.
@@ -2097,24 +2162,39 @@ def test_план_под_границей_счёта_агента_бюджет_�
             # закрыть), и середина ролика с ведущей в верхней половине кадра:
             # моментов под вставку план обязан набрать столько же, сколько
             # требует `D34_inserts`, и одними «слепыми» сценами их не набрать.
-            def _сцена(i, к, флаг):
+            #
+            # Сцена с ведущей под вставку режется по окну серии: счёт кредитует
+            # только те моменты, что доживут до кадра
+            # (`hf_montage.survives_series`), а пара фраз обычной речи даёт
+            # 7,0 с при окне до 6,0 с. Слепую сцену резать не надо — она лежит
+            # на дыре аватара, и отбор берёт её вне очереди.
+            def _сцены(i, к, флаг):
                 край = i == 0 or i == len(куски) - 1
-                scene = {"id": f"s-{i:02d}",
-                         "phrases": [к[0]["id"], к[-1]["id"]],
-                         "avatarNeeded": флаг,
-                         "beat": "hook" if i == 0 else "point",
-                         "presenter": "full" if флаг else "none",
-                         "insert": None}
-                if not флаг or not край:
-                    scene["insert"] = {
-                        "shots": ["hands sorting papers on a desk"],
-                        "kind": "video"}
-                    if флаг:
-                        scene["presenter"] = "stack"
-                return scene
+                со_вставкой = not флаг or not край
+                части = [к]
+                if (со_вставкой and флаг
+                        and sum(float(p["end"]) - float(p["start"])
+                                for p in к) > SERIES_MAX):
+                    части = [[p] for p in к]
+                out = []
+                for номер, часть in enumerate(части):
+                    scene = {"id": f"s-{i:02d}-{номер}",
+                             "phrases": [часть[0]["id"], часть[-1]["id"]],
+                             "avatarNeeded": флаг,
+                             "beat": "hook" if i == 0 else "point",
+                             "presenter": "full" if флаг else "none",
+                             "insert": None}
+                    if со_вставкой:
+                        scene["insert"] = {
+                            "shots": ["hands sorting papers on a desk"],
+                            "kind": "video"}
+                        if флаг:
+                            scene["presenter"] = "stack"
+                    out.append(scene)
+                return out
 
-            план = [_сцена(i, к, флаг)
-                    for i, (к, флаг) in enumerate(zip(куски, флаги))]
+            план = [scene for i, (к, флаг) in enumerate(zip(куски, флаги))
+                    for scene in _сцены(i, к, флаг)]
             плохо = _гейты(план, phrases, duration)
             if set(плохо) - {"D29_avatar_budget"}:
                 continue  # план валят другие правила — бюджет тут ни при чём
@@ -2442,6 +2522,36 @@ def test_образец_даёт_запас_каждой_сцене_со_вст�
             assert (scene.get("fallback") or scene.get("icon")
                     or scene.get("overlay")), (
                 f'{name}: {scene["id"]} со вставкой и без запаса')
+
+
+def test_образец_не_называет_вставку_сцене_которую_снимет_отбор(tmp_path):
+    """Раздавать вставки штуками, когда гейт считает их по длине, — учить
+    плану, который заворачивают.
+
+    Гейт до заказа кредитует только те моменты, что доживут до кадра:
+    `survives_series` (hf_montage.py) режет по вилке `SERIES_MIN`–`SERIES_MAX`.
+    На медленной речи пара фраз даёт сцену длиннее вилки, и образец ставил ей
+    `insert` не глядя — план, срисованный с него, получал от `D34_inserts`
+    «названо 3, но 3 из них отбор снимет по длине».
+    """
+    from reels_factory.hf_montage import survives_series
+
+    for длина in (3.5, 4.0):
+        phrases = _фразы(16, длина)
+        board = _board(_text(tmp_path / f"i{длина}", phrases=phrases,
+                             clips=[], duration=16 * длина,
+                             avatar_ordered=False))
+        края = {p["id"]: (float(p["start"]), float(p["end"]))
+                for p in phrases}
+        for scene in board["scenes"]:
+            if not scene.get("insert"):
+                continue
+            размеченная = dict(scene,
+                               startSec=края[scene["phrases"][0]][0],
+                               endSec=края[scene["phrases"][-1]][1])
+            assert survives_series(размеченная), (
+                f'фраза {длина} с: образец назвал вставку сцене '
+                f'{scene["id"]}, а отбор снимет её по длине')
 
 
 def test_образец_показывает_значок_там_где_он_встаёт(tmp_path):
