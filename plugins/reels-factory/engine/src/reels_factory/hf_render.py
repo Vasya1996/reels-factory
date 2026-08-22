@@ -8,12 +8,14 @@
 """
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
 import shutil
 import subprocess
 from pathlib import Path
+from types import CodeType
 
 from reels_factory import hf_captions
 from reels_factory.compose import VENC
@@ -172,13 +174,101 @@ def save_retry_reason(rdir, reason: str | None) -> None:
         path.unlink(missing_ok=True)
 
 
+#: Имя гейта: «D», номер и слово. Одно и то же и в отчёте, и в причине.
+GATE_NAME = re.compile(r"D\d+_[a-z_]+")
+
+#: Начало куска причины: имя гейта после начала строки или разделителя. Сам
+#: вердикт внутри куска тоже склеен через «; », поэтому резать причину простым
+#: split нельзя — куски рвались бы посреди перечисления виноватых сцен.
+_REASON_PIECE = re.compile(r"(?:^|;\s+)(D\d+_[a-z_]+): ")
+
+
+@functools.lru_cache(maxsize=1)
+def known_gate_names() -> frozenset[str]:
+    """Имена гейтов, которые НЫНЕШНИЙ код умеет выставлять.
+
+    Спрашиваем у самого кода, а не у списка рядом: список — второе место, где
+    имя надо править на каждое снятие гейта, и протух бы он ровно так же, как
+    причина в папке задания.
+
+    Читаем строковые константы скомпилированных модулей движка. Ключ словаря
+    гейтов всегда лежит в коде отдельной строкой (`result["D34_inserts"]`,
+    `{"D26_frame_content": …}`), а упоминание гейта в комментарии в константы
+    не попадает вовсе; упоминание в docstring или в тексте отказа — часть
+    длинной строки и на равенство имени не встаёт. Снятый `D26_flash` в коде
+    так и остался — комментарием в `hf_compose.py` и строкой docstring в
+    `hf_zoom.py`, — и сюда он не попадает.
+
+    Спускаемся и по вложенным константам: словарь, все ключи которого —
+    строки, компилятор складывает одним кортежем, и без этого шага гейты,
+    написанные словарём (`D15_inserts_visible`, `D25_empty_frame`), считались
+    бы несуществующими, а живая причина — протухшей.
+    """
+    names: set[str] = set()
+    for path in sorted(Path(__file__).parent.glob("*.py")):
+        try:
+            stack = [compile(path.read_text(encoding="utf-8"), str(path),
+                             "exec")]
+        except (OSError, SyntaxError, ValueError):
+            continue
+        while stack:
+            value = stack.pop()
+            if isinstance(value, str):
+                if GATE_NAME.fullmatch(value):
+                    names.add(value)
+            elif isinstance(value, CodeType):
+                stack.extend(value.co_consts)
+            elif isinstance(value, (tuple, frozenset)):
+                stack.extend(value)
+    return frozenset(names)
+
+
+def fresh_retry_reason(reason: str | None) -> str | None:
+    """Причина пересдачи без гейтов, которых в нынешнем коде уже нет.
+
+    Причина лежит в папке задания, а код тем временем едет: выкатка, снявшая
+    гейт, оставляет по всем папкам причины с его именем. Боевой случай — папка
+    с `D26_flash: FAIL: вспышка не видна…` после того, как гейт сняли
+    (64ad5ae): прогон честно прочитал причину, снял маркер `plan`, переписал
+    BRIEF.md разделом пересдачи и заплатил $3.48 за то, чтобы агент чинил
+    проверку, которой больше нет. У живого пользователя на кнопке
+    «продолжить» вышло бы то же самое.
+
+    Причина не про гейты вовсе (например, «план не лёг на озвучку») остаётся
+    как есть: имён в ней нет, судить о её свежести нечем, а молча терять её
+    нельзя.
+    """
+    if not reason:
+        return None
+    pieces = list(_REASON_PIECE.finditer(reason))
+    if not pieces:
+        return reason
+    known = known_gate_names()
+    kept = []
+    for index, piece in enumerate(pieces):
+        end = (pieces[index + 1].start() if index + 1 < len(pieces)
+               else len(reason))
+        chunk = reason[piece.start(1):end].strip().rstrip(";").strip()
+        if piece.group(1) in known:
+            kept.append(chunk)
+        else:
+            print(f"причина пересдачи протухла: гейта {piece.group(1)} в коде "
+                  "больше нет, чинить его агента не зову")
+    return "; ".join(kept) or None
+
+
 def last_retry_reason(rdir) -> str | None:
-    """Причина, с которой прошлый прогон этой папки ушёл в отказ."""
+    """Причина, с которой прошлый прогон этой папки ушёл в отказ.
+
+    Свежесть проверяется здесь, на чтении: дальше по коду причина снимает
+    маркер `plan` и уезжает агенту разделом пересдачи, и место, где её ещё
+    можно не взять в работу, — одно.
+    """
     try:
         text = (Path(rdir) / RETRY_REASON_FILE).read_text(encoding="utf-8")
     except OSError:
         return None
-    return text.strip() or None
+    return fresh_retry_reason(text.strip() or None)
 
 
 def run_step(rdir, step: str, fn):
@@ -1000,6 +1090,45 @@ EARLY_BRIEF_COPIES = (("BRIEF.md", "BRIEF.plan.md"),
 #: ведущую ровно так, как её заказали, — иначе куски мастер-звука разъедутся,
 #: кэш островов промахнётся и HeyGen снимет деньги второй раз.
 EARLY_PLAN_FILE = "plan.early.json"
+
+#: Вердикт гейта, которому нечего судить. От PASS отличается намеренно: гейт не
+#: пройден, он снят — и в отчёте это должно быть видно словом.
+SKIPPED_VERDICT = "SKIP"
+
+
+def frozen_plan_gates(gates: dict) -> dict:
+    """Вердикты ранних гейтов по плану, который уже заморожен заказом.
+
+    Ранние гейты судят то, что ещё можно переписать: провал становится
+    причиной пересдачи внутри `plan_before_avatar`, агент правит план, и
+    ведущую заказывают уже по исправленному. Как только заказ сделан, план
+    заморожен (`EARLY_PLAN_FILE`, `reset_montage_steps`), и тот же провал
+    поправить нечем — чинить его значит платить за ведущую второй раз.
+
+    Отказ на замороженном плане не отклонить и не исправить, поэтому он
+    становится вечным: `qa_pass` уходит в False на каждой пересборке, и кнопка
+    «продолжить» до успеха не доводит никогда. Боевой случай — задание
+    f6e14bfcfe3f40afa875abf2ea8a174f после 4b031f0: `D34_inserts` завернул
+    ранний план из длинных сцен, при том что в готовом ролике `D15` насчитал
+    десять вставок в кадре, а `D18` — 35 смен картинки.
+
+    Поэтому на пересборке вердикт остаётся в отчёте (иначе о промахе плана не
+    узнает никто), но качество ролика больше не решает. Гейты готового файла на
+    его месте не пустуют: вставки в кадре судит `D15_inserts_visible`, ритм —
+    `D18_change_rate`, и эти двое меряют то, что пересборка ещё меняет.
+
+    На ПЕРВОЙ сборке ничего не меняется: там гейты считает
+    `plan_before_avatar`, и их провал по-прежнему возвращает агенту пересдачу
+    до заказа — ради этого проверка и стоит.
+    """
+    softened = {}
+    for name, verdict in gates.items():
+        text = str(verdict)
+        softened[name] = text if not text.startswith("FAIL") else (
+            f"{SKIPPED_VERDICT}: план заморожен оплаченным заказом ведущей — "
+            "переписать его нечем, не заказав её второй раз. Вердикт до "
+            f"заказа: {text}")
+    return softened
 
 
 def _keep_early_brief(rdir: Path) -> None:

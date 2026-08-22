@@ -1610,6 +1610,129 @@ def test_отказ_гейтов_раскадровки_оставляет_пр�
         "завёрнутый план")
 
 
+def test_отказ_замороженного_плана_остаётся_в_отчёте_но_не_валит_ролик():
+    """Ранние гейты судят план, который ещё можно переписать. После заказа
+    ведущей план заморожен, и тот же отказ поправить нечем: `qa_pass` уходил
+    в False на каждой пересборке навсегда.
+
+    Вердикт из отчёта не выкидываем — промах плана должен быть виден, — но
+    приставку меняем: качество ролика решают гейты того, что ещё меняется.
+    """
+    from reels_factory.hf_render import frozen_plan_gates
+
+    вердикты = frozen_plan_gates({
+        "D29_avatar_budget": "PASS",
+        "D34_inserts": "FAIL: вставок в плане 4, а нужно хотя бы 5"})
+
+    assert вердикты["D29_avatar_budget"] == "PASS", "зелёный вердикт тронут"
+    assert not вердикты["D34_inserts"].startswith("FAIL"), (
+        "отказ по замороженному плану валит ролик, а поправить его нечем")
+    assert "вставок в плане 4" in вердикты["D34_inserts"], (
+        "промах раннего плана пропал из отчёта")
+
+
+def test_имена_гейтов_спрашивают_у_кода_а_не_у_списка():
+    """Список имён рядом с проверкой протухал бы ровно так же, как причина в
+    папке задания: снятый гейт правился бы вторым местом.
+
+    Проверяем на снятом `D26_flash` (64ad5ae): в исходниках он остался —
+    комментарием в `hf_compose.py` и строкой докстроки в `hf_zoom.py`, — а
+    выставить его код уже не умеет.
+    """
+    from reels_factory.hf_render import known_gate_names
+
+    имена = known_gate_names()
+
+    assert "D26_flash" not in имена, (
+        "снятый гейт считается живым — упоминание в тексте принято за код")
+    for живой in ("D34_inserts", "D18_change_rate", "D15_inserts_visible",
+                  "D25_empty_frame", "D26_frame_content", "D8_face"):
+        assert живой in имена, f"живой гейт {живой} не найден в коде"
+
+
+def test_протухшая_причина_пересдачи_не_идёт_в_работу(tmp_path, capsys):
+    """Причина живёт в папке задания, а код тем временем едет.
+
+    Боевой случай: в папке лежал `D26_flash: FAIL: вспышка не видна…`, гейт
+    сняли выкаткой (64ad5ae), а прогон честно снял маркер `plan`, переписал
+    BRIEF.md разделом пересдачи и заново позвал агента чинить несуществующую
+    проверку — $3.48. У живого пользователя на кнопке «продолжить» вышло бы
+    то же самое.
+    """
+    from reels_factory import hf_render
+
+    hf_render.save_retry_reason(
+        tmp_path, "D26_flash: FAIL: вспышка не видна на 3,2 с")
+
+    assert hf_render.last_retry_reason(tmp_path) is None, (
+        "протухшая причина принята к работе — агента зовут чинить гейт, "
+        "которого нет")
+    assert "D26_flash" in capsys.readouterr().out, (
+        "причину погасили молча — разобрать прогон будет нечем")
+
+
+def test_живая_часть_причины_переживает_протухшую(tmp_path):
+    """Гасим ровно протухшие куски. Живой отказ терять нельзя: без него
+    продолжение пересоберёт тот же ролик за те же деньги.
+
+    Вердикт внутри куска сам склеен через «; » (перечисление виноватых сцен),
+    поэтому режется причина по имени гейта, а не простым split.
+    """
+    from reels_factory import hf_render
+
+    hf_render.save_retry_reason(tmp_path, "; ".join((
+        "D26_flash: FAIL: вспышка не видна",
+        "D25_empty_frame: FAIL: пустой кадр: s-03; s-04",
+    )))
+
+    причина = hf_render.last_retry_reason(tmp_path)
+
+    assert причина == "D25_empty_frame: FAIL: пустой кадр: s-03; s-04", причина
+
+
+def test_причина_не_про_гейты_остаётся_как_есть(tmp_path):
+    """Проверять свежесть тут нечем: имён гейтов в такой причине нет вовсе, а
+    молча терять её нельзя — следующий прогон получил бы то же задание."""
+    from reels_factory import hf_render
+
+    hf_render.save_retry_reason(tmp_path, "план не лёг на озвучку — фраза 7")
+
+    assert hf_render.last_retry_reason(tmp_path) == (
+        "план не лёг на озвучку — фраза 7")
+
+
+def test_протухшая_причина_не_гоняет_агента_на_продолжении(
+        tmp_path, monkeypatch):
+    """То же самое целиком: сборка на папке с протухшей причиной обязана
+    оставить маркер `plan` и не звать агента вовсе.
+
+    Обратный случай — свежая причина зовёт агента заново — держит
+    `test_продолжение_на_островах_спрашивает_агента_по_купленным_клипам`.
+    """
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [])
+    (tmp_path / "plan.json").write_text(json.dumps(GOOD), encoding="utf-8")
+    (tmp_path / ".hf-plan.done").write_text("ok", encoding="utf-8")
+    hf_render.save_retry_reason(
+        tmp_path, "D26_flash: FAIL: вспышка не видна на 3,2 с")
+
+    звали = []
+    monkeypatch.setattr(hf_render, "plan_with_agent",
+                        lambda rdir, **kw: звали.append(rdir))
+
+    hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert звали == [], (
+        "агента позвали чинить снятый гейт — прогон стоит денег, а чинить "
+        "нечего")
+    assert "## Этот план не прошёл проверку" not in (
+        tmp_path / "BRIEF.md").read_text(encoding="utf-8"), (
+        "в задание уехал раздел пересдачи по гейту, которого нет")
+
+
 #: Ставки счёта — только чтобы работа моделей вообще получила цену.
 RATES_СЧЁТА_HF = {
     "heygen_usd_per_second": 0.05,

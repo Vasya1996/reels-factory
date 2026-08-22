@@ -57,6 +57,7 @@ from reels_factory.compose import apply_caption_fixes, build_caption_fixes
 # ({"mp4","timed_scenario","words_fixed"}) плюс "gates" от гейтов раскадровки.
 from reels_factory.hf_render import (
     assemble_hyperframes as _assemble,
+    frozen_plan_gates as _frozen_plan_gates,
     plan_before_avatar as _plan_before_avatar,
     save_retry_reason as _save_retry_reason,
     step_done as _step_done,
@@ -488,19 +489,26 @@ def run_make(config: dict, workdir,
                 # из `plan.early.json` без единой сессии агента, но только при
                 # маркере шага; без него `plan_before_avatar` пошёл бы
                 # спрашивать агента заново, а это деньги.
+                #
+                # Судить качество ролика они здесь уже не вправе: план куплен
+                # вместе с ведущей, и его отказ не поправить ничем, кроме
+                # второго заказа. `_frozen_plan_gates` оставляет вердикт в
+                # отчёте, но снимает с него право валить `qa_pass` — иначе
+                # кнопка «продолжить» упирается в вечный отказ (подробности и
+                # боевой случай — в его docstring).
                 ранний_план_есть = (
                     _step_done(wd, EARLY_PLAN_STEP)
                     and (wd / "plan.json").is_file()
                 )
                 if ранний_план_есть:
-                    early_gates = _plan_before_avatar(
+                    early_gates = _frozen_plan_gates(_plan_before_avatar(
                         wd,
                         master.timed_scenario,
                         alignment_words=apply_caption_fixes(
                             list(master.words), caption_fixes),
                         config=config,
                         agent_spend=agent_spend,
-                    ).get("gates") or {}
+                    ).get("gates") or {})
             elif use_avatar_islands:
                 avatar_plan_fn = avatar_plan_fn or _build_avatar_render_plan
                 avatar_render_fn = avatar_render_fn or _render_avatar_islands
