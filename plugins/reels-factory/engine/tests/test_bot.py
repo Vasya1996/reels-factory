@@ -1586,6 +1586,86 @@ def test_клон_делается_перед_сценарием_и_старый
     assert s["step"] == bot.REVIEW
 
 
+def test_копия_голоса_перед_сценарием_делается_молча(work, monkeypatch, tmp_path):
+    """Человек прислал текст и ждёт сценария; согласия на работу он ещё не
+    давал. «Делаю голос…» на этом месте читается как начатая без спроса работа
+    — и рушит доверие к порядку шагов раньше, чем прозвучит «Утверждаем?».
+    Клон при этом делается: он молчит, а не отменён."""
+    запись = tmp_path / "запись.ogg"
+    запись.write_bytes(b"voice")
+    monkeypatch.setattr(
+        bot, "step_voice", lambda chat_id, path, language: "voice-новый"
+    )
+    monkeypatch.setattr(
+        bot, "step_verbatim", lambda chat_id, text, language: SCENARIO
+    )
+    bot.save_session(7, _паспорт(
+        step=bot.WAIT_TEXT,
+        material_mode="text",
+        voices={},
+        voice_id=None,
+        voice_samples={"ru": str(запись)},
+        voice_pending={"ru": str(запись)},
+    ))
+
+    msg = _Msg("Мой текст.")
+    asyncio.run(bot.on_message(_Update(msg), None))
+
+    assert bot.CLONING_VOICE_MSG not in msg.replies
+    assert bot.load_session(7)["voices"] == {"ru": "voice-новый"}
+    assert SCENARIO["title"] in msg.replies[-1]   # сценарий показан
+    assert bot.load_session(7)["step"] == bot.REVIEW
+
+
+def test_копия_голоса_на_кнопке_пути_объявлена(work, клиент, monkeypatch,
+                                               tmp_path):
+    """На кнопке пути человек уже согласился платить и ждёт работы: молчание
+    здесь оставило бы минуту тишины без причины."""
+    запись = tmp_path / "запись.ogg"
+    запись.write_bytes(b"voice")
+    monkeypatch.setattr(
+        bot, "step_voice", lambda chat_id, path, language: "voice-1"
+    )
+    bot.save_session(7, _паспорт(
+        step=bot.READY, scenario=SCENARIO, scenario_approved=True,
+        voices={}, voice_id=None,
+        voice_samples={"ru": str(запись)}, voice_pending={"ru": str(запись)},
+    ))
+
+    msg = _Msg()
+    _press("build:plain", msg)
+
+    assert bot.CLONING_VOICE_MSG in msg.replies
+
+
+def test_ошибка_копии_голоса_перед_сценарием_видна_человеку(work, monkeypatch,
+                                                            tmp_path):
+    """Молчит объявление, а не ошибка: без неё человека просят перезаписать
+    голос без единого слова о том, почему."""
+    запись = tmp_path / "запись.ogg"
+    запись.write_bytes(b"voice")
+
+    def падаем(chat_id, path, language):
+        raise RuntimeError("ElevenLabs отказал")
+
+    monkeypatch.setattr(bot, "step_voice", падаем)
+    bot.save_session(7, _паспорт(
+        step=bot.WAIT_TEXT,
+        material_mode="text",
+        voices={},
+        voice_id=None,
+        voice_samples={"ru": str(запись)},
+        voice_pending={"ru": str(запись)},
+    ))
+
+    msg = _Msg("Мой текст.")
+    asyncio.run(bot.on_message(_Update(msg), None))
+
+    assert bot.CLONING_VOICE_MSG not in msg.replies
+    assert any("ElevenLabs отказал" in ответ for ответ in msg.replies)
+    assert bot.ASK_VOICE in msg.replies[-1]
+
+
 def test_новая_запись_клонируется_и_на_кнопке_пути(work, клиент, monkeypatch,
                                                    tmp_path):
     """Клон делается на демо, а демо получает только новичок. Кто прислал
@@ -1695,7 +1775,9 @@ def test_упавший_клон_не_пускает_в_генерацию(work,
     asyncio.run(bot.on_message(_Update(msg), None))
 
     assert сценарии == []  # Клода не зовём, раз голоса не вышло
-    assert "ElevenLabs отказал" in msg.replies[-2]
+    # По содержимому, а не по индексу: индекс считал реплики от объявления
+    # «делаю голос», которого на этом шаге больше нет.
+    assert any("ElevenLabs отказал" in ответ for ответ in msg.replies)
     assert bot.load_session(7)["step"] == bot.WAIT_VOICE
 
 
