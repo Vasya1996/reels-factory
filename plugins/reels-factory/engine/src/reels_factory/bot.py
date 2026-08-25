@@ -2447,15 +2447,28 @@ async def _clone_pending_voice(chat_id: int, s: dict, language: str) -> bool:
     return True
 
 
-async def _ensure_voice_clone(msg, chat_id: int, s: dict) -> bool:
-    """Голос по записи с разговором об ошибках — путь платной генерации."""
+async def _ensure_voice_clone(
+    msg, chat_id: int, s: dict, *, announce: bool = True
+) -> bool:
+    """Голос по записи с разговором об ошибках — путь платной генерации.
+
+    `announce` различает два вызова одним параметром, а не двумя функциями:
+    работа и разговор об ошибках у них общие, разное — только вправе ли бот
+    объявить, что взялся за дело. На кнопке пути человек уже согласился
+    платить и ждёт работы — там объявление уместно (умолчание). Перед
+    сценарием он ещё ничего не утверждал: объявление там читается как «бот
+    начал без спроса», поэтому вызов идёт молча. Ошибку клона молчание не
+    трогает: без неё человек остался бы без объяснения, почему у него просят
+    перезаписать голос.
+    """
     language = _reel_language(s)
     if _pending_voice_sample(s, language) is None:
         if _voice_for_language(s, language):
             return True
         await _ask_voice(msg, chat_id, s, language)
         return False
-    await msg.reply_text(CLONING_VOICE_MSG)
+    if announce:
+        await msg.reply_text(CLONING_VOICE_MSG)
     try:
         return await _clone_pending_voice(chat_id, s, language)
     except Exception as e:
@@ -2545,7 +2558,12 @@ async def _start_generation(msg, chat_id: int, s: dict):
     """
     language = _reel_language(s)
     _track(chat_id, s, "generation_started")
-    if not await _ensure_voice_clone(msg, chat_id, s):
+    # Молча: человек прислал материал и ждёт сценария, согласия на работу он
+    # ещё не давал. Объявление «делаю голос» на этом месте читалось как начатая
+    # без спроса работа — и до вопроса «Утверждаем?» рушило доверие к порядку
+    # шагов. Сам клон нужен здесь: он отсекает негодную запись до того, как мы
+    # заплатили Клоду за сценарий, и заводит карточку клиента для скидки.
+    if not await _ensure_voice_clone(msg, chat_id, s, announce=False):
         return
     material = str(s.get("material_text") or "")
     if not material.strip():
