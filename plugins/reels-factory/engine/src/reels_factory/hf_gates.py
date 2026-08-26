@@ -360,8 +360,8 @@ def check_montage(storyboard: dict, *, clips: list[dict] | None = None,
     return {"D24_avatar_paid_shown": gate}
 
 
-def check_frame_filled(storyboard: dict) -> dict:
-    """Ни на одной сцене кадр не пустует.
+def frame_filled_problems(scenes: list[dict]) -> list[str]:
+    """Сцены, где ведущая уголком или половиной кадра оставила остальное пустым.
 
     Считалось это по геометрии окна ведущей плюс непрозрачной карточки. Кадр из
     слоёв закрывают другие два прямоугольника: ведущая и вставка. Ведущая во
@@ -371,9 +371,15 @@ def check_frame_filled(storyboard: dict) -> dict:
 
     Геометрию пересчитывать не надо: таблица `INSERT_RECTS` построена как
     дополнение к раскладке ведущей, и `fills_frame` отвечает по ней.
+
+    Список отдаётся наружу, а не сразу вердикт: по нему судят двое — D20 здесь,
+    после сборки, и `D35_frame_filled` до заказа ведущей (hf_render.py). Второй
+    появился потому, что первый судит уже с оплаченными рендерами HeyGen: боевой
+    прогон лёг на `s-06: ведущая 'pip-tl' без вставки`, и это стоило $11,86 без
+    ролика. Судят они одно и то же одним кодом — разойтись двум местам нечем.
     """
     problems = []
-    for scene in storyboard.get("scenes") or []:
+    for scene in scenes:
         position = str(scene.get("presenter") or "full")
         # Схема закрывает кадр наравне со вставкой: она стоит в верхней трети,
         # и нижний уголок ведущей с ней не спорит. Считается и запланированная,
@@ -390,6 +396,12 @@ def check_frame_filled(storyboard: dict) -> dict:
             problems.append(
                 f'{scene.get("id", "?")}: ведущая {position!r} без вставки не '
                 "закрывает кадр — остальное будет чёрным")
+    return problems
+
+
+def check_frame_filled(storyboard: dict) -> dict:
+    """Ни на одной сцене кадр не пустует."""
+    problems = frame_filled_problems(storyboard.get("scenes") or [])
     return {"D20_frame_filled": "PASS" if not problems
             else "FAIL: " + "; ".join(problems)}
 

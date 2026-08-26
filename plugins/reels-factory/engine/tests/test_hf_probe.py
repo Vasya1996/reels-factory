@@ -12,6 +12,9 @@ FULL_FRAME = {"left": 0, "top": 0, "width": 1080, "height": 1920, "visible": Tru
 # окно ведущей, отодвинутое вправо-вверх: раскладка pip из hf_layout.VIDEO_RECTS
 PIP = {"left": 690, "top": 28, "width": 360, "height": 203, "visible": True}
 ARCH = {"left": 120, "top": 900, "width": 520, "height": 700, "visible": True}
+# наезд: то же полное окно, но заметно крупнее — `punch` из hf_layout.VIDEO_RECTS
+PUNCH = {"left": -87, "top": -170, "width": 1254, "height": 2229,
+         "visible": True}
 
 
 def _rect(left, top, width, height):
@@ -145,8 +148,6 @@ def test_планка_считается_от_достижимого():
     `punch`. Третьего положения взять неоткуда, и требовать его значит валить
     сборку за невозможное; чинить это агенту нечем. Пол в одно положение при
     этом остаётся: неподвижная ведущая — по-прежнему провал."""
-    PUNCH = {"left": -87, "top": -170, "width": 1254, "height": 2229,
-             "visible": True}
     двух = [_sample(0.0, clips=()), _sample(3.0, video=PUNCH, clips=())]
     assert gates_from_report(_report(двух), FACE)[
         "D14_presenter_moves"].startswith("PASS")
@@ -154,6 +155,41 @@ def test_планка_считается_от_достижимого():
     одного = [_sample(0.0, clips=()), _sample(3.0, clips=())]
     assert gates_from_report(_report(одного), FACE)[
         "D14_presenter_moves"].startswith("FAIL")
+
+
+def test_вставка_без_ведущей_в_кадре_планку_не_поднимает():
+    """Дожившая вставка стоит на сцене без ведущей — уголка она не открывает.
+
+    Прежде хватало одной видимой вставки где угодно по ролику, и планка
+    возвращалась к трём. На упавшем прогоне дожила ровно одна, и требовать
+    третье окно было неоткуда: `presenter: "none"` — ведущей в этих секундах
+    нет, а поверх пустого фона уголок роняет D20.
+    """
+    порознь = [_sample(0.0, clips=()),
+               _sample(3.0, video=dict(FULL_FRAME, visible=False)),
+               _sample(6.0, video=PUNCH, clips=())]
+    assert gates_from_report(_report(порознь), FACE)[
+        "D14_presenter_moves"].startswith("PASS")
+
+
+def test_вставка_рядом_с_ведущей_планку_поднимает():
+    """Вставка и ведущая стоят в кадре одновременно — уголок тут законен, и
+    трёх окон ролик действительно позволяет."""
+    вместе = [_sample(0.0, clips=()), _sample(3.0, video=PIP)]
+    assert gates_from_report(_report(вместе), FACE)[
+        "D14_presenter_moves"].startswith("FAIL")
+
+
+def test_отказ_D14_не_зовёт_агента_в_угол():
+    """Текст отказа обращён к коду. Прежний велел «раскидать ведущую по кадру
+    — во весь кадр, в угол, в половину», и выполнение этого указания роняло
+    следующий гейт: уголок без вставки и без схемы оставляет остальной кадр
+    чёрным (`D20_frame_filled`)."""
+    вместе = [_sample(0.0, clips=()), _sample(3.0, video=PIP)]
+    отказ = gates_from_report(_report(вместе), FACE)["D14_presenter_moves"]
+    assert отказ.startswith("FAIL")
+    assert "раскидай" not in отказ and "в угол" not in отказ
+    assert "вставка или схема" in отказ
 
 
 # ---------- D15: вставки видны ----------

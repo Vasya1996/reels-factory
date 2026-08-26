@@ -1422,6 +1422,194 @@ def test_нехватку_вставок_ловит_ранний_гейт_а_н�
     assert "вставк" in str(гейты["D34_inserts"])
 
 
+def _ранние(scenes):
+    """Ранние гейты по этим сценам, разложенным на озвучку раннего материала."""
+    from reels_factory import hf_render
+    from reels_factory.hf_phrases import lay_out_scenes, phrase_timeline
+
+    phrases = phrase_timeline(EARLY_TIMED, EARLY_WORDS)
+    разложены = lay_out_scenes(json.loads(json.dumps(scenes)), phrases,
+                               duration=EARLY_TOTAL)
+    return hf_render._early_plan_gates(разложены, EARLY_TOTAL, phrases,
+                                       hf_render.islands_settings(None))
+
+
+def test_пустой_кадр_ловит_ранний_гейт_а_не_гейт_после_рендеров():
+    """Боевой прогон лёг на `D20_frame_filled: FAIL: s-06: ведущая 'pip-tl'
+    без вставки не закрывает кадр`. Судит D20 уже собранный кадр, то есть
+    после оплаченных рендеров HeyGen: прогон стоил $11,86 и ролика не отдал.
+
+    Уголок ведущей и вставку выбирает агент, и до заказа это ещё его решение —
+    значит место проверке среди ранних гейтов.
+    """
+    сцены = json.loads(json.dumps(FIT["scenes"]))
+    сцены[5]["presenter"] = "pip-tl"
+    сцены[5]["insert"] = None
+
+    гейты = _ранние(сцены)
+
+    assert "D35_frame_filled" in гейты, "пустой кадр не проверяется до заказа"
+    assert str(гейты["D35_frame_filled"]).startswith("FAIL")
+    assert сцены[5]["id"] in гейты["D35_frame_filled"], (
+        "гейт не назвал сцену — агенту нечего чинить")
+    assert "pip-tl" in гейты["D35_frame_filled"]
+
+
+def test_схема_закрывает_кадр_для_раннего_гейта_наравне_со_вставкой():
+    """Уголок ведущей под схемой — законная раскладка: схема стоит в верхней
+    трети и кадр держит она. Судит это `schema_scene`, и ранний гейт спрашивает
+    ровно его — своей копии правила у него нет.
+    """
+    сцены = json.loads(json.dumps(FIT["scenes"]))
+    сцены[5]["presenter"] = "pip-br"
+    сцены[5]["insert"] = None
+    сцены[5]["schema"] = {"form": "steps", "why": "порядок",
+                          "nodes": ["кто", "что", "как"]}
+
+    assert _ранние(сцены)["D35_frame_filled"] == "PASS"
+
+
+def test_пустой_кадр_возвращает_агенту_пересдачу_до_заказа(tmp_path,
+                                                           monkeypatch):
+    """Провал ранних гейтов — это причина пересдачи, а не отчёт: агента
+    спрашивают заново, и ведущую заказывают уже по исправленному плану. Здесь
+    проверяется, что новый гейт попадает в этот же круг, — иначе он повторил бы
+    D20 и опоздал бы ровно так же."""
+    from reels_factory import hf_render
+
+    дыра = json.loads(json.dumps(FIT))
+    дыра["scenes"][5]["presenter"] = "pip-tl"
+    дыра["scenes"][5]["insert"] = None
+    calls = _plan_fakes(monkeypatch, tmp_path, [дыра, FIT])
+
+    res = hf_render.plan_before_avatar(tmp_path, EARLY_TIMED,
+                                       alignment_words=EARLY_WORDS)
+
+    планы = [text for name, text in calls if name == "plan"]
+    assert len(планы) == 2, "пустой кадр пересдачи не вызвал"
+    причина = _причина(планы[1])
+    assert "D35_frame_filled" in причина
+    assert дыра["scenes"][5]["id"] in причина
+    assert _fails(res.get("gates")) == []
+
+
+def test_дыру_в_кадре_чинит_код_когда_попытки_агента_кончились(tmp_path,
+                                                              monkeypatch,
+                                                              capsys):
+    """Ранний FAIL прогон не останавливает: после двух попыток план ложится на
+    диск как есть, и `pipeline.py:550-556` идёт заказывать ведущую по нему же.
+    Покрытие там пересчитает код, а `presenter` и `insert` — нет: дыра доедет
+    до оплаченного заказа и упадёт на `D20_frame_filled` уже после списания.
+
+    Поэтому последнее слово о положении ведущей остаётся за кодом, и берёт он
+    его у `positions_for` — не выдумывая своего.
+    """
+    from reels_factory import hf_render
+    from reels_factory.hf_montage import positions_for
+
+    дыра = json.loads(json.dumps(FIT))
+    дыра["scenes"][5]["presenter"] = "pip-tl"
+    дыра["scenes"][5]["insert"] = None
+    # Оба хода агента — с той же дырой: попытки кончились, чинить некому.
+    _plan_fakes(monkeypatch, tmp_path, [дыра, json.loads(json.dumps(дыра))])
+
+    res = hf_render.plan_before_avatar(tmp_path, EARLY_TIMED,
+                                       alignment_words=EARLY_WORDS)
+
+    сцена = res["scenes"][5]
+    assert сцена["id"] == дыра["scenes"][5]["id"]
+    assert сцена["presenter"] in positions_for(сцена), (
+        "код поставил положение мимо списка, согласованного с кадром")
+    assert res["gates"]["D35_frame_filled"] == "PASS", (
+        "вердикт остался прежним — в отчёт уехал не тот план, что поедет "
+        "в заказ")
+    # По снимку заказывают ведущую и раскладывают её на возобновлённом
+    # прогоне: дыра, оставшаяся там, стоила бы второго заказа.
+    снимок = json.loads((tmp_path / hf_render.EARLY_PLAN_FILE)
+                        .read_text(encoding="utf-8"))
+    assert снимок["scenes"][5]["presenter"] == сцена["presenter"]
+    # Вставку и схему решает агент — их код не трогает.
+    assert снимок["scenes"][5]["insert"] is None
+    строки = capsys.readouterr().out.splitlines()
+    правка = [line for line in строки if "положение ведущей поправлено" in line]
+    assert правка, "код поправил чужое решение молча"
+    assert сцена["id"] in правка[0] and "pip-tl" in правка[0]
+    # Бот берёт последнюю строку stdout, начинающуюся с `{`, за свой ответ
+    # (bot.py:1417-1426) — наша строка такой быть не должна.
+    assert not any(line.startswith("{") for line in правка)
+
+
+def test_зелёный_ранний_гейт_код_не_трогает(tmp_path, monkeypatch, capsys):
+    """Починка — это последнее слово после исчерпанных попыток, а не правка
+    каждого плана: план без дыры обязан доехать до заказа ровно таким, каким
+    его написал агент."""
+    from reels_factory import hf_render
+
+    _plan_fakes(monkeypatch, tmp_path, [FIT])
+
+    res = hf_render.plan_before_avatar(tmp_path, EARLY_TIMED,
+                                       alignment_words=EARLY_WORDS)
+
+    положения = [scene["presenter"] for scene in res["scenes"]]
+    assert положения == [scene["presenter"] for scene in FIT["scenes"]]
+    assert "положение ведущей поправлено" not in capsys.readouterr().out
+
+
+def test_сцена_без_заказа_ведущей_закрывается_фоном_а_не_ведущей(tmp_path):
+    """`avatarNeeded: false` — это дыра аватара, прочитанная до заказа
+    (hf_montage.py:179-185): клипа HeyGen на этих секундах не будет, и `full`
+    на такой сцене — обещание кадра, которого никто не снимет. На дыре
+    `refill_scene` ставит `none`, и `fills_frame` такую сцену принимает
+    (hf_layout.py:135) — тем же отвечает и починка.
+    """
+    from reels_factory import hf_render
+    from reels_factory.hf_gates import frame_filled_problems
+    from reels_factory.hf_phrases import lay_out_scenes, phrase_timeline
+
+    board = json.loads(json.dumps(FIT))
+    board["scenes"][6].update({"presenter": "pip-tl", "insert": None})
+    assert board["scenes"][6]["avatarNeeded"] is False
+    phrases = phrase_timeline(EARLY_TIMED, EARLY_WORDS)
+    сцены = lay_out_scenes(json.loads(json.dumps(board["scenes"])), phrases,
+                           duration=EARLY_TOTAL)
+
+    правки = hf_render._fill_frame_holes(tmp_path, board, сцены)
+
+    assert сцены[6]["presenter"] == "none"
+    assert правки and сцены[6]["id"] in правки[0]
+    assert frame_filled_problems(сцены) == []
+    # Правка ушла и в план на диске — по нему заказывают ведущую.
+    assert board["scenes"][6]["presenter"] == "none"
+    записан = json.loads((tmp_path / "plan.json").read_text(encoding="utf-8"))
+    assert записан["scenes"][6]["presenter"] == "none"
+
+
+def test_причина_ненайденной_вставки_попадает_в_лог(capsys):
+    """`resolve_all` пишет на каждый ненайденный запрос свою причину в поле
+    `error` (hf_media.py:874-889), и не читал их никто: вызывающие спрашивают
+    только `file`. Из-за этого упавший прогон, где из десяти запросов файлы
+    получились у трёх, разбирать было нечем.
+
+    Строка не смеет начинаться с `{`: бот берёт из stdout движка последнюю
+    строку, начинающуюся с `{`, и читает её как ответ (`bot.py:1417-1426`).
+    """
+    from reels_factory import hf_render
+
+    hf_render._report_resolve(
+        {"s-02::shot0": {"file": "media/a.mp4"},
+         "s-02::shot1": {"error": "Pexels не дал кандидатов: «стол»"},
+         "s-06::shot0": {"error": "судья забраковал всех кандидатов: «офис»"}},
+        "вставка")
+
+    напечатано = capsys.readouterr().out
+    assert "s-02::shot1" in напечатано and "Pexels не дал кандидатов" in напечатано
+    assert "s-06::shot0" in напечатано and "судья забраковал" in напечатано
+    assert "файлы у 1 из 3" in напечатано, "счёта найденного в логе нет"
+    assert "s-02::shot0" not in напечатано, "найденный файл попал в отчёт о потерях"
+    assert not any(line.startswith("{") for line in напечатано.splitlines()), (
+        "строка, начинающаяся с `{`, уедет боту вместо ответа движка")
+
+
 def test_средство_которого_не_будет_снимается_до_разбора_пустых_сцен(
         tmp_path, monkeypatch):
     """Значок без файла и плашку с непригодным блоком сборка снимала сама —

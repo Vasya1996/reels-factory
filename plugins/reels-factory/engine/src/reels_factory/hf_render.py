@@ -42,14 +42,15 @@ from reels_factory.hf_compose import (
 from reels_factory.hf_fonts import inject_fonts
 from reels_factory.hf_frame import read_frame
 from reels_factory.hf_gates import (
-    check_media, check_placeholders, check_storyboard,
+    check_media, check_placeholders, check_storyboard, frame_filled_problems,
 )
 from reels_factory.hf_layout import FULL_FRAME_PRESENTER, quantize
 from reels_factory.hf_media import resolve_all
 from reels_factory.hf_montage import (
     check_inserts, check_shots, dedupe_neighbours, drop_series,
     inserts_shortfall, inserts_wanted,
-    merge_adjacent_series, ordered_gaps, pick_series, settle_schemas,
+    merge_adjacent_series, ordered_gaps, pick_position, pick_series,
+    settle_schemas,
     show_ordered_avatar,
 )
 from reels_factory.hf_montage_skill import SKILL_NAME, seconds
@@ -515,6 +516,32 @@ def _place_clips(public: Path, avatar_mp4s: list, avatar_render_plan: dict | Non
                       "start": quantize(start),
                       "duration": duration})
     return clips
+
+
+def _report_resolve(resolved: dict, what: str) -> None:
+    """Почему подбор не дал файла — поимённо, в лог.
+
+    `resolve_all` кладёт на каждый ненайденный запрос свою причину в поле
+    `error` (hf_media.py:874-889): «Pexels не дал кандидатов», «судья забраковал
+    всех кандидатов», «сцену не судили», «биролл не скачался». Не читал их
+    никто — вызывающие спрашивают только `file`, — и упавший прогон, где из
+    десяти запросов файлы получились у трёх, разбирать было нечем.
+
+    Печать чисто диагностическая: выбор вставок она не трогает.
+
+    Строка НИКОГДА не начинается с `{`: бот берёт из stdout движка последнюю
+    строку, которая начинается с `{` и читается как JSON, и считает её ответом
+    (`bot.py:1417-1426`).
+    """
+    if not resolved:
+        return
+    lost = [(key, str(answer.get("error") or "причина не названа"))
+            for key, answer in sorted(resolved.items())
+            if not (isinstance(answer, dict) and answer.get("file"))]
+    got = len(resolved) - len(lost)
+    print(f"{what}: файлы у {got} из {len(resolved)} запросов")
+    for key, reason in lost:
+        print(f"{what} без файла — {key}: {reason}")
 
 
 def _media_from_plan(plan: dict, public: Path) -> list[dict]:
@@ -1075,6 +1102,24 @@ def _early_plan_gates(scenes: list[dict], duration: float,
     # нужно 4». Счёт тот же самый, чтобы два места не разъехались.
     shortfall = inserts_shortfall(scenes)
     result["D34_inserts"] = "PASS" if not shortfall else f"FAIL: {shortfall}"
+
+    # То же самое судит D20 (`check_frame_filled` в hf_gates.py) — но уже после
+    # рендеров HeyGen: боевой прогон лёг там на `s-06: ведущая 'pip-tl' без
+    # вставки`, отдал $11,86 и не отдал ролика. Здесь чинить это ещё бесплатно:
+    # ведущая уголком, вставка и схема — решения агента, и все три стоят в
+    # плане уже сейчас (образец ответа показывает их до заказа,
+    # `_sample_plan` в hf_brief.py). Судим тем же кодом, а не своей копией:
+    # разойтись двум местам иначе нечем.
+    #
+    # Про схему гейт не спрашивает отдельно — `frame_filled_problems` считает
+    # `schema_scene` наравне со вставкой.
+    empty = frame_filled_problems(scenes)
+    result["D35_frame_filled"] = "PASS" if not empty else (
+        "FAIL: ведущая уголком (`pip-*`) или половиной кадра (`stack`) "
+        "оставляет остальной кадр пустым, и закрыть его нечем — зритель "
+        "увидит дыру. Дай такой сцене вставку `insert` из двух планов или "
+        "схему `schema`, а если закрывать нечем — поставь ей presenter "
+        "`full` или `punch`: " + "; ".join(empty))
     return result
 
 
@@ -1144,6 +1189,67 @@ def _keep_early_brief(rdir: Path) -> None:
         path = rdir / source
         if path.exists():
             shutil.copyfile(path, rdir / name)
+
+
+def _fill_frame_holes(rdir: Path, board: dict, scenes: list[dict]) -> list[str]:
+    """Закрыть дыру в кадре кодом, когда попытки агента кончились.
+
+    Провал раннего гейта прогон не останавливает: после `MAX_PLAN_ATTEMPTS`
+    план ложится на диск как есть, а `pipeline.py:550-556` печатает «покрытие
+    оставлено прежним» и идёт заказывать ведущую. Остальным ранним гейтам это
+    сходит с рук — покрытие потом пересчитает код. `D35_frame_filled` — нет:
+    `presenter` и `insert` эвристика не переписывает, и план с дырой доезжает
+    до оплаченного заказа, а потом гарантированно валится на
+    `D20_frame_filled` уже после списания денег. Боевой прогон так и кончился:
+    $11,86 за недоставленный ролик.
+
+    Трогаем только положение ведущей: вставку, схему и порядок сцен решает
+    агент, и переписывать их за него значит собрать не тот ролик, который он
+    задумал. Положение берём не своё — `pick_position` (hf_montage.py:349)
+    выбирает его из `positions_for` (hf_montage.py:322), то есть из списка,
+    согласованного с наполнением сцены; клипов и дыр аватара на этом шаге ещё
+    нет, и им они не нужны — в отличие от `refill_scene`, который спрашивает
+    `gaps`.
+
+    Сцену, где ведущей не закажут вовсе (`avatarNeeded: false`), закрывать
+    ведущей нельзя: `full` на ней — обещание кадра, которого HeyGen не снимет.
+    До заказа `avatarNeeded: false` читается ровно как дыра аватара
+    (hf_montage.py:179-185), а на дыре `refill_scene` ставит `none` — законную
+    фоновую сцену, которую `fills_frame` принимает (hf_layout.py:135).
+
+    Возвращает список поправок словами. Пустой — гейт зелёный, ничего не
+    трогали.
+    """
+    fixed = []
+    for index, scene in enumerate(scenes):
+        # Гейт судит каждую сцену отдельно (hf_gates.py:381-399), поэтому
+        # вопрос о ней одной — тот же самый вопрос. Своей копии правила у нас
+        # тут нет: разойтись двум местам иначе нечем.
+        if not frame_filled_problems([scene]):
+            continue
+        was = str(scene.get("presenter") or "full")
+        scene["presenter"] = ("none" if scene.get("avatarNeeded") is False
+                              else pick_position(scenes, index))
+        fixed.append(f'{scene.get("id", "?")}: {was} → {scene["presenter"]}')
+    if not fixed:
+        return fixed
+
+    # План агента лежит на диске, и по нему поедет всё дальнейшее: заказ читает
+    # `plan.json`, возобновлённый прогон — снимок `EARLY_PLAN_FILE`, который
+    # сейчас снимут с него же. Поправить только сцены в памяти значит починить
+    # один прогон и оставить дыру во втором.
+    by_id = {str(scene.get("id")): scene for scene in board.get("scenes") or []}
+    for scene in scenes:
+        twin = by_id.get(str(scene.get("id")))
+        if twin is not None:
+            twin["presenter"] = scene["presenter"]
+    (rdir / "plan.json").write_text(
+        json.dumps(board, ensure_ascii=False, indent=1), encoding="utf-8")
+    print("положение ведущей поправлено кодом: агент исчерпал попытки, а "
+          "уголок или половина кадра так и остались без вставки и без схемы — "
+          "закрываем кадр до заказа, иначе за дыру заплатит пользователь: "
+          + "; ".join(fixed))
+    return fixed
 
 
 def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
@@ -1257,6 +1363,17 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
             if not failed:
                 break
             reason = "; ".join(failed)
+
+    # Чиним здесь, а не там, где план читают перед заказом: ниже по этой же
+    # функции план замораживают — снимок `EARLY_PLAN_FILE` и маркеры шага, — и
+    # возобновлённый прогон разложит уже снимок, не спрашивая никого. Правка
+    # на месте чтения досталась бы одному прогону, а в снимке дыра осталась бы
+    # навсегда: `frozen_plan_gates` её потом даже не завернёт, а переведёт в
+    # вечный SKIP. Это последняя точка, где план ещё чей-то, а не оплаченный.
+    if _fill_frame_holes(rdir, board, scenes):
+        # В отчёт и в снимок обязан уйти вердикт по тому плану, который
+        # действительно поедет в заказ, а не по тому, что вернул агент.
+        gates = _early_plan_gates(scenes, duration, phrases, settings)
 
     # Задание последней попытки — это то самое, по которому сделан лежащий
     # план: копию снимаем до того, как сборка перепишет оригинал.
@@ -1469,6 +1586,7 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     found = resolve_all(public, requests,
                                         context=board.get("brollContext"),
                                         agent_spend=spend)
+                    _report_resolve(found, "вставка")
                     lost = settle_inserts(board, found, saved_clips, duration,
                                           public=public)
                     if lost:
@@ -1483,9 +1601,14 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     icons = with_speech(
                         icon_intents(board.get("scenes") or []))
                     if icons:
-                        found.update(resolve_all(
+                        # Значки подбираются тем же `resolve_all` и молчат так
+                        # же: значок без файла снимает `settle_fillers`, и
+                        # сцена, стоявшая на нём одном, остаётся фоном.
+                        picked = resolve_all(
                             public, icons, context=board.get("brollContext"),
-                            agent_spend=spend))
+                            agent_spend=spend)
+                        _report_resolve(picked, "значок")
+                        found.update(picked)
                     # Значок без файла и плашку с непригодным блоком
                     # снимаем здесь же: раньше их снимала сама сборка, то
                     # есть после разбора пустых сцен, и сцена, стоявшая на
@@ -1512,8 +1635,9 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     schema = schema_intents(board.get("scenes") or [],
                                             theme=theme)
                     if schema:
-                        found.update(resolve_all(public, schema,
-                                                 agent_spend=spend))
+                        drawn = resolve_all(public, schema, agent_spend=spend)
+                        _report_resolve(drawn, "схема")
+                        found.update(drawn)
                     build_composition(rdir, sdk, storyboard=board,
                                       clips=saved_clips, duration=duration,
                                       words=words, resolved=found,
