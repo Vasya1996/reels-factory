@@ -2295,6 +2295,37 @@ def _downgrade_window(plan: dict, window: dict, reason: str) -> None:
     })
 
 
+def _enforce_face_absence_chain(plan: dict) -> None:
+    """Та же мера, что у валидатора, но на точных таймингах.
+
+    Черновик цепочку уже разводит (`_plan_visual_windows`, :2036), однако
+    делает это по оценке речи `WORDS_PER_SEC = 2.5` (scenario.py:403). Реальная
+    озвучка длиннее оценки: по тринадцати прод-заданиям от -4% до +22%, и на
+    +22% цепочка из двух окон по 9.4с оценочных вырастает за лимит. Одиночное
+    переросшее окно finalize понижает выше (:2429), а цепочку до этой правки не
+    понижал никто — валидатор (:2642) ловил её исключением, когда за ролик уже
+    заплачено. Понижаем сами: кадр теряет вставку, но ролик доезжает.
+    """
+    face_absence_start = None
+    for window in plan.get("windows") or []:
+        if window.get("coverage") not in {"full_broll", "hyperframes"}:
+            face_absence_start = None
+            continue
+        timing = window.get("final_timing") or {}
+        start = float(timing.get("start", 0.0))
+        end = float(timing.get("end", 0.0))
+        if face_absence_start is None:
+            face_absence_start = start
+        if end - face_absence_start > MAX_FACE_ABSENCE_S:
+            _downgrade_window(
+                plan,
+                window,
+                "соседние fullscreen-окна скрыли бы лицо дольше "
+                f"{MAX_FACE_ABSENCE_S:.0f}с",
+            )
+            face_absence_start = None
+
+
 def finalize_edit_plan(
     plan: dict,
     timed_scenario: dict,
@@ -2451,6 +2482,7 @@ def finalize_edit_plan(
     from reels_factory.visual_grounding import enforce_visual_grounding
 
     result = enforce_visual_grounding(result)
+    _enforce_face_absence_chain(result)
     _refresh_blocks_and_summary(result)
     report = validate_edit_plan(
         result,
