@@ -148,6 +148,7 @@ from reels_factory.editplan import (
     EDIT_PLAN_FILENAME,
     GESTURE_KEYS,
     GESTURE_VOCABULARY,
+    MAX_FACE_ABSENCE_S,
     PERFORMANCE_BY_ROLE,
     _chart_variables,
     _language_rules,
@@ -1061,6 +1062,98 @@ def test_finalize_exact_timing_делает_явный_asset_fallback(tmp_path):
     assert final["revisions"]
     assert "короче exact window" in final["revisions"][0]["reason"]
     assert covered_block_indexes(final) == set()
+
+
+def test_finalize_разводит_цепочку_соседних_окон_на_точных_таймингах(tmp_path):
+    """Прод-случай job e00b740b: оценка речи короче озвучки на 22%.
+
+    Черновик разводит цепочку по `WORDS_PER_SEC = 2.5` (scenario.py:403) и
+    укладывается в лимит — 9.0с из 10.0. Реальная озвучка длиннее, те же два
+    окна занимают 12.0с, и до этой правки finalize не понижал цепочку, а
+    валидатор ронял оплаченную сборку исключением.
+    """
+    scenario = _canonical_scenario()
+    # Блоки короче канонических: цепочка из двух соседних окон укладывается
+    # в лимит по оценке и вылезает за него только после озвучки.
+    scenario["blocks"][1]["end"] = 8.0
+    scenario["blocks"][2]["start"] = 8.0
+    scenario["blocks"][2]["end"] = 12.0
+    scenario["blocks"][3]["start"] = 12.0
+    scenario["blocks"][3]["end"] = 15.0
+    draft = build_edit_plan(
+        scenario,
+        _canonical_config(),
+        index=_library(tmp_path, duration=30.0),
+        library_dir=tmp_path,
+        embed_fn=lambda _text: [1.0, 0.0],
+    )
+    development = next(
+        window for window in draft["windows"] if window["role"] == "development"
+    )
+    payoff = next(
+        window for window in draft["windows"] if window["role"] == "payoff"
+    )
+    # Соседнее fullscreen-окно планировщик сам не поставит (:1600), поэтому
+    # цепочку собираем руками — так же, как её собрал Visual Director на проде.
+    payoff["coverage"] = "full_broll"
+    payoff["zone"] = development["zone"]
+    payoff["asset"] = copy.deepcopy(development["asset"])
+    payoff["material"] = copy.deepcopy(development.get("material"))
+    payoff["safe_to_skip_avatar"] = True
+    for phrase in draft["phrases"]:
+        if phrase["window_id"] == payoff["id"]:
+            phrase["coverage"] = "full_broll"
+            phrase["asset"] = copy.deepcopy(payoff["asset"])
+    estimated_chain = (
+        payoff["estimated_timing"]["end"]
+        - development["estimated_timing"]["start"]
+    )
+    assert estimated_chain <= MAX_FACE_ABSENCE_S
+
+    # Озвучка длиннее оценки на четверть: те же окна уходят за лимит.
+    timed = copy.deepcopy(scenario)
+    stretched = [(0.0, 3.6), (3.6, 9.6), (9.6, 16.0), (16.0, 19.0)]
+    for block, (start, end) in zip(timed["blocks"], stretched):
+        block["start"], block["end"] = start, end
+    timed["total"] = 19.0
+    words = []
+    phrases_by_block: dict[int, list] = {}
+    for phrase in draft["phrases"]:
+        phrases_by_block.setdefault(phrase["block_index"], []).append(phrase)
+    for block_index, phrases in phrases_by_block.items():
+        block = timed["blocks"][block_index]
+        span = (float(block["end"]) - float(block["start"])) / len(phrases)
+        for index, phrase in enumerate(phrases):
+            words.append({
+                "block_index": block_index,
+                "start": float(block["start"]) + span * index + 0.05,
+                "end": float(block["start"]) + span * (index + 1) - 0.05,
+                "text": phrase["text"],
+                "character_start": phrase["character_start"],
+                "character_end": phrase["character_end"],
+            })
+
+    final = finalize_edit_plan(draft, timed, words)
+
+    final_payoff = next(
+        window for window in final["windows"] if window["role"] == "payoff"
+    )
+    final_development = next(
+        window for window in final["windows"] if window["role"] == "development"
+    )
+    chain = (
+        final_payoff["final_timing"]["end"]
+        - final_development["final_timing"]["start"]
+    )
+    assert chain > MAX_FACE_ABSENCE_S
+    assert final_development["coverage"] == "full_broll"
+    assert final_payoff["coverage"] == "avatar"
+    assert final_payoff["safe_to_skip_avatar"] is False
+    assert any(
+        "скрыли бы лицо дольше" in revision["reason"]
+        for revision in final["revisions"]
+    )
+    assert final["validation"]["all_pass"] is True
 
 
 class _PerformanceRunner:
