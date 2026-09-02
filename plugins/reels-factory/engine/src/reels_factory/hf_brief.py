@@ -231,7 +231,7 @@ def _blind_scenes(shown: list[tuple[list[int], bool]], phrases: list[dict], *,
 
     Образец сильнее правила, стоящего рядом с ним, поэтому под отказ он берёт
     только такие сцены, какие примут гейты до заказа, и ровно столько, сколько
-    нужно, чтобы доля ведущей в образце не спорила с бюджетом. Четыре гейта, и
+    нужно, чтобы доля ведущей в образце не спорила с бюджетом. Три гейта, и
     каждый режет свои сцены:
 
     - открытие и финал ролика ведёт лицо (`D28_avatar_bookends`) — отказы
@@ -242,9 +242,7 @@ def _blind_scenes(shown: list[tuple[list[int], bool]], phrases: list[dict], *,
       и гейт считает сумму её фраз;
     - лицо не пропадает дольше `MAX_FACE_ABSENCE_S` подряд
       (`D32_face_absence`) — отсюда и потолок длины такой сцены, и запрет на
-      два отказа подряд;
-    - фразы ролей `hook` и `cta` ролик говорит лицом (`D30_avatar_roles`) —
-      сцена, накрывшая такую фразу, под отказ не годится.
+      два отказа подряд.
 
     `bar` — доля ведущей, выше которой план заворачивает `D29_avatar_budget`.
     Прежний выбор отдавал под отказ ровно одну сцену и на бюджет не смотрел
@@ -258,10 +256,6 @@ def _blind_scenes(shown: list[tuple[list[int], bool]], phrases: list[dict], *,
     и задание рядом назовёт признаки, по которым сцену под отказ выбирают
     самому.
     """
-    from reels_factory.hf_render import SPEAKING_ROLES
-
-    speaking = {int(p["id"]) for p in phrases
-                if p.get("role") in SPEAKING_ROLES}
     lengths = _scene_lengths(shown, phrases)
     total = sum(lengths)
     if total <= 0:
@@ -270,7 +264,6 @@ def _blind_scenes(shown: list[tuple[list[int], bool]], phrases: list[dict], *,
     roof = _BLIND_ROOF - SAMPLE_BLIND_MARGIN
     eligible = [index for index, (block, _) in enumerate(shown)
                 if 0 < index < len(shown) - 1
-                and not speaking.intersection(block)
                 and floor <= lengths[index] <= roof]
     variants: list[tuple[float, list[int]]] = []
     for mask in range(1, 1 << len(eligible)):
@@ -361,13 +354,12 @@ def _sample_plan(phrases: list[dict], faceless: set[int], *,
     что образец сильнее правила, стоящего рядом с ним.
 
     Значение `false` образец показывает не всегда, а только когда среди
-    показанных сцен есть годная под отказ по длине и по ролям своих фраз
-    (`_blind_scenes`). На коротком ролике середины, свободной от краёв, не
-    остаётся; на очень коротких фразах середина есть, но пола сцены без ведущей
-    не набирает; хук во всю середину закрывает её ролями — и во всех трёх
-    случаях образец показывает одни `true`, а задание рядом объясняет, почему.
-    Учить отказу там нечем: сцена, отданная под него, была бы либо финалом —
-    финал за лицом требуют и свод правил, и `D28_avatar_bookends`
+    показанных сцен есть годная под отказ по длине (`_blind_scenes`). На
+    коротком ролике середины, свободной от краёв, не остаётся; на очень
+    коротких фразах середина есть, но пола сцены без ведущей не набирает — и в
+    обоих случаях образец показывает одни `true`, а задание рядом объясняет,
+    почему. Учить отказу там нечем: сцена, отданная под него, была бы либо
+    финалом — финал за лицом требуют и свод правил, и `D28_avatar_bookends`
     (hf_render.py), — либо планом, который заворачивает гейт до заказа.
 
     Положения ведущей в образце различаются причиной, а не чередованием по
@@ -572,21 +564,6 @@ def _share(value: float, duration: float) -> str:
     return f"{round(100.0 * float(value) / float(duration))} %"
 
 
-def _locked_seconds(phrases: list[dict]) -> float:
-    """Секунды фраз, которые ролик обязан говорить лицом.
-
-    Роли `hook` и `cta` уходят с ведущей всегда (`D30_avatar_roles`), то есть
-    расходуются до первого свободного решения агента. Сумму знает код, а агент
-    её не видел: роли напечатаны у каждой фразы порознь, итог не подводился.
-    На боевом ролике эти роли забирали 81 % цели, и агент планировал так, будто
-    весь бюджет в его распоряжении.
-    """
-    from reels_factory.hf_render import SPEAKING_ROLES
-
-    return sum(float(p["end"]) - float(p["start"]) for p in phrases
-               if p.get("role") in SPEAKING_ROLES)
-
-
 def _faceless_phrase_floor(phrases: list[dict]) -> int:
     """Сколько фраз подряд набирают самую короткую сцену без ведущей.
 
@@ -598,21 +575,15 @@ def _faceless_phrase_floor(phrases: list[dict]) -> int:
     пол. Число знает код, и оно печатается в задании.
 
     Считаем лучший случай: сколько фраз подряд нужно, если брать их с самого
-    выгодного места ролика. Роли `hook` и `cta` пропускаем — их сцене без
-    ведущей не отдать (`D30_avatar_roles`), крайние фразы тоже
-    (`D28_avatar_bookends`). Ноль значит «отдать нечего вовсе».
+    выгодного места ролика. Крайние фразы пропускаем — их сцене без ведущей не
+    отдать (`D28_avatar_bookends`), открытие и финал ролика ведёт лицо. Ноль
+    значит «отдать нечего вовсе».
     """
-    from reels_factory.hf_render import SPEAKING_ROLES
-
     best = 0
     inner = list(phrases[1:-1]) if len(phrases or []) > 2 else []
     for start in range(len(inner)):
-        if inner[start].get("role") in SPEAKING_ROLES:
-            continue
         total = 0.0
         for step, phrase in enumerate(inner[start:], start=1):
-            if phrase.get("role") in SPEAKING_ROLES:
-                break
             total += float(phrase["end"]) - float(phrase["start"])
             if total > MAX_FACE_ABSENCE_S:
                 break
@@ -632,10 +603,10 @@ def _faceless_candidates(phrases: list[dict]) -> list[list[dict]]:
     """Куски ролика, которые можно отдать вставке, не ломая ни одного гейта.
 
     Собираются жадно и по тем же меркам, которыми судят план: подряд идущие
-    фразы без ролей `hook` и `cta` (`D30_avatar_roles`), сцена не короче
-    `MIN_FULLSCREEN_S` (`D31_faceless_scenes`) и не длиннее `_BLIND_ROOF`,
-    между двумя такими сценами остаётся хотя бы одна фраза с ведущей, а
-    крайние фразы ролика не трогаются вовсе (`D28_avatar_bookends`).
+    фразы, сцена не короче `MIN_FULLSCREEN_S` (`D31_faceless_scenes`) и не
+    длиннее `_BLIND_ROOF`, между двумя такими сценами остаётся хотя бы одна
+    фраза с ведущей, а крайние фразы ролика не трогаются вовсе
+    (`D28_avatar_bookends`).
 
     Потолок здесь — длина СЦЕНЫ, а не промежутка без лица: `MAX_FACE_ABSENCE_S`
     меряет промежуток, в который влезает несколько сцен, а одну сцену раньше
@@ -648,8 +619,6 @@ def _faceless_candidates(phrases: list[dict]) -> list[list[dict]]:
     («Multishot examples work with thinking», claude-prompting-best-practices).
     Планом это не является: сцены выбирает агент.
     """
-    from reels_factory.hf_render import SPEAKING_ROLES
-
     def _length(items: list[dict]) -> float:
         return sum(float(p["end"]) - float(p["start"]) for p in items)
 
@@ -660,7 +629,7 @@ def _faceless_candidates(phrases: list[dict]) -> list[list[dict]]:
     while queue:
         phrase = queue.pop(0)
         length = float(phrase["end"]) - float(phrase["start"])
-        if phrase.get("role") in SPEAKING_ROLES or length > _BLIND_ROOF:
+        if length > _BLIND_ROOF:
             current = []
             continue
         if _length(current) + length > _BLIND_ROOF:
@@ -670,7 +639,7 @@ def _faceless_candidates(phrases: list[dict]) -> list[list[dict]]:
         current.append(phrase)
         room = queue and _length(current) + (
             float(queue[0]["end"]) - float(queue[0]["start"])
-        ) <= _BLIND_ROOF and queue[0].get("role") not in SPEAKING_ROLES
+        ) <= _BLIND_ROOF
         if _length(current) >= MIN_FULLSCREEN_S and not room:
             found.append(current)
             current = []
@@ -884,7 +853,6 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
             "ролика идут без лица и где они стоят — одно решение на весь "
             "ролик.\n\n"
             if most_scenes >= 1 else "")
-        locked = _locked_seconds(phrases)
         gaps_block = (
             "Аватар ещё **не заказан**: ведущую снимут у HeyGen ровно по "
             "твоему плану. Поле `avatarNeeded` ставь каждой сцене плана, а не "
@@ -916,14 +884,8 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
             "целая сцена, полсцены вставке не отдашь, и попасть в цель ровно "
             "удаётся не всегда.\n\n"
             + give_block
-            + "Фразы ролей `hook` и `cta` идут с ведущей всегда "
-            "(`D30_avatar_roles`), и в этом ролике они забирают "
-            f"{seconds(locked)} из цели. Свободно ты распоряжаешься "
-            f"{seconds(max(0.0, duration - locked))} — отданное вставке "
-            "набирается только из них.\n\n"
-            "Вышло выше границы — отдай вставке самую длинную сцену середины, "
-            "среди фраз которой нет ролей `hook` и `cta`: одна такая сцена "
-            "снимает со счёта всю свою длину."
+            + "Вышло выше границы — отдай вставке самую длинную сцену "
+            "середины: одна такая сцена снимает со счёта всю свою длину."
             # Слабую половину примера судим границей В СЧЁТЕ АГЕНТА: пример
             # складывает длительности фраз, и сравнивать эту сумму с секундами
             # заказа значило бы показывать арифметику, которой агент повторить
@@ -1050,10 +1012,9 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
         "ведущей он не\nпоказывает: среди показанных сцен отдать его некому. "
         "Отказ живёт в сцене,\nкоторая набирает минимум сцены без ведущей — он "
         "назван в своде правил и\nмеряется длиной сцены целиком, то есть "
-        "суммой её фраз, — и при этом не\nоткрывает ролик, не закрывает его и "
-        "не накрывает фраз ролей `hook` и `cta`.\nВ своём плане собирай под "
-        "отказ соседние короткие фразы в одну сцену: вместе\nони этот минимум "
-        "набирают.")
+        "суммой её фраз, — и при этом не\nоткрывает ролик и не закрывает его. "
+        "В своём плане собирай под отказ\nсоседние короткие фразы в одну "
+        "сцену: вместе они этот минимум набирают.")
 
     # Доктрина — скиллом рядом, задание ссылается на него первым шагом.
     # `min_fullscreen` и `max_face_absence` судят план агента (`editplan.py`),
@@ -1216,27 +1177,25 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
    (`D33_avatar_decisions`).
 2. Открытие и финал ролика: `presenter` `full` или `punch` и
    `avatarNeeded: true` (`D28_avatar_bookends`).
-3. Ни одна сцена с `avatarNeeded: false` не накрывает фраз ролей `hook` и
-   `cta` — роли напечатаны у каждой фразы выше (`D30_avatar_roles`).
-4. Сумма длительностей фраз всех сцен с `avatarNeeded: true` не выше
+3. Сумма длительностей фраз всех сцен с `avatarNeeded: true` не выше
    {seconds(hard_target)} при цели {seconds(target)} — это граница
    {seconds(hard_ceiling)} за вычетом ручек, которые заказ докупает по краям
    кусков (`D29_avatar_budget`).
-5. У каждой сцены с `avatarNeeded: false` сумма длительностей её фраз не
+4. У каждой сцены с `avatarNeeded: false` сумма длительностей её фраз не
    меньше {seconds(MIN_FULLSCREEN_S)} (`D31_faceless_scenes`).
-6. Идущие подряд сцены с `avatarNeeded: false` вместе не длиннее {seconds(MAX_FACE_ABSENCE_S)} —
+5. Идущие подряд сцены с `avatarNeeded: false` вместе не длиннее {seconds(MAX_FACE_ABSENCE_S)} —
    сложи длительности их фраз; между ними стоит сцена с ведущей
    (`D32_face_absence`).
-7. Сцены идут встык и покрывают фразы `0`–{last_phrase}, сцен не меньше {low}.
-8. `climax` ровно один и не в первой сцене; соседние сцены отличаются
+6. Сцены идут встык и покрывают фразы `0`–{last_phrase}, сцен не меньше {low}.
+7. `climax` ровно один и не в первой сцене; соседние сцены отличаются
    картинкой.
-9. Сцен с `insert` ровно столько же, сколько сцен с запасом — с заполненным
+8. Сцен с `insert` ровно столько же, сколько сцен с запасом — с заполненным
    `fallback`, `overlay` или `icon`: посчитай и сравни числа. Сцена со
    вставкой и без запаса выйдет в ролик фоном с титром (`D25_empty_frame`).
-10. У каждой сцены, где `presenter` — уголок (`pip-*`) или половина (`stack`),
+9. У каждой сцены, где `presenter` — уголок (`pip-*`) или половина (`stack`),
    есть чем закрыть остальной кадр: `insert` или `schema`. Нет ни того, ни
    другого — ставь `full` или `punch` (`D35_frame_filled`).
-11. Оба файла на месте: `storyboard.json` и `frame.md`.
+10. Оба файла на месте: `storyboard.json` и `frame.md`.
 
 Расхождение нашлось — почини план и только потом записывай файлы."""
     gaps_title = ("## Где ведущей нет" if avatar_ordered

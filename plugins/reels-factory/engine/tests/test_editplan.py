@@ -1014,10 +1014,8 @@ def test_validator_ловит_отсутствующий_asset_и_low_confidence
     assert any("не существует" in error for error in report["errors"])
 
 
-def test_validator_защищает_hook_face_absence_и_motion_contract(tmp_path):
+def test_validator_защищает_face_absence_и_motion_contract(tmp_path):
     plan = _build_canonical(tmp_path)
-    hook = next(window for window in plan["windows"] if window["role"] == "hook")
-    hook["coverage"] = "hyperframes"
     for window in plan["windows"]:
         if window["role"] in {"hook", "development", "payoff"}:
             window["coverage"] = "hyperframes"
@@ -1027,9 +1025,24 @@ def test_validator_защищает_hook_face_absence_и_motion_contract(tmp_pat
 
     report = validate_edit_plan(plan)
 
-    assert any("hook нельзя полностью скрывать" in error for error in report["errors"])
     assert any("лицо отсутствует дольше" in error for error in report["errors"])
     assert any("неподдерживаемым объектом" in error for error in report["errors"])
+
+
+def test_validator_не_запрещает_прятать_hook_и_cta_ролью(tmp_path):
+    """Решение Васи: правило «роль hook/cta ролик всегда говорит лицом» снято
+    и в раннем гейте до заказа, и здесь, в валидаторе. Окно роли `hook` может
+    быть полностью скрыто, если это не ломает другие правила — тут оно одно
+    и лицо пропадает меньше `MAX_FACE_ABSENCE_S`, так что план проходит целиком.
+    """
+    plan = _build_canonical(tmp_path)
+    hook = next(window for window in plan["windows"] if window["role"] == "hook")
+    hook["coverage"] = "hyperframes"
+
+    report = validate_edit_plan(plan)
+
+    assert not any("нельзя полностью скрывать" in error
+                  for error in report["errors"]), report["errors"]
 
 
 def test_finalize_добавляет_exact_timing_не_перепланируя(tmp_path):

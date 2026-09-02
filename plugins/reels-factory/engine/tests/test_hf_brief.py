@@ -92,11 +92,10 @@ FULL_CLIPS = [{"file": "clips/avatar_0.mp4", "start": 0.0, "duration": 41.5}]
 def _фразы(count: int, length: float = 2.0) -> list[dict]:
     """Ровные фразы с правдоподобными ролями: хук открывает, призыв закрывает.
 
-    Роль тянется по фразам, и образец не вправе отдавать сцене без ведущей
-    фразу роли `hook` или `cta` — это заворачивает и валидатор (editplan.py), и
-    гейт до заказа (`D30_avatar_roles`). Список, где КАЖДАЯ фраза — `hook`,
-    сцены под отказ не оставляет вовсе, и проверка того, какой сцене образец
-    его отдал, становится пустой.
+    Роли нужны материалу для правдоподобия — реальный сценарий их несёт, — а
+    не потому, что роль сама решает, какой сцене годится отказ от ведущей:
+    единственное, что теперь его решает, — длина сцены и края ролика
+    (`D28_avatar_bookends`).
     """
     return [{"id": index,
              "role": "hook" if index < 2 else
@@ -973,32 +972,6 @@ def test_образец_отдаёт_отказ_сцене_которая_наб
                 f"({MIN_FULLSCREEN_S:g} с)")
 
 
-def test_образец_не_прячет_фразы_ролей_hook_и_cta(tmp_path):
-    """Тот же класс, что и дефект 4: сцену под отказ образец выбирал, не глядя
-    ни на длительности, ни на роли. Роль тянется по фразам, и на быстрой речи
-    двенадцатисекундный хук занимает пять фраз — середина показанных сцен
-    оказывается хуком целиком, а окно роли `hook` или `cta` без ведущей
-    заворачивает и валидатор (editplan.py), и гейт до заказа
-    (`D30_avatar_roles`, hf_render.py).
-    """
-    from reels_factory.hf_render import SPEAKING_ROLES
-
-    phrases = [dict(phrase, role="hook" if phrase["id"] < 5 else
-                                "cta" if phrase["id"] > 13 else "development")
-               for phrase in FAST_PHRASES]
-    text = _text(tmp_path / "hook", phrases=phrases, clips=[],
-                 avatar_ordered=False)
-    говорящие = {p["id"] for p in phrases if p["role"] in SPEAKING_ROLES}
-    for scene in _board(text)["scenes"]:
-        if scene.get("avatarNeeded") is not False:
-            continue
-        накрыты = {pid for pid in говорящие
-                   if scene["phrases"][0] <= pid <= scene["phrases"][-1]}
-        assert not накрыты, (
-            f'образец прячет за вставку фразы ролей hook и cta: сцена '
-            f'{scene["id"]}, фразы {sorted(накрыты)}')
-
-
 def test_образец_молчит_про_отказ_когда_отдать_его_некому(tmp_path):
     """Круг 4, дефект 4, вторая половина. Когда ни одна сцена образца пола не
     набирает, отказ в нём не показывается вовсе: образец, который учит плану,
@@ -1337,22 +1310,6 @@ def test_форма_запасной_схемы_выбирается_по_дли
         "не сказано, что при снятой серии кадр остаётся на запасной схеме")
     assert "выбирай по длине этой сцены" in text, (
         "не сказано, чем выбирать форму запасной схемы")
-
-
-def test_роли_hook_и_cta_идут_с_ведущей(tmp_path):
-    """Ломает прод 2. Окно роли `hook` или `cta` без ведущей валидатор
-    отклоняет (editplan.py:2559-2562), а роль куска — роль его первой фразы
-    (`_regroup_windows`, avatar_islands.py:357). Роли напечатаны у каждой
-    фразы задания, но правила про них не было ни в задании, ни в своде.
-    """
-    text = _skill(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES)
-    куски = [part for part in _абзацы(text, "`hook` и `cta`")
-             if "avatarNeeded: true" in part]
-    assert куски, "не сказано, что фразы ролей `hook` и `cta` идут с ведущей"
-    assert any("Роль напечатана" in part for part in куски), (
-        "не сказано, где агент берёт роль фразы")
-    assert any("то же, что `beat`" in part for part in куски), (
-        "роль фразы не отделена от `beat`, а имена значений там совпадают")
 
 
 def test_решение_про_ведущую_показано_примерами(tmp_path):
@@ -1742,7 +1699,6 @@ def _план_из_образца(text: str, phrases: list[dict]) -> list[dict]:
     следующая = scenes[-1]["phrases"][-1] + 1
     ведущая = bool(scenes[-1].get("avatarNeeded", True))
     длина = {p["id"]: float(p["end"]) - float(p["start"]) for p in phrases}
-    роль = {p["id"]: p.get("role") for p in phrases}
 
     def _длина_сцены(первая, край):
         return sum(длина[pid] for pid in range(первая, край + 1))
@@ -1762,11 +1718,6 @@ def _план_из_образца(text: str, phrases: list[dict]) -> list[dict]:
                 следующая, min(следующая + размер - 1, last)) > SERIES_MAX:
             размер_сцены = 1
         край = min(следующая + размер_сцены - 1, last)
-        # Хук и призыв ролик говорит лицом (`D30_avatar_roles`), и чередование
-        # их не отменяет.
-        if any(роль.get(pid) in ("hook", "cta")
-               for pid in range(следующая, край + 1)):
-            ведущая = True
         сцена = {"id": f"s-tail{len(хвост)}", "beat": "point",
                  "phrases": [следующая, край],
                  "presenter": "full" if ведущая else "none",
@@ -1947,25 +1898,6 @@ def test_требование_бюджета_сказано_действием(t
             f"{имя}: не названа вилка числа сцен без ведущей")
 
 
-def test_роли_hook_и_cta_названы_суммой_секунд(tmp_path):
-    """Ревизия круга 4: роли `hook` и `cta` съедали от 58 до 81 % цели ещё до
-    первого свободного решения агента, а сумму он не видел — роли напечатаны у
-    каждой фразы порознь, итог не подводился. Код её знает.
-    """
-    for имя, phrases, duration in МАТЕРИАЛЫ:
-        section = _где_ведущей_нет(
-            _text(tmp_path / f"r{имя}", phrases=phrases, clips=[],
-                  duration=duration, avatar_ordered=False))
-        занято = sum(float(p["end"]) - float(p["start"]) for p in phrases
-                     if p["role"] in ("hook", "cta"))
-        части = [part for part in _абзацы(section, "`hook` и `cta`")
-                 if "забирают" in part]
-        assert части, f"{имя}: сумма ролей `hook` и `cta` не названа"
-        assert any(f"{занято:.1f} с".replace(".", ",") in part
-                   or f"{занято:.0f} с" in part for part in части), (
-            f"{имя}: названо не то число ({занято:g} с)")
-
-
 def test_все_гейты_названы_в_сверке_перед_сдачей(tmp_path):
     """Приём взят у фреймворка: «## Self-check before finishing… the codes in
     parens are `hyperframes lint`'s and what the orchestrator may cite back»
@@ -1979,9 +1911,8 @@ def test_все_гейты_названы_в_сверке_перед_сдаче�
     text = _text(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES)
     сверка = text.split("## Сверка перед сдачей")[1]
     for гейт in ("D28_avatar_bookends", "D29_avatar_budget",
-                 "D30_avatar_roles", "D31_faceless_scenes",
-                 "D32_face_absence", "D33_avatar_decisions",
-                 "D35_frame_filled"):
+                 "D31_faceless_scenes", "D32_face_absence",
+                 "D33_avatar_decisions", "D35_frame_filled"):
         assert гейт in сверка, f"{гейт} в сверке не назван"
     assert "почини план и только потом записывай файлы" in сверка, (
         "не сказано, что делать с найденным расхождением")
@@ -2047,7 +1978,7 @@ def test_решение_про_ведущую_дано_таблицей_случ
     """
     skill = _skill(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES)
     таблица = skill.split("| Случай | `avatarNeeded` |")[1].split("\n\n")[0]
-    for случай in ("`hook` или `cta`", "открывает или закрывает ролик",
+    for случай in ("открывает или закрывает ролик",
                    "Предыдущая сцена уже идёт без ведущей"):
         assert случай in таблица, f"в таблице решения нет случая: {случай}"
     assert "Ни одна строка не подошла" in skill, (

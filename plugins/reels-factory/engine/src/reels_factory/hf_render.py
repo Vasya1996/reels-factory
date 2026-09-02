@@ -883,11 +883,6 @@ def order_facts(edit_plan: dict, scenes: list[dict],
 BOOKEND_PRESENTER = FULL_FRAME_PRESENTER & {name for name, *_ in POSITIONS}
 
 
-#: Роли, которые ролик обязан говорить лицом. Прятать их запрещает валидатор
-#: плана монтажа (`validate_edit_plan`, editplan.py:2683-2686), и запрет тот же
-#: самый: сорванный на нём план роняет сборку, когда озвучка уже оплачена.
-SPEAKING_ROLES = ("hook", "cta")
-
 #: Запас к порогам, которые меряются по фразам. Наши фразы округлены к
 #: миллисекунде, а валидатор меряет неокруглённые (`final_timing` в
 #: `finalize_edit_plan`), поэтому фразу ровно на пороге гейт заворачивает: промах
@@ -1034,26 +1029,14 @@ def _early_plan_gates(scenes: list[dict], duration: float,
             f'{seconds(budget["hard_target_seconds"])}, и это то же число, что '
             "стоит пунктом сверки в задании. " + вернули
             + "Отдай одну сцену из середины вставке или схеме, поставив ей "
-            "`avatarNeeded: false`: хватит самой длинной, "
-            "которая не несёт фраз ролей hook и cta. Сейчас с ведущей идут: "
-            f"{paid}")
+            "`avatarNeeded: false`: хватит самой длинной сцены середины. "
+            f"Сейчас с ведущей идут: {paid}")
 
-    # Роль тянется по фразам, а не по сценам, поэтому D28 её не ловит: он
-    # смотрит только первую и последнюю сцену ролика, а хук занимает несколько
-    # фраз и может уехать во вторую сцену.
-    hidden_roles = []
     short = []
     for scene, own in _scene_phrases(scenes, phrases):
         if _avatar_ordered_scene(scene):
             continue
         name = str(scene.get("id", "?"))
-        speaking = [phrase for phrase in own
-                    if phrase.get("role") in SPEAKING_ROLES]
-        if speaking:
-            hidden_roles.append(
-                f"{name} — " + ", ".join(
-                    f'фраза {phrase["id"]} роли {phrase.get("role")}'
-                    for phrase in speaking))
         # Меряем сцену, а не каждую её фразу: заказ склеивает окна одного
         # решения агента в одно (`_merge_agent_windows` в `avatar_islands.py`),
         # и валидатор увидит длину всей сцены. Считаем сложением длительностей
@@ -1064,13 +1047,6 @@ def _early_plan_gates(scenes: list[dict], duration: float,
             named = (f'фраза {own[0]["id"]}' if len(own) == 1
                      else f'фразы {own[0]["id"]}–{own[-1]["id"]}')
             short.append(f"{name} — {named}, вместе {seconds(spoken)}")
-
-    result["D30_avatar_roles"] = "PASS" if not hidden_roles else (
-        "FAIL: хук и призыв ролик говорит лицом. На первых секундах зритель "
-        "решает, смотреть ли дальше, а призыву без лица он не верит, и заказ "
-        "по плану, где эти фразы спрятаны, не состоится вовсе. Поставь этим "
-        "сценам `avatarNeeded: true` либо отдай фразы ролей hook и cta "
-        "соседней сцене с ведущей: " + "; ".join(hidden_roles))
 
     # Смягчать D31 до мерки валидатора нельзя, и это замерено. Валидатор
     # такие планы принимает — но только потому, что код сам возвращает

@@ -2680,10 +2680,6 @@ def validate_edit_plan(
             face_absence_start = None
 
         role = window.get("role")
-        if role == "hook" and coverage not in {"avatar", "mixed"}:
-            errors.append(f"{window.get('id')}: hook нельзя полностью скрывать")
-        if role == "cta" and coverage not in {"avatar", "mixed"}:
-            errors.append(f"{window.get('id')}: CTA нельзя полностью скрывать")
 
         effect = window.get("effect") or {}
         visual_error = _visual_director_effect_error(effect)

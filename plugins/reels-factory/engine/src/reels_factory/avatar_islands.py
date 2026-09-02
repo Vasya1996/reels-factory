@@ -518,9 +518,10 @@ def _regroup_windows(plan: dict, scene_of: dict | None = None) -> None:
                 part["id"] = f"{original['id']}-a{offset}"
             part["phrase_ids"] = list(phrase_ids)
             own = [phrase_by_id[item] for item in phrase_ids]
-            # Роль куска — роль его первой фразы: у хвоста, отрезанного от
-            # хука, роли hook уже нет, а прятать именно hook и cta валидатор
-            # запрещает (editplan.py:2683-2686).
+            # Роль куска — роль его первой фразы: её читает валидатор плана
+            # монтажа для built-in visual и bubble — этим эффектам hook и cta
+            # закрыты (editplan.py:2699, :2720), и Visual Director их не видит
+            # кандидатами (editplan.py:3002, :3096).
             part["role"] = own[0].get("role")
             for key in ("estimated_timing", "final_timing"):
                 if key in part:

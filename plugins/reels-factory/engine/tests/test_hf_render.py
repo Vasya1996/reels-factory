@@ -438,16 +438,12 @@ NO_FINALE = _hidden(FIT, -1, "гасит свет в офисе")
 # занимает целиком, но агенту его никто не предлагал.
 OVERLAY_END = json.loads(json.dumps(FIT))
 OVERLAY_END["scenes"][-1]["presenter"] = "overlay"
-# Хук уехал во вторую сцену и там спрятан. Открытие и финал ролика при этом с
-# ведущей — D28 такой план принимает.
-HIDDEN_HOOK = _hidden(FIT, 1, "листает ежедневник")
 # Короткая фраза (1,8 с) досталась сцене без ведущей: вставке нечем закрыть
 # кадр, и заказ по такому плану не состоится.
 SHORT_FACELESS = _hidden(FIT, 7, "закрывает ноутбук")
 # Сцена, разделявшая две сцены без ведущей, сама отдана вставке: лицо пропадает
 # на пяти фразах подряд (18 с) при пределе 10 с. Ни одна фраза этого куска не
-# короче пола и ни одна не несёт роли hook или cta — то есть ловит план ровно
-# новый гейт.
+# короче пола — то есть ловит план ровно новый гейт.
 LONG_BLIND = _hidden(FIT, 5, "смотрит в окно")
 
 
@@ -758,27 +754,60 @@ def test_порог_вставки_меряется_сценой_а_не_каж�
     assert "s-01 — фраза 2, вместе 2,4 с" in gates["D31_faceless_scenes"]
 
 
-def test_роль_hook_в_сцене_без_ведущей_даёт_пересдачу(tmp_path, monkeypatch):
-    """Дефект 2: роли hook и cta валидатор прятать запрещает
-    (editplan.py:2558-2562), а D28 смотрит только первую и последнюю сцену
-    ролика. Хук тянется по нескольким фразам и уезжает во вторую сцену —
-    такой план проходил все гейты и падал уже в сборке, без пересдачи."""
+def test_фраза_роли_hook_в_средней_сцене_без_ведущей_проходит_гейты():
+    """Решение Васи: правило «роли `hook` и `cta` ролик всегда говорит лицом»
+    снято, остаётся только край ролика (`D28_avatar_bookends`) — открытие
+    и финал. Хук тянется на три фразы
+    (`_EARLY_BLOCKS`), фраза 2 — во второй, не крайней, сцене; сцена s-01
+    отдана вставке (`avatarNeeded: false`), а s-00 (открытие) и s-09 (финал)
+    остаются с ведущей. План обязан пройти ранние гейты и `validate_edit_plan`
+    без единого упоминания роли."""
     from reels_factory import hf_render
+    from reels_factory.avatar_islands import apply_agent_coverage
+    from reels_factory.editplan import (
+        build_edit_plan, finalize_edit_plan, validate_edit_plan,
+    )
+    from reels_factory.hf_phrases import lay_out_scenes, phrase_timeline
 
-    calls = _plan_fakes(monkeypatch, tmp_path, [HIDDEN_HOOK, FIT])
+    board = json.loads(json.dumps(FIT))
+    # Фраза 2 несёт роль hook (`_EARLY_BLOCKS`) и лежит в сцене s-01 — код
+    # переводит эту сцену на вставку. Соседнюю s-02 держим с ведущей, иначе
+    # два отказа подряд сливаются в один промежуток дольше `MAX_FACE_ABSENCE_S`
+    # (`D32_face_absence`) — это другой, не наш, гейт.
+    board["scenes"][1].update({"presenter": "none", "avatarNeeded": False,
+                               "insert": _series("листает ежедневник")})
+    board["scenes"][2].update({"presenter": "full", "avatarNeeded": True,
+                               "insert": None})
 
-    res = hf_render.plan_before_avatar(tmp_path, EARLY_TIMED,
-                                       alignment_words=EARLY_WORDS)
+    phrases = phrase_timeline(EARLY_TIMED, EARLY_WORDS)
+    scenes = lay_out_scenes(json.loads(json.dumps(board["scenes"])), phrases,
+                            duration=EARLY_TOTAL)
 
-    планы = [text for name, text in calls if name == "plan"]
-    assert len(планы) == 2, "спрятанный хук пересдачи не вызвал"
-    причина = _причина(планы[1])
-    assert "D30_avatar_roles" in причина
-    assert "фраза 2 роли hook" in причина
-    # Открытие и финал у этого плана с ведущей — то есть поймал его именно
-    # новый гейт, а не D28.
-    assert "D28_avatar_bookends" not in причина
-    assert _fails(res.get("gates")) == []
+    draft = build_edit_plan(EARLY_TIMED, {}, index={}, require_asset_files=False)
+    edit_plan = finalize_edit_plan(draft, EARLY_TIMED, EARLY_WORDS,
+                                   require_asset_files=False)
+
+    facts = hf_render.order_facts(edit_plan, scenes, ISLAND_CONFIG)
+    assert facts["plan"] is not None, facts.get("error")
+    gates = hf_render._early_plan_gates(scenes, EARLY_TOTAL, phrases,
+                                        hf_render.islands_settings(None),
+                                        order=facts)
+    assert _fails(gates) == [], gates
+    # Гейтов ровно столько, сколько судит план сейчас — роли среди них больше
+    # нет: снятое правило не оставило ни ключа, ни молчаливого PASS.
+    assert set(gates) == {"D28_avatar_bookends", "D29_avatar_budget",
+                          "D31_faceless_scenes", "D32_face_absence",
+                          "D33_avatar_decisions", "D34_inserts",
+                          "D35_frame_filled"}, gates
+
+    out = apply_agent_coverage(edit_plan, scenes)
+    report = validate_edit_plan(out, require_final=True,
+                                require_asset_files=False)
+    assert report["all_pass"] is True, report["errors"]
+    hook_windows = [w for w in out["windows"] if w.get("role") == "hook"]
+    assert hook_windows, "окно роли hook пропало из плана"
+    assert any(w["coverage"] not in {"avatar", "mixed"} for w in hook_windows), (
+        "тест бессмыслен: ни одно окно роли hook не спрятано")
 
 
 def test_долгая_пропажа_лица_даёт_пересдачу(tmp_path, monkeypatch):
@@ -803,10 +832,8 @@ def test_долгая_пропажа_лица_даёт_пересдачу(tmp_pa
     assert "идут подряд без ведущей 18 с" in причина
     for индекс in (4, 5, 6):
         assert LONG_BLIND["scenes"][индекс]["id"] in причина
-    # Остальные гейты этот план принимают: фразы куска не короче пола и ролей
-    # hook и cta не несут.
+    # Остальной гейт этот план принимает: фразы куска не короче пола.
     assert "D31_faceless_scenes" not in причина
-    assert "D30_avatar_roles" not in причина
     assert _fails(res.get("gates")) == []
 
 
