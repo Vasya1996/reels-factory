@@ -783,7 +783,7 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     least = seconds(island["min_request_seconds"])
     longest = seconds(island["max_shot_seconds"])
     # Потолок гейта и цель — разные числа, и агенту называются оба. Потолок
-    # судит секунды ЗАКАЗА (`_avatar_order_seconds` в hf_render.py), а к
+    # судит секунды ПОСТРОЕННОГО ЗАКАЗА (`order_facts` в hf_render.py), а к
     # заказу код прикладывает по ручке с каждого края каждого куска. Целясь в
     # сам потолок сложением фраз, агент промахивался ровно на эти ручки.
     #
