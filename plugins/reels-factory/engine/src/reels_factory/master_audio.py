@@ -619,10 +619,26 @@ def load_approved_master_audio(
     return artifacts
 
 
+def _strip_marks(text: str) -> str:
+    """Убрать знаки ударения из текста.
+
+    Сценарий несёт ударения для синтеза («Самосе́йл»), но разбор слов их не
+    знает и режет слово на куски: «самосе» плюс «йл». Слов становится вдвое
+    больше настоящего, и корректно начитанное голосовое отбраковывается как
+    «записанное не целиком». Для сверки ударения не нужны — снимаем их.
+    """
+    decomposed = unicodedata.normalize("NFD", str(text or ""))
+    without = "".join(
+        ch for ch in decomposed if unicodedata.category(ch) != "Mn"
+    )
+    return unicodedata.normalize("NFC", without)
+
+
 def _normalized_tokens(text: str) -> list[str]:
+    clean = _strip_marks(text)
     return [
-        text[start:end].casefold()
-        for start, end, _display_end in _word_spans(str(text or ""))
+        clean[start:end].casefold()
+        for start, end, _display_end in _word_spans(clean)
     ]
 
 
