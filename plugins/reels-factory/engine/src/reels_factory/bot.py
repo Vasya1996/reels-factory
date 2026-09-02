@@ -2899,12 +2899,136 @@ def _scenario_speech(job: BuildJob) -> str:
     )
 
 
+# --- разовый опрос про демо ------------------------------------------------
+#
+# Живёт сбоку от разговора о ролике: ни один ответ не двигает шаг сессии и не
+# трогает сборку. Человек может отвечать на опрос посреди любого своего шага.
+
+SURVEY_INTRO = (
+    "Добрый день! Вы пробовали в моём боте демо со своим ИИ-аватаром.\n\n"
+    "Как вам результат?"
+)
+SURVEY_BAD_Q = "Жаль. А что именно не понравилось?"
+SURVEY_STOP_Q = "Спасибо! А что помешало сделать полный ролик?"
+SURVEY_STOP_Q_TOP = "Спасибо, приятно 🔥 А что помешало сделать полный ролик?"
+SURVEY_ASK_TEXT_BAD = "Напишите, пожалуйста, прямо сюда, что было не так 🙏🏻"
+SURVEY_ASK_TEXT_STOP = "Напишите, пожалуйста, прямо сюда, что остановило 🙏🏻"
+SURVEY_THANKS_FREE = "Спасибо, записала! Это правда помогает 🙏🏻☺️"
+
+SURVEY_REPLIES = {
+    "avatar": "Поняла, спасибо 🙏🏻 Если добавите пару слов, что именно не так "
+              "с аватаром, будет совсем ценно.",
+    "voice": "Поняла, спасибо 🙏🏻 Если добавите пару слов, что именно не так "
+             "с голосом, будет совсем ценно.",
+    "price": "Поняла, спасибо 🙏🏻 Если скажете, какая цена показалась бы "
+             "нормальной, это очень поможет.",
+    "confused": "Поняла, спасибо 🙏🏻 Скажите, на каком шаге застряли, и я "
+                "помогу пройти его вместе.",
+    "notime": "Поняла, спасибо 🙏🏻 Ролик можно доделать в любой момент: бот "
+              "помнит ваше фото и голос, заново присылать не нужно.",
+    "later": "Поняла, спасибо за честный ответ 🙏🏻",
+}
+
+#: После этих ответов ждём свободный текст. «Пока неактуально» и «не было
+#: времени» вопросов не задают, поэтому ловить ответ на них не нужно.
+SURVEY_EXPECTS_TEXT = ("avatar", "voice", "price", "confused", "other")
+
+#: Сколько живёт ожидание свободного ответа. Без срока забытый флаг однажды
+#: проглотит присланный материал ролика вместо отзыва.
+SURVEY_TEXT_TTL_S = 3600
+
+
+def _kb_survey_rate():
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("😕 Плохо", callback_data="sv:rate:bad"),
+        InlineKeyboardButton("🙂 Норм", callback_data="sv:rate:ok"),
+        InlineKeyboardButton("🔥 Отлично", callback_data="sv:rate:top"),
+    ]])
+
+
+def _kb_survey_bad():
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Качество аватара", callback_data="sv:bad:avatar")],
+        [InlineKeyboardButton("Качество голоса", callback_data="sv:bad:voice")],
+        [InlineKeyboardButton("Другое, напишу сам", callback_data="sv:bad:other")],
+    ])
+
+
+def _kb_survey_stop():
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Дорого", callback_data="sv:stop:price")],
+        [InlineKeyboardButton("Не разобрался", callback_data="sv:stop:confused")],
+        [InlineKeyboardButton("Не было времени", callback_data="sv:stop:notime")],
+        [InlineKeyboardButton("Пока неактуально", callback_data="sv:stop:later")],
+        [InlineKeyboardButton("Другое, напишу сам", callback_data="sv:stop:other")],
+    ])
+
+
+def _survey_expect_text(chat_id: int, s: dict) -> None:
+    s["survey_await"] = time.time()
+    save_session(chat_id, s)
+
+
+def _survey_take_text(chat_id: int, s: dict, text: str) -> bool:
+    """Свободный ответ на опрос вместо материала ролика.
+
+    Возвращает True, если сообщение забрал опрос. Просроченную метку снимаем
+    молча: человек мог не ответить и вернуться к ролику через сутки.
+    """
+    started = s.get("survey_await")
+    if not started:
+        return False
+    s.pop("survey_await", None)
+    save_session(chat_id, s)
+    if time.time() - float(started) > SURVEY_TEXT_TTL_S:
+        return False
+    _track(chat_id, s, "survey:text", (text or "")[:400])
+    return True
+
+
+async def _handle_survey(q, chat_id: int, s: dict, data: str) -> None:
+    """Тап по кнопке опроса. Клавиатуру снимаем, чтобы не отвечали дважды."""
+    _, kind, value = data.split(":", 2)
+    try:
+        await q.edit_message_reply_markup(reply_markup=None)
+    except Exception:  # сообщение старое или уже без кнопок — не страшно
+        pass
+
+    if kind == "rate":
+        _track(chat_id, s, "survey:demo", value)
+        if value == "bad":
+            await q.message.reply_text(SURVEY_BAD_Q, reply_markup=_kb_survey_bad())
+        else:
+            await q.message.reply_text(
+                SURVEY_STOP_Q_TOP if value == "top" else SURVEY_STOP_Q,
+                reply_markup=_kb_survey_stop(),
+            )
+        return
+
+    _track(chat_id, s, "survey:reason", "%s:%s" % (kind, value))
+    if value in SURVEY_EXPECTS_TEXT:
+        _survey_expect_text(chat_id, s)
+    if value == "other":
+        await q.message.reply_text(
+            SURVEY_ASK_TEXT_BAD if kind == "bad" else SURVEY_ASK_TEXT_STOP
+        )
+        return
+    await q.message.reply_text(SURVEY_REPLIES.get(value) or "Спасибо 🙏🏻")
+
+
 async def on_button(update, context):
     q = update.callback_query
     await q.answer()
     chat_id = q.message.chat_id
     s = load_session(chat_id)
     data = q.data
+
+    if data.startswith("sv:"):
+        await _handle_survey(q, chat_id, s, data)
+        return
 
     if data.startswith(("reel_gender:", "reel_language:", "switch:")) and \
             _job_store().active_for_chat(chat_id) is not None:
@@ -4114,6 +4238,12 @@ async def on_message(update, context):
     s = load_session(chat_id)
     step = s.get("step", CHOOSING)
     msg = update.message
+
+    if msg is not None and (msg.text or "").strip() and _survey_take_text(
+        chat_id, s, msg.text
+    ):
+        await msg.reply_text(SURVEY_THANKS_FREE)
+        return
 
     if step == CHOOSING_LANGUAGE:
         await msg.reply_text(ASK_LANGUAGE, reply_markup=_kb_language())
