@@ -2929,6 +2929,25 @@ SURVEY_REPLIES = {
     "later": "Поняла, спасибо за честный ответ 🙏🏻",
 }
 
+#: Вариант для тех, кто ролик уже оплатил и получил: спрашиваем только оценку
+#: готового ролика, без вопроса «что помешало» — он им бессмысленен.
+SURVEY_REEL_REPLIES = {
+    "bad": "Жаль 🙏🏻 Напишите, пожалуйста, прямо сюда, что было не так.",
+    "ok": "Спасибо 🙏🏻 Если добавите пару слов, что улучшить, будет очень ценно.",
+    "top": "Спасибо, приятно 🔥 Если добавите пару слов, что понравилось, "
+           "будет очень ценно.",
+}
+
+
+def _kb_survey_reel():
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("😕 Плохо", callback_data="sv:reel:bad"),
+        InlineKeyboardButton("🙂 Норм", callback_data="sv:reel:ok"),
+        InlineKeyboardButton("🔥 Отлично", callback_data="sv:reel:top"),
+    ]])
+
+
 #: После этих ответов ждём свободный текст. «Пока неактуально» и «не было
 #: времени» вопросов не задают, поэтому ловить ответ на них не нужно.
 SURVEY_EXPECTS_TEXT = ("avatar", "voice", "price", "confused", "other")
@@ -2996,6 +3015,14 @@ async def _handle_survey(q, chat_id: int, s: dict, data: str) -> None:
         await q.edit_message_reply_markup(reply_markup=None)
     except Exception:  # сообщение старое или уже без кнопок — не страшно
         pass
+
+    if kind == "reel":
+        _track(chat_id, s, "survey:reel", value)
+        _survey_expect_text(chat_id, s)
+        await q.message.reply_text(
+            SURVEY_REEL_REPLIES.get(value) or "Спасибо 🙏🏻"
+        )
+        return
 
     if kind == "rate":
         _track(chat_id, s, "survey:demo", value)
