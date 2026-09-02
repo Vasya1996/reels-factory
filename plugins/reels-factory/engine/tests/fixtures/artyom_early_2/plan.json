@@ -1,0 +1,158 @@
+{
+ "brollContext": {
+  "domain": "AI coding tools and automation skills replacing paid SaaS microservices",
+  "anti": "office handshake clichés, humanoid robots, futuristic AI holograms, generic stock business meetings, casino imagery"
+ },
+ "scenes": [
+  {
+   "id": "s-01",
+   "intent": "Сразу называет решение — крупный план лица держит внимание с первого кадра",
+   "beat": "hook",
+   "phrases": [
+    0,
+    1
+   ],
+   "presenter": "full",
+   "avatarNeeded": true,
+   "insert": null
+  },
+  {
+   "id": "s-02",
+   "intent": "Показывает тесноту рынка микросервисов, каждый со своей узкой задачей",
+   "beat": "point",
+   "phrases": [
+    2,
+    3
+   ],
+   "presenter": "none",
+   "avatarNeeded": false,
+   "insert": {
+    "shots": [
+     "scrolling through many app icons on phone screen",
+     "closeup of multiple browser tabs open on laptop"
+    ],
+    "kind": "video"
+   },
+   "icon": {
+    "query": "grid of apps"
+   }
+  },
+  {
+   "id": "s-03",
+   "intent": "Раскрывает механику на конкретных кадрах: один сервис режет видео, другой переводит звук в текст",
+   "beat": "point",
+   "phrases": [
+    4,
+    5
+   ],
+   "presenter": "stack",
+   "avatarNeeded": true,
+   "insert": {
+    "shots": [
+     "hand trimming video clip on editing timeline",
+     "audio waveform turning into text captions onscreen"
+    ],
+    "kind": "video"
+   }
+  },
+  {
+   "id": "s-04",
+   "intent": "Считает деньги — отдельный счёт за каждый сервис, и так каждый месяц",
+   "beat": "point",
+   "phrases": [
+    6,
+    7
+   ],
+   "presenter": "none",
+   "avatarNeeded": false,
+   "insert": {
+    "shots": [
+     "hand entering credit card on checkout screen",
+     "closeup of monthly subscription invoice on phone"
+    ],
+    "kind": "video"
+   },
+   "icon": {
+    "query": "credit card"
+   }
+  },
+  {
+   "id": "s-05",
+   "intent": "Поворот мысли крупным планом: платишь за чужой код, а на деле это просто скилл",
+   "beat": "turn",
+   "phrases": [
+    8,
+    10
+   ],
+   "presenter": "punch",
+   "avatarNeeded": true,
+   "insert": null
+  },
+  {
+   "id": "s-06",
+   "intent": "Показывает, что сборка через скиллы — это просто код, который легко написать самому",
+   "beat": "point",
+   "phrases": [
+    11,
+    13
+   ],
+   "presenter": "none",
+   "avatarNeeded": false,
+   "insert": {
+    "shots": [
+     "hands typing code in terminal on laptop",
+     "closeup of code editor writing script file"
+    ],
+    "kind": "video"
+   },
+   "icon": {
+    "query": "terminal window"
+   }
+  },
+  {
+   "id": "s-07",
+   "intent": "Прямое обращение поверх вставки: не покупаешь доступ, а наговариваешь задачу голосом",
+   "beat": "point",
+   "phrases": [
+    14,
+    15
+   ],
+   "presenter": "none",
+   "avatarNeeded": false,
+   "insert": {
+    "shots": [
+     "phone screen showing voice assistant listening animation",
+     "closeup of microphone icon pulsing on screen"
+    ],
+    "kind": "video"
+   },
+   "icon": {
+    "query": "microphone"
+   }
+  },
+  {
+   "id": "s-08",
+   "intent": "Кульминация крупным планом: один скилл закрывает потребность в платном сервисе",
+   "beat": "climax",
+   "phrases": [
+    16,
+    17
+   ],
+   "presenter": "punch",
+   "avatarNeeded": true,
+   "insert": null
+  },
+  {
+   "id": "s-09",
+   "intent": "Финальный призыв лицом в кадр — сохранить и подписаться, чтобы узнать, как собрать скилл",
+   "beat": "outro",
+   "phrases": [
+    18,
+    20
+   ],
+   "presenter": "full",
+   "avatarNeeded": true,
+   "insert": null
+  }
+ ]
+}

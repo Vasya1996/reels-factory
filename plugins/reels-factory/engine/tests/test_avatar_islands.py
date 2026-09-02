@@ -1205,6 +1205,78 @@ def test_короткий_кусок_вставки_возвращается_в�
     build_avatar_render_plan(out, _config(), master_audio_sha256="sha")
 
 
+def test_домонтажное_окно_на_две_сцены_не_рвёт_сцену_агента():
+    """Регрессия прогона `artyom-early-2` (02.09.2026), синтетика.
+
+    Сцена агента `s-target` — три фразы (4,8–10,8 с, 6,0 с — выше
+    `MIN_FULLSCREEN_S`). Домонтажная сетка режет её надвое ДРУГОЙ границей:
+    одна фраза остаётся отдельным окном (`window-002`), а следующее окно
+    тянется дальше — через остаток `s-target` НАСКВОЗЬ в соседнюю сцену
+    `s-neighbor` (фразы 3–6). Обе сцены агент отдал вставке одним и тем же
+    покрытием (`full_broll`); соседняя сцена сама не короче порога (3,8 с) —
+    её нарочно взяли выше 3 с, чтобы возврат по ней не путался с проверяемым.
+    Разрез по совпадению покрытия границу между сценами не находит,
+    `window-003` держит две сцены сразу, его `scene_key` выходит `None`, и
+    `window-002` не с чем слить — осиротевшая фраза (2,0 с) короче порога
+    получала обратно ведущую, хотя сама сцена агента `s-target` порог не
+    нарушала (ровно так же, как в `s-06` прогона `artyom-early-2`:
+    `tests/fixtures/artyom_early_2/`, разбор в `s06-investigation.md`).
+    Суммарный безлицый кусок (9,8 с) остаётся ниже `MAX_FACE_ABSENCE_S`
+    (10,0 с) — иначе валится другой гейт, не тот, что здесь меряется.
+
+    После починки `_regroup_windows` режет и внутри `window-003` — по границе
+    сцены `s-target`/`s-neighbor`, даже хотя покрытие с обеих сторон
+    совпало, — и кусок `s-target` склеивается с `window-002` в одно окно.
+    """
+    edit_plan = _fast_edit_plan(
+        durations=[2.4, 2.4, 2.0, 2.0, 2.0, 1.9, 1.9, 2.4, 2.4])
+    windows = edit_plan["windows"]
+    # Домонтажное окно на четыре фразы: держит хвост `s-target` (3, 4) и всю
+    # `s-neighbor` (5, 6) одним куском — так же, как `window-010` настоящего
+    # прогона держал хвост `s-06` и всю `s-07`.
+    merged = windows[3]
+    merged["phrase_ids"] = ["phrase-003", "phrase-004", "phrase-005",
+                            "phrase-006"]
+    for key in ("estimated_timing", "final_timing"):
+        merged[key] = {"start": 6.8, "end": 14.6, "duration": 7.8}
+    del windows[4:7]
+    for phrase in edit_plan["phrases"]:
+        if phrase["id"] in {"phrase-004", "phrase-005", "phrase-006"}:
+            phrase["window_id"] = merged["id"]
+    for index, window in enumerate(windows):
+        window["index"] = index
+    assert validate_edit_plan(edit_plan, require_final=True,
+                              require_asset_files=False)["all_pass"] is True
+
+    scenes = _fast_scenes([
+        (0.0, 4.8, True),    # s-00: открытие
+        (4.8, 10.8, False),  # s-01 = s-target: три фразы, 6,0 с
+        (10.8, 14.6, False), # s-02 = s-neighbor: две фразы, 3,8 с
+        (14.6, 19.4, True),  # s-03: финал
+    ])
+
+    out = apply_agent_coverage(edit_plan, scenes)
+
+    цель = _window_of(out, "phrase-002")
+    assert цель["phrase_ids"] == ["phrase-002", "phrase-003", "phrase-004"], (
+        "сцена агента осталась разрезана унаследованной границей: "
+        f'{цель["phrase_ids"]}')
+    assert цель["final_timing"] == {"start": 4.8, "end": 10.8,
+                                    "duration": 6.0}
+    assert out["agent_coverage"]["restored_windows"] == [], (
+        "код вернул ведущую куску сцены, которая порог не нарушала: "
+        f'{out["agent_coverage"]["restored_windows"]}')
+
+    сосед = _window_of(out, "phrase-005")
+    assert сосед["phrase_ids"] == ["phrase-005", "phrase-006"], (
+        "соседняя сцена не должна была слиться с s-target")
+
+    report = validate_edit_plan(out, require_final=True,
+                                require_asset_files=False)
+    assert report["all_pass"] is True, report["errors"]
+    build_avatar_render_plan(out, _config(), master_audio_sha256="sha")
+
+
 def test_обрезанный_кусок_схемы_теряет_встроенную_графику_и_ведущую_возвращает():
     """P6-01: разрез окна посередине оставлял короткий кусок с чужой графикой.
 

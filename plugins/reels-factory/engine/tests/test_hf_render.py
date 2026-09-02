@@ -1175,6 +1175,109 @@ def test_отказ_бюджета_называет_сцены_которым_в
     assert seconds(факты["billed_seconds"]) in вердикт
 
 
+#: Папка задания боевого прогона `artyom-early-2` (02.09.2026), снятая с
+#: прод-сервера только на чтение (`root@134.209.80.75`,
+#: `/root/reels-workspace/work/jobs/artyom-early-2`). Три файла:
+#: `plan.json` (план агента), `edit_plan.json` (финальный план монтажа, вход
+#: настоящего заказа), `scenario.timed.json` (озвучка с таймингами блоков).
+ARTYOM_EARLY_2_DIR = Path(__file__).parent / "fixtures" / "artyom_early_2"
+
+
+def _artyom_early_2_edit_plan() -> dict:
+    return json.loads(
+        (ARTYOM_EARLY_2_DIR / "edit_plan.json").read_text(encoding="utf-8"))
+
+
+def _artyom_early_2_scenes_and_phrases() -> tuple[list[dict], list[dict]]:
+    """Сцены и фразы прогона `artyom-early-2` — секунды и без агента.
+
+    `plan.json` агента называет только диапазон фраз каждой сцены: секунды
+    достраивает `hf_phrases.lay_out_scenes` по отдельной, пословной раскладке
+    речи (`phrase_timeline`), а её сырые тайминги (ElevenLabs) с сервера не
+    сняты — в папке задания их нет, только «pretty» файлы. Секунды сцены
+    здесь берутся напрямую из `final_timing` первой и последней её фразы в
+    `edit_plan.json` — том самом файле, по которому строился настоящий заказ:
+    сцены выстилают ролик без зазоров (`lay_out_scenes`), значит граница
+    сцены и граница крайней её фразы — одно и то же число. Разбор
+    `s06-investigation.md` (02.09.2026) сверил их перед починкой кода: сумма
+    фраз сцены `s-06` (2,88+2,04+1,26=6,18 с) совпала с округлением
+    «2,9+2,0+1,3=6,2 с» из `BRIEF.plan.md` того же прогона.
+    """
+    board = json.loads(
+        (ARTYOM_EARLY_2_DIR / "plan.json").read_text(encoding="utf-8"))
+    edit_plan = _artyom_early_2_edit_plan()
+    by_index = {phrase["index"]: phrase for phrase in edit_plan["phrases"]}
+    scenes = []
+    for raw_scene in board["scenes"]:
+        first, last = raw_scene["phrases"][0], raw_scene["phrases"][-1]
+        scene = dict(raw_scene)
+        scene["startSec"] = by_index[first]["final_timing"]["start"]
+        scene["endSec"] = by_index[last]["final_timing"]["end"]
+        scenes.append(scene)
+    phrases = [
+        {"id": phrase["index"], "role": phrase["role"], "text": phrase["text"],
+         "start": phrase["final_timing"]["start"],
+         "end": phrase["final_timing"]["end"],
+         "said": [phrase["final_timing"]["start"],
+                  phrase["final_timing"]["end"]]}
+        for phrase in edit_plan["phrases"]
+    ]
+    return scenes, phrases
+
+
+def test_прогон_artyom_early_2_окно_без_ведущей_следует_сцене_агента():
+    """Регрессия боевого прогона `artyom-early-2` (02.09.2026).
+
+    Сцену `s-06` (фразы 11–13, сумма 6,18 с — выше `MIN_FULLSCREEN_S`) агент
+    отдал вставке ровно по правилу, которое ему назвали, а код всё равно
+    вернул ей ведущую. Причина — не решение агента, а домонтажное окно
+    `window-010` (`edit_plan.json`): оно держало фразы ДВУХ разных
+    `avatarNeeded: false` сцен подряд (`s-06` и соседнюю `s-07`) без разреза
+    между ними, потому что обе получили одно и то же итоговое покрытие
+    `full_broll` — разрез по одному покрытию границу между ними не находил.
+    Сосед, окно `window-009` (одна фраза `s-06`, 2,88 с), остаться с ним не
+    мог: `_merge_agent_windows` меряет сцену окна целиком, а окну на двух
+    сценах сразу сцена не приписывается (`scene_key` выходил `None`).
+    Осиротевшая фраза короче порога, и `_restore_short_faceless` покупала
+    ведущую туда, где агент честно отказался — заказ рос до 30,68 с при
+    границе 70 % 29,77 с.
+    """
+    from reels_factory import hf_render
+
+    edit_plan = _artyom_early_2_edit_plan()
+    scenes, phrases = _artyom_early_2_scenes_and_phrases()
+    settings = hf_render.islands_settings(None)
+    duration = float(edit_plan["timeline"]["final_duration_seconds"])
+    граница = avatar_budget_targets(duration, settings)["hard_ceiling_seconds"]
+    assert граница == pytest.approx(29.7731, abs=0.001), (
+        "тест мерит не тот прогон — граница разошлась с расследованием")
+
+    факты = hf_render.order_facts(edit_plan, scenes, ISLAND_CONFIG)
+
+    assert факты["error"] == "", факты["error"]
+    assert факты["plan"] is not None
+    assert факты["restored"] == [], (
+        "код вернул ведущую сцене, которую агент отдал вставке: "
+        f'{факты["restored"]}')
+
+    covered = факты["edit_plan"]
+    for window in covered["windows"]:
+        if window["coverage"] in {"avatar", "mixed"}:
+            continue
+        timing = window["final_timing"]
+        длительность = timing["end"] - timing["start"]
+        assert длительность >= MIN_FULLSCREEN_S - 1e-6, (
+            f'{window["id"]}: {длительность:.2f} с короче порога')
+
+    assert факты["billed_seconds"] <= граница, (
+        f'заказ {факты["billed_seconds"]:.2f} с превысил границу '
+        f"{граница:.2f} с")
+
+    гейты = hf_render._early_plan_gates(scenes, duration, phrases, settings,
+                                        order=факты)
+    assert гейты["D29_avatar_budget"] == "PASS", гейты["D29_avatar_budget"]
+
+
 def test_план_между_ориентиром_и_границей_годен():
     """Решение заказчика: ориентир доли ведущей остаётся 60 % хронометража, а
     заворачивает план только 70 %. Между ними план годен — пересдача стоит
