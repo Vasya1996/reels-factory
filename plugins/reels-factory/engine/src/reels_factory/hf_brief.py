@@ -854,8 +854,7 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
             f"{seconds(give_least)}, а целься в {seconds(give)}.** Это от "
             f"{least_scenes} до {most_scenes} сцен с "
             "`avatarNeeded: false`, каждая длиной от "
-            f"{seconds(MIN_FULLSCREEN_S)} до {seconds(_BLIND_ROOF)}, и "
-            "между двумя такими сценами стоит сцена с ведущей. Потолок "
+            f"{seconds(MIN_FULLSCREEN_S)} до {seconds(_BLIND_ROOF)}. Потолок "
             f"{seconds(_BLIND_ROOF)} — это предел куска без смены картинки "
             "(`D19_static_span`), поэтому вилка сцен начинается там, где "
             "этого потолка хватает на все отданные секунды."
@@ -1249,8 +1248,8 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
 4. У каждой сцены с `avatarNeeded: false` сумма длительностей её фраз не
    меньше {seconds(MIN_FULLSCREEN_S)} (`D31_faceless_scenes`).
 5. Идущие подряд сцены с `avatarNeeded: false` вместе не длиннее {seconds(MAX_FACE_ABSENCE_S)} —
-   сложи длительности их фраз; между ними стоит сцена с ведущей
-   (`D32_face_absence`).
+   сложи длительности их фраз; что делать, если вышло больше, — в «Ритме и
+   битах» скилла reels-montage (`D32_face_absence`).
 6. Сцены идут встык и покрывают фразы `0`–{last_phrase}, сцен не меньше {low}.
 7. `climax` ровно один и не в первой сцене; соседние сцены отличаются
    картинкой.
