@@ -1340,7 +1340,8 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
             write_brief(rdir, scenario=timed_scenario, face=None,
                         duration=duration, clips=[], phrases=phrases,
                         overlay_passports=passports, retry_reason=reason,
-                        avatar_ordered=False, islands=islands)
+                        avatar_ordered=False, islands=islands,
+                        attempt=attempt, max_attempts=MAX_PLAN_ATTEMPTS)
             # Ход без плана — такая же причина пересдачи, как и план, не легший
             # на озвучку: сессия обрывается по своим причинам, а стоит эта
             # осечка одного переспроса против всей сборки. Ловим только пустой
@@ -1475,7 +1476,8 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         hf_captions.stage(rdir)
         write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
                     duration=duration, clips=clips, phrases=phrases,
-                    overlay_passports=_passports(), wishes=wishes)
+                    overlay_passports=_passports(), wishes=wishes,
+                    attempt=0, max_attempts=MAX_COMPOSE_ATTEMPTS)
         (rdir / "phrases.json").write_text(
             json.dumps(phrases, ensure_ascii=False, indent=1), encoding="utf-8")
         (rdir / "clips.json").write_text(
@@ -1517,7 +1519,8 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                             face=load_face(rdir), duration=duration,
                             clips=saved_clips, retry_reason=reason,
                             phrases=phrases,
-                            overlay_passports=_passports(), wishes=wishes)
+                            overlay_passports=_passports(), wishes=wishes,
+                            attempt=attempt, max_attempts=MAX_COMPOSE_ATTEMPTS)
 
             # Обёртку заводим здесь, а не внутри `plan_with_agent`: там она
             # осталась бы при функции вместе со своим расходом, и работа

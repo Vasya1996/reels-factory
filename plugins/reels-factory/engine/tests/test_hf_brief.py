@@ -8,13 +8,19 @@ import json
 import math
 import re
 
+import pytest
+
 from reels_factory.avatar_islands import DEFAULTS as ISLAND_DEFAULTS
 from reels_factory.editplan import MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S
 from reels_factory.hf_brief import FONTS, write_brief
-from reels_factory.hf_montage import SERIES_MAX, SERIES_MIN
+from reels_factory.hf_gates import min_scenes as _min_scenes
+from reels_factory.hf_montage import SERIES_MAX, SERIES_MIN, face_gap, inserts_wanted
+from reels_factory.hf_phrases import MIN_SCENE
+from reels_factory.hf_rhythm import MAX_STATIC_SPAN
+from reels_factory.hf_schema import LIMITS, MINIMUM, min_seconds
 # Написание секунд одно на оба текста, и тесты обязаны искать ровно его:
 # «29,05 с» печатается как «29 с», и поиск по `f"{x:.1f}"` находил бы пустоту.
-from reels_factory.hf_montage_skill import seconds as _секунды
+from reels_factory.hf_montage_skill import number as _число, seconds as _секунды
 
 SCENARIO = {
     "total": 41.5,
@@ -460,7 +466,8 @@ def test_серия_из_двух_планов_объяснена(tmp_path):
     серий доживёт до кадра — считает код."""
     text = _skill(tmp_path)
     assert "серией из двух планов" in text
-    assert "от пяти до восьми на ролик" in text
+    assert "Назови не меньше" in text
+    assert "`inserts_wanted`" in text
     assert "2,1 с лица" in text or "с лица" in text
 
 
@@ -529,9 +536,9 @@ def test_бюджет_ведущей_это_бюджет_заказа_а_не_п
 
 
 def test_когда_аватар_остаётся_поверх_биролла(tmp_path):
-    """Четыре случая названы явно: без них агент ставил уголок по вкусу."""
+    """Случаи названы явно: без них агент ставил уголок по вкусу."""
     text = _skill(tmp_path)
-    assert "Сцена со вставкой — `pip-*` (ведущая уголком поверх вставки)" in text
+    assert "Сцена со вставкой — любой уголок (`pip-*`)" in text
     assert "обращается к зрителю" in text
     assert "предмет, который диктор называет" in text
 
@@ -609,11 +616,12 @@ def test_биты_объяснены_и_кульминация_одна(tmp_path
 
 def test_пол_сцен_дан_числом(tmp_path):
     """Пол только против дыр: ceil(41,5 / 8) = 6. Числовой планки смен в
-    задании больше нет — темп задаёт их правило жанра (1,5–4 с на мысль),
-    наш детектор остаётся замером по готовому файлу."""
+    задании больше нет — темп задаёт пол сцены с ведущей, подставленный из
+    `MIN_SCENE`, а не переписанный литералом рядом; наш детектор остаётся
+    замером по готовому файлу."""
     text = _text(tmp_path)
     assert "меньше 6" in text
-    assert "1,5–4 с" in _skill(tmp_path)
+    assert "Сцена с ведущей живёт не короче" in _skill(tmp_path)
     assert "заметных смен" not in text
 
 
@@ -1299,13 +1307,13 @@ def test_запасная_схема_нужна_там_где_кадр_держ�
 
 
 def test_форма_запасной_схемы_выбирается_по_длине_сцены(tmp_path):
-    """Канон 14. Совет «называй от пяти до восьми моментов, лишние код уберёт
-    сам» после работы 9 неполон: на сцене без ведущей снятая серия оставляет
-    кадр на `fallback`, и форма, которой не хватило пола, снимается тоже —
-    кадр пустеет, и это ловит D25 (`_empty_frame_problems`).
+    """Канон 14. Совет назвать моменты под вставку с запасом после работы 9
+    неполон: на сцене без ведущей снятая серия оставляет кадр на `fallback`, и
+    форма, которой не хватило пола, снимается тоже — кадр пустеет, и это ловит
+    D25 (`_empty_frame_problems`).
     """
     text = _skill(tmp_path)
-    assert "от пяти до восьми на ролик" in text, "совет про запас пропал"
+    assert "Назови не меньше" in text, "совет про моменты под вставку пропал"
     assert "снятая серия оставляет кадр на `fallback`" in text, (
         "не сказано, что при снятой серии кадр остаётся на запасной схеме")
     assert "выбирай по длине этой сцены" in text, (
@@ -1940,16 +1948,21 @@ def test_сверка_стоит_последней_а_данные_выше_и�
 def test_пересдача_названа_жёстким_ограничением(tmp_path):
     """Их формулировка: «if your context carries `lint` / `check` feedback from
     a prior pass, read it first and re-author so none of those findings recur;
-    treat each as a hard constraint» (frame-worker-core.md:25). Наш раздел
-    называл причину, но не переводил её в статус ограничения.
+    treat each as a hard constraint» (frame-worker-core.md:25). Раздел не
+    только просит не повторять замечания, но и честно называет цену: попыток
+    ограниченное число (`MAX_PLAN_ATTEMPTS`/`MAX_COMPOSE_ATTEMPTS`,
+    hf_render.py), и это последняя.
     """
     text = _text(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES,
-                 retry_reason="D29_avatar_budget: FAIL: 40 с при потолке 25 с")
+                 retry_reason="D29_avatar_budget: FAIL: 40 с при потолке 25 с",
+                 attempt=1, max_attempts=2)
     section = text.split("# Задание на монтаж рилса")[1].split(
         "\n## Что решаешь не ты")[0]
-    assert "жёстким ограничением" in section, (
-        "замечания прошлой попытки не названы ограничением")
     assert "ни одно из них не должно повториться" in section
+    assert "Пересдач на этот шаг всего 2, это последняя" in section, (
+        "число попыток и то, что это последняя, не названы")
+    assert "план всё равно уйдёт в заказ ведущей" in section, (
+        "не сказано, что после последней попытки план уходит в заказ как есть")
 
 
 def test_главная_ошибка_названа_отдельным_блоком(tmp_path):
@@ -2017,11 +2030,14 @@ def test_вилка_обычной_сцены_не_спорит_с_полом_с
     """Ревизия круга 4, место 6: «Обычная сцена живёт 1,5–4 с» стояло рядом с
     «сцена без ведущей живёт не меньше 3 с», и на быстрой речи агент штатно
     отдавал вставке сцену в 2,4 с — законную по первой строке и незаконную по
-    второй.
+    второй. Числовой вилки больше нет — пол сцены с ведущей подставлен из
+    `MIN_SCENE`, а потолок — из `MAX_STATIC_SPAN`, тем же числом, что и у
+    серии, так что второго (более узкого) потолка, с которым можно
+    разойтись, в тексте не осталось.
     """
     for kw in ({}, {"avatar_ordered": False, "phrases": FAST_PHRASES}):
         skill = _skill(tmp_path / f"v{len(kw)}", **kw)
-        правило = _абзац(skill, skill.index("1,5–4 с"))
+        правило = _абзац(skill, skill.index("Сцена с ведущей живёт не короче"))
         assert "с ведущей" in правило, (
             "вилка обычной сцены не сказала, к какой сцене относится")
         assert "без ведущей" in правило, (
@@ -2605,18 +2621,24 @@ def test_образец_показывает_значок_там_где_он_в�
                 f'{scene["id"]}: значок стоит там, где код его снимет')
 
 
-def test_сверка_считает_запас_числом(tmp_path):
-    """Диагноз 8: пункт сверки повторял условие самого правила и потому не
-    ловил ничего. Счётный пункт проверяется глазами за секунду.
+def test_сверка_требует_запас_на_каждой_сцене_а_не_счётом(tmp_path):
+    """Диагноз 8 продолжение: «сцен со вставкой ровно столько же, сколько
+    сцен с запасом» — счёт, которого в коде нет, и он пропускает план, где
+    вставка одной сцены случайно уравновешена запасом совсем другой. Пункт
+    сверки требует запас у КАЖДОЙ сцены с `insert`, а не совпадения двух чисел.
     """
     for name, kw in (("early", {"avatar_ordered": False,
                                 "phrases": GAP_PHRASES}),
                      ("ordered", {"clips": CLIPS, "phrases": GAP_PHRASES})):
         сверка = _text(tmp_path / name, **kw).split(
             "## Сверка перед сдачей")[1]
+        assert "столько же" not in сверка, (
+            f"{name}: сверка всё ещё считает запас несуществующим счётом")
         пункты = [part for part in сверка.splitlines()
-                  if "`insert`" in part and "столько же" in part]
-        assert пункты, f"{name}: в сверке нет счётного пункта про запас"
+                  if "`insert`" in part and "запас" in part]
+        assert пункты, f"{name}: в сверке нет пункта про запас"
+        assert any("каждой сцены" in part for part in пункты), (
+            f"{name}: пункт не требует запас у каждой сцены со вставкой")
         assert "где ведущей нет" not in сверка, (
             f"{name}: сверка меряет ту же условную выборку, что и правило")
 
@@ -2645,3 +2667,87 @@ def test_порядок_работы_называет_проход_по_запа
         шаги = _text(tmp_path / name, **kw).split("## Порядок работы")[1]
         шаги = шаги.split("\n## ")[0]
         assert "запас" in шаги, f"{name}: прохода по запасу в шагах нет"
+
+
+def _ожидаемый_пол_сцен(duration: float, phrases: list[dict]) -> int:
+    """То же самое `low`, что считает `write_brief` — пол `min_scenes`,
+    зажатый числом фраз."""
+    низ = _min_scenes(duration)
+    if phrases:
+        низ = max(1, min(низ, len(phrases)))
+    return низ
+
+
+#: Три разные длительности и разное число фраз — задача 02 требует, чтобы
+#: подстановка сходилась с кодом не на одном частном случае.
+_ЗАДАНИЯ = (
+    ("короткий", _фразы(8, 2.0), 16.0),
+    ("средний", _фразы(16, 3.5), 56.0),
+    ("длинный", _фразы(30, 2.0), 60.0),
+)
+
+
+@pytest.mark.parametrize("name, phrases, duration", _ЗАДАНИЯ)
+def test_числа_задания_совпадают_с_числами_кода(tmp_path, name, phrases,
+                                                duration):
+    """Задача 02: каждое число в задании берётся из той же константы или
+    функции, которой судит код, а не переписано рядом литералом. Проверяем
+    это подстановкой, а не догадкой — пересчитывая те же функции, что и
+    `hf_brief`, и ищем ровно их печатное написание в собранном скилле.
+    """
+    skill = _skill(tmp_path / name, avatar_ordered=False, phrases=phrases,
+                   duration=duration)
+
+    low = _ожидаемый_пол_сцен(duration, phrases)
+    ждём_вставок = inserts_wanted(list(range(low)))
+    assert f"Назови не меньше {ждём_вставок} моментов" in skill, (
+        f"{name}: inserts_wanted({low}) = {ждём_вставок} не назван")
+
+    assert f"{_число(SERIES_MIN)}–{_секунды(SERIES_MAX)}" in skill, (
+        f"{name}: вилка серии не сходится с SERIES_MIN/SERIES_MAX")
+
+    assert f"не короче {_секунды(MIN_SCENE)}" in skill, (
+        f"{name}: пол обычной сцены не сходится с MIN_SCENE")
+    assert f"не длиннее {_секунды(MAX_STATIC_SPAN)}" in skill, (
+        f"{name}: потолок сцены не сходится с MAX_STATIC_SPAN")
+    assert _секунды(MIN_FULLSCREEN_S) in skill, (
+        f"{name}: пол сцены без ведущей не сходится с MIN_FULLSCREEN_S")
+
+    ждём_зазор = face_gap(duration)
+    assert f"{_секунды(ждём_зазор)} лица" in skill, (
+        f"{name}: зазор между сериями не сходится с face_gap({duration})")
+
+    for count in (MINIMUM["pairs"], LIMITS["pairs"]):
+        floor = _секунды(min_seconds("pairs", count))
+        assert floor in skill, (
+            f"{name}: пол `pairs` на {count} строк(и) — {floor} — не назван")
+
+
+@pytest.mark.parametrize("name, phrases, duration", _ЗАДАНИЯ)
+def test_в_задании_нет_старых_литералов_вилки(tmp_path, name, phrases,
+                                              duration):
+    """Задача 02: «1,5–4 с», «от пяти до восьми» и голое «восьми» — цифры,
+    которые код не мерил ничем, и они разошлись бы с любой правкой констант.
+    """
+    skill = _skill(tmp_path / name, avatar_ordered=False, phrases=phrases,
+                   duration=duration)
+    for литерал in ("1,5–4", "1,5-4", "от пяти до восьми", "восьми"):
+        assert литерал not in skill, f"{name}: старый литерал «{литерал}» вернулся"
+
+
+def test_раздел_про_правки_кода_после_сдачи_называет_механизмы(tmp_path):
+    """Задача 02, пункт 10: тринадцать мест, где код переписывает план после
+    сдачи, задание почти не называло. Раздел обязан быть и обязан называть хотя
+    бы механизм возврата короткого куска без ведущей — самый дорогой из
+    ненаписанных: он добавляет оплаченные секунды поверх решения агента.
+    """
+    skill = _skill(tmp_path, avatar_ordered=False, phrases=GAP_PHRASES)
+    assert "## Что код делает с планом после сдачи" in skill
+    раздел = skill.split("## Что код делает с планом после сдачи")[1]
+    assert "_restore_short_faceless" in раздел, (
+        "механизм возврата короткого куска без ведущей не назван")
+    assert _секунды(MIN_FULLSCREEN_S) in раздел, (
+        "порог возврата не подставлен из MIN_FULLSCREEN_S")
+    for имя in ("settle_schemas", "absorb_scene", "dedupe_neighbours",
+                "_fill_frame_holes"):
+        assert имя in раздел, f"механизм {имя} не назван в разделе"
