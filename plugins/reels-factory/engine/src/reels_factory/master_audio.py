@@ -555,6 +555,27 @@ def _verify_file(path: Path, expected_sha256: str | None = None) -> Path:
     return path
 
 
+def _canonical_compare_text(canonical: dict) -> str:
+    """Текст canonical для сверки «сценарий не поменялся с утверждения» —
+    устойчив к тому, что версия кода, которая писала этот canonical, могла
+    ставить (или не ставить) точку на конце блока.
+
+    Дефект B1 (задача 15 после ревью): `_ensure_sentence_end` начала
+    безусловно добавлять точку в конец каждого блока TTS-текста. Аудио,
+    утверждённое ДО этой правки, хранит `script.canonical.json` без точки —
+    хотя произнесённый текст блока не менялся ни на символ. Сверять
+    text_sha256 «в лоб» с сегодняшним canonical для такого approval значит
+    сравнивать текст с точкой и без и получать ложное расхождение. Здесь обе
+    стороны сравнения проходят через один и тот же (сегодняшний, идемпотентный
+    — добавляет точку только если её ещё нет) `_ensure_sentence_end`, поэтому
+    расхождение только в точке схлопывается, а реальная правка слов в блоке
+    по-прежнему ловится."""
+    blocks = canonical.get("blocks") or []
+    return "\n".join(
+        _ensure_sentence_end(str(block.get("speech") or "")) for block in blocks
+    )
+
+
 def load_master_audio(
     scenario: dict,
     config: dict,
@@ -568,17 +589,27 @@ def load_master_audio(
     записаны: `audio/tts` (ElevenLabs, `build_master_audio`) — True, `audio/
     user` (голосовое Telegram, `build_user_master_audio`) — False. Иначе
     text_sha256 никогда не совпадёт: у одного canonical — speech_tts или
-    speech, у другого — всегда speech."""
+    speech, у другого — всегда speech.
+
+    Два разных сравнения текста здесь неспроста разные величины. «Сценарий не
+    поменялся с утверждения» сравнивается через `_canonical_compare_text` —
+    пересобранный СЕГОДНЯ canonical против сохранённого, но нормализованные
+    одинаково (см. её докстринг, дефект B1). А вот manifest/words_doc должны
+    совпадать именно с СОХРАНЁННЫМ `saved_canonical["text_sha256"]`: их писал
+    один и тот же вызов `build_master_audio`, что и `script.canonical.json`,
+    какой бы код тогда ни считал точки — это внутренняя согласованность трёх
+    файлов одного approval, а не вопрос «изменился ли сценарий», и её не
+    должна поколебать более поздняя правка правил канонизации."""
     wd = Path(artifact_dir)
     canonical = build_canonical_script(scenario, config, prefer_tts=prefer_tts)
     saved_canonical = json.loads(
         (wd / "script.canonical.json").read_text(encoding="utf-8")
     )
-    if saved_canonical.get("text_sha256") != canonical["text_sha256"]:
+    if _canonical_compare_text(saved_canonical) != _canonical_compare_text(canonical):
         raise ValueError("утверждённое аудио создано для другого сценария")
 
     manifest = json.loads((wd / "audio_manifest.json").read_text(encoding="utf-8"))
-    if manifest.get("input_sha256") != canonical["text_sha256"]:
+    if manifest.get("input_sha256") != saved_canonical.get("text_sha256"):
         raise ValueError("audio manifest не совпадает с утверждённым сценарием")
     files = manifest.get("files") or {}
     canonical_file = files.get("canonical_audio") or {}
@@ -596,7 +627,7 @@ def load_master_audio(
         (wd / str((files.get("words_alignment") or {}).get("path")
                   or "alignment.words.json")).read_text(encoding="utf-8")
     )
-    if words_doc.get("text_sha256") != canonical["text_sha256"]:
+    if words_doc.get("text_sha256") != saved_canonical.get("text_sha256"):
         raise ValueError("word alignment не совпадает с утверждённым сценарием")
     words = list(words_doc.get("words") or [])
     ranges = list(words_doc.get("blocks") or [])

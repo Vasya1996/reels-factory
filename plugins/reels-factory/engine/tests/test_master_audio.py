@@ -450,6 +450,63 @@ def test_approved_audio_hash_не_даёт_подменить_дорожку_п�
         load_approved_master_audio(_scenario(), config, tmp_path)
 
 
+def test_старое_approved_elevenlabs_аудио_без_точки_проходит_проверку_сегодняшним_кодом(
+        tmp_path, monkeypatch):
+    """Дефект B1: до 73870a9 build_canonical_script (без prefer_tts) никогда
+    не добавляла точку в конец блока — approved elevenlabs-задачи,
+    утверждённые тогда, хранят script.canonical.json/audio_manifest.json с
+    этим текстом. load_approved_master_audio для source=elevenlabs_approved
+    пересчитывает canonical с prefer_tts=True, а эта ветка теперь безусловно
+    ставит точку — старый approval не должен из-за этого падать ValueError
+    и требовать нового платного вызова ElevenLabs.
+
+    `_ensure_sentence_end` патчим тождественной функцией только на время
+    build_master_audio — так approval на диске получается ровно таким, каким
+    его писал код ДО 73870a9, а не подделан руками мимо реального кода."""
+    import reels_factory.master_audio as master_audio_module
+
+    monkeypatch.setattr(master_audio_module, "_ensure_sentence_end", lambda t: t)
+
+    scenario = {"blocks": [
+        {"role": "hook", "speech": "Мы это сделали"},
+        {"role": "cta", "speech": "Подпишись"},
+    ]}
+    config = {"language": "ru", "voice_id": "v1"}
+
+    class Provider:
+        def convert_with_timestamps(self, text, **kwargs):
+            return TimestampedSpeech(
+                audio=b"old-preview", alignment=_alignment(text),
+                normalized_alignment=None, request_id="req",
+            )
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"generated")
+
+    artifact_dir = tmp_path / "audio" / "tts"
+    build_master_audio(
+        scenario, config, artifact_dir,
+        provider=Provider(), run_cmd=fake_run, duration_fn=lambda _: 1.3,
+    )
+    approve_master_audio(tmp_path, artifact_dir, source="elevenlabs_approved")
+    saved = json.loads(
+        (artifact_dir / "script.canonical.json").read_text(encoding="utf-8")
+    )
+    assert saved["text"] == "Мы это сделали\nПодпишись"  # без точки — старый код
+
+    # Возвращаем настоящий _ensure_sentence_end: дальше читаем сегодняшним
+    # кодом, как при рендере после git pull на проде поверх старого approval.
+    monkeypatch.undo()
+
+    # load_approved_master_audio/load_master_audio не принимают provider —
+    # структурно не могут заказать новую озвучку, только прочитать диск.
+    loaded = load_approved_master_audio(scenario, config, tmp_path)
+    assert loaded.mp3.read_bytes() == b"old-preview"
+    assert loaded.manifest["provider"] == "elevenlabs"
+    assert [w["text"] for w in loaded.words] == ["Мы", "это", "сделали", "Подпишись"]
+    assert len(loaded.block_wavs) == 2
+
+
 def test_telegram_voice_становится_master_без_генеративной_обработки(tmp_path):
     source = tmp_path / "input.ogg"
     source.write_bytes(b"telegram-opus")
