@@ -1,0 +1,7 @@
+{
+ "format_version": 1,
+ "source": "elevenlabs_approved",
+ "artifact_dir": "audio/tts",
+ "input_sha256": "cafef00d",
+ "canonical_audio_sha256": "beefcafe"
+}

@@ -3,11 +3,13 @@ import dataclasses
 import json
 import logging
 import re
+from pathlib import Path
 
 import pytest
 
 from reels_factory import bot
 from reels_factory import clients as clients_mod
+from reels_factory.billing import JobMeter, LedgerStore
 from reels_factory.config import ConfigError
 
 
@@ -2973,8 +2975,16 @@ def test_исключение_при_сборке_не_роняет_бота(wor
 
     assert bot.BUILD_FAILED_MSG in api.messages[-1][1]
     assert "subprocess" not in api.messages[-1][1]
-    assert "subprocess не поднялся" in bot._job_store().get(job.job_id).error
-    assert bot._job_store().get(job.job_id).status == "failed"
+    finished = bot._job_store().get(job.job_id)
+    assert "subprocess не поднялся" in finished.error
+    assert finished.status == "failed"
+    # Задача 19: карточка сборки пишется и на падении — voркер только успел
+    # захватить job (файлов в пустой workdir ещё нет), но попытки job уже
+    # известны сами по себе.
+    numbers = finished.result["build_numbers"]
+    assert numbers["job_attempts"] == 1
+    assert numbers["job_resumes"] == 0
+    assert numbers.get("gates_all_pass") is None
 
 
 def test_ролик_с_непройденным_qa_всё_равно_отправляется(work, клиент):
@@ -2984,6 +2994,13 @@ def test_ролик_с_непройденным_qa_всё_равно_отпра�
     сообщением про брак, теперь ролик уходит в чат как обычный."""
     def fake_run_build(chat_id, workdir):
         (workdir / "reel.mp4").write_bytes(b"x")
+        # Задача 19: `gates.json`/`retry_reason.txt` — файлы движка
+        # (hf_render.py: сохраняются рядом с сборкой, а не только полем
+        # возвращаемого словаря); карточка обязана прочитать их из папки.
+        (workdir / "gates.json").write_text(
+            json.dumps({"D0_check": "FAIL: пустой угол кадра"}), encoding="utf-8")
+        (workdir / "retry_reason.txt").write_text(
+            "D0_check: FAIL: пустой угол кадра", encoding="utf-8")
         return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": False,
                 "gates": {"D0_check": "FAIL: пустой угол кадра"}}
 
@@ -3001,6 +3018,13 @@ def test_ролик_с_непройденным_qa_всё_равно_отпра�
     assert finished.status == "completed"
     assert finished.result["qa_pass"] is False
     assert bot.load_session(7)["step"] == bot.DONE
+    # Карточка сборки пишется и на доставке с красным гейтом
+    # (delivered:qa_fail), не только на чистом успехе.
+    numbers = finished.result["build_numbers"]
+    assert numbers["gates_all_pass"] is False
+    assert numbers["gates_failed"] == ["D0_check"]
+    assert "пустой угол кадра" in numbers["retry_reason"]
+    assert numbers["job_attempts"] == 1
 
 
 def test_ролик_больше_50мб_не_отправляется(work, клиент, monkeypatch):
@@ -3238,6 +3262,12 @@ def test_алерт_при_поломке_сборки(work, клиент, ал�
     assert "voice" in text
     assert "HeyGen отказал" in text
     assert job.job_id in text
+    # Задача 19: алерт печатает те же числа, что и карточка в result_json —
+    # без новой формы для них. job_attempts/job_resumes есть у любой job
+    # (BuildJob), поэтому строка «Числа:» стоит даже без файлов движка.
+    assert "Числа:" in text
+    numbers = bot._job_store().get(job.job_id).result["build_numbers"]
+    assert str(numbers["job_attempts"]) in text
     assert str(job.workdir) in text
 
 
@@ -6175,3 +6205,123 @@ def test_при_минусе_на_балансе_вместо_продолжен
 
     assert _данные_кнопки(экран_отказа(), ПРОДОЛЖИТЬ), (
         "баланс поправлен, а перезапуск не вернулся")
+
+
+# --- Задача 19: карточка сборки (collect_build_numbers) -------------------
+
+BUILD_NUMBERS_FULL_DIR = Path(__file__).parent / "fixtures" / "build_numbers_full"
+
+
+def test_карточка_сборки_полная_на_готовой_папке():
+    """Папка с полным набором файлов, которые движок пишет сам по ходу
+    сборки (по образцу `tests/fixtures/artyom_early_2/`, но для карточки
+    задачи 19): `avatar_render_plan.json`, `avatar_render_manifest.json`,
+    `audio.approved.json` + `audio/tts/audio_manifest.json`,
+    `scenario.timed.json`, `gates.json`, `retry_reason.txt`."""
+    numbers = bot.collect_build_numbers(BUILD_NUMBERS_FULL_DIR)
+
+    assert numbers["avatar_seconds_requested"] == 21.4
+    assert numbers["avatar_seconds_billed_planned"] == 21.4
+    assert numbers["avatar_estimated_cost_usd"] == 1.07
+
+    assert numbers["avatar_shots_by_status"] == {
+        "ready": 2, "timeout": 1, "failed": 1,
+    }
+    problems = {p["shot_id"]: p for p in numbers["avatar_shot_problems"]}
+    assert problems["s-03"]["status"] == "timeout"
+    assert problems["s-03"]["video_id"] == "heygen-video-abc123"
+    assert problems["s-04"]["status"] == "failed"
+    assert problems["s-04"]["video_id"] is None
+    assert "не создал clip" in problems["s-04"]["error"]
+
+    assert numbers["video_duration_planned_seconds"] == 42.1
+    assert numbers["video_duration_actual_seconds"] == 42.5335
+
+    assert numbers["gates_all_pass"] is False
+    assert numbers["gates_failed"] == ["D15_inserts_visible"]
+
+    assert "D15_inserts_visible" in numbers["retry_reason"]
+
+    # Без ledger/job_id себестоимость по провайдерам не считается — это не
+    # падение, а честно отсутствующая часть карточки.
+    assert "cost_by_provider_usd" not in numbers
+    assert "avatar_seconds_actual" not in numbers
+    assert "montage_agent_paid_runs" not in numbers
+
+
+def test_карточка_сборки_подмешивает_числа_из_ledger(tmp_path):
+    """`JobMeter` уже знает факт секунд HeyGen, число ОПЛАЧЕННЫХ прогонов
+    сборки с расходом агента монтажа (не число прогонов/пересдач самого
+    агента внутри одной сборки — то на диск не пишется) и себестоимость по
+    провайдерам (billing.py: `LedgerStore.job_provider_stats`) — карточка их
+    подмешивает, когда вызывающий (`_process_job`) передаёт
+    `ledger`/`job_id`."""
+    ledger = LedgerStore(tmp_path / "billing.sqlite3")
+    rates = {
+        "heygen_usd_per_second": 0.05,
+        "heygen_twin_usd_per_second": 0.0667,
+        "elevenlabs_usd_per_1k_chars": 0.10,
+        "chars_per_second": 14.0,
+        "claude_flat_usd_per_reel": 0.05,
+    }
+    meter = JobMeter(ledger, chat_id=7, job_id="job1", rates=rates, markup=2.0)
+    meter.heygen(21.4)
+    meter.claude(0.9)
+
+    numbers = bot.collect_build_numbers(tmp_path, ledger=ledger, job_id="job1")
+
+    assert numbers["avatar_seconds_actual"] == 21.4
+    assert numbers["montage_agent_paid_runs"] == 1
+    assert numbers["cost_by_provider_usd"]["heygen"] == pytest.approx(1.07)
+    assert numbers["cost_by_provider_usd"]["claude"] == pytest.approx(0.9)
+
+
+def test_карточка_сборки_без_записей_в_ledger_не_добавляет_числа(tmp_path):
+    """job_id, о котором ledger ничего не знает (billing выключен, ручной
+    прогон), — не падение: те же ключи, что и вовсе без ledger."""
+    ledger = LedgerStore(tmp_path / "billing.sqlite3")
+    numbers = bot.collect_build_numbers(tmp_path, ledger=ledger, job_id="нет-такой")
+    assert numbers["cost_by_provider_usd"] == {}
+    assert "avatar_seconds_actual" not in numbers
+    assert "montage_agent_paid_runs" not in numbers
+
+
+def test_карточка_сборки_неполная_на_пустой_папке(tmp_path):
+    """Старая папка или сборка, упавшая на середине: файлов нет вовсе.
+    Карточка не падает — она просто неполная."""
+    numbers = bot.collect_build_numbers(tmp_path)
+
+    assert numbers.get("avatar_seconds_requested") is None
+    assert numbers.get("video_duration_planned_seconds") is None
+    assert numbers.get("video_duration_actual_seconds") is None
+    assert numbers.get("gates_all_pass") is None
+    assert numbers.get("retry_reason") is None
+    assert "cost_by_provider_usd" not in numbers
+
+
+def test_карточка_сборки_битый_utf8_в_одном_файле_не_роняет_остальное(tmp_path):
+    """Сборка, упавшая на середине записи файла: `scenario.timed.json`
+    обрывается посреди многобайтового символа UTF-8 (не JSON-синтаксис —
+    сами байты не декодируются). Раньше `_read_json` ловил только
+    `(OSError, json.JSONDecodeError)`, а `UnicodeDecodeError` ронял весь
+    `collect_build_numbers` исключением — карточка пропадала целиком, включая
+    уже успешно прочитанный `gates.json`. Теперь ловится `ValueError`
+    (общий предок обоих) — карточка частичная, а не пустая."""
+    (tmp_path / "gates.json").write_text(
+        json.dumps({"D0_check": "PASS"}), encoding="utf-8")
+    # Обрубленный знак евро (€ = 0xE2 0x82 0xAC) — валидный старт
+    # многобайтовой последовательности, оборванный на середине.
+    (tmp_path / "scenario.timed.json").write_bytes(
+        b'{"total": 12.5, "note": "\xe2\x82"}')
+
+    numbers = bot.collect_build_numbers(tmp_path)
+
+    assert numbers["gates_all_pass"] is True
+    assert numbers["gates_failed"] == []
+    assert "video_duration_actual_seconds" not in numbers
+
+
+def test_карточка_сборки_передаёт_попытки_job(tmp_path):
+    numbers = bot.collect_build_numbers(tmp_path, job_attempts=2, job_resumes=1)
+    assert numbers["job_attempts"] == 2
+    assert numbers["job_resumes"] == 1

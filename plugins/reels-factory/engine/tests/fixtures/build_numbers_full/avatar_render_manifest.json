@@ -1,0 +1,56 @@
+{
+ "format_version": 1,
+ "engine_scope": "photo_avatar_iv",
+ "edit_plan_sha256": "deadbeef",
+ "master_audio_sha256": "cafef00d",
+ "shots": [
+  {
+   "shot_id": "s-01",
+   "idempotency_key": "s-01:cafef00d",
+   "cache_key": "aaaa1111",
+   "audio_path": "avatar_islands_audio/s-01.wav",
+   "audio_sha256": "1111",
+   "status": "ready",
+   "provider_job_id": null,
+   "clip_path": "avatar_islands_cache/aaaa1111.mp4",
+   "clip_sha256": "2222",
+   "error": null
+  },
+  {
+   "shot_id": "s-02",
+   "idempotency_key": "s-02:cafef00d",
+   "cache_key": "bbbb2222",
+   "audio_path": "avatar_islands_audio/s-02.wav",
+   "audio_sha256": "3333",
+   "status": "ready",
+   "provider_job_id": null,
+   "clip_path": "avatar_islands_cache/bbbb2222.mp4",
+   "clip_sha256": "4444",
+   "error": null
+  },
+  {
+   "shot_id": "s-03",
+   "idempotency_key": "s-03:cafef00d",
+   "cache_key": "cccc3333",
+   "audio_path": "avatar_islands_audio/s-03.wav",
+   "audio_sha256": "5555",
+   "status": "timeout",
+   "provider_job_id": "heygen-video-abc123",
+   "clip_path": null,
+   "clip_sha256": null,
+   "error": "HeyGen video generation timed out after 900s (video_id=heygen-video-abc123); заказ на стороне HeyGen жив и оплачен"
+  },
+  {
+   "shot_id": "s-04",
+   "idempotency_key": "s-04:cafef00d",
+   "cache_key": "dddd4444",
+   "audio_path": "avatar_islands_audio/s-04.wav",
+   "audio_sha256": "6666",
+   "status": "failed",
+   "provider_job_id": null,
+   "clip_path": null,
+   "clip_sha256": null,
+   "error": "HeyGen/cache не создал clip: avatar_islands_cache/dddd4444.mp4"
+  }
+ ]
+}

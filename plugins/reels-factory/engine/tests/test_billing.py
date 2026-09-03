@@ -431,6 +431,27 @@ def test_meter_считает_все_три_провайдера(store):
     }
 
 
+def test_job_provider_stats_агрегирует_себестоимость_объём_и_число_записей(store):
+    """Задача 19: карточка сборки (`collect_build_numbers` в bot.py) читает
+    отсюда факт секунд HeyGen и число прогонов агента монтажа —
+    `job_breakdown` для этого не годится, он суммирует `charged_micro`,
+    который у JobMeter всегда 0 (см. `test_meter_не_списывает_...` выше)."""
+    meter = JobMeter(store, chat_id=777, job_id="job1", rates=RATES, markup=2.0)
+    meter.heygen(30.0)
+    meter.heygen(12.0)
+    meter.claude(0.02)
+    assert store.job_provider_stats("job1") == {
+        "heygen": {"cost_micro": 2_100_000, "quantity": 42.0, "count": 2},
+        "claude": {"cost_micro": 20_000, "quantity": 0.02, "count": 1},
+    }
+
+
+def test_job_provider_stats_пусто_для_чужой_или_отсутствующей_job(store):
+    meter = JobMeter(store, chat_id=777, job_id="job1", rates=RATES, markup=2.0)
+    meter.heygen(30.0)
+    assert store.job_provider_stats("job-другой") == {}
+
+
 class _МедленноеЧисло(int):
     """int, который специально тормозит при форматировании в f-строку.
 
