@@ -5,6 +5,7 @@ from pathlib import Path
 from reels_factory.llm import FakeRunner
 from reels_factory.scenario import (
     ScenarioError,
+    WORDS_PER_SEC,
     _mentions_theme,
     build_prompt,
     generate_scenario,
@@ -110,7 +111,8 @@ def test_target_90_расширяет_duration_и_word_budget():
 def test_prompt_60_строит_динамический_skeleton_и_budget():
     prompt = build_prompt(_hyp(target_duration_s=60))
     assert "целевая длительность 60 секунд" in prompt
-    assert "около 150 слов" in prompt
+    # бюджет слов = target * WORDS_PER_SEC (scenario.py:66), не отдельное число
+    assert f"около {round(60 * WORDS_PER_SEC)} слов" in prompt
     assert '"end": 60.0' in prompt
 
 
@@ -303,6 +305,53 @@ def test_split_short_text_single_block():
     blocks = split_verbatim("Одна фраза.")
     assert len(blocks) == 1
     assert blocks[0]["speech"] == "Одна фраза."
+
+
+# ---------------------------------------------------------------------------
+# Темп речи: одна константа вместо двух (задача 04, замер по прод-заданиям).
+
+def test_words_per_second_target_не_существует_отдельно():
+    """WORDS_PER_SECOND_TARGET и WORDS_PER_SEC были двумя копиями 2.5 —
+    теперь темп речи только один: WORDS_PER_SEC (scenario.py:66)."""
+    import reels_factory.scenario as scenario_module
+
+    assert not hasattr(scenario_module, "WORDS_PER_SECOND_TARGET")
+    assert scenario_module.WORDS_PER_SEC == WORDS_PER_SEC
+    assert WORDS_PER_SEC < 2.5  # была верхней границей темпа, не серединой
+
+
+def test_words_soft_hard_считаются_от_words_per_sec():
+    """words_soft/words_hard — бюджет слов под заданную длину, тот же темп,
+    что и у split_verbatim/run_verbatim_path (не отдельное число)."""
+    from reels_factory.scenario import _duration_contract, WORDS_PER_SEC
+    import math
+
+    contract = _duration_contract({"target_duration_s": 20.0})
+    assert contract["words_soft"] == max(30, round(20.0 * WORDS_PER_SEC))
+    assert contract["words_hard"] == max(36, math.ceil(20.0 * WORDS_PER_SEC * 1.12))
+
+
+def test_split_verbatim_считает_длительность_по_words_per_sec():
+    from reels_factory.scenario import WORDS_PER_SEC
+
+    blocks = split_verbatim(TEXT)
+    for block in blocks:
+        expected = round(len(block["speech"].split()) / WORDS_PER_SEC, 1)
+        assert round(block["end"] - block["start"], 1) == expected
+
+
+def test_темп_не_короче_факта_на_job_e00b740b():
+    """Прод-job e00b740b (2026-09-03): 154 слова, реальная озвучка (по
+    audio/tts/alignment.words.json на 134.209.80.75) — 72.82с. Черновой план
+    по старой WORDS_PER_SEC=2.5 давал 59.6с (в scenario.json job'а) — короче
+    факта на 22%. Оценка по новой константе должна лечь в ±10% факта, а не
+    систематически строить план короче."""
+    words = 154
+    real_seconds = 72.82
+
+    estimated = round(words / WORDS_PER_SEC, 1)
+
+    assert abs(estimated - real_seconds) / real_seconds <= 0.10
 
 
 def test_scenario_from_text_writes_file(tmp_path):
