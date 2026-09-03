@@ -1,0 +1,32 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "caption-highlight",
+  "type": "hyperframes:component",
+  "title": "Highlight",
+  "description": "Red background sweep behind each active word, TikTok-style",
+  "tags": [
+    "captions",
+    "caption-style",
+    "highlight",
+    "social",
+    "tiktok"
+  ],
+  "files": [
+    {
+      "path": "caption-highlight.html",
+      "target": "compositions/components/caption-highlight.html",
+      "type": "hyperframes:snippet"
+    }
+  ],
+  "preview": {
+    "video": "https://static.heygen.ai/hyperframes-oss/registry/components/caption-highlight/preview-v2.mp4",
+    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-highlight.png"
+  },
+  "reels": {
+    "kind": "effect",
+    "mount": "composition",
+    "decor_texts": [],
+    "text_slots": [],
+    "skip": "layout:container_overflow:#highlight:Element extends outside a clipping layout container."
+  }
+}

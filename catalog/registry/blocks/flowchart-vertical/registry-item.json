@@ -1,0 +1,35 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "flowchart-vertical",
+  "type": "hyperframes:block",
+  "title": "Flowchart Vertical",
+  "description": "Portrait animated decision tree with SVG connectors, sticky-note nodes, cursor interaction, and typing correction",
+  "tags": [
+    "diagram",
+    "flowchart",
+    "interactive",
+    "portrait"
+  ],
+  "dimensions": {
+    "width": 1440,
+    "height": 2560
+  },
+  "duration": 12,
+  "files": [
+    {
+      "path": "flowchart-vertical.html",
+      "target": "compositions/flowchart-vertical.html",
+      "type": "hyperframes:composition"
+    }
+  ],
+  "preview": {
+    "video": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/flowchart-vertical.mp4",
+    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/flowchart-vertical.png"
+  },
+  "reels": {
+    "kind": "scene",
+    "decor_texts": [],
+    "text_slots": [],
+    "skip": "runtime:console_warning — GSAP target #flowchart-vertical .selection-border not found; плюс на других секундах реальные layout:text_occluded (несколько узлов схемы) и contrast:contrast_aa_failure 1:1 (норма 4.5:1). Не встаёт и смонтированным в наш кадр 1080x1920 — та же ошибка GSAP-таргета."
+  }
+}

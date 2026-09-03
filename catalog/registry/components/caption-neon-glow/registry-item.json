@@ -1,0 +1,32 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "caption-neon-glow",
+  "type": "hyperframes:component",
+  "title": "Neon Glow",
+  "description": "Cyan and magenta neon glow with keyword accent colors",
+  "tags": [
+    "captions",
+    "caption-style",
+    "neon",
+    "glow",
+    "gaming"
+  ],
+  "files": [
+    {
+      "path": "caption-neon-glow.html",
+      "target": "compositions/components/caption-neon-glow.html",
+      "type": "hyperframes:snippet"
+    }
+  ],
+  "preview": {
+    "video": "https://static.heygen.ai/hyperframes-oss/registry/components/caption-neon-glow/preview.mp4?v=1779051416",
+    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-neon-glow.png"
+  },
+  "reels": {
+    "kind": "effect",
+    "mount": "composition",
+    "decor_texts": [],
+    "text_slots": [],
+    "skip": "layout:container_overflow:#neon-glow:Element extends outside a clipping layout container.; contrast:contrast_aa_failure:#ne-w-4:Contrast is 1.34:1; WCAG AA requires 3:1.; contrast:contrast_aa_failure:#ne-w-5:Contrast is 1.34:1; WCAG AA requires 3:1."
+  }
+}

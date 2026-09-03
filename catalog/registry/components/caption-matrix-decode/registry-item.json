@@ -1,0 +1,32 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "caption-matrix-decode",
+  "type": "hyperframes:component",
+  "title": "Matrix Decode",
+  "description": "Character scramble animation before text reveal",
+  "tags": [
+    "captions",
+    "caption-style",
+    "matrix",
+    "scramble",
+    "decode"
+  ],
+  "files": [
+    {
+      "path": "caption-matrix-decode.html",
+      "target": "compositions/components/caption-matrix-decode.html",
+      "type": "hyperframes:snippet"
+    }
+  ],
+  "preview": {
+    "video": "https://static.heygen.ai/hyperframes-oss/registry/components/caption-matrix-decode/preview-v2.mp4",
+    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-matrix-decode.png"
+  },
+  "reels": {
+    "kind": "effect",
+    "mount": "composition",
+    "decor_texts": [],
+    "text_slots": [],
+    "skip": "layout:content_overlap:#sc-real-1:Two text blocks overlap and may render unreadable.; layout:content_overlap:#sc-real-2:Two text blocks overlap and may render unreadable.; layout:container_overflow:#matrix-decode:Element extends outside a clipping layout container."
+  }
+}

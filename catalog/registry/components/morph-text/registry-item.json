@@ -1,0 +1,33 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "morph-text",
+  "type": "hyperframes:component",
+  "title": "Morph Text",
+  "description": "Gooey text morph — cycles through an editable word list using SVG threshold + GSAP-driven blur for a fluid, satisfying transition effect",
+  "tags": [
+    "text",
+    "text-effect",
+    "typography",
+    "morph",
+    "gooey",
+    "kinetic",
+    "animation"
+  ],
+  "files": [
+    {
+      "path": "morph-text.html",
+      "target": "compositions/components/morph-text.html",
+      "type": "hyperframes:snippet"
+    }
+  ],
+  "preview": {
+    "video": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/morph-text.mp4"
+  },
+  "reels": {
+    "kind": "effect",
+    "mount": "composition",
+    "decor_texts": [],
+    "text_slots": [],
+    "skip": "layout:content_overlap:#morph-a:Two text blocks overlap and may render unreadable.; layout:container_overflow:#morph-text:Element extends outside a clipping layout container.; layout:content_overlap:#morph-a:Two text blocks overlap and may render unreadable."
+  }
+}

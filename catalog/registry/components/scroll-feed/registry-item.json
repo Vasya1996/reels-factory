@@ -1,0 +1,114 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "scroll-feed",
+  "type": "hyperframes:component",
+  "title": "Scroll Feed",
+  "description": "A loop-friendly column of varied skeleton post cards scrolls upward with subtle motion trails and an agitated pace.",
+  "tags": [
+    "motion-primitive",
+    "effects",
+    "scroll",
+    "feed",
+    "loop",
+    "agitation"
+  ],
+  "jobs": [
+    "demonstrate"
+  ],
+  "family": "effects",
+  "profile": "continuous",
+  "evidence": "Wave F U9 scroll-feed specification",
+  "files": [
+    {
+      "path": "scroll-feed.html",
+      "target": "compositions/components/scroll-feed.html",
+      "type": "hyperframes:snippet"
+    }
+  ],
+  "variables": [
+    {
+      "id": "speed",
+      "type": "enum",
+      "role": "timing",
+      "label": "Scroll speed",
+      "description": "Pace of the upward feed movement.",
+      "default": "doom",
+      "options": [
+        {
+          "value": "doom",
+          "label": "Doom"
+        },
+        {
+          "value": "frantic",
+          "label": "Frantic"
+        }
+      ]
+    },
+    {
+      "id": "card_count",
+      "type": "number",
+      "role": "content",
+      "label": "Card count",
+      "description": "Number of skeleton posts in one repeated feed cycle.",
+      "default": 6,
+      "min": 4,
+      "max": 10,
+      "step": 1
+    },
+    {
+      "id": "cues",
+      "type": "string",
+      "role": "timing",
+      "label": "Cues",
+      "description": "Comma-separated seconds (from mount start); each cue advances the feed by one card. Empty synthesizes evenly spaced flicks, one per card.",
+      "default": ""
+    },
+    {
+      "id": "exit",
+      "type": "enum",
+      "role": "timing",
+      "label": "Exit",
+      "description": "Optional departure. Default none: the feed scrolls until the frame cuts.",
+      "default": "none",
+      "options": [
+        {
+          "value": "none",
+          "label": "None"
+        },
+        {
+          "value": "fade",
+          "label": "Fade"
+        },
+        {
+          "value": "up",
+          "label": "Up"
+        }
+      ]
+    }
+  ],
+  "reels": {
+    "kind": "effect",
+    "mount": "composition",
+    "decor_texts": [],
+    "text_slots": [],
+    "variables": {
+      "speed": {
+        "type": "enum",
+        "default": "doom"
+      },
+      "card_count": {
+        "type": "number",
+        "default": 6
+      },
+      "cues": {
+        "type": "string",
+        "default": ""
+      },
+      "exit": {
+        "type": "enum",
+        "default": "none"
+      }
+    },
+    "skip": "layout:container_overflow:div.sf-column.sf-main:Element extends outside a clipping layout container.; layout:escaped_container:div.sf-column.sf-main:Positioned element renders far outside its offset parent — its coordinates were likely computed in a different frame (canvas/viewport pixels)."
+  }
+}

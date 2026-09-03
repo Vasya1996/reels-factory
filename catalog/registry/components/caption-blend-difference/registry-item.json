@@ -1,0 +1,29 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "caption-blend-difference",
+  "type": "hyperframes:component",
+  "title": "Blend Difference",
+  "description": "Auto-inverting text using mix-blend-mode: difference — flips between white and black per-pixel against the background",
+  "tags": [
+    "text",
+    "text-effect",
+    "effect",
+    "blend-mode",
+    "contrast",
+    "inversion"
+  ],
+  "files": [
+    {
+      "path": "caption-blend-difference.html",
+      "target": "compositions/components/caption-blend-difference.html",
+      "type": "hyperframes:snippet"
+    }
+  ],
+  "reels": {
+    "kind": "effect",
+    "mount": "paste",
+    "decor_texts": [],
+    "text_slots": [],
+    "skip": "lint:missing_or_empty_sub_composition:[data-composition-id]:data-composition-src references \"compositions/components/caption-blend-difference.html\", but the file has no <template> or <body> content to render."
+  }
+}

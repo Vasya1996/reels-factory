@@ -1,0 +1,26 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "yt-screen-warp",
+  "type": "hyperframes:component",
+  "title": "On-Screen Display Effect",
+  "description": "Grid, scanline, vignette, and sheen overlay plus a 3D-warp wrapper class that makes footage read as if playing on a physical display",
+  "tags": [
+    "effect",
+    "overlay",
+    "texture"
+  ],
+  "files": [
+    {
+      "path": "yt-screen-warp.html",
+      "target": "compositions/components/yt-screen-warp.html",
+      "type": "hyperframes:snippet"
+    }
+  ],
+  "reels": {
+    "kind": "effect",
+    "mount": "composition",
+    "decor_texts": [],
+    "text_slots": [],
+    "skip": "layout:escaped_container:#yt-sw-wrap:Positioned element renders far outside its offset parent — its coordinates were likely computed in a different frame (canvas/viewport pixels)."
+  }
+}

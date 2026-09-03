@@ -1,0 +1,26 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "yt-circle-pointer",
+  "type": "hyperframes:component",
+  "title": "Pointer Circle + Countdown",
+  "description": "Draw-on annotation ellipse around a target plus a countdown chip that pulses each tick",
+  "tags": [
+    "annotation",
+    "countdown",
+    "overlay"
+  ],
+  "files": [
+    {
+      "path": "yt-circle-pointer.html",
+      "target": "compositions/components/yt-circle-pointer.html",
+      "type": "hyperframes:snippet"
+    }
+  ],
+  "reels": {
+    "kind": "effect",
+    "mount": "composition",
+    "decor_texts": [],
+    "text_slots": [],
+    "skip": "layout:content_overlap:#yt-ptr-scene > span:nth-of-type(1):Two text blocks overlap and may render unreadable.; layout:content_overlap:#yt-ptr-scene > span:nth-of-type(1):Two text blocks overlap and may render unreadable.; layout:escaped_container:#yt-ptr-circle:Positioned element renders far outside its offset parent — its coordinates were likely computed in a different frame (canvas/viewport pixels)."
+  }
+}

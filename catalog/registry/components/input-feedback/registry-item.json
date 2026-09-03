@@ -1,0 +1,80 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "input-feedback",
+  "type": "hyperframes:component",
+  "title": "Input Feedback",
+  "description": "A transitions.dev-inspired input feedback primitive with shake, clear affordance, and success state",
+  "tags": [
+    "transition-primitive",
+    "transitions-dev-port",
+    "input",
+    "feedback"
+  ],
+  "files": [
+    {
+      "path": "input-feedback.html",
+      "target": "compositions/components/input-feedback.html",
+      "type": "hyperframes:snippet"
+    }
+  ],
+  "variables": [
+    {
+      "id": "status",
+      "type": "enum",
+      "role": "style",
+      "label": "Status",
+      "description": "Whether the field reads as accepted or rejected, colouring the border, chip and hint.",
+      "default": "valid",
+      "options": [
+        {
+          "value": "valid",
+          "label": "Valid"
+        },
+        {
+          "value": "error",
+          "label": "Error"
+        }
+      ]
+    },
+    {
+      "id": "value",
+      "type": "string",
+      "role": "content",
+      "label": "Value",
+      "description": "Text held by the field.",
+      "default": "mia@example.com"
+    },
+    {
+      "id": "hint",
+      "type": "string",
+      "role": "content",
+      "label": "Hint",
+      "description": "Helper line under the field.",
+      "default": "Looks good."
+    }
+  ],
+  "preview": {
+    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/input-feedback.png"
+  },
+  "reels": {
+    "kind": "effect",
+    "mount": "paste",
+    "decor_texts": [],
+    "text_slots": [],
+    "variables": {
+      "status": {
+        "type": "enum",
+        "default": "valid"
+      },
+      "value": {
+        "type": "string",
+        "default": "mia@example.com"
+      },
+      "hint": {
+        "type": "string",
+        "default": "Looks good."
+      }
+    },
+    "skip": "contrast:contrast_aa_failure:div > div > div > div > label:Contrast is 2.54:1; WCAG AA requires 4.5:1.; contrast:contrast_aa_failure:div > div > div > div > div > button:Contrast is 4.4:1; WCAG AA requires 4.5:1."
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "hw-box-label",
+  "type": "hyperframes:component",
+  "title": "Hand-Drawn Box Label",
+  "description": "Wobbled rounded rectangle draws around a region with a handwritten label above or centered",
+  "tags": [
+    "handwritten",
+    "annotation",
+    "overlay"
+  ],
+  "files": [
+    {
+      "path": "hw-box-label.html",
+      "target": "compositions/components/hw-box-label.html",
+      "type": "hyperframes:snippet"
+    },
+    {
+      "path": "assets/fonts/Caveat-700-latin.woff2",
+      "target": "compositions/components/assets/fonts/Caveat-700-latin.woff2",
+      "type": "hyperframes:asset"
+    }
+  ],
+  "reels": {
+    "kind": "effect",
+    "mount": "composition",
+    "decor_texts": [],
+    "text_slots": [],
+    "skip": "layout:escaped_container:#hw-bx-demo:Positioned element renders far outside its offset parent — its coordinates were likely computed in a different frame (canvas/viewport pixels).; layout:escaped_container:#hw-bx-demo-label:Positioned element renders far outside its offset parent — its coordinates were likely computed in a different frame (canvas/viewport pixels)."
+  }
+}
