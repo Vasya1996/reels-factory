@@ -30,10 +30,7 @@ from reels_factory.hf_agent import (
 )
 from reels_factory.hf_assets import vendor_gsap
 from reels_factory.hf_brief import POSITIONS, write_brief
-from reels_factory.hf_catalog import (
-    overlay_passports as catalog_overlay_passports, serve_catalog,
-    write_project_config,
-)
+from reels_factory.hf_catalog import serve_catalog, write_project_config
 from reels_factory.hf_compose import (
     CAPTION_BAND_TOP, build_composition, clear_generated, collect_intents,
     complete_storyboard, icon_intents, needed_blocks, schema_intents,
@@ -42,7 +39,8 @@ from reels_factory.hf_compose import (
 from reels_factory.hf_fonts import inject_fonts
 from reels_factory.hf_frame import read_frame
 from reels_factory.hf_gates import (
-    check_media, check_placeholders, check_storyboard, frame_filled_problems,
+    check_media, check_placeholders, check_storyboard, elements_problems,
+    frame_filled_problems,
 )
 from reels_factory.hf_layout import FULL_FRAME_PRESENTER, quantize
 from reels_factory.hf_media import resolve_all
@@ -1113,6 +1111,18 @@ def _early_plan_gates(scenes: list[dict], duration: float,
     #
     # Про схему гейт не спрашивает отдельно — `frame_filled_problems` считает
     # `schema_scene` наравне со вставкой.
+    # Имя позиции каталога сверяется до заказа по той же причине: их
+    # `hyperframes add` неизвестное имя не ставит и роняет попытку сборки, а
+    # ставит он блоки уже после того, как ведущую сняли и оплатили. Тот же
+    # список сверяет D11 после сборки, и считает его тот же код —
+    # `elements_problems`.
+    named = elements_problems(scenes)
+    result["D36_elements"] = "PASS" if not named else (
+        "FAIL: позицию каталога код ставит их же `hyperframes add`, и "
+        "неизвестное имя он не ставит вовсе — сборка встанет уже с оплаченной "
+        "ведущей. Имена, слоты и переменные позиций перечислены в "
+        "`catalog.index.md` рядом с заданием: " + "; ".join(named))
+
     empty = frame_filled_problems(scenes)
     result["D35_frame_filled"] = "PASS" if not empty else (
         "FAIL: ведущая уголком (`pip-*`) или половиной кадра (`stack`) "
@@ -1323,12 +1333,6 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
                 "gates": _early_plan_gates(scenes, duration, phrases,
                                            settings, order=order)}
 
-    try:
-        passports = catalog_overlay_passports()
-    except Exception as error:
-        print(f"паспорта накладок не собрались: {error}")
-        passports = ""
-
     board: dict = {}
     scenes: list[dict] = []
     gates: dict = {}
@@ -1339,7 +1343,7 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
         for attempt in range(MAX_PLAN_ATTEMPTS):
             write_brief(rdir, scenario=timed_scenario, face=None,
                         duration=duration, clips=[], phrases=phrases,
-                        overlay_passports=passports, retry_reason=reason,
+                        retry_reason=reason,
                         avatar_ordered=False, islands=islands,
                         attempt=attempt, max_attempts=MAX_PLAN_ATTEMPTS)
             # Ход без плана — такая же причина пересдачи, как и план, не легший
@@ -1461,19 +1465,6 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
     phrases = phrase_timeline(timed_scenario, words,
                               language=timed_scenario.get("language", "ru"))
 
-    # Паспорта их накладок — в задание. Собираются их SDK по каталогу; отказ
-    # каталога не роняет сборку: агент просто останется без накладок.
-    passports_cache: dict[str, str] = {}
-
-    def _passports() -> str:
-        if "text" not in passports_cache:
-            try:
-                passports_cache["text"] = catalog_overlay_passports()
-            except Exception as error:
-                print(f"паспорта накладок не собрались: {error}")
-                passports_cache["text"] = ""
-        return passports_cache["text"]
-
     def prepare() -> None:
         public.mkdir(parents=True, exist_ok=True)
         clips = _place_clips(public, avatar_mp4s, avatar_render_plan, timed_scenario)
@@ -1489,7 +1480,7 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         hf_captions.stage(rdir)
         write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
                     duration=duration, clips=clips, phrases=phrases,
-                    overlay_passports=_passports(), wishes=wishes,
+                    wishes=wishes,
                     attempt=0, max_attempts=MAX_COMPOSE_ATTEMPTS)
         (rdir / "phrases.json").write_text(
             json.dumps(phrases, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -1532,7 +1523,7 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                             face=load_face(rdir), duration=duration,
                             clips=saved_clips, retry_reason=reason,
                             phrases=phrases,
-                            overlay_passports=_passports(), wishes=wishes,
+                            wishes=wishes,
                             attempt=attempt, max_attempts=MAX_COMPOSE_ATTEMPTS)
 
             # Обёртку заводим здесь, а не внутри `plan_with_agent`: там она
