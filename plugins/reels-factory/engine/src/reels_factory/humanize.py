@@ -10,7 +10,7 @@
 import json
 from pathlib import Path
 
-from reels_factory.scenario import _extract_json, ScenarioError
+from reels_factory.scenario import _skill_json, ScenarioError
 
 MODES = ("polish", "phonetics")
 
@@ -39,24 +39,30 @@ HUMANIZING_SPEECH_SCHEMA = {
 }
 
 
-class HumanizeError(Exception):
-    pass
+class HumanizeError(RuntimeError):
+    """RuntimeError, а не голый Exception: обработчики bot.py уже ловят
+    `(ScenarioError, RuntimeError)` вокруг step_scenario/step_verbatim
+    (то же место, что алертит провал писателя) — голый Exception туда не
+    попадал бы и падение хуманайзера/судьи проходило бы мимо и сообщения
+    человеку, и алерта Васе."""
 
 
 def _call_humanizer(runner, workdir, sc: dict, payload: dict) -> dict:
-    """Пишет payload в humanize_task.json, вызывает humanizing-speech,
-    проверяет роли блоков в ответе, возвращает обновлённый сценарий."""
+    """Пишет payload в humanize_task.json, вызывает humanizing-speech через
+    тот же _skill_json, что и писатель (scenario.py) — один повтор на
+    таймаут/сбой claude -p или кривой JSON, а не немедленный провал с первой
+    попытки. Раньше здесь стоял голый runner.run_skill() без повтора —
+    асимметрия с writing-scenario, не заявленная в коммите c7d4b20."""
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
     payload_path = workdir / "humanize_task.json"
     payload_path.write_text(json.dumps(payload, ensure_ascii=False, indent=1),
                              encoding="utf-8")
 
-    reply = runner.run_skill("humanizing-speech", payload_path,
-                             json_schema=HUMANIZING_SPEECH_SCHEMA)
     try:
-        data = _extract_json(reply)
-    except ScenarioError as e:
+        data = _skill_json(runner, "humanizing-speech", payload_path, workdir,
+                           json_schema=HUMANIZING_SPEECH_SCHEMA)
+    except (RuntimeError, ScenarioError) as e:
         raise HumanizeError(str(e)) from e
 
     new_blocks = data.get("blocks")
@@ -93,6 +99,9 @@ def _polish_with_task(runner, workdir, sc: dict, language: str, task: dict) -> d
 
 
 def judge_scenario(runner, workdir, sc: dict, task: dict, language: str) -> dict:
+    """Тот же _skill_json, что и у писателя и у _call_humanizer выше — один
+    повтор на таймаут/сбой claude -p или кривой JSON вместо немедленного
+    провала с первой попытки."""
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
     payload = workdir / "judge_task.json"
@@ -100,10 +109,9 @@ def judge_scenario(runner, workdir, sc: dict, task: dict, language: str) -> dict
         {"language": language, "task": task,
          "blocks": [{"role": b["role"], "speech": b["speech"]} for b in sc["blocks"]]},
         ensure_ascii=False, indent=1), encoding="utf-8")
-    reply = runner.run_skill("judging-script", payload)
     try:
-        v = _extract_json(reply)
-    except ScenarioError as e:
+        v = _skill_json(runner, "judging-script", payload, workdir)
+    except (RuntimeError, ScenarioError) as e:
         raise HumanizeError(f"судья вернул не-JSON: {e}") from e
     if not isinstance(v.get("pass"), bool):
         raise HumanizeError(f"вердикт без поля pass: {v!r}")

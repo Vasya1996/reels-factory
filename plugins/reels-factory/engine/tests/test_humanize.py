@@ -4,6 +4,25 @@ from reels_factory.llm import FakeSkillRunner
 from reels_factory.humanize import humanize_scenario, HumanizeError
 from reels_factory.humanize import judge_scenario, refine_loop
 
+
+class _FlakySkillRunner:
+    """run_skill бросает RuntimeError, пока не кончится fail_times, потом
+    отдаёт reply по очереди — тот же помощник, что и у писателя
+    (test_scenario.py:_FlakySkillRunner), для проверки, что хуманайзер и
+    судья ретраят через тот же _skill_json, что и writing-scenario."""
+
+    def __init__(self, fail_times: int, replies):
+        self.fail_times = fail_times
+        self.replies = list(replies)
+        self.calls = []
+
+    def run_skill(self, skill, payload_path, json_schema=None):
+        self.calls.append((skill, payload_path))
+        if self.fail_times > 0:
+            self.fail_times -= 1
+            raise RuntimeError("claude -p /humanizing-speech не ответил за 600с (таймаут)")
+        return self.replies.pop(0)
+
 SC = {"mode": "verbatim", "blocks": [
     {"role": "hook", "start": 0.0, "end": 2.0, "speech": "Мы внедрили Microsoft CRM."},
     {"role": "development", "start": 2.0, "end": 5.0, "speech": "Продажи выросли."},
@@ -137,3 +156,62 @@ def test_refine_loop_exhaust_picks_attempt_with_fewer_fails(tmp_path):
     assert len(log["attempts"]) == 2
     assert log["attempts"][0]["scenario"]["blocks"][0]["speech"] == "v1"
     assert log["attempts"][1]["scenario"]["blocks"][0]["speech"] == "v2"
+
+
+# --- дефект 2 независимой проверки: хуманайзер и судья ретраят так же, как
+# писатель (scenario.py:_skill_json), а не проваливаются с первой попытки ---
+
+def test_хуманайзер_первая_попытка_таймаут_вторая_успешна(tmp_path):
+    """Первый вызов humanizing-speech таймаутится (RuntimeError), второй
+    отвечает нормально — _call_humanizer теперь ретраит его через тот же
+    _skill_json, что и writing-scenario, вместо немедленного провала."""
+    reply = json.dumps({"blocks": [
+        {"role": "hook", "speech": "Хук v2"},
+        {"role": "development", "speech": "Развитие v2"},
+    ]}, ensure_ascii=False)
+    runner = _FlakySkillRunner(1, [reply])
+
+    out = humanize_scenario(runner, tmp_path, SC, mode="polish", language="ru")
+
+    assert out["blocks"][0]["speech"] == "Хук v2"
+    assert [c[0] for c in runner.calls] == ["humanizing-speech", "humanizing-speech"]
+
+
+def test_хуманайзер_обе_попытки_проваливаются_runtimeerror_наружу(tmp_path):
+    """Обе попытки провалились — исключение уходит наружу (HumanizeError,
+    подкласс RuntimeError — тот же except, что уже алертит провал писателя
+    в bot.py), вызовов ровно два, не больше."""
+    runner = _FlakySkillRunner(2, [])
+
+    with pytest.raises(RuntimeError, match="не ответил за 600с"):
+        humanize_scenario(runner, tmp_path, SC, mode="polish", language="ru")
+
+    assert len(runner.calls) == 2
+
+
+def test_HumanizeError_подкласс_runtimeerror():
+    """bot.py ловит провал сборки сценария как `(ScenarioError,
+    RuntimeError)` — HumanizeError обязан попадать под это же except,
+    иначе падение хуманайзера/судьи проходит мимо и сообщения человеку, и
+    алерта Васе."""
+    assert issubclass(HumanizeError, RuntimeError)
+
+
+def test_судья_первая_попытка_таймаут_вторая_успешна(tmp_path):
+    sc = {"blocks": [{"role": "hook", "start": 0.0, "end": 2.0, "speech": "х"}]}
+    runner = _FlakySkillRunner(1, [VERDICT_PASS])
+
+    v = judge_scenario(runner, tmp_path, sc, TASK, "ru")
+
+    assert v["pass"] is True
+    assert len(runner.calls) == 2
+
+
+def test_судья_обе_попытки_проваливаются_runtimeerror_наружу(tmp_path):
+    sc = {"blocks": [{"role": "hook", "start": 0.0, "end": 2.0, "speech": "х"}]}
+    runner = _FlakySkillRunner(2, [])
+
+    with pytest.raises(RuntimeError, match="не ответил за 600с"):
+        judge_scenario(runner, tmp_path, sc, TASK, "ru")
+
+    assert len(runner.calls) == 2
