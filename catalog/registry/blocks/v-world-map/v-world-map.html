@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <title>World Map -- portrait</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        background: #0f172a;
+      }
+
+      /* Google Fonts <link> removed (rule: strip external font refs);
+         gap filled by the family the engine already renders Cyrillic
+         through, declared twice per the schema-forms convention. */
+      #v-world-map {
+        position: relative;
+        width: 1080px;
+        height: 1920px;
+        background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
+        font-family: "Manrope", sans-serif;
+        --mk-font: "Manrope", sans-serif;
+        color: #f0fdfa;
+        overflow: hidden;
+      }
+
+      /* portrait: content column pushed down to the safe-zone top
+         boundary (y=230, 12% of 1920) plus a 32px buffer; every offset
+         below is measured from that new baseline, not the raw canvas
+         top, so nothing sits in the platform status-bar strip. */
+      #v-world-map .headline {
+        position: absolute;
+        top: 262px;
+        left: 32px;
+        font-size: 68px;
+        line-height: 1.15;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: #f0fdfa;
+        clip-path: inset(0 100% 0 0);
+      }
+
+      /* top allows for a two-line headline (agent-supplied text length is
+         not known ahead of time; a 30-char Cyrillic phrase wraps at this
+         width/font-size, confirmed by snapshot) plus a two-line subtitle
+         of its own, so neither ever collides with the map below it. */
+      #v-world-map .subtitle {
+        position: absolute;
+        top: 440px;
+        left: 32px;
+        font-size: 28px;
+        line-height: 1.2;
+        font-weight: 300;
+        /* lightened from the source #94a3b8: that color gives this text
+           2.15:1 on the dark background, under the 4.5:1 AA floor their
+           contrast-audit enforces (pre-existing in the landscape source
+           too, confirmed against it unmodified) */
+        color: #cbd5e1;
+        opacity: 0;
+      }
+
+      /* map box width fit to canvas width 1080 with 32px side padding
+         (24-36px band); height kept at the source's own 1380:700 map
+         aspect ratio, not scaled, so the geography is not stretched. */
+      #v-world-map .map-container {
+        position: absolute;
+        top: 548px;
+        left: 32px;
+        width: 1016px;
+        height: 516px;
+      }
+
+      #v-world-map .map-container svg {
+        width: 1016px;
+        height: 516px;
+      }
+
+      #v-world-map .country-path {
+        stroke: #1e293b;
+        stroke-width: 0.6;
+        opacity: 0;
+        cursor: default;
+      }
+
+      #v-world-map .ocean {
+        fill: none;
+      }
+
+      #v-world-map .graticule {
+        fill: none;
+        stroke: #1e293b;
+        stroke-width: 0.3;
+        stroke-opacity: 0.4;
+      }
+
+      /* below the map, not pinned to the canvas bottom: with the extra
+         portrait height there is no reason to crowd the bottom 22%
+         platform-UI band, so this sits right under the map instead. */
+      #v-world-map .legend-group {
+        position: absolute;
+        top: 1128px;
+        right: 32px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 12px;
+        opacity: 0;
+      }
+
+      #v-world-map .legend-bar {
+        width: 364px;
+        height: 20px;
+        border-radius: 8px;
+      }
+
+      #v-world-map .legend-labels {
+        display: flex;
+        justify-content: space-between;
+        width: 364px;
+        font-size: 16px;
+        font-weight: 500;
+        color: #cbd5e1;
+      }
+
+      #v-world-map .source {
+        position: absolute;
+        top: 1208px;
+        left: 32px;
+        font-size: 16px;
+        font-weight: 400;
+        /* lightened from the source #475569 for the same reason as
+           .subtitle above: 2.17:1 on this background, under the 4.5:1
+           AA floor (pre-existing in the landscape source too) */
+        color: #cbd5e1;
+        opacity: 0;
+      }
+
+      #v-world-map .tooltip {
+        position: absolute;
+        pointer-events: none;
+        background: rgba(15, 23, 42, 0.92);
+        border: 1px solid #334155;
+        border-radius: 12px;
+        padding: 12px 20px;
+        font-size: 20px;
+        font-weight: 500;
+        color: #f0fdfa;
+        white-space: nowrap;
+        opacity: 0;
+        transform: translateY(4px);
+        backdrop-filter: blur(8px);
+        z-index: 10;
+      }
+
+      #v-world-map .tooltip .tt-value {
+        color: #22d3ee;
+        font-weight: 600;
+        margin-left: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="v-world-map"
+      data-composition-id="v-world-map"
+      data-width="1080"
+      data-height="1920"
+      data-start="0"
+      data-duration="14"
+    >
+      <h1 class="headline">Global GDP per Capita</h1>
+      <p class="subtitle">Nominal GDP per capita, 2024 IMF estimates</p>
+
+      <div class="map-container">
+        <svg id="v-world-map-svg"></svg>
+      </div>
+
+      <div class="legend-group">
+        <div
+          class="legend-bar"
+          style="
+            background: linear-gradient(90deg, #064e3b 0%, #0d9488 33%, #22d3ee 66%, #f0fdfa 100%);
+          "
+        ></div>
+        <div class="legend-labels">
+          <span>Low</span>
+          <span>High</span>
+        </div>
+      </div>
+
+      <p class="source">Source: International Monetary Fund</p>
+
+      <div class="tooltip"></div>
+    </div>
+
+    <script>
+      (function () {
+        /* ── GDP per capita data (2024 IMF estimates, USD) ── */
+        /* Keys are ISO 3166-1 numeric codes as strings (3-digit, zero-padded) */
+        var gdpData = {
+          840: { name: "United States", gdp: 85373 },
+          156: { name: "China", gdp: 13136 },
+          356: { name: "India", gdp: 2731 },
+          276: { name: "Germany", gdp: 54291 },
+          826: { name: "United Kingdom", gdp: 48913 },
+          250: { name: "France", gdp: 44408 },
+          392: { name: "Japan", gdp: 33950 },
+          "076": { name: "Brazil", gdp: 10412 },
+          "036": { name: "Australia", gdp: 65366 },
+          124: { name: "Canada", gdp: 54866 },
+          643: { name: "Russia", gdp: 14403 },
+          410: { name: "South Korea", gdp: 33147 },
+          484: { name: "Mexico", gdp: 13434 },
+          360: { name: "Indonesia", gdp: 5108 },
+          566: { name: "Nigeria", gdp: 1621 },
+          710: { name: "South Africa", gdp: 6190 },
+          818: { name: "Egypt", gdp: 4295 },
+          792: { name: "Turkey", gdp: 13110 },
+          682: { name: "Saudi Arabia", gdp: 32270 },
+          764: { name: "Thailand", gdp: 7647 },
+          704: { name: "Vietnam", gdp: 4623 },
+          616: { name: "Poland", gdp: 22393 },
+          752: { name: "Sweden", gdp: 59324 },
+          578: { name: "Norway", gdp: 94660 },
+          756: { name: "Switzerland", gdp: 105669 },
+          "032": { name: "Argentina", gdp: 13709 },
+          170: { name: "Colombia", gdp: 7230 },
+          404: { name: "Kenya", gdp: 2198 },
+          586: { name: "Pakistan", gdp: 1658 },
+          "050": { name: "Bangladesh", gdp: 2688 },
+        };
+
+        /* Top 5 GDP countries for highlight pulse */
+        var top5Codes = ["756", "578", "840", "036", "752"];
+
+        /* GDP range for color scale */
+        var gdpValues = [];
+        var codes = Object.keys(gdpData);
+        for (var i = 0; i < codes.length; i++) {
+          gdpValues.push(gdpData[codes[i]].gdp);
+        }
+        var minGdp = Math.min.apply(null, gdpValues);
+        var maxGdp = Math.max.apply(null, gdpValues);
+
+        /* Color interpolation: green → teal → cyan → white */
+        var colorStops = [
+          { r: 6, g: 78, b: 59 },
+          { r: 13, g: 148, b: 136 },
+          { r: 34, g: 211, b: 238 },
+          { r: 240, g: 253, b: 250 },
+        ];
+
+        function gdpToColor(value) {
+          var t = (value - minGdp) / (maxGdp - minGdp);
+          t = Math.max(0, Math.min(1, t));
+          var scaledT = t * (colorStops.length - 1);
+          var idx = Math.floor(scaledT);
+          if (idx >= colorStops.length - 1) idx = colorStops.length - 2;
+          var localT = scaledT - idx;
+          var c0 = colorStops[idx];
+          var c1 = colorStops[idx + 1];
+          var r = Math.round(c0.r + (c1.r - c0.r) * localT);
+          var g = Math.round(c0.g + (c1.g - c0.g) * localT);
+          var b = Math.round(c0.b + (c1.b - c0.b) * localT);
+          return "rgb(" + r + "," + g + "," + b + ")";
+        }
+
+        /* Default fill for countries without data */
+        var defaultFill = "#1e293b";
+
+        /* ── Build the map ── */
+        var svg = d3
+          .select("#v-world-map-svg")
+          .attr("viewBox", "0 0 1016 516")
+          .attr("preserveAspectRatio", "xMidYMid meet");
+
+        var projection = d3.geoNaturalEarth1().fitSize([1016, 516], { type: "Sphere" });
+
+        var pathGenerator = d3.geoPath().projection(projection);
+
+        /* Graticule */
+        var graticule = d3.geoGraticule10();
+        svg.append("path").datum(graticule).attr("class", "graticule").attr("d", pathGenerator);
+
+        /* Tooltip element */
+        var tooltipEl = document.querySelector("#v-world-map .tooltip");
+
+        /* Fetch topology and render countries */
+        d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json").then(
+          function (world) {
+            var countries = topojson.feature(world, world.objects.countries).features;
+
+            svg
+              .selectAll(".country-path")
+              .data(countries)
+              .enter()
+              .append("path")
+              .attr("class", "country-path")
+              .attr("d", pathGenerator)
+              .attr("data-country", function (d) {
+                return String(d.id).padStart(3, "0");
+              })
+              .attr("fill", function (d) {
+                var code = String(d.id).padStart(3, "0");
+                if (gdpData[code]) {
+                  return gdpToColor(gdpData[code].gdp);
+                }
+                return defaultFill;
+              })
+              .on("mouseenter", function (event, d) {
+                var code = String(d.id).padStart(3, "0");
+                if (gdpData[code]) {
+                  var entry = gdpData[code];
+                  tooltipEl.innerHTML =
+                    entry.name +
+                    '<span class="tt-value">$' +
+                    entry.gdp.toLocaleString() +
+                    "</span>";
+                  tooltipEl.style.opacity = "1";
+                  tooltipEl.style.transform = "translateY(0)";
+                }
+              })
+              .on("mousemove", function (event) {
+                var container = document.querySelector("#v-world-map");
+                var rect = container.getBoundingClientRect();
+                var x = event.clientX - rect.left + 16;
+                var y = event.clientY - rect.top - 40;
+                tooltipEl.style.left = x + "px";
+                tooltipEl.style.top = y + "px";
+              })
+              .on("mouseleave", function () {
+                tooltipEl.style.opacity = "0";
+                tooltipEl.style.transform = "translateY(4px)";
+              });
+
+            /* ── GSAP Timeline ── */
+            buildTimeline();
+          },
+        );
+
+        function buildTimeline() {
+          var tl = gsap.timeline({ paused: true });
+
+          /* 0s: Headline clip-path wipe reveal (1s) */
+          tl.to(
+            "#v-world-map .headline",
+            {
+              clipPath: "inset(0 0% 0 0)",
+              duration: 1,
+              ease: "power3.inOut",
+            },
+            0,
+          );
+
+          /* 0.4s: Subtitle fade in (0.6s) */
+          tl.to(
+            "#v-world-map .subtitle",
+            {
+              opacity: 1,
+              duration: 0.6,
+              ease: "power2.out",
+            },
+            0.4,
+          );
+
+          /* 1.0s: Countries stagger reveal */
+          tl.to(
+            "#v-world-map .country-path",
+            {
+              opacity: 1,
+              duration: 0.3,
+              stagger: {
+                each: 0.02,
+                from: "center",
+              },
+              ease: "power1.out",
+            },
+            1.0,
+          );
+
+          /* 4.0s: Legend fade in */
+          tl.to(
+            "#v-world-map .legend-group",
+            {
+              opacity: 1,
+              duration: 0.6,
+              ease: "power2.out",
+            },
+            4.0,
+          );
+
+          /* 4.5s: Source fade in */
+          tl.to(
+            "#v-world-map .source",
+            {
+              opacity: 1,
+              duration: 0.5,
+              ease: "power2.out",
+            },
+            4.5,
+          );
+
+          /* 5.0s: Highlight pulse on top 5 GDP countries */
+          for (var i = 0; i < top5Codes.length; i++) {
+            var selector = '#v-world-map [data-country="' + top5Codes[i] + '"]';
+
+            /* Pulse up: brightness + white stroke */
+            tl.to(
+              selector,
+              {
+                filter: "brightness(1.5)",
+                stroke: "#ffffff",
+                strokeWidth: 1.8,
+                duration: 0.4,
+                ease: "power2.out",
+              },
+              5.0 + i * 0.15,
+            );
+
+            /* Pulse back to normal */
+            tl.to(
+              selector,
+              {
+                filter: "brightness(1)",
+                stroke: "#1e293b",
+                strokeWidth: 0.6,
+                duration: 0.6,
+                ease: "power2.inOut",
+              },
+              5.0 + i * 0.15 + 0.4,
+            );
+          }
+
+          /* Register timeline */
+          if (!window.__timelines) {
+            window.__timelines = {};
+          }
+          window.__timelines["v-world-map"] = tl;
+        }
+      })();
+    </script>
+  </body>
+</html>

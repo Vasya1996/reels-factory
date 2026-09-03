@@ -1,0 +1,37 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "v-code-snippet-apple-terminal-basic",
+  "type": "hyperframes:block",
+  "title": "Code Snippet - Apple Terminal Basic",
+  "description": "Apple Terminal Basic profile: white background, black text, per-character typing animation of a shell session. portrait port of code-snippet-apple-terminal-basic",
+  "tags": ["code", "developer", "showcase", "terminal", "apple", "apple-terminal", "portrait"],
+  "dimensions": {
+    "width": 1080,
+    "height": 1920
+  },
+  "duration": 12,
+  "files": [
+    {
+      "path": "v-code-snippet-apple-terminal-basic.html",
+      "target": "compositions/v-code-snippet-apple-terminal-basic.html",
+      "type": "hyperframes:composition"
+    }
+  ],
+  "reels": {
+    "kind": "scene",
+    "text_slots": ["bash — 80×24", "ls -la"],
+    "decor_texts": [
+      "user@Mac ~ % ",
+      "Last login: Mon Jun 2 09:14:22 on ttys001",
+      "total 48",
+      "drwxr-xr-x 8 user staff 256 Jun 2 09:10 .",
+      "drwxr-xr-x 42 user staff 1344 Jun 1 18:22 ..",
+      "-rw-r--r-- 1 user staff 872 May 30 14:05 README.md",
+      "drwxr-xr-x 5 user staff 160 Jun 2 09:10 dist",
+      "drwxr-xr-x 12 user staff 384 Jun 2 09:10 node_modules",
+      "-rw-r--r-- 1 user staff 1204 Jun 2 09:08 package.json",
+      "drwxr-xr-x 6 user staff 192 Jun 2 09:10 src",
+      "-rw-r--r-- 1 user staff 348 May 29 11:42 tsconfig.json"
+    ]
+  }
+}

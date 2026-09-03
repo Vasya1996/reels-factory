@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Bar Chart Race -- portrait</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        background-color: #f5f3ef;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="bcr-root"
+      data-composition-id="v-bar-chart-race"
+      data-width="1080"
+      data-height="1920"
+      data-start="0"
+      data-duration="12"
+      data-composition-variables='[
+        {"id":"title","type":"string","label":"Title","default":"Streaming Subscribers by Service"},
+        {"id":"subtitle","type":"string","label":"Subtitle","default":"Ranked by reported subscribers"},
+        {"id":"periods","type":"string","label":"Period labels (comma separated)","default":"2019, 2020, 2021, 2022, 2023, 2024"},
+        {"id":"series","type":"string","label":"Series (one per line: Name: v1, v2, ...)","default":"Northwind: 42, 58, 71, 96, 118, 131\nCobalt: 30, 46, 68, 92, 126, 168\nFerry: 55, 62, 66, 70, 74, 79\nMarlow: 18, 33, 52, 61, 88, 104\nAster: 25, 28, 44, 58, 63, 72\nPell: 12, 20, 39, 47, 55, 90\nQuill: 8, 11, 15, 24, 40, 66\nDunmore: 35, 37, 38, 40, 42, 44"},
+        {"id":"barCount","type":"number","label":"Bars shown","default":6,"min":3,"max":12,"step":1},
+        {"id":"periodDuration","type":"number","label":"Seconds per period","default":2,"min":0.4,"max":6,"step":0.1},
+        {"id":"valuePrefix","type":"string","label":"Value prefix","default":"$"},
+        {"id":"valueSuffix","type":"string","label":"Value suffix","default":"M"},
+        {"id":"valueDecimals","type":"number","label":"Value decimals","default":0,"min":0,"max":3,"step":1},
+        {"id":"accent","type":"color","label":"Leader accent","default":"#c8452d"}
+      ]'
+    >
+      <div id="bcr-stage" class="clip" data-start="0" data-duration="12" data-track-index="0">
+        <div id="bcr-bg"></div>
+
+        <div id="bcr-head">
+          <div id="bcr-head-left">
+            <h1 id="bcr-title">Streaming Subscribers by Service</h1>
+            <p id="bcr-subtitle">Ranked by reported subscribers</p>
+          </div>
+          <div id="bcr-head-right">
+            <span id="bcr-period-caption">Period</span>
+            <span id="bcr-period">2019</span>
+          </div>
+        </div>
+
+        <!-- Rows live here, one per series, positioned by rank. -->
+        <div id="bcr-plot"></div>
+
+        <!-- Axis is painted above the rows: the tick labels sliding left is the
+             visible evidence that the scale is rescaling as values climb. -->
+        <div id="bcr-axis"></div>
+
+        <p id="bcr-source">Placeholder data</p>
+      </div>
+
+      <style>
+        #bcr-root {
+          position: relative;
+          width: 1080px;
+          height: 1920px;
+          overflow: hidden;
+          font-family: Inter, sans-serif;
+          color: #1f1d1b;
+        }
+
+        #bcr-stage {
+          position: absolute;
+          inset: 0;
+        }
+
+        /* Scene fill goes on a full-bleed child, never the composition root. */
+        #bcr-bg {
+          position: absolute;
+          inset: 0;
+          background-color: #f5f3ef;
+        }
+
+        /* portrait: header pushed down to the safe zone top boundary
+           (y=230, 12% of 1920) plus the scaled 58px landscape offset, so
+           nothing sits in the platform status-bar strip; width fit to 1080
+           with 32px side padding (24-36px band), not scaled. */
+        #bcr-head {
+          position: absolute;
+          top: 306px;
+          left: 32px;
+          width: 1016px;
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+        }
+
+        #bcr-title {
+          font-size: 60px;
+          font-weight: 700;
+          letter-spacing: -0.015em;
+          line-height: 1.1;
+        }
+
+        #bcr-subtitle {
+          margin-top: 12px;
+          font-size: 24px;
+          font-weight: 400;
+          color: #6b6560;
+        }
+
+        #bcr-head-right {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+        }
+
+        #bcr-period-caption {
+          font-size: 20px;
+          font-weight: 600;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          color: #6b6560;
+        }
+
+        #bcr-period {
+          margin-top: 4px;
+          font-size: 92px;
+          font-weight: 700;
+          line-height: 1;
+          font-variant-numeric: tabular-nums;
+          letter-spacing: -0.02em;
+        }
+
+        /* plot area: bottom edge held inside the safe zone (y=1498, 78%
+           of 1920) with room left below for #bcr-source; PLOT_H is mirrored
+           into the JS geometry constant below, not just this CSS box. */
+        #bcr-plot {
+          position: absolute;
+          left: 0;
+          top: 560px;
+          width: 1080px;
+          height: 880px;
+          overflow: hidden;
+        }
+
+        .bcr-row {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 1080px;
+        }
+
+        /* Rows are transparent so both bars of an overtake stay visible sliding
+           past each other; only the two TEXT blocks carry an opaque backing, so
+           the front row's label covers the one it crosses instead of tangling
+           with it. */
+        .bcr-name {
+          position: absolute;
+          left: 32px;
+          width: 260px;
+          top: 50%;
+          transform: translateY(-50%);
+          text-align: right;
+          font-size: 32px;
+          font-weight: 600;
+          line-height: 1.7;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          background-color: #f5f3ef;
+        }
+
+        .bcr-bar {
+          position: absolute;
+          left: 332px;
+          top: 50%;
+          transform: translateY(-50%);
+          border-radius: 3px;
+          background-color: #1f1d1b;
+        }
+
+        .bcr-value {
+          position: absolute;
+          left: 336px;
+          top: 50%;
+          padding: 0 12px;
+          font-size: 32px;
+          font-weight: 600;
+          line-height: 1.7;
+          font-variant-numeric: tabular-nums;
+          white-space: nowrap;
+          background-color: #f5f3ef;
+        }
+
+        #bcr-axis {
+          position: absolute;
+          inset: 0;
+          z-index: 5000;
+        }
+
+        .bcr-tick-line {
+          position: absolute;
+          top: 556px;
+          left: 0;
+          width: 1px;
+          height: 888px;
+          background-color: rgba(31, 29, 27, 0.11);
+        }
+
+        .bcr-tick-line.bcr-tick-zero {
+          background-color: rgba(31, 29, 27, 0.5);
+        }
+
+        .bcr-tick-label {
+          position: absolute;
+          top: 512px;
+          left: 0;
+          font-size: 24px;
+          font-weight: 500;
+          font-variant-numeric: tabular-nums;
+          color: #6b6560;
+          white-space: nowrap;
+        }
+
+        #bcr-source {
+          position: absolute;
+          left: 32px;
+          top: 1460px;
+          font-size: 20px;
+          color: #6b6560;
+        }
+      </style>
+
+      <script src="v-bar-chart-race.js"></script>
+      <script>
+        window.__timelines = window.__timelines || {};
+        window.__timelines["v-bar-chart-race"] = window.__bcrInit();
+      </script>
+    </div>
+  </body>
+</html>

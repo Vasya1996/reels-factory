@@ -1,0 +1,46 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "v-bar-chart-race",
+  "type": "hyperframes:block",
+  "title": "Bar Chart Race",
+  "description": "Ranked bars grow and overtake each other as a time series advances, with the axis rescaling as values climb and the accent handing over to whoever leads. portrait port of bar-chart-race",
+  "tags": ["data", "chart", "statistics", "ranking", "portrait"],
+  "dimensions": {
+    "width": 1080,
+    "height": 1920
+  },
+  "duration": 12,
+  "files": [
+    {
+      "path": "v-bar-chart-race.html",
+      "target": "compositions/v-bar-chart-race.html",
+      "type": "hyperframes:composition"
+    },
+    {
+      "path": "v-bar-chart-race.js",
+      "target": "compositions/v-bar-chart-race.js",
+      "type": "hyperframes:composition"
+    }
+  ],
+  "reels": {
+    "kind": "scene",
+    "text_slots": [
+      "Streaming Subscribers by Service",
+      "Ranked by reported subscribers",
+      "Placeholder data"
+    ],
+    "decor_texts": ["Period"],
+    "variables": {
+      "title": {"type": "string", "default": "Streaming Subscribers by Service"},
+      "subtitle": {"type": "string", "default": "Ranked by reported subscribers"},
+      "periods": {"type": "string", "default": "2019, 2020, 2021, 2022, 2023, 2024"},
+      "series": {"type": "string", "default": "Northwind: 42, 58, 71, 96, 118, 131\nCobalt: 30, 46, 68, 92, 126, 168\nFerry: 55, 62, 66, 70, 74, 79\nMarlow: 18, 33, 52, 61, 88, 104\nAster: 25, 28, 44, 58, 63, 72\nPell: 12, 20, 39, 47, 55, 90\nQuill: 8, 11, 15, 24, 40, 66\nDunmore: 35, 37, 38, 40, 42, 44"},
+      "barCount": {"type": "number", "default": 6, "min": 3, "max": 12, "step": 1},
+      "periodDuration": {"type": "number", "default": 2, "min": 0.4, "max": 6, "step": 0.1},
+      "valuePrefix": {"type": "string", "default": "$"},
+      "valueSuffix": {"type": "string", "default": "M"},
+      "valueDecimals": {"type": "number", "default": 0, "min": 0, "max": 3, "step": 1},
+      "accent": {"type": "color", "default": "#c8452d"}
+    }
+  }
+}

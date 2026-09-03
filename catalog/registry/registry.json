@@ -264,6 +264,26 @@
       "type": "hyperframes:block"
     },
     {
+      "name": "v-code-snippet-apple-terminal-basic",
+      "type": "hyperframes:block"
+    },
+    {
+      "name": "v-code-diff",
+      "type": "hyperframes:block"
+    },
+    {
+      "name": "v-world-map",
+      "type": "hyperframes:block"
+    },
+    {
+      "name": "v-bar-chart-race",
+      "type": "hyperframes:block"
+    },
+    {
+      "name": "v-macos-notification",
+      "type": "hyperframes:block"
+    },
+    {
       "name": "ai-generation-canvas",
       "type": "hyperframes:component"
     },
