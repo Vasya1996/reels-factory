@@ -7,6 +7,10 @@ run_make() гонит стадии подряд; при исключении н�
 "error"}. DI на внешние ресурсы (synth/avatar/assemble/covered_block) —
 тестируемо без сети/ffmpeg. verify_reel не параметр (детерминированная QA-логика).
 
+{"ok": True, "qa_pass": False, ...} — тоже штатный исход, не отказ: файл
+собрался и прошёл до конца, но какой-то гейт красный. С работы 05 такой ролик
+`bot.py` доставляет как обычный, а изъян остаётся в `gates`/result_json.
+
 При ``RF_MASTER_AUDIO_ENABLED=1`` (либо ``master_audio.enabled: true``) весь
 утверждённый сценарий озвучивается одним ElevenLabs request. По alignment из
 master WAV режутся технические block WAV только для переходного HeyGen-пути;
@@ -707,6 +711,11 @@ def run_make(config: dict, workdir,
         except Exception as e:
             return fail("verify", e)
 
+        # `qa_pass: False` рядом с `ok: True` — штатный исход, не отказ
+        # (решение 05): ведущая куплена, гейт остаётся FAIL честно, а решает,
+        # доставлять ли ролик с изъяном, уже `bot.py` — здесь только отчёт.
+        # `gates` и причина пересдачи (записана строкой выше) едут в него как
+        # есть, красными вердиктами.
         return {
             "ok": True,
             "workdir": str(wd),
