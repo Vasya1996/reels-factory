@@ -166,6 +166,10 @@ def _run_plain_avatar(config: dict, wd, scenario: dict, voice_id,
             meter=(meter.elevenlabs if meter is not None else None),
         )
     def order():
+        # Задача 09: веха «ведущая заказана» — единственная точка вызова
+        # HeyGen на этом пути, до неё бот не может сказать человеку ничего
+        # честнее «идёт подготовка».
+        _log("avatar_order")
         mp4 = avatar_client.generate(master.wav, out_mp4)
         if meter is not None:
             meter.heygen(
@@ -589,6 +593,9 @@ def run_make(config: dict, workdir,
                     master_audio_sha256=master_sha256,
                 )
                 save_avatar_render_plan(avatar_render_plan, wd)
+                # Задача 09: веха «ведущая заказана» — план агента посчитан,
+                # HeyGen вызывается прямо следующей строкой.
+                _log("avatar_order")
                 rendered = avatar_render_fn(
                     master.wav,
                     avatar_render_plan,
@@ -603,6 +610,11 @@ def run_make(config: dict, workdir,
                 )
                 avatar_render_manifest = getattr(rendered, "manifest", None)
             else:
+                # Задача 09: тот же путь без островов — веха печатается один
+                # раз перед циклом, а не за каждый блок: заказчику важен факт
+                # начала заказа, а не то, сколько блоков ведущей в ролике.
+                if fmt in ("split", "avatar"):
+                    _log("avatar_order")
                 for i, (b, wav) in enumerate(zip(scenario["blocks"], block_wavs)):
                     if fmt in ("split", "avatar"):
                         role = b.get("role")

@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import json
 import logging
 import re
@@ -108,6 +109,19 @@ class _BotAPI:
             "reply_markup": reply_markup,
             "title": title,
         })
+
+
+class _FakeProc:
+    """Замена subprocess.Popen для run_build (задача 09): готовые строки
+    отдаются как построчный stdout — так же, как их видит `on_line`, читая
+    ЖИВОЙ процесс, а не отчёт после его конца."""
+
+    def __init__(self, lines, returncode=0):
+        self.stdout = iter(f"{line}\n" for line in lines)
+        self.returncode = returncode
+
+    def wait(self):
+        return self.returncode
 
 
 def _press(button, msg):
@@ -2371,15 +2385,11 @@ def test_new_не_бросает_реально_идущий_рендер(work, 
 def test_run_build_зовёт_make_через_subprocess(tmp_path, monkeypatch):
     вызовы = {}
 
-    class Completed:
-        stdout = json.dumps({"ok": True, "mp4": "x", "qa_pass": True})
-        stderr = ""
-
-    def fake_run(cmd, **kw):
+    def fake_popen(cmd, **kw):
         вызовы["cmd"] = cmd
-        return Completed()
+        return _FakeProc([json.dumps({"ok": True, "mp4": "x", "qa_pass": True})])
 
-    monkeypatch.setattr(bot.subprocess, "run", fake_run)
+    monkeypatch.setattr(bot.subprocess, "Popen", fake_popen)
     wd = tmp_path / "wd"
 
     result = bot.run_build(7, wd)
@@ -2392,20 +2402,16 @@ def test_run_build_зовёт_make_через_subprocess(tmp_path, monkeypatch):
 def test_run_build_для_новой_job_использует_immutable_config(tmp_path, monkeypatch):
     вызовы = {}
 
-    class Completed:
-        stdout = json.dumps({"ok": True, "mp4": "x", "qa_pass": True})
-        stderr = ""
-
     wd = tmp_path / "wd"
     wd.mkdir()
     snapshot = wd / "build-config.yaml"
     snapshot.write_text("language: kk", encoding="utf-8")
 
-    def fake_run(cmd, **kw):
+    def fake_popen(cmd, **kw):
         вызовы["cmd"] = cmd
-        return Completed()
+        return _FakeProc([json.dumps({"ok": True, "mp4": "x", "qa_pass": True})])
 
-    monkeypatch.setattr(bot.subprocess, "run", fake_run)
+    monkeypatch.setattr(bot.subprocess, "Popen", fake_popen)
     result = bot.run_build(7, wd)
 
     assert вызовы["cmd"] == [
@@ -2465,11 +2471,12 @@ def test_enqueue_build_без_монтажа_пишет_флаг_в_snapshot(wor
 
 
 def test_run_build_невалидный_json_превращается_в_ошибку(tmp_path, monkeypatch):
-    class Completed:
-        stdout = "Traceback (most recent call last): ..."
-        stderr = "boom"
-
-    monkeypatch.setattr(bot.subprocess, "run", lambda cmd, **kw: Completed())
+    monkeypatch.setattr(
+        bot.subprocess, "Popen",
+        lambda cmd, **kw: _FakeProc(
+            ["Traceback (most recent call last): ...", "boom"]
+        ),
+    )
 
     result = bot.run_build(7, tmp_path / "wd")
 
@@ -2480,13 +2487,13 @@ def test_run_build_невалидный_json_превращается_в_оши�
 def test_run_build_разбирает_json_среди_шума_рендера(tmp_path, monkeypatch):
     """node/vite-рендер пишет свой вывод в stdout движка ДО финального JSON —
     реальный кейс первого платного прогона: успешная сборка выглядела провалом."""
-    class Completed:
-        stdout = ("Render progress, worker 0: 99%\n"
-                  "Rendered video to C:\\work\\reel.mp4\n"
-                  + json.dumps({"ok": True, "mp4": "x", "qa_pass": True}) + "\n")
-        stderr = "[make] assemble"
-
-    monkeypatch.setattr(bot.subprocess, "run", lambda cmd, **kw: Completed())
+    lines = [
+        "Render progress, worker 0: 99%",
+        "Rendered video to C:\\work\\reel.mp4",
+        "[make] assemble",
+        json.dumps({"ok": True, "mp4": "x", "qa_pass": True}),
+    ]
+    monkeypatch.setattr(bot.subprocess, "Popen", lambda cmd, **kw: _FakeProc(lines))
 
     result = bot.run_build(7, tmp_path / "wd")
 
@@ -2498,13 +2505,15 @@ def test_run_build_логирует_stderr_движка_даже_при_успе
     JSON — оба денежных предупреждения (_build_meter, _billable_seconds)
     пишутся в stderr движка и терялись при успешной сборке, потому что их
     никто не читал. Теперь стадийные логи и предупреждения обязаны попасть
-    в логгер бота, даже если сборка ok."""
-    class Completed:
-        stdout = json.dumps({"ok": True, "mp4": "x", "qa_pass": True})
-        stderr = ("[make] job.input.json повреждён, учёт трат отключён: "
-                   "boom\n[make] assemble")
-
-    monkeypatch.setattr(bot.subprocess, "run", lambda cmd, **kw: Completed())
+    в логгер бота, даже если сборка ok. С задачи 09 stderr движка слит с
+    stdout в один поток (Popen(stderr=STDOUT)) — построчный `on_line` должен
+    видеть и его тоже, не только финальный JSON."""
+    lines = [
+        "[make] job.input.json повреждён, учёт трат отключён: boom",
+        "[make] assemble",
+        json.dumps({"ok": True, "mp4": "x", "qa_pass": True}),
+    ]
+    monkeypatch.setattr(bot.subprocess, "Popen", lambda cmd, **kw: _FakeProc(lines))
 
     with caplog.at_level(logging.WARNING):
         result = bot.run_build(7, tmp_path / "wd")
@@ -2512,6 +2521,91 @@ def test_run_build_логирует_stderr_движка_даже_при_успе
     assert result == {"ok": True, "mp4": "x", "qa_pass": True}
     assert "job.input.json повреждён" in caplog.text
     assert "[make] assemble" in caplog.text
+
+
+def test_run_build_читает_строки_вехами_по_мере_поступления(tmp_path, monkeypatch):
+    """on_line (задача 09) видит каждую строку живого stdout, а не только
+    итоговый JSON после конца процесса — включая шум node/vite-рендера."""
+    lines = [
+        "[make] plan",
+        "[make] avatar_order",
+        "Render progress, worker 0: 50%",
+        "[make] assemble",
+        json.dumps({"ok": True, "mp4": "x", "qa_pass": True}),
+    ]
+    monkeypatch.setattr(bot.subprocess, "Popen", lambda cmd, **kw: _FakeProc(lines))
+    видено = []
+
+    result = bot.run_build(7, tmp_path / "wd", on_line=видено.append)
+
+    assert видено == lines
+    assert result == {"ok": True, "mp4": "x", "qa_pass": True}
+
+
+def test_вехи_сборки_шлют_два_сообщения_в_нужном_порядке(work, клиент, monkeypatch):
+    """Задача 09: между RUNNING_MSG и готовым файлом сборка молчит 15-50
+    минут. Обе вехи, которые печатает движок ([make] avatar_order и
+    [make] assemble — pipeline.py), обязаны обернуться ровно двумя
+    сообщениями человеку, в том порядке, в котором подпроцесс их напечатал —
+    остальные строки (шум node/vite-рендера, другие [make]-стадии) не
+    должны звать бота вовсе."""
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    job = _claim_job()
+    (job.workdir / "reel.mp4").write_bytes(b"x")
+    lines = [
+        "[make] plan",
+        "[make] avatar_order",
+        "Render progress, worker 0: 10%",
+        "[make] assemble",
+        json.dumps({"ok": True, "mp4": str(job.workdir / "reel.mp4"),
+                    "qa_pass": True}),
+    ]
+    monkeypatch.setattr(bot.subprocess, "Popen", lambda cmd, **kw: _FakeProc(lines))
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job))
+
+    вехи = [text for _, text in api.messages
+            if text in (bot.AVATAR_ORDER_STAGE_MSG, bot.ASSEMBLE_STAGE_MSG)]
+    assert вехи == [bot.AVATAR_ORDER_STAGE_MSG, bot.ASSEMBLE_STAGE_MSG]
+
+
+def test_вехи_сборки_не_дублируются_на_возобновлённом_прогоне(
+    work, клиент, monkeypatch
+):
+    """Возобновлённая job (кнопка продолжения, перезапуск сервиса) собирает
+    ту же папку заново и печатает те же строки-вехи с начала стадии — маркер
+    на диске (hf_render.run_step, тот же механизм, что бережёт заказ ведущей
+    от повторной покупки) обязан погасить повтор сообщения."""
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    job = _claim_job()
+    lines = ["[make] avatar_order", "[make] assemble"]
+    monkeypatch.setattr(
+        bot.subprocess, "Popen",
+        lambda cmd, **kw: _FakeProc(
+            lines + [json.dumps({"ok": False, "stage": "assemble",
+                                 "error": "рендер лёг"})]
+        ),
+    )
+
+    api1 = _BotAPI()
+    asyncio.run(bot._process_job(api1, job))
+    первый_прогон = [text for _, text in api1.messages
+                     if text in (bot.AVATAR_ORDER_STAGE_MSG, bot.ASSEMBLE_STAGE_MSG)]
+    assert первый_прогон == [bot.AVATAR_ORDER_STAGE_MSG, bot.ASSEMBLE_STAGE_MSG]
+
+    # Та же папка (job.workdir) собирается ещё раз — ровно то, что переживает
+    # RESUMABLE-job после отказа: маркеры вех остаются на диске между прогонами.
+    возобновлённая = dataclasses.replace(job, status="failed")
+    api2 = _BotAPI()
+    asyncio.run(bot._process_job(api2, возобновлённая))
+    повтор = [text for _, text in api2.messages
+             if text in (bot.AVATAR_ORDER_STAGE_MSG, bot.ASSEMBLE_STAGE_MSG)]
+    assert повтор == []
 
 
 def test_профиль_клиента_готов(tmp_path, monkeypatch):

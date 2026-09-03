@@ -57,7 +57,7 @@ from reels_factory.config import (
     load_config,
 )
 from reels_factory.feedback import FeedbackStore
-from reels_factory.hf_render import reset_montage_steps
+from reels_factory.hf_render import reset_montage_steps, run_step
 from reels_factory.jobs import RESUMABLE_STATUSES, BuildJob, JobStore
 from reels_factory.language import (
     SUPPORTED_LANGUAGES,
@@ -414,6 +414,15 @@ RENDER_QUEUED_MSG = (
 )
 AUDIO_ACTION_STALE = "Эта кнопка уже не относится к текущему этапу ролика."
 RUNNING_MSG = "Начинаю сборку ролика. Это займёт несколько минут…"
+#: Задача 09: между RUNNING_MSG и готовым файлом сборка идёт 15-50 минут
+#: молча. Две вехи движок печатает сам (`_log("avatar_order")` и
+#: `_log("assemble")` в pipeline.py) — на них уходит ровно по одному
+#: сообщению, на остальные стадии ничего. Числа — из журнала прогонов, не
+#: гейт: рендер HyperFrames на свободном сервере занимает ~15 минут, заказ
+#: ведущей у HeyGen — 10-30 минут (переменная длина: минуты видео и очередь
+#: у них), итого путь целиком укладывается в 35-55 минут.
+AVATAR_ORDER_STAGE_MSG = "Снимаю ведущую — это 10–30 минут."
+ASSEMBLE_STAGE_MSG = "Монтирую ролик — ещё 10–20 минут."
 BUSY_MSG = "Предыдущий ролик ещё не завершён — сначала закончим его текущий этап."
 CANCELLED_PENDING_MSG = (
     "Предыдущий ролик ждал вашего решения — отменил его. Начинаем новый."
@@ -1423,41 +1432,68 @@ def enqueue_build(
         raise
 
 
-def run_build(chat_id: int, workdir: Path) -> dict:
+def run_build(chat_id: int, workdir: Path, on_line=None) -> dict:
     """Сборка ролика — чёрный ящик Юли: `python -m reels_factory make` тем же
     питоном, что и бот, cwd не задаём — наследуем cwd бота (корень рабочей
     площадки), как и требует движок. Разбираем JSON из stdout; если разобрать
     не вышло (сбой на середине без валидного ответа) — честная ошибка из
-    stderr/stdout."""
+    того же вывода.
+
+    stderr слит в тот же поток, что и stdout (задача 09): и вехи сборки
+    (`[make] …` из pipeline.py), и предупреждения о деньгах читаются построчно,
+    ПОКА процесс идёт, а не только после его конца — иначе `on_line` узнавал бы
+    о заказе ведущей и начале монтажа тогда же, когда и весь остальной вывод, то
+    есть после того, как уже поздно было бы о них сказать человеку. Раздельные
+    stdout/stderr пришлось бы читать двумя потоками — реальный риск дедлока,
+    если дочерний процесс заполнит второй, никем не читаемый канал раньше, чем
+    первый закроется; общий канал этого риска не несёт.
+
+    ``on_line`` вызывается на каждой строке склеенного вывода по мере
+    поступления; сбой в нём не должен ронять сборку — только предупреждение в
+    лог."""
     config_path = Path(workdir) / "build-config.yaml"
     config_args = (
         ["--config", str(config_path)]
         if config_path.exists()
         else ["--client", str(chat_id)]  # queued job старого формата
     )
-    p = subprocess.run(
+    p = subprocess.Popen(
         [sys.executable, "-m", "reels_factory", "make",
          "--workdir", str(workdir), *config_args],
-        capture_output=True, text=True, encoding="utf-8", errors="replace")
-    if p.stderr:
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace")
+    lines: list[str] = []
+    for raw in p.stdout:
+        line = raw.rstrip("\n")
+        lines.append(line)
+        if on_line is not None:
+            try:
+                on_line(line)
+            except Exception:
+                log.warning("обработчик строки сборки упал (chat_id=%s)",
+                            chat_id, exc_info=True)
+    p.wait()
+    tail = "\n".join(lines)
+    if tail:
         # Движок пишет туда и штатные stage-логи, и предупреждения о деньгах
         # без учёта (job.input.json нечитаем, сбой замера длительности для
-        # HeyGen). Раньше при успешной сборке этот stderr никто не читал —
-        # предупреждения терялись. warning, а не info: без настроенных
-        # хендлеров logging по умолчанию печатает только WARNING и выше —
-        # иначе строка снова не попадёт в journalctl. Хвост достаточно
-        # длинный, чтобы не обрезать сообщение, но не раздувать журнал.
-        log.warning("движок (chat_id=%s): %s", chat_id, p.stderr[-2000:])
-    # node-рендер (vite) пишет свой прогресс в stdout движка, поэтому JSON-ответ
-    # make — не весь stdout, а последняя разбираемая строка-объект
-    for line in reversed((p.stdout or "").splitlines()):
-        line = line.strip()
-        if line.startswith("{"):
+        # HeyGen), и прогресс node-рендера (vite). Раньше при успешной сборке
+        # stderr никто не читал — предупреждения терялись. warning, а не info:
+        # без настроенных хендлеров logging по умолчанию печатает только
+        # WARNING и выше — иначе строка снова не попадёт в journalctl. Хвост
+        # достаточно длинный, чтобы не обрезать сообщение, но не раздувать
+        # журнал.
+        log.warning("движок (chat_id=%s): %s", chat_id, tail[-2000:])
+    # node-рендер (vite) пишет свой прогресс в тот же поток, поэтому JSON-ответ
+    # make — не весь вывод, а последняя разбираемая строка-объект
+    for line in reversed(lines):
+        stripped = line.strip()
+        if stripped.startswith("{"):
             try:
-                return json.loads(line)
+                return json.loads(stripped)
             except json.JSONDecodeError:
                 continue
-    return {"ok": False, "error": (p.stderr or p.stdout or "пустой ответ движка")[:500]}
+    return {"ok": False, "error": (tail or "пустой ответ движка")[:500]}
 
 
 def _job_meter(chat_id: int, job_id: str):
@@ -3963,6 +3999,44 @@ def _charged_but_undelivered_notice(job_id: str) -> str:
     )
 
 
+#: Строки-вехи, которые печатает движок (`_log` в pipeline.py), в порядке
+#: «строка -> сообщение человеку». Ключи — ровно то, что попадает в
+#: `on_line` построчно, без обрезки: сравнение точное, а не по подстроке,
+#: чтобы совпадение с текстом внутри JSON-ответа или чужого лога было
+#: исключено.
+_BUILD_STAGE_NOTICES = {
+    "[make] avatar_order": ("stage-notice-avatar-order", AVATAR_ORDER_STAGE_MSG),
+    "[make] assemble": ("stage-notice-assemble", ASSEMBLE_STAGE_MSG),
+}
+
+
+def _watch_build_stages(bot_api, job: BuildJob, loop: asyncio.AbstractEventLoop):
+    """`on_line` для `run_build` (задача 09): по вехам сборки шлёт короткие
+    сообщения о прогрессе — ровно по одному на веху. `on_line` вызывается из
+    рабочего потока (`asyncio.to_thread`), поэтому отправка идёт через
+    `run_coroutine_threadsafe` обратно в event loop бота.
+
+    Маркер на диске (`hf_render.run_step`, тот же механизм, что бережёт от
+    двойного заказа ведущей в pipeline.py) не даёт сообщению уйти второй раз:
+    возобновлённый job перечитывает те же строки с начала стадии, которая
+    печатает их заново."""
+
+    def on_line(line: str) -> None:
+        hit = _BUILD_STAGE_NOTICES.get(line.strip())
+        if hit is None:
+            return
+        marker, text = hit
+
+        def send() -> None:
+            asyncio.run_coroutine_threadsafe(
+                _safe_job_message(bot_api, job.chat_id, text), loop
+            )
+
+        run_step(job.workdir, marker, send)
+
+    return on_line
+
+
 async def _alert_job_trouble(job: BuildJob, *, stage: str, detail: str) -> None:
     """Алерт Васе в отдельный телеграм-бот (задача 08): реальная поломка
     сборки/доставки или доставка с красным гейтом. `alerts.send_alert` сам
@@ -4003,8 +4077,20 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
     await _safe_job_message(
         bot_api, job.chat_id, f"{RUNNING_MSG}\nID: {job.job_id[:8]}"
     )
+    effective_build_fn = build_fn
+    if build_fn is run_build:
+        # Только реальный run_build получает построчного наблюдателя стадий
+        # (задача 09): build_fn, подставленный тестами, — не подпроцесс, и
+        # у него нет построчного stdout, который можно было бы читать.
+        loop = asyncio.get_running_loop()
+        on_line = _watch_build_stages(bot_api, job, loop)
+        effective_build_fn = (
+            lambda chat_id, workdir: run_build(chat_id, workdir, on_line=on_line)
+        )
     try:
-        result = await asyncio.to_thread(build_fn, job.chat_id, job.workdir)
+        result = await asyncio.to_thread(
+            effective_build_fn, job.chat_id, job.workdir
+        )
     except Exception as e:
         result = {"ok": False, "stage": "build", "error": str(e)[:500]}
 
