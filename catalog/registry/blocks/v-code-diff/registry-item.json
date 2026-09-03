@@ -1,0 +1,34 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "v-code-diff",
+  "type": "hyperframes:block",
+  "title": "Code Diff",
+  "description": "An edit shown as a colored diff — removed lines collapse in red, added lines expand in green. portrait port of code-diff",
+  "dimensions": {
+    "width": 1080,
+    "height": 1920
+  },
+  "duration": 6,
+  "tags": ["code", "code-animation", "diff", "developer", "portrait"],
+  "files": [
+    {
+      "path": "v-code-diff.html",
+      "target": "compositions/v-code-diff.html",
+      "type": "hyperframes:composition"
+    },
+    {
+      "path": "v-code-diff.js",
+      "target": "compositions/v-code-diff.js",
+      "type": "hyperframes:composition"
+    }
+  ],
+  "reels": {
+    "kind": "scene",
+    "text_slots": [
+      "greet.js",
+      "Code Diff",
+      "function greet(name) {\n  console.log(\"hi \" + name)\n}",
+      "function greet(name, lang) {\n  const msg = translate(\"hi\", lang)\n  console.log(`${msg} ${name}`)\n}"
+    ]
+  }
+}
