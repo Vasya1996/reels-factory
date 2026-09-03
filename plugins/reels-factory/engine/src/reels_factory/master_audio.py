@@ -713,18 +713,21 @@ def load_approved_master_audio(
 
 
 def _strip_marks(text: str) -> str:
-    """Убрать знаки ударения из текста.
+    """Убрать знак ударения (акут, U+0301) из текста для сверки слов.
 
     Сценарий несёт ударения для синтеза («Самосе́йл»), но разбор слов их не
     знает и режет слово на куски: «самосе» плюс «йл». Слов становится вдвое
     больше настоящего, и корректно начитанное голосовое отбраковывается как
     «записанное не целиком». Для сверки ударения не нужны — снимаем их.
-    """
-    decomposed = unicodedata.normalize("NFD", str(text or ""))
-    without = "".join(
-        ch for ch in decomposed if unicodedata.category(ch) != "Mn"
-    )
-    return unicodedata.normalize("NFC", without)
+
+    Только литеральный U+0301 (`scenario.py`: «ударение акутом сразу после
+    ударной гласной») — снимать весь Unicode-класс Mn через NFD-разбор нельзя:
+    «й» и «ё» сами раскладываются в NFD на базовую букву плюс комбинирующий
+    знак (бревис/диерезис, тоже категория Mn), и такое снятие превращало бы
+    их в «и»/«е» — уже не ударение, а испорченная буква. Проявилось без
+    единого ударения в сценарии: ASR услышала «вкусный», NFD/Mn-разбор стирал
+    «й» в «и», и сценарное «вкусный» с этим больше не совпадало."""
+    return unicodedata.normalize("NFC", str(text or "").replace("́", ""))
 
 
 def _normalized_tokens(text: str) -> list[str]:
@@ -740,7 +743,15 @@ def _script_words(canonical: dict) -> list[dict]:
 
     Тот же `_word_spans`, что режет ElevenLabs alignment на слова
     (`alignment_to_words`) — один способ узнать, где в тексте слово, для
-    любого источника таймингов."""
+    любого источника таймингов.
+
+    `token` идёт через тот же `_strip_marks`, что и `_normalized_tokens` для
+    услышанной речи (`_align_script_words`) — одна нормализация для обеих
+    сторон сравнения, иначе слово сценария с ударением никогда не совпадёт со
+    своим же словом в речи. `text` (титр) остаётся дословным срезом
+    canonical["text"] — сохраняет ударение, если оно в сценарии стоит; character
+    offsets тоже считаются по немодифицированному тексту, чтобы попадание в
+    блок (`character_start`/`character_end`) не съехало."""
     text = canonical["text"]
     words = []
     for start, core_end, display_end in _word_spans(text):
@@ -757,7 +768,7 @@ def _script_words(canonical: dict) -> list[dict]:
             "block_id": block["id"],
             "block_index": block["index"],
             "role": block.get("role"),
-            "token": text[start:core_end].casefold(),
+            "token": _strip_marks(text[start:core_end]).casefold(),
             "text": text[start:display_end],
         })
     return words
