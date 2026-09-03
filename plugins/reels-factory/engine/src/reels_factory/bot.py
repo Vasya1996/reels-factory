@@ -1488,8 +1488,12 @@ def collect_build_numbers(job_dir, *, ledger: LedgerStore | None = None,
       hf_render.py:1791 и 1828), плоский словарь имя гейта -> вердикт;
     * причина последней пересдачи — `retry_reason.txt`
       (`RETRY_REASON_FILE`, hf_render.py:166), пишет `save_retry_reason`;
-    * себестоимость по провайдерам и факт секунд HeyGen/число прогонов агента
-      монтажа — `LedgerStore.job_provider_stats` (billing.py), агрегат по
+    * себестоимость по провайдерам, факт секунд HeyGen и число ОПЛАЧЕННЫХ
+      прогонов сборки с расходом агента монтажа (`montage_agent_paid_runs` —
+      не число прогонов/пересдач самого агента внутри одной сборки: те
+      схлопываются в одну запись `spend_log` за прогон `run_make`, а их
+      настоящее число на диск не пишется нигде) —
+      `LedgerStore.job_provider_stats` (billing.py), агрегат по
       `spend_log`, куда одни и те же числа пишет `JobMeter._record`
       (billing.py:461-472: `cost_micro` — настоящая себестоимость,
       `quantity` — секунды HeyGen или сумма в долларах у Клода) при каждом
@@ -1509,7 +1513,11 @@ def collect_build_numbers(job_dir, *, ledger: LedgerStore | None = None,
     def _read_json(path: Path):
         try:
             return json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):
+            # ValueError покрывает и json.JSONDecodeError (его подкласс), и
+            # UnicodeDecodeError при декодировании UTF-8 (тоже подкласс) —
+            # битый файл (обрыв записи посреди сборки) пропускает только
+            # СВОИ числа, а не роняет сбор карточки целиком.
             return None
 
     plan = _read_json(jd / RENDER_PLAN_FILENAME)
@@ -1559,7 +1567,7 @@ def collect_build_numbers(job_dir, *, ledger: LedgerStore | None = None,
     try:
         reason = (jd / RETRY_REASON_FILE).read_text(encoding="utf-8").strip()
         numbers["retry_reason"] = reason or None
-    except OSError:
+    except (OSError, ValueError):
         numbers["retry_reason"] = None
 
     if ledger is not None and job_id:
@@ -1576,7 +1584,16 @@ def collect_build_numbers(job_dir, *, ledger: LedgerStore | None = None,
         if "heygen" in stats:
             numbers["avatar_seconds_actual"] = stats["heygen"]["quantity"]
         if "claude" in stats:
-            numbers["montage_agent_charges"] = stats["claude"]["count"]
+            # Не «число прогонов агента монтажа» — внутри одной сборки агент
+            # реально мог пробежать несколько раз (ранний план, план
+            # монтажа, пересдачи внутри MAX_COMPOSE_ATTEMPTS), но все они
+            # схлопываются в одну запись `_record` за один прогон
+            # `run_make` (`meter.claude_agent(...)`, pipeline.py:753 —
+            # единственный вызов во всём движке). Настоящее число прогонов
+            # агента (`len(agent_spend.runs)`) на диск не пишется нигде и в
+            # ledger не попадает — считать здесь нечего, кроме того, что
+            # ledger хранит: число ОПЛАЧЕННЫХ прогонов сборки.
+            numbers["montage_agent_paid_runs"] = stats["claude"]["count"]
 
     if job_attempts is not None:
         numbers["job_attempts"] = job_attempts

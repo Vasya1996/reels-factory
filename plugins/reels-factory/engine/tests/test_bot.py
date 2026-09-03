@@ -6246,14 +6246,16 @@ def test_карточка_сборки_полная_на_готовой_папк
     # падение, а честно отсутствующая часть карточки.
     assert "cost_by_provider_usd" not in numbers
     assert "avatar_seconds_actual" not in numbers
-    assert "montage_agent_charges" not in numbers
+    assert "montage_agent_paid_runs" not in numbers
 
 
 def test_карточка_сборки_подмешивает_числа_из_ledger(tmp_path):
-    """`JobMeter` уже знает факт секунд HeyGen, число прогонов агента
-    монтажа и себестоимость по провайдерам (billing.py:
-    `LedgerStore.job_provider_stats`) — карточка их подмешивает, когда
-    вызывающий (`_process_job`) передаёт `ledger`/`job_id`."""
+    """`JobMeter` уже знает факт секунд HeyGen, число ОПЛАЧЕННЫХ прогонов
+    сборки с расходом агента монтажа (не число прогонов/пересдач самого
+    агента внутри одной сборки — то на диск не пишется) и себестоимость по
+    провайдерам (billing.py: `LedgerStore.job_provider_stats`) — карточка их
+    подмешивает, когда вызывающий (`_process_job`) передаёт
+    `ledger`/`job_id`."""
     ledger = LedgerStore(tmp_path / "billing.sqlite3")
     rates = {
         "heygen_usd_per_second": 0.05,
@@ -6269,7 +6271,7 @@ def test_карточка_сборки_подмешивает_числа_из_le
     numbers = bot.collect_build_numbers(tmp_path, ledger=ledger, job_id="job1")
 
     assert numbers["avatar_seconds_actual"] == 21.4
-    assert numbers["montage_agent_charges"] == 1
+    assert numbers["montage_agent_paid_runs"] == 1
     assert numbers["cost_by_provider_usd"]["heygen"] == pytest.approx(1.07)
     assert numbers["cost_by_provider_usd"]["claude"] == pytest.approx(0.9)
 
@@ -6281,7 +6283,7 @@ def test_карточка_сборки_без_записей_в_ledger_не_до
     numbers = bot.collect_build_numbers(tmp_path, ledger=ledger, job_id="нет-такой")
     assert numbers["cost_by_provider_usd"] == {}
     assert "avatar_seconds_actual" not in numbers
-    assert "montage_agent_charges" not in numbers
+    assert "montage_agent_paid_runs" not in numbers
 
 
 def test_карточка_сборки_неполная_на_пустой_папке(tmp_path):
@@ -6295,6 +6297,28 @@ def test_карточка_сборки_неполная_на_пустой_пап
     assert numbers.get("gates_all_pass") is None
     assert numbers.get("retry_reason") is None
     assert "cost_by_provider_usd" not in numbers
+
+
+def test_карточка_сборки_битый_utf8_в_одном_файле_не_роняет_остальное(tmp_path):
+    """Сборка, упавшая на середине записи файла: `scenario.timed.json`
+    обрывается посреди многобайтового символа UTF-8 (не JSON-синтаксис —
+    сами байты не декодируются). Раньше `_read_json` ловил только
+    `(OSError, json.JSONDecodeError)`, а `UnicodeDecodeError` ронял весь
+    `collect_build_numbers` исключением — карточка пропадала целиком, включая
+    уже успешно прочитанный `gates.json`. Теперь ловится `ValueError`
+    (общий предок обоих) — карточка частичная, а не пустая."""
+    (tmp_path / "gates.json").write_text(
+        json.dumps({"D0_check": "PASS"}), encoding="utf-8")
+    # Обрубленный знак евро (€ = 0xE2 0x82 0xAC) — валидный старт
+    # многобайтовой последовательности, оборванный на середине.
+    (tmp_path / "scenario.timed.json").write_bytes(
+        b'{"total": 12.5, "note": "\xe2\x82"}')
+
+    numbers = bot.collect_build_numbers(tmp_path)
+
+    assert numbers["gates_all_pass"] is True
+    assert numbers["gates_failed"] == []
+    assert "video_duration_actual_seconds" not in numbers
 
 
 def test_карточка_сборки_передаёт_попытки_job(tmp_path):
