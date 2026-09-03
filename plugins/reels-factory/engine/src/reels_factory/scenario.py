@@ -295,16 +295,56 @@ def _extract_json(text: str) -> dict:
         raise ScenarioError(f"bad json: {e}") from e
 
 
-def _skill_json(runner, skill: str, payload_path, workdir, retries: int = 1) -> dict:
+#: --json-schema для writing-scenario (задача 12): те же поля, что читает
+#: `validate_integrity` ниже и что описывает сам скилл
+#: (skills/writing-scenario/SKILL.md:57-61) — role/start/end/speech по
+#: блокам, плюс title. Роли — по списку ROLES_4/ROLES_5 выше.
+WRITING_SCENARIO_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "blocks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "role": {"type": "string", "enum": ROLES_5},
+                    "start": {"type": "number"},
+                    "end": {"type": "number"},
+                    "speech": {"type": "string"},
+                },
+                "required": ["role", "start", "end", "speech"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["blocks"],
+    "additionalProperties": False,
+}
+
+
+def _skill_json(runner, skill: str, payload_path, workdir, retries: int = 1,
+                json_schema: dict | None = None) -> dict:
     """Ответ скилла -> dict; сырой ответ ложится рядом с заданием.
 
     Файл ответа — единственный след, по которому потом видно, что пришло
     вместо JSON. Проза вместо схемы бывает случайной, поэтому один повтор.
+
+    Сам вызов (`runner.run_skill`) тоже может провалиться без ответа вовсе —
+    таймаут (`SkillTimeout`, задача 13) или success без `structured_output`
+    при заданной `json_schema` (задача 12, `llm.py`) приходят RuntimeError'ом
+    ещё до того, как есть что писать в `{skill}_reply.txt`. Раньше такой сбой
+    уходил из повтора наверх немедленно; теперь он — такая же неудачная
+    попытка, как кривой JSON.
     """
     workdir = Path(workdir)
     last = None
     for _ in range(retries + 1):
-        reply = runner.run_skill(skill, payload_path)
+        try:
+            reply = runner.run_skill(skill, payload_path, json_schema=json_schema)
+        except RuntimeError as e:
+            last = e
+            continue
         (workdir / f"{skill}_reply.txt").write_text(reply or "", encoding="utf-8")
         try:
             return _extract_json(reply)
@@ -573,7 +613,8 @@ def run_generated_path(workdir, idea: dict, skill_runner, language: str,
     payload.write_text(json.dumps(task, ensure_ascii=False, indent=1),
                        encoding="utf-8")
 
-    draft = _skill_json(skill_runner, "writing-scenario", payload, workdir)
+    draft = _skill_json(skill_runner, "writing-scenario", payload, workdir,
+                        json_schema=WRITING_SCENARIO_SCHEMA)
     errs = validate_integrity(draft)
     if errs:
         raise ScenarioError(f"черновик генерации: {errs}")

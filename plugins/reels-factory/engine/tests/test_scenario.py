@@ -670,3 +670,54 @@ def test_не_json_от_скилла_идей_виден_в_ошибке(tmp_pat
         run_ideas(tmp_path, "сырьё", runner, "ru")
     assert "и снова текст" in str(exc.value)  # в ошибке — последняя попытка
     assert (tmp_path / "extracting-ideas_reply.txt").exists()
+
+
+# Задачи 12/13: run_skill может провалиться ещё ДО ответа (SkillTimeout,
+# success без structured_output) — RuntimeError, а не кривой JSON.
+# `_skill_json` обязан считать это такой же неудачной попыткой.
+
+class _FlakySkillRunner:
+    """run_skill бросает RuntimeError, пока не кончится fail_times, потом
+    отдаёт reply по очереди — и запоминает переданную json_schema."""
+
+    def __init__(self, fail_times: int, replies):
+        self.fail_times = fail_times
+        self.replies = list(replies)
+        self.calls = []
+        self.schemas = []
+
+    def run_skill(self, skill, payload_path, json_schema=None):
+        self.calls.append((skill, payload_path))
+        self.schemas.append(json_schema)
+        if self.fail_times > 0:
+            self.fail_times -= 1
+            raise RuntimeError(
+                "claude -p /writing-scenario не ответил за 600с (таймаут)")
+        return self.replies.pop(0)
+
+
+def test_таймаут_первой_попытки_вторая_успешна(tmp_path):
+    """Первый вызов писателя таймаутится (SkillTimeout — RuntimeError),
+    второй отвечает нормально — `_skill_json` ретраит его как обычную
+    неудачную попытку, а не роняет сборку сценария немедленно."""
+    from reels_factory.scenario import WRITING_SCENARIO_SCHEMA
+
+    runner = _FlakySkillRunner(1, [_gen_reply(), *_polish_pass_replies()])
+    res = run_generated_path(tmp_path, IDEA, runner, language="ru")
+
+    assert res["ok"] is True
+    # ровно два вызова writing-scenario (таймаут + успех), потом хуманизатор+судья
+    assert [c[0] for c in runner.calls[:2]] == ["writing-scenario", "writing-scenario"]
+    assert runner.schemas[0] == WRITING_SCENARIO_SCHEMA
+
+
+def test_обе_попытки_писателя_проваливаются_runtimeerror_наверх(tmp_path):
+    """Обе попытки `_skill_json` (retries=1 -> 2 вызова) провалились
+    RuntimeError'ом — сценарий считается упавшим, наверх уходит именно эта
+    ошибка (не «bad json»), и вызовов ровно два, не больше."""
+    import pytest as _pytest
+
+    runner = _FlakySkillRunner(2, [])
+    with _pytest.raises(RuntimeError, match="не ответил за 600с"):
+        run_generated_path(tmp_path, IDEA, runner, language="ru")
+    assert len(runner.calls) == 2

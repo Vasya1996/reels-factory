@@ -2099,6 +2099,7 @@ async def _switch_gender(msg, chat_id: int, s: dict, gender: str) -> None:
         except (ScenarioError, RuntimeError) as e:
             _track(chat_id, s, "error:scenario", str(e)[:120])
             await msg.reply_text(f"Не получилось собрать сценарий: {str(e)[:200]}")
+            await _alert_scenario_trouble(chat_id, s, e)
             await _show_ideas(msg, chat_id, s)
             return
         s["scenario"] = sc
@@ -3250,6 +3251,7 @@ async def on_button(update, context):
             )
         except (ScenarioError, RuntimeError) as e:
             await q.message.reply_text(f"Не получилось собрать сценарий: {e}")
+            await _alert_scenario_trouble(chat_id, s, e)
             return
         s["scenario"] = sc
         s["scenario_idea"] = index
@@ -4280,6 +4282,22 @@ async def _alert_job_trouble(job: BuildJob, *, stage: str, detail: str) -> None:
         await alerts.send_alert(text)
     except Exception as e:
         log.warning("алерт по job %s не собрался: %s", job.job_id, e)
+
+
+async def _alert_scenario_trouble(chat_id: int, s: dict, error: Exception) -> None:
+    """Алерт Васе (задача 13): сценарист (`step_scenario`) упал на обеих
+    попытках `_skill_json` — протухший вход, таймаут (`SkillTimeout`,
+    llm.py) или success без структурированного ответа при заданной схеме
+    (задача 12). Человек уже увидел «Не получилось собрать сценарий…»; этот
+    алерт — только след для Васи, ровно один на падение, а не на попытку."""
+    name = s.get("username") or s.get("first_name")
+    who = f"{chat_id}" + (f" ({name})" if name else "")
+    await alerts.send_alert(
+        "Сценарий не собрался\n"
+        f"Кто: {who}\n"
+        "Шаг: сценарий\n"
+        f"Ошибка: {str(error)[:300]}"
+    )
 
 
 async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:

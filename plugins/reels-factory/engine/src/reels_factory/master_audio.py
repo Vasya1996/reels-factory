@@ -27,6 +27,7 @@ from reels_factory.config import FFMPEG
 from reels_factory.render import media_dur
 from reels_factory.tts import (
     DEFAULT_OUTPUT_FORMAT,
+    DEFAULT_SEED,
     DEFAULT_SIMILARITY_BOOST,
     DEFAULT_SPEED,
     DEFAULT_STABILITY,
@@ -278,7 +279,11 @@ def _tts_options(config: dict) -> dict:
     model_id = str(
         tts.get("model_id") or os.environ.get("ELEVENLABS_MODEL") or MODEL_ID
     )
-    seed = tts.get("seed")
+    # Задача 16: без seed ElevenLabs на одном тексте разъезжается до 0.65с, и
+    # ключ кэша HeyGen (sha1 звука) меняется от правки, которая ведущую не
+    # трогает. Дефолт — только когда ключ вовсе отсутствует в конфиге; явный
+    # `seed: null` по-прежнему выключает его для того, кто это сделал сознательно.
+    seed = tts.get("seed", DEFAULT_SEED)
     # v3 принимает stability только дискретными значениями (0.0/0.5/1.0):
     # production-дефолт v2 (0.2) провайдер для v3 отклонит, поэтому берём
     # v3-безопасный дефолт, если явное значение в конфиге не задано.

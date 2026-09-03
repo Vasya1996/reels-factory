@@ -2,7 +2,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
-from reels_factory.llm import FakeRunner, ClaudeCliRunner, ClaudeSkillRunner, FakeSkillRunner
+from reels_factory.llm import (FakeRunner, ClaudeCliRunner, ClaudeSkillRunner,
+                               FakeSkillRunner, SkillTimeout)
 
 
 def test_fake_runner_отдаёт_по_очереди_и_копит_промпты():
@@ -142,6 +143,97 @@ def test_claude_skill_runner_builds_command(monkeypatch, tmp_path):
     assert captured["cmd"][i + 1] == "C:/plug/reels-factory"
     assert captured["input"].startswith("/reels-factory:humanizing-speech ")
     assert str(payload).replace("\\", "/") in captured["input"].replace("\\", "/")
+
+
+def test_run_skill_сужает_набор_инструментов_флагом_tools(monkeypatch, tmp_path):
+    """Задача 12: `--allowedTools` только снимает вопрос разрешения, набор
+    видимых моделью инструментов им не сужается (code.claude.com/docs/en/
+    cli-reference: «To restrict which tools are available, use --tools
+    instead»). Без `--tools` модель видела WebFetch и на материале со ссылкой
+    просила доступ вместо JSON — 5 факапов у 4 людей 2-3 сентября."""
+    captured = {}
+
+    def fake_run(cmd, **kw):
+        captured["cmd"] = cmd
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"result": "ок", "total_cost_usd": 0.0}),
+            stderr="",
+        )
+
+    monkeypatch.setattr("reels_factory.llm.subprocess.run", fake_run)
+    ClaudeSkillRunner(config_dir=tmp_path / "profile").run_skill(
+        "writing-scenario", tmp_path / "p.json")
+
+    cmd = captured["cmd"]
+    assert "--allowedTools" in cmd  # снятие вопроса остаётся как было
+    i = cmd.index("--tools")
+    assert cmd[i + 1] == "Read,Glob,Grep"
+
+
+def test_run_skill_с_json_schema_читает_structured_output(monkeypatch, tmp_path):
+    """`--json-schema` едет вместе с прочими флагами, а ответ достаётся из
+    поля structured_output конверта CLI (docs/en/agent-sdk/structured-outputs:
+    «the result message includes a structured_output field»)."""
+    captured = {}
+    schema = {"type": "object", "properties": {"blocks": {"type": "array"}}}
+
+    def fake_run(cmd, **kw):
+        captured["cmd"] = cmd
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({
+                "subtype": "success", "is_error": False,
+                "structured_output": {"blocks": [{"role": "hook", "speech": "х"}]},
+                "total_cost_usd": 0.01,
+            }),
+            stderr="",
+        )
+
+    monkeypatch.setattr("reels_factory.llm.subprocess.run", fake_run)
+    r = ClaudeSkillRunner(config_dir=tmp_path / "profile")
+    out = r.run_skill("writing-scenario", tmp_path / "p.json", json_schema=schema)
+
+    cmd = captured["cmd"]
+    assert json.loads(cmd[cmd.index("--json-schema") + 1]) == schema
+    assert json.loads(out) == {"blocks": [{"role": "hook", "speech": "х"}]}
+
+
+def test_run_skill_без_structured_output_при_success_считается_отказом(monkeypatch, tmp_path):
+    """docs/en/agent-sdk/structured-outputs, «Error handling»: success без
+    structured_output бывает и без сбоя валидации — «Treat that case as a
+    failure as well». Тут это RuntimeError, чтобы `_skill_json` (scenario.py)
+    завёл его в свой повтор, как и любой другой отказ вызова."""
+    monkeypatch.setattr(
+        "reels_factory.llm.subprocess.run",
+        lambda *a, **kw: SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"subtype": "success", "is_error": False,
+                               "total_cost_usd": 0.0}),
+            stderr="",
+        ),
+    )
+    r = ClaudeSkillRunner(config_dir=tmp_path / "profile")
+    with pytest.raises(RuntimeError, match="structured_output"):
+        r.run_skill("writing-scenario", tmp_path / "p.json",
+                    json_schema={"type": "object"})
+
+
+def test_run_skill_таймаут_даёт_skill_timeout(monkeypatch, tmp_path):
+    """Задача 13: `subprocess.run(..., timeout=...)` бросает TimeoutExpired —
+    не RuntimeError, и обработчики бота (`except (ScenarioError, RuntimeError)`)
+    его не ловили, бот молчал. SkillTimeout — RuntimeError-подкласс, ловится
+    и там, и в `_skill_json`."""
+    import subprocess as sp
+
+    def fake_run(cmd, **kw):
+        raise sp.TimeoutExpired(cmd=cmd, timeout=kw.get("timeout"))
+
+    monkeypatch.setattr("reels_factory.llm.subprocess.run", fake_run)
+    r = ClaudeSkillRunner(timeout_s=5, config_dir=tmp_path / "profile")
+    with pytest.raises(SkillTimeout) as exc:
+        r.run_skill("writing-scenario", tmp_path / "p.json")
+    assert isinstance(exc.value, RuntimeError)
 
 
 def test_скилл_зовётся_в_изоляции(monkeypatch, tmp_path):
