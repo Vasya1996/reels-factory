@@ -1655,13 +1655,16 @@ def _kb_ready(prices: dict | None = None, have: int | None = None):
     prices=None — биллинг выключен, называть нечего.
 
     Путь дороже баланса кнопку не теряет: она помечена нехваткой и ведёт на
-    пополнение. Убрать её значило бы спрятать и цену — то самое число, ради
-    которого человек и пошёл бы пополнять.
+    пополнение — уже с ценой ИМЕННО этого пути (`build:` запоминает, какую
+    кнопку жали, раньше, чем проверяет баланс). Отдельной кнопки «Пополнить
+    баланс» без пути здесь нет: у неё нет своего числа — топ-ап открывался бы
+    без выбранного пути (topup_path), а подставлять вместо него дешёвый путь
+    значило бы обещать сумму, которой может не хватить на путь, который
+    человек в итоге выберет.
     """
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     rows = []
-    не_хватает = False
     for code, шаблон in (("montage", BTN_MONTAGE), ("plain", BTN_PLAIN)):
         if prices is None:
             label = шаблон.format(price="").rstrip(" —")
@@ -1669,12 +1672,7 @@ def _kb_ready(prices: dict | None = None, have: int | None = None):
             label = шаблон.format(price=format_usd(prices[code]))
             if have is not None and have < prices[code]:
                 label += NO_FUNDS_SUFFIX
-                не_хватает = True
         rows.append([InlineKeyboardButton(label, callback_data=f"build:{code}")])
-    if не_хватает:
-        rows.append([InlineKeyboardButton(
-            "💳 Пополнить баланс", callback_data="topup:start"
-        )])
     rows.append([InlineKeyboardButton("← Назад", callback_data="back")])
     return InlineKeyboardMarkup(rows)
 
@@ -3406,20 +3404,26 @@ def _topup_gap_minor(chat_id: int, s: dict, currency: str) -> int | None:
     вовсе, позже сборка уже оплачена.
 
     Считаем от пути, чью кнопку жали (topup_path): за ним человек сюда и
-    пришёл. Если он открыл пополнение с самого экрана, не выбирая пути, берём
-    дешёвый — это нижняя граница, после которой доступен хотя бы один путь, и
-    обещать «ровно на этот ролик» больше неё было бы враньём.
+    пришёл. Пути ещё не выбрал (topup_path пуст — экран цены только
+    показался, кнопку выбора пути не жали) — тоже None: угадывать за него
+    путь, которого он не выбирал, значит подставить дешёвый и обещать сумму,
+    которой может не хватить, если он в итоге выберет монтаж (решение Васи:
+    ошибка второго счёта Артёма шла отсюда — `plain` подставлялся по
+    умолчанию).
 
     Оценку берём заново: пока экран пополнения висел в чате, сценарий мог
     смениться.
     """
     if (s or {}).get("step") != READY:
         return None
+    topup_path = s.get("topup_path")
+    if topup_path not in ("montage", "plain"):
+        return None
     billing = _billing()
     if not billing["enabled"]:
         return None
     prices = path_prices(chat_id, s, billing)
-    need = prices["montage"] if s.get("topup_path") == "montage" else prices["plain"]
+    need = prices[topup_path]
     gap = need - _ledger().balance(chat_id)
     if gap <= 0:
         return None
