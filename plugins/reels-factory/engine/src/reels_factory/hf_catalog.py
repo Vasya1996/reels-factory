@@ -112,10 +112,29 @@ def serve_catalog(catalog_dir=None, *, timeout_s: float = 10.0):
 
 
 def block_names(catalog_dir=None) -> list[str]:
-    """Имена блоков реестра — для сообщений и проверок."""
+    """Имена блоков реестра — для сообщений и проверок.
+
+    Только `hyperframes:block`: реестр с работы B1 несёт ещё и
+    `hyperframes:component` записи (карточка лежит в `components/<имя>`, не в
+    `blocks/<имя>`), и всё остальное в этом модуле открывает файл по пути
+    `blocks/<имя>/registry-item.json` — компонент по этому пути не найдётся.
+    """
     root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
     manifest = json.loads((root / "registry.json").read_text(encoding="utf-8"))
-    return [item["name"] for item in manifest.get("items") or []]
+    return [item["name"] for item in manifest.get("items") or []
+            if item.get("type", "hyperframes:block") == "hyperframes:block"]
+
+
+def component_names(catalog_dir=None) -> list[str]:
+    """Имена компонентов реестра — `hyperframes:snippet`/`hyperframes:component`.
+
+    Карточка компонента лежит в `components/<имя>/registry-item.json`, не в
+    `blocks/<имя>` — путь другой, поэтому функция отдельная от `block_names`.
+    """
+    root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
+    manifest = json.loads((root / "registry.json").read_text(encoding="utf-8"))
+    return [item["name"] for item in manifest.get("items") or []
+            if item.get("type") == "hyperframes:component"]
 
 
 def block_durations(catalog_dir=None) -> dict[str, float]:
