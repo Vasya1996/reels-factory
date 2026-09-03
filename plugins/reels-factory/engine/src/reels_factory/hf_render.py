@@ -1437,6 +1437,19 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
     списывает счётчик денег (`meter.claude_agent` в `pipeline.py`). Кто передаёт
     свою обёртку через `agent_runner`, тот отдаёт её со своим кошельком —
     иначе её прогоны останутся при ней.
+
+    На ПОСЛЕДНЕЙ попытке цикла compose ни провал `check_shots`/`check_inserts`,
+    ни красные гейты (D0_check и весь `check_storyboard`) саму сборку больше не
+    роняют (решение 05, Вася): к этому моменту ведущая уже куплена — клипы
+    HeyGen оплачены до входа в этот цикл, — и ролик с изъяном (мало вставок,
+    пустой угол, лишняя секунда без лица, предупреждение их `check`) для
+    заказчика лучше, чем отсутствие ролика вовсе. Прогоны Лейлы, Nagimash и
+    Артёма собрались именно так: мелкий изъян в карточке, ролик в чате.
+    Вердикты остаются в `gates.json`/возвращаемом `"gates"` как есть, FAIL не
+    прячется — честный отчёт важнее красивого. Настоящая поломка (файла нет,
+    HeyGen отказал, рендер отдал мёртвый слой субтитров) по-прежнему
+    поднимается исключением — эта уступка касается только суждений о качестве
+    уже собранного плана, не механических отказов.
     """
     rdir = Path(rdir).resolve()
     spend = agent_spend if agent_spend is not None else AgentSpend()
@@ -1554,9 +1567,12 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                 check_inserts(board["scenes"])
             except RuntimeError as error:
                 reason = str(error)
-                if attempt == MAX_COMPOSE_ATTEMPTS - 1:
-                    raise
-                continue
+                if attempt != MAX_COMPOSE_ATTEMPTS - 1:
+                    continue
+                # Последняя попытка: ведущая уже куплена, повторного плана не
+                # будет. Слабый план (не хватает моментов под вставку, серия
+                # названа не двумя планами) едет в сборку как есть — код ниже
+                # соберёт то, что сможет, а не откажет в ролике из-за него.
             # Ведущая, за которую уже заплачено, обязана быть в кадре: клипы
             # куплены до плана, и `presenter: "none"` на купленной секунде
             # выбрасывает деньги, а не бережёт их.
@@ -1764,25 +1780,27 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     _check_findings(rdir / "check.json") or [str(error)])
 
             failed = [f"{k}: {v}" for k, v in result.items() if v.startswith("FAIL")]
-            if not failed:
+            # Красные гейты больше не роняют ПОСЛЕДНЮЮ попытку (решение 05):
+            # ведущая куплена, повторного плана не будет, и ролик с изъяном
+            # доезжает до заказчика — вердикты остаются в `result`/`gates.json`
+            # как есть, FAIL не прячется. На attempt-ах ДО последнего поведение
+            # то же, что раньше: причина уходит агенту, план пересдаётся заново
+            # (`continue` ниже, реализован падением сквозь `if`).
+            if not failed or attempt == MAX_COMPOSE_ATTEMPTS - 1:
                 gate_result = result
                 (rdir / "gates.json").write_text(
                     json.dumps(result, ensure_ascii=False), encoding="utf-8")
                 _marker(rdir, "gates").write_text("ok", encoding="utf-8")
+                if failed:
+                    # Причину кладём в папку и на пересдающей попытке: сюда
+                    # больше не ведёт исключение, но `retry_reason.txt` — это
+                    # ещё и след для человека, который откроет папку руками.
+                    # Ниже, после рендера и громкости (около 1820), тот же файл
+                    # перезапишется полным `gate_result` вместе с ритмом и
+                    # зумом — здесь достаточно того, что уже посчитано.
+                    save_retry_reason(rdir, "; ".join(failed))
                 break
             reason = "; ".join(failed)
-            if attempt == MAX_COMPOSE_ATTEMPTS - 1:
-                # Причину кладём в папку ДО отказа. Отсюда сборка уходит
-                # исключением, `pipeline` возвращает `fail("assemble", …)` и
-                # запись не делает вовсе — а продолжение (`reset_montage_steps`
-                # в bot.py) маркер `plan` не снимает. Без записи круг пересдачи
-                # не сходится: продолжение читает `plan.json`, пересобирает тот
-                # же завёрнутый план и получает тот же отказ, заплатив за суд
-                # бироллов и подбор медиа. Из тех гейтов, что сюда доходят,
-                # D21, D24 и D25 меняются только вместе с планом — снять
-                # `plan` может лишь эта запись (около 1176).
-                save_retry_reason(rdir, reason)
-                raise RuntimeError("сборка не прошла проверки — " + reason)
 
     # Снимки композиции перед рендером — обязательный шаг их же конвейера
     # (product-launch-video/SKILL.md:195-197): «snapshot stitches the captured

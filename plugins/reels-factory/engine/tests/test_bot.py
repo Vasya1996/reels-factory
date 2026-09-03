@@ -2806,10 +2806,15 @@ def test_исключение_при_сборке_не_роняет_бота(wor
     assert bot._job_store().get(job.job_id).status == "failed"
 
 
-def test_ролик_собран_но_qa_не_пройден_не_отправляется(work, клиент):
+def test_ролик_с_непройденным_qa_всё_равно_отправляется(work, клиент):
+    """Решение 05: ведущая уже куплена, ролик с красным гейтом лучше
+    отсутствия ролика. Красный гейт остаётся в отчёте, но не отменяет
+    доставку — раньше этот же build_fn кончался статусом `qa_failed` и
+    сообщением про брак, теперь ролик уходит в чат как обычный."""
     def fake_run_build(chat_id, workdir):
         (workdir / "reel.mp4").write_bytes(b"x")
-        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": False}
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": False,
+                "gates": {"D0_check": "FAIL: пустой угол кадра"}}
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
@@ -2819,10 +2824,12 @@ def test_ролик_собран_но_qa_не_пройден_не_отправл
 
     asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
 
-    assert not api.videos
-    assert bot.QA_FAIL_MSG in api.messages[-1][1]
-    assert bot._job_store().get(job.job_id).status == "qa_failed"
-    assert bot.load_session(7)["step"] == bot.BUILD_FAILED
+    assert api.videos, "ролик с красным гейтом обязан дойти до чата"
+    assert api.videos[-1]["caption"] == bot.DONE_MSG
+    finished = bot._job_store().get(job.job_id)
+    assert finished.status == "completed"
+    assert finished.result["qa_pass"] is False
+    assert bot.load_session(7)["step"] == bot.DONE
 
 
 def test_ролик_больше_50мб_не_отправляется(work, клиент, monkeypatch):
@@ -2855,15 +2862,17 @@ def _зачесть_расход_на_job(job_id: str) -> None:
     )
 
 
-def test_qa_провал_сообщает_сколько_уже_стоил_рендер(work, клиент):
-    """Fix 8: build-субпроцесс уже списал деньги до провала QA — баланс
-    просел, а бот раньше говорил только «остановлен проверкой качества»,
-    не упоминая списание. Формулировка выровнена с квитанцией (Fix C):
-    не «списано», а «стоил сам рендер» — без Клода, который тратится
-    отдельно и в этот breakdown не входит."""
+def test_сбой_сборки_сообщает_сколько_уже_стоил_рендер(work, клиент):
+    """Fix 8: build-субпроцесс уже списал деньги до настоящей поломки — баланс
+    просел, а бот раньше говорил только про отказ, не упоминая списание.
+    Формулировка выровнена с квитанцией (Fix C): не «списано», а «стоил сам
+    рендер» — без Клода, который тратится отдельно и в этот breakdown не
+    входит. Раньше сценарий этого теста строился на провале QA — с решения 05
+    красный гейт больше не отменяет доставку (см.
+    test_ролик_с_непройденным_qa_всё_равно_отправляется), и «charged but
+    undelivered» остаётся только у настоящих поломок: этот же build_fn."""
     def fake_run_build(chat_id, workdir):
-        (workdir / "reel.mp4").write_bytes(b"x")
-        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": False}
+        return {"ok": False, "stage": "assemble", "error": "рендер лёг"}
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
@@ -2924,7 +2933,7 @@ def test_отказ_telegram_принять_файл_сообщает_сколь
     assert bot._job_store().get(job.job_id).status == "delivery_failed"
 
 
-def test_qa_провал_с_битым_breakdown_всё_равно_доставляет_отказ(
+def test_сбой_сборки_с_битым_breakdown_всё_равно_доставляет_отказ(
     work, клиент, monkeypatch, caplog
 ):
     """Fix B: _charged_but_undelivered_notice раньше звалась вне защиты
@@ -2932,10 +2941,12 @@ def test_qa_провал_с_битым_breakdown_всё_равно_достав�
     бы _process_job целиком, и пользователь не получил бы вообще ничего,
     хотя job уже finished и повторов не будет. Теперь чтение breakdown
     защищено само по себе: пустое уведомление, но голый текст отказа
-    доходит."""
+    доходит. Сценарий переведён с провала QA на настоящую поломку: с
+    решения 05 QA больше не отменяет доставку (см.
+    test_ролик_с_непройденным_qa_всё_равно_отправляется), и этот защитный
+    путь остаётся только у `BUILD_FAILED_MSG`."""
     def fake_run_build(chat_id, workdir):
-        (workdir / "reel.mp4").write_bytes(b"x")
-        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": False}
+        return {"ok": False, "stage": "assemble", "error": "рендер лёг"}
 
     def падающий_breakdown(self, job_id):
         raise RuntimeError("database is locked")
@@ -2951,7 +2962,7 @@ def test_qa_провал_с_битым_breakdown_всё_равно_достав�
     with caplog.at_level(logging.WARNING):
         asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
 
-    assert bot.QA_FAIL_MSG in api.messages[-1][1]
+    assert bot.BUILD_FAILED_MSG in api.messages[-1][1]
     assert "database is locked" in caplog.text
 
 
@@ -4606,7 +4617,9 @@ def test_все_отказы_озвучки_дают_кнопку_возврат
 
 def test_все_отказы_сборки_дают_кнопку_возврата(work, клиент, monkeypatch):
     """Те же тупики на стороне рендера: сценарий цел, а выхода к нему с экрана
-    отказа не было."""
+    отказа не было. QA-провал сюда больше не входит (решение 05): красный
+    гейт доставляет ролик, а не открывает экран отказа — см.
+    test_ролик_с_непройденным_qa_всё_равно_отправляется."""
     def собрать(chat_id, workdir, *, qa=True, размер=1):
         mp4 = workdir / "reel.mp4"
         mp4.write_bytes(b"x" * размер)
@@ -4622,15 +4635,7 @@ def test_все_отказы_сборки_дают_кнопку_возврата
     assert api.messages[-1][1] == bot.MISSING_FILE_MSG
     assert _выходы_отказа(api)[-2:] == ВОЗВРАТ
 
-    # 2. QA не пройден
-    job = _job_на_сборке()
-    api = _BotAPI()
-    asyncio.run(bot._process_job(
-        api, job, build_fn=lambda c, w: собрать(c, w, qa=False)))
-    assert bot.QA_FAIL_MSG in api.messages[-1][1]
-    assert _выходы_отказа(api)[-2:] == ВОЗВРАТ
-
-    # 3. ролик тяжелее 50 МБ
+    # 2. ролик тяжелее 50 МБ
     monkeypatch.setattr(bot, "MAX_TG_VIDEO_BYTES", 3)
     job = _job_на_сборке()
     api = _BotAPI()
@@ -4639,7 +4644,7 @@ def test_все_отказы_сборки_дают_кнопку_возврата
     assert "50 МБ" in api.messages[-1][1]
     assert _выходы_отказа(api)[-2:] == ВОЗВРАТ
 
-    # 4. Telegram не принял видео
+    # 3. Telegram не принял видео
     monkeypatch.setattr(bot, "MAX_TG_VIDEO_BYTES", 1_000_000)
 
     class ОтказПоВидео(_BotAPI):
@@ -4945,12 +4950,30 @@ def _упавшая_сборка():
 
 
 def _провал_проверок():
-    """Ролик собрался, но не прошёл гейты: озвучка и ведущая уже оплачены."""
+    """Ролик собрался, но не прошёл гейты: озвучка и ведущая уже оплачены. С
+    решения 05 это больше не отказ — ролик доезжает до чата с изъяном в
+    отчёте, `job` при этом `completed`, а не `qa_failed` (это статус старых
+    записей, см. `_старая_запись_qa_failed`)."""
     job = _job_на_сборке()
     api = _BotAPI()
     asyncio.run(bot._process_job(
         api, job, build_fn=lambda c, w: _собрать(c, w, qa=False)))
     return job, api
+
+
+def _старая_запись_qa_failed():
+    """Job, финализированная так, как это делал код ДО решения 05: статус
+    `qa_failed`, сессия в BUILD_FAILED. Новый `_process_job` такую запись
+    больше не создаёт (см. `_провал_проверок` выше) — этот хелпер строит её
+    руками, чтобы проверить, что кнопка продолжения всё ещё умеет дочитать
+    записи, оставшиеся от прежних версий бота."""
+    job = _job_на_сборке()
+    store = bot._job_store()
+    store.finish(job.job_id, "qa_failed",
+                 result={"ok": True, "qa_pass": False},
+                 stage="verify", error="QA gates failed")
+    bot._update_session_after_job(job.chat_id, job.job_id, bot.BUILD_FAILED)
+    return store.get(job.job_id)
 
 
 def test_экран_упавшей_сборки_предлагает_продолжить_первой_строкой(
@@ -4974,13 +4997,15 @@ def test_экран_упавшей_сборки_предлагает_продо�
     assert _данные_кнопки(msg.markups[-1], ПРОДОЛЖИТЬ)
 
 
-def test_провал_проверок_качества_тоже_предлагает_продолжить(work, клиент):
-    """Ролик собрался, но не прошёл гейты: озвучка и ведущая оплачены,
-    пересобрать надо только монтаж."""
+def test_провал_проверок_качества_не_останавливает_доставку(work, клиент):
+    """Раньше: «ролик собрался, но не прошёл гейты — экран отказа предлагает
+    продолжить». С решения 05 красный гейт больше не отказ: ролик доезжает до
+    чата, экрана отказа нет вовсе, и продолжать нечего."""
     job, api = _провал_проверок()
 
-    assert bot._job_store().get(job.job_id).status == "qa_failed"
-    assert _выходы_отказа(api)[0] == ПРОДОЛЖИТЬ
+    assert bot._job_store().get(job.job_id).status == "completed"
+    assert api.videos, "ролик с красным гейтом обязан дойти до чата"
+    assert _данные_кнопки(api.videos[-1]["reply_markup"], ПРОДОЛЖИТЬ) is None
 
 
 def test_кнопки_продолжения_нет_там_где_продолжать_нечего(
@@ -5113,19 +5138,26 @@ def test_продолжение_при_идущей_сборке_отвечае�
     assert bot._job_store().get(другая.job_id).status == "queued"
 
 
-def test_продолжение_после_провала_проверок_сбрасывает_монтажные_маркеры(
+def test_продолжение_старой_записи_qa_failed_сбрасывает_монтажные_маркеры(
         work, клиент):
     """Провал гейтов чинится пересборкой монтажа. Маркеры prepare и plan-early
     при этом неприкосновенны: по плану, помеченному plan-early, ведущая УЖЕ
-    куплена, и новый план агента сделал бы оплаченные клипы ненужными."""
+    куплена, и новый план агента сделал бы оплаченные клипы ненужными.
+
+    Новый код статус `qa_failed` больше не пишет (решение 05: красный гейт
+    доставляет ролик, см. test_провал_проверок_качества_не_останавливает_доставку)
+    — но старые записи с этим статусом ещё лежат в базе, и кнопка продолжения
+    обязана резолвить их так же, как раньше. `_старая_запись_qa_failed`
+    строит такую запись руками, минуя `_process_job`."""
     from reels_factory.hf_render import EARLY_PLAN_STEP, step_done
 
-    job, api = _провал_проверок()
+    job = _старая_запись_qa_failed()
     монтажные = ("compose", "gates", "shots", "render", "loudness")
     for шаг in ("prepare", "plan", EARLY_PLAN_STEP, *монтажные):
         (job.workdir / f".hf-{шаг}.done").write_text("ok", encoding="utf-8")
 
-    данные = _данные_кнопки(api.markups[-1], ПРОДОЛЖИТЬ)
+    markup = bot._failed_markup(job.chat_id, job.job_id)
+    данные = _данные_кнопки(markup, ПРОДОЛЖИТЬ)
     assert данные, "на экране отказа нет кнопки продолжения"
     _press(данные, _Msg())
 
@@ -5187,14 +5219,18 @@ def test_текст_о_прерванной_сборке_обещает_прод
 def test_три_самых_дорогих_сбоя_попадают_в_аналитику(work, клиент):
     """Сборка, проверки и озвучка — самые дорогие сбои продукта, и ни один не
     писал в журнал событий ни строки: в отчёте они выглядели как «человек
-    передумал», а не как «у нас сломалось»."""
+    передумал», а не как «у нас сломалось».
+
+    Провал гейтов с решения 05 — уже не сбой (ролик доезжает), поэтому
+    больше не "error:qa": воронка обязана видеть его отдельным событием
+    "delivered:qa_fail", а не молчать о нём."""
     from reels_factory.analytics import ERROR_EVENTS
 
     _упавшая_сборка()
     assert "error:build" in _события(7)
 
     _провал_проверок()
-    assert "error:qa" in _события(7)
+    assert "delivered:qa_fail" in _события(7)
 
     job = _job_на_сборке()
     asyncio.run(bot._process_audio_job(
@@ -5205,7 +5241,7 @@ def test_три_самых_дорогих_сбоя_попадают_в_анал�
     сбой_озвучки = [e for e in события if e.startswith("error:audio")]
     assert сбой_озвучки, события
     # Иначе render_funnel упадёт на подписи для незнакомого события.
-    for event in ("error:build", "error:qa", *сбой_озвучки):
+    for event in ("error:build", *сбой_озвучки):
         assert event in ERROR_EVENTS, event
 
 def test_человеку_доступны_три_перезапуска_а_не_один(work, клиент, monkeypatch):

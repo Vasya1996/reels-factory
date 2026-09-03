@@ -30,7 +30,40 @@ _TAG_RE = re.compile(r"\[[^\]\n]*\]")
 
 WORD_LIMIT_HARD = 70   # валидатор: жёсткий предел (иначе ролик не влезет)
 WORD_LIMIT_SOFT = 60   # промпт: целевой предел
-WORDS_PER_SECOND_TARGET = 2.5
+
+# Темп речи для любой оценки длительности ДО озвучки: сколько слов писать под
+# заданную длину (words_soft/words_hard ниже), сколько секунд займёт путь
+# «дословно» (split_verbatim, run_verbatim_path) и перевод (bot.py step_translate).
+# Раньше здесь стояли две копии одного числа (2.5) — по имени WORDS_PER_SECOND_TARGET
+# и WORDS_PER_SEC, взятого из «natural speaking pace» в справке HyperFrames
+# (skills/hyperframes-creative/references/narration.md:5), а не из замера ElevenLabs.
+#
+# Замер по 8 прод-заданиям reels-factory на 134.209.80.75 (2026-09-03; метод:
+# слова/знаки сценария против длительности по последнему слову
+# audio/tts/alignment.words.json, сверено с ffprobe voice_master.wav; скрипт и
+# полная таблица — scratchpad/measure_tempo.py и tempo-measure.md той сессии):
+#   ru (n=7): words/s p25=2.28, медиана=2.41, p75=2.59, диапазон 2.11-2.89
+#   kk (n=1): 2.38 words/s — одно наблюдение, отдельную константу не заводим
+# 2.5 оказалось не серединой, а верхней границей: черновой план по нему выходил
+# короче факта — job e00b740b (154 слова): scenario.json (split_verbatim по
+# 2.5) даёт план 59.6с, реальная озвучка (alignment) 72.8с, +22%. Цепочка
+# fullscreen-окон без лица вылетала за MAX_FACE_ABSENCE_S уже после оплаты
+# (editplan.py:_enforce_face_absence_chain).
+#
+# Берём 25-й процентиль (не медиану): оценка "слова -> секунды" должна не
+# выходить короче факта чаще, чем сейчас, а не совпадать с ним в среднем —
+# 25-й процентиль слева от большинства реальных темпов, поэтому estimated >=
+# real в основном (5-6 из 7 наблюдений), медиана давала бы промах в половине
+# случаев. 2.28 округлено вниз до 2.2 для запаса и потому что 2.2 слов/с — то
+# же число, которым HyperFrames меряет TTS-паузы в PR-роликах
+# (skills/pr-to-video/references/story-design.md:175) — независимое
+# подтверждение порядка величины на другом корпусе текстов.
+#
+# Открытый вопрос: язык здесь не различаем (ru и kk смешаны, en не встречался
+# в выборке). Отдельная константа на kk/en не заводится — данных мало (1
+# kk-задание), а плодить числа без нужды хуже, чем взять чуть неточное общее.
+# Разойдётся заметно на большей выборке — тогда разводить по языку.
+WORDS_PER_SEC = 2.2
 MAX_SUPPORTED_DURATION_S = 90
 # Верхняя граница ролика, когда target_duration_s не задан. Бот берёт её как
 # длину ещё не написанного сценария: до генерации считать больше не из чего.
@@ -119,9 +152,9 @@ def _duration_contract(hypothesis: dict | None) -> dict:
         "target": target,
         "minimum": max(14.0, target - tolerance),
         "maximum": min(MAX_SUPPORTED_DURATION_S, target + tolerance),
-        "words_soft": max(30, round(target * WORDS_PER_SECOND_TARGET)),
+        "words_soft": max(30, round(target * WORDS_PER_SEC)),
         "words_hard": max(
-            36, math.ceil(target * WORDS_PER_SECOND_TARGET * 1.12)
+            36, math.ceil(target * WORDS_PER_SEC * 1.12)
         ),
         "explicit": True,
     }
@@ -398,9 +431,8 @@ def generate_scenario(workdir: Path, hypothesis: dict, runner: LLMRunner, retrie
 # ---------------------------------------------------------------------------
 # Путь «дословно»: текст пользователя без правок (spec 2026-07-21).
 # Блоки — только формат передачи сборке/Юле: границы по предложениям,
-# роли позиционные, тайминги — черновая оценка по счёту слов.
-
-WORDS_PER_SEC = 2.5
+# роли позиционные, тайминги — черновая оценка по счёту слов (WORDS_PER_SEC
+# выше, :66).
 
 _SENT_RE = re.compile(r"(?<=[.!?…])\s+")
 

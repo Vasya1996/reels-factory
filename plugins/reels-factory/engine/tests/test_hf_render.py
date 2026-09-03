@@ -191,6 +191,12 @@ BAD = _board([dict(scene, **({"contentRect": {"left": 200, "top": 400,
                                               "width": 700, "height": 300}}
                              if index == 0 else {}))
               for index, scene in enumerate(json.loads(json.dumps(GOOD["scenes"])))])
+# GOOD называет вставку у трёх сцен (s-01, s-03, s-05) — ровно `inserts_wanted`
+# для семи сцен. Сняв одну (s-05), опускаем счёт до двух и роняем check_inserts
+# в компоузе — как в живом прогоне 17.08, только уже после заказа ведущей.
+FEW_INSERTS = _board([dict(scene, insert=None) if scene["id"] == "s-05"
+                      else scene
+                      for scene in json.loads(json.dumps(GOOD["scenes"]))])
 
 
 # Материал раннего шага — свой, не тот, на котором проверяется сборка.
@@ -1648,7 +1654,12 @@ def test_находки_их_проверки_отправляют_на_повт
 
 def test_их_check_судится_по_отчёту_а_не_по_коду_выхода(tmp_path, monkeypatch):
     """`hyperframes check` 0.7.84 отдаёт ноль всегда — и на предупреждении, и на
-    «Not a directory». Гейт, написанный на коде выхода, не срабатывал ни разу."""
+    «Not a directory». Гейт, написанный на коде выхода, не срабатывал ни разу.
+
+    Предупреждение чинится пересдачей (`seen` растёт до двух — агента спросили
+    заново), но на ПОСЛЕДНЕЙ попытке решение 05 больше не роняет сборку из-за
+    их предупреждения: ведущая куплена, ролик с этим изъяном едет в кадр,
+    D0_check остаётся FAIL в отчёте как честная запись."""
     from reels_factory import hf_render
 
     _fakes(monkeypatch, tmp_path, [GOOD, GOOD])
@@ -1667,11 +1678,16 @@ def test_их_check_судится_по_отчёту_а_не_по_коду_вы�
 
     monkeypatch.setattr(hf_render, "_cli", failing_check)
 
-    with pytest.raises(RuntimeError, match="composition_file_too_large"):
-        hf_render.assemble_hyperframes(
-            tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
-            master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+    res = hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
     assert len(seen) == 2
+    assert Path(res["mp4"]).exists()
+    assert "composition_file_too_large" in res["gates"]["D0_check"]
+    assert res["gates"]["D0_check"].startswith("FAIL")
+    assert "composition_file_too_large" in (
+        tmp_path / "retry_reason.txt").read_text(encoding="utf-8")
 
 
 def test_судья_получает_реплику_своей_сцены(tmp_path, monkeypatch):
@@ -1768,14 +1784,43 @@ def test_нерегистрированный_сабтаймлайн_роняе�
     assert not (tmp_path / ".hf-render.done").exists()
 
 
-def test_две_неудачи_подряд_роняют_сборку(tmp_path, monkeypatch):
+def test_две_неудачи_подряд_не_роняют_сборку(tmp_path, monkeypatch):
+    """Решение 05: к последней попытке compose ведущая уже куплена, и
+    красный гейт (здесь — D11_schema) больше не роняет сборку исключением.
+    Раньше та же пара BAD, BAD кончалась RuntimeError; теперь рендер идёт до
+    конца, гейт остаётся FAIL честно в gates.json/result["gates"], а причина
+    записана в retry_reason.txt — как раньше, но уже не для автопересдачи."""
     from reels_factory import hf_render
 
     _fakes(monkeypatch, tmp_path, [BAD, BAD])
-    with pytest.raises(RuntimeError, match="схемой не предусмотрено"):
-        hf_render.assemble_hyperframes(
-            tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
-            master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+    res = hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert Path(res["mp4"]).exists()
+    assert res["gates"]["D11_schema"].startswith("FAIL")
+    assert "схемой не предусмотрено" in res["gates"]["D11_schema"]
+    gates_on_disk = json.loads((tmp_path / "gates.json").read_text(encoding="utf-8"))
+    assert gates_on_disk["D11_schema"].startswith("FAIL")
+    assert "схемой не предусмотрено" in (
+        tmp_path / "retry_reason.txt").read_text(encoding="utf-8")
+
+
+def test_нехватку_вставок_на_последней_попытке_компоуза_не_роняет_сборку(
+        tmp_path, monkeypatch):
+    """`check_inserts` — тот же круг, что и D11_schema выше, только до
+    компоуза, а не после: план с нехваткой вставок раньше ронял сборку
+    исключением ДО первого рендера кадра (живой прогон 17.08 — уже с оплаченной
+    ведущей). С решения 05 на последней попытке сборка не отказывает: код
+    добирает то, что план назвал, и едет дальше."""
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [FEW_INSERTS, FEW_INSERTS])
+    res = hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert Path(res["mp4"]).exists()
 
 
 def test_окно_с_материалом_снимает_сайт_или_маршрут(tmp_path, monkeypatch):
@@ -2201,16 +2246,19 @@ def test_пересборка_после_провала_проверок_нес�
             tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
             master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
 
-    # Прогон 1: ролик собрался, но ритм не прошёл — ровно тот случай, из
-    # которого бот делает `qa_failed` и предлагает перезапуск.
+    # Прогон 1: ролик собрался, но ритм не прошёл — с решения 05 бот такой
+    # ролик доставляет как обычный (см. test_bot.py), а не отказывает; здесь
+    # проверяется, что причина всё равно доезжает до ручной пересборки той же
+    # папки, если кто-то её запустит.
     monkeypatch.setattr(hf_render, "rhythm_gates", lambda mp4: {
         "D18_change_rate": "FAIL: картинка меняется реже раза в 2,5 секунды",
         "D19_static_span": "PASS"})
     первый = собрать()
     assert _fails(первый["gates"]), "первый прогон обязан не пройти проверки"
 
-    # Продолжение: бот снимает монтажные маркеры и зовёт сборку на той же
-    # папке. Оплаченное (`prepare`, снятые клипы) остаётся на месте.
+    # Продолжение (ручное, как кнопка «Перезапустить сборку»): снимает
+    # монтажные маркеры и зовёт сборку на той же папке. Оплаченное (`prepare`,
+    # снятые клипы) остаётся на месте.
     hf_render.reset_montage_steps(tmp_path)
     monkeypatch.setattr(hf_render, "rhythm_gates", lambda mp4: {
         "D18_change_rate": "PASS", "D19_static_span": "PASS"})
@@ -2226,13 +2274,13 @@ def test_пересборка_после_провала_проверок_нес�
 
 def test_отказ_гейтов_раскадровки_оставляет_причину_в_папке(
         tmp_path, monkeypatch):
-    """Круг пересдачи по D21, D24 и D25 не сходился. Эти гейты валят сборку
-    ИСКЛЮЧЕНИЕМ, `pipeline` возвращает `fail("assemble", …)` и причину никуда
-    не пишет, а продолжение снимает монтажные маркеры, оставляя `plan` целым.
-    Без записи в папке следующий прогон читает `plan.json`, пересобирает тот
-    самый план, который проверки уже завернули, и получает тот же отказ —
-    заплатив за суд бироллов и подбор медиа. Снять `plan` может только запись
-    причины (`assemble_hyperframes` около 1176).
+    """Круг пересдачи по D21, D24 и D25 звал агента заново на каждой ДО-
+    последней попытке — это осталось. Раньше ПОСЛЕДНЯЯ попытка валила сборку
+    исключением, `pipeline` возвращал `fail("assemble", …)`, а продолжение
+    снимало монтажные маркеры, оставляя `plan` целым. С решения 05 ведущая уже
+    куплена, и последняя попытка красный гейт больше не роняет: сборка
+    доезжает до файла, а причина всё равно остаётся в папке — на случай
+    ручной пересборки, а не для автопересдачи.
     """
     from reels_factory import hf_render
 
@@ -2249,15 +2297,16 @@ def test_отказ_гейтов_раскадровки_оставляет_пр�
     monkeypatch.setattr(hf_render, "check_storyboard", lambda board, **k: {
         "D25_empty_frame": "FAIL: s-03: ведущей нет, вставка не встала"})
 
-    with pytest.raises(RuntimeError, match="сборка не прошла проверки"):
-        hf_render.assemble_hyperframes(
-            tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
-            master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+    res = hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
 
+    assert Path(res["mp4"]).exists()
+    assert res["gates"]["D25_empty_frame"].startswith("FAIL")
     причина = hf_render.last_retry_reason(tmp_path)
     assert причина and "D25_empty_frame" in причина, (
-        "причина отказа не пережила прогон — продолжение пересоберёт тот же "
-        "завёрнутый план")
+        "причина отказа не пережила прогон — ручная пересборка получит то же "
+        "задание без единого слова о том, чем план не устроил проверки")
 
 
 def test_отказ_замороженного_плана_остаётся_в_отчёте_но_не_валит_ролик():
@@ -2476,8 +2525,8 @@ def test_продолжение_на_островах_спрашивает_аг�
             # списывается независимо от того, чем прогон кончился.
             meter.claude_agent(кошелёк.runs, кошелёк.total_cost_usd)
 
-    # Прогон 1: ролик собрался, но ритм не прошёл — тот случай, из которого
-    # бот делает qa_failed и предлагает перезапуск.
+    # Прогон 1: ролик собрался, но ритм не прошёл — с решения 05 такой ролик
+    # бот доставляет как обычный (см. test_bot.py), а не отказывает.
     monkeypatch.setattr(hf_render, "rhythm_gates", lambda mp4: {
         "D18_change_rate": "FAIL: картинка меняется реже раза в 2,5 секунды",
         "D19_static_span": "PASS"})
