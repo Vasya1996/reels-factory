@@ -162,6 +162,16 @@ class SkillRunner(Protocol):
                   json_schema: dict | None = None) -> str: ...
 
 
+class SkillTimeout(RuntimeError):
+    """`claude -p /<skill>` не ответил за `timeout_s` (задача 13).
+
+    Подкласс RuntimeError, а не голый TimeoutExpired: вызывающий код —
+    `_skill_json` в scenario.py и обработчики bot.py — уже ловит RuntimeError
+    как проваленную попытку/ошибку сценария; необработанный TimeoutExpired
+    проходил мимо обоих и бот молчал, не отвечая человеку вовсе.
+    """
+
+
 #: Права скилла: только чтение. Скиллы сценария держат свои правила в
 #: справочниках рядом с SKILL.md и читают их по ходу; в чистой комнате
 #: разрешений нет ни одного, и первый же `Read` возвращает «нужно
@@ -251,11 +261,16 @@ class ClaudeSkillRunner:
         ]
         if json_schema is not None:
             cmd += ["--json-schema", json.dumps(json_schema, ensure_ascii=False)]
-        p = subprocess.run(
-            cmd,
-            input=prompt, capture_output=True, text=True, encoding="utf-8",
-            timeout=self.timeout_s, env=self._env(),
-        )
+        try:
+            p = subprocess.run(
+                cmd,
+                input=prompt, capture_output=True, text=True, encoding="utf-8",
+                timeout=self.timeout_s, env=self._env(),
+            )
+        except subprocess.TimeoutExpired as e:
+            raise SkillTimeout(
+                f"claude -p /{skill} не ответил за {self.timeout_s}с (таймаут)"
+            ) from e
         if p.returncode != 0:
             # ошибки входа CLI печатает в stdout, поэтому берём оба потока
             err = (p.stderr or "").strip() or (p.stdout or "").strip()

@@ -4428,6 +4428,60 @@ def test_кнопка_идеи_из_истории_не_переписывает
     assert "[хук]" in msg.replies[-1]
 
 
+def test_обе_попытки_сценариста_проваливаются_сообщение_и_один_алерт(work, алерты):
+    """Задача 13: `_skill_json` исчерпал обе попытки (SkillTimeout или любой
+    другой RuntimeError) — человек видит существующее сообщение «Не
+    получилось собрать сценарий…», а Васе уходит ровно один алерт (не по
+    одному на попытку)."""
+    ошибка = "claude -p /writing-scenario не ответил за 600с (таймаут)"
+
+    def упавший_scenario(chat_id, idea, language, gender=None):
+        raise RuntimeError(ошибка)
+
+    bot.save_session(7, {
+        "step": bot.CHOOSING_IDEA, "language": "ru",
+        "ideas": [{"idea": "Раз", "draft_hook": "Хук раз"}],
+    })
+    msg = _Msg()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(bot, "step_scenario", упавший_scenario)
+        _press("idea:0", msg)
+
+    assert "Не получилось собрать сценарий" in msg.replies[-1]
+    assert len(алерты) == 1
+    text = алерты[0]["text"]
+    assert "7" in text  # chat_id
+    assert "сценарий" in text.lower()
+    assert ошибка in text
+
+
+def test_алерт_сценария_без_переменных_окружения_не_роняет_обработчик(
+    work, monkeypatch
+):
+    """Как и остальные алерты Васе: без ALERT_BOT_TOKEN/ALERT_CHAT_ID
+    send_alert — no-op, а не исключение, роняющее ответ человеку."""
+    monkeypatch.delenv("ALERT_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("ALERT_CHAT_ID", raising=False)
+
+    def упавший_бот(*a, **kw):
+        raise AssertionError("Bot не должен создаваться без переменных окружения")
+
+    monkeypatch.setattr(bot.alerts, "Bot", упавший_бот)
+
+    def упавший_scenario(chat_id, idea, language, gender=None):
+        raise RuntimeError("claude -p /writing-scenario не ответил за 600с (таймаут)")
+
+    monkeypatch.setattr(bot, "step_scenario", упавший_scenario)
+    bot.save_session(7, {
+        "step": bot.CHOOSING_IDEA, "language": "ru",
+        "ideas": [{"idea": "Раз", "draft_hook": "Хук раз"}],
+    })
+    msg = _Msg()
+    _press("idea:0", msg)  # не должно поднять исключение
+
+    assert "Не получилось собрать сценарий" in msg.replies[-1]
+
+
 def test_биллинг_выключен_ведёт_прямо_в_генерацию(work, monkeypatch):
     _charge_flat(7, 1)
     billing_on = bot._billing()

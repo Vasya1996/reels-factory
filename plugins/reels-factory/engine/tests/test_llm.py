@@ -3,7 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import pytest
 from reels_factory.llm import (FakeRunner, ClaudeCliRunner, ClaudeSkillRunner,
-                               FakeSkillRunner)
+                               FakeSkillRunner, SkillTimeout)
 
 
 def test_fake_runner_отдаёт_по_очереди_и_копит_промпты():
@@ -217,6 +217,23 @@ def test_run_skill_без_structured_output_при_success_считается_о
     with pytest.raises(RuntimeError, match="structured_output"):
         r.run_skill("writing-scenario", tmp_path / "p.json",
                     json_schema={"type": "object"})
+
+
+def test_run_skill_таймаут_даёт_skill_timeout(monkeypatch, tmp_path):
+    """Задача 13: `subprocess.run(..., timeout=...)` бросает TimeoutExpired —
+    не RuntimeError, и обработчики бота (`except (ScenarioError, RuntimeError)`)
+    его не ловили, бот молчал. SkillTimeout — RuntimeError-подкласс, ловится
+    и там, и в `_skill_json`."""
+    import subprocess as sp
+
+    def fake_run(cmd, **kw):
+        raise sp.TimeoutExpired(cmd=cmd, timeout=kw.get("timeout"))
+
+    monkeypatch.setattr("reels_factory.llm.subprocess.run", fake_run)
+    r = ClaudeSkillRunner(timeout_s=5, config_dir=tmp_path / "profile")
+    with pytest.raises(SkillTimeout) as exc:
+        r.run_skill("writing-scenario", tmp_path / "p.json")
+    assert isinstance(exc.value, RuntimeError)
 
 
 def test_скилл_зовётся_в_изоляции(monkeypatch, tmp_path):
