@@ -2993,7 +2993,12 @@ def test_receipt_называет_названную_цену_а_не_общим
     в квитанции не должна выдавать себя за «списано всего». А с Task 7 total
     — это ровно одна строка списания на job_id: цена с кнопки (enqueue_build),
     не сумма провайдерского разбора — JobMeter пишет HeyGen/озвучку/монтаж
-    только себестоимостью (charged_micro=0)."""
+    только себестоимостью (charged_micro=0).
+
+    Ревью 06-07 нашло несостыковку: эта квитанция ещё звучала как «Сам рендер
+    стоил X» — то же самое число, но без слова «цена», хотя
+    `_charged_but_undelivered_notice` уже говорит про «Названную цену».
+    Обе квитанции должны называть одну и ту же вещь одним словом."""
     def fake_run_build(chat_id, workdir):
         (workdir / "reel.mp4").write_bytes(b"x")
         return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
@@ -3009,7 +3014,8 @@ def test_receipt_называет_названную_цену_а_не_общим
 
     text = api.messages[-1][1]
     assert "Списано" not in text  # больше не звучит как «итог за ролик»
-    assert "рендер" in text.lower()
+    assert "рендер" not in text.lower()  # не «рендер стоил» — списание было до него
+    assert "цена" in text.lower()  # то же слово, что и в _charged_but_undelivered_notice
     assert "Баланс" in text
     assert bot.format_usd(цена) in text
 

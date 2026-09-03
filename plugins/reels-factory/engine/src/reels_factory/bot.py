@@ -4104,13 +4104,15 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         # (enqueue_build, quoted_micro), а не сумма провайдерского разбора —
         # JobMeter пишет HeyGen/озвучку/монтаж только себестоимостью
         # (charged_micro=0), списывать по факту второй раз здесь нечего.
-        # Подготовка сценария Клодом списывается раньше, без job_id, и в чек
-        # не попадает — поэтому не называем total «списано за ролик», баланс
-        # ниже точнее.
+        # Не «рендер стоил X»: списание случилось до рендера и не зависит от
+        # факта — это та же названная цена, что и в
+        # _charged_but_undelivered_notice, тем же словом «цена». Подготовка
+        # сценария Клодом списывается раньше, без job_id, и в чек не
+        # попадает — поэтому total не «весь ролик», а именно цена пути.
         await _safe_job_message(
             bot_api,
             job.chat_id,
-            f"Сам рендер стоил {format_usd(total)}.\n"
+            f"Цена ролика — {format_usd(total)}, списана с баланса.\n"
             f"Баланс: {format_usd(_ledger().balance(job.chat_id))}",
         )
     _update_session_after_job(job.chat_id, job.job_id, DONE)
