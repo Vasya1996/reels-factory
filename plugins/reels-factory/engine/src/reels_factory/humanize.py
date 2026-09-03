@@ -14,6 +14,30 @@ from reels_factory.scenario import _extract_json, ScenarioError
 
 MODES = ("polish", "phonetics")
 
+#: --json-schema для humanizing-speech (задача 12): форма, которую сам скилл
+#: обещает вернуть (skills/humanizing-speech/SKILL.md:28) и которую
+#: `_call_humanizer` ниже реально читает — role/speech по блокам, без
+#: остального.
+HUMANIZING_SPEECH_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "blocks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "role": {"type": "string"},
+                    "speech": {"type": "string"},
+                },
+                "required": ["role", "speech"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["blocks"],
+    "additionalProperties": False,
+}
+
 
 class HumanizeError(Exception):
     pass
@@ -28,7 +52,8 @@ def _call_humanizer(runner, workdir, sc: dict, payload: dict) -> dict:
     payload_path.write_text(json.dumps(payload, ensure_ascii=False, indent=1),
                              encoding="utf-8")
 
-    reply = runner.run_skill("humanizing-speech", payload_path)
+    reply = runner.run_skill("humanizing-speech", payload_path,
+                             json_schema=HUMANIZING_SPEECH_SCHEMA)
     try:
         data = _extract_json(reply)
     except ScenarioError as e:

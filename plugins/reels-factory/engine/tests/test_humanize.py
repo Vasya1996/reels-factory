@@ -41,6 +41,30 @@ def test_humanize_rejects_bad_mode(tmp_path):
         humanize_scenario(FakeSkillRunner([]), tmp_path, SC, mode="x", language="ru")
 
 
+def test_humanize_зовёт_скилл_со_схемой_ответа(tmp_path):
+    """Задача 12: humanizing-speech зовётся с --json-schema (role/speech по
+    блокам, как обещает сам скилл) — форму принуждает CLI, а не проверка
+    постфактум."""
+    from reels_factory.humanize import HUMANIZING_SPEECH_SCHEMA
+
+    class _Recording:
+        def __init__(self, reply):
+            self.reply = reply
+            self.seen_schema = None
+
+        def run_skill(self, skill, payload_path, json_schema=None):
+            self.seen_schema = json_schema
+            return self.reply
+
+    reply = json.dumps({"blocks": [
+        {"role": "hook", "speech": "х"},
+        {"role": "development", "speech": "у"},
+    ]}, ensure_ascii=False)
+    runner = _Recording(reply)
+    humanize_scenario(runner, tmp_path, SC, mode="phonetics", language="ru")
+    assert runner.seen_schema == HUMANIZING_SPEECH_SCHEMA
+
+
 TASK = {"idea": "как мы подняли продажи", "length_s": 30}
 
 

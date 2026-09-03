@@ -158,7 +158,8 @@ class FakeRunner:
 
 
 class SkillRunner(Protocol):
-    def run_skill(self, skill: str, payload_path) -> str: ...
+    def run_skill(self, skill: str, payload_path,
+                  json_schema: dict | None = None) -> str: ...
 
 
 #: Права скилла: только чтение. Скиллы сценария держат свои правила в
@@ -228,14 +229,30 @@ class ClaudeSkillRunner:
                 return obj
         raise RuntimeError(f"claude -p вернул не JSON: {text[:300]}")
 
-    def run_skill(self, skill: str, payload_path) -> str:
+    def run_skill(self, skill: str, payload_path,
+                  json_schema: dict | None = None) -> str:
         prompt = f"/reels-factory:{skill} {payload_path}"
         self.config_dir.mkdir(parents=True, exist_ok=True)
+        cmd = [
+            self.exe, "-p", "--output-format", "json",
+            "--plugin-dir", self.plugin_dir,
+            "--allowedTools", *SKILL_TOOLS,
+            # `--allowedTools` только снимает вопрос разрешения на эти три
+            # инструмента — набор, который модель ВИДИТ, этим не сужается
+            # (code.claude.com/docs/en/cli-reference, «--allowedTools»: «To
+            # restrict which tools are available, use --tools instead»).
+            # Без `--tools` модель видит и WebFetch: материал со ссылкой
+            # заставлял её пытаться открыть URL, получать отказ и отвечать
+            # просьбой о доступе вместо JSON — 5 факапов у 4 людей 2-3
+            # сентября. `claude --help`: `--tools <tools...>` принимает
+            # список одним аргументом через запятую («Bash,Edit,Read»).
+            "--tools", ",".join(SKILL_TOOLS),
+            "--setting-sources", "", "--strict-mcp-config",
+        ]
+        if json_schema is not None:
+            cmd += ["--json-schema", json.dumps(json_schema, ensure_ascii=False)]
         p = subprocess.run(
-            [self.exe, "-p", "--output-format", "json",
-             "--plugin-dir", self.plugin_dir,
-             "--allowedTools", *SKILL_TOOLS,
-             "--setting-sources", "", "--strict-mcp-config"],
+            cmd,
             input=prompt, capture_output=True, text=True, encoding="utf-8",
             timeout=self.timeout_s, env=self._env(),
         )
@@ -269,6 +286,18 @@ class ClaudeSkillRunner:
                 f"{str(obj.get('result') or '')[:500]}"
                 + (f" отказано инструментам: {denials}" if denials else "")
             )
+        if json_schema is not None:
+            # docs/en/agent-sdk/structured-outputs, «Error handling»: success
+            # без structured_output бывает и без сбоя валидации (например,
+            # модель ничего не произвела) — «Treat that case as a failure as
+            # well». RuntimeError уходит в тот же повтор `_skill_json`
+            # (scenario.py), что и прочие сбои этого вызова.
+            structured = obj.get("structured_output")
+            if structured is None:
+                raise RuntimeError(
+                    f"claude -p /{skill}: success без structured_output "
+                    f"(--json-schema задан): {str(obj)[:300]}")
+            return json.dumps(structured, ensure_ascii=False)
         if "result" not in obj:
             raise RuntimeError(
                 f"claude -p /{skill}: ответ без поля result: {str(obj)[:300]}")
@@ -280,6 +309,7 @@ class FakeSkillRunner:
         self.replies = list(replies)
         self.calls = []
 
-    def run_skill(self, skill: str, payload_path) -> str:
+    def run_skill(self, skill: str, payload_path,
+                  json_schema: dict | None = None) -> str:
         self.calls.append((skill, payload_path))
         return self.replies.pop(0)
