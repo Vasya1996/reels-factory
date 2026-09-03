@@ -191,6 +191,19 @@ def test_сценарий_показывается_ролями_и_длител�
     assert "28 сек" in out
 
 
+def test_экран_утверждения_показывает_speech_а_не_speech_tts():
+    # Задача 15: фонетика ElevenLabs (speech_tts) не должна протекать на
+    # экран человека — он утверждает то, что сам написал/увидел (speech).
+    sc = {"title": "Про Qaz AI", "blocks": [
+        {"role": "hook", "start": 0.0, "end": 3.0,
+         "speech": "Мы внедрили Qaz AI Research.",
+         "speech_tts": "Мы внедрили Казак Эй-Ай Рисёрч."},
+    ]}
+    out = bot.render_scenario(sc)
+    assert "Qaz AI Research" in out
+    assert "Казак" not in out
+
+
 def test_идеи_показываются_с_хуками():
     out = bot.render_ideas([{"idea": "Подготовка важнее встречи",
                              "draft_hook": "Вы опоздали ещё до встречи"}])

@@ -15,6 +15,7 @@ from reels_factory.tts import (
     V3_MAX_CHARACTERS,
     V3_MODEL_ID,
     ElevenLabsClient,
+    add_pronunciation_dictionary,
     create_voice_clone,
     delete_voice,
     synth_voice,
@@ -225,6 +226,55 @@ def test_create_voice_clone_posts_and_returns_id(tmp_path, monkeypatch):
     assert captured["data"]["name"] == "Серик"
     assert captured["headers"]["xi-api-key"] == "k"
     assert captured["files"]  # запись приложена
+
+
+def test_add_pronunciation_dictionary_posts_file_and_returns_ids(tmp_path, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "k")
+    lexicon = tmp_path / "brands.pls"
+    lexicon.write_text("<lexicon/>", encoding="utf-8")
+    captured = {}
+
+    class Resp:
+        def raise_for_status(self): pass
+        def json(self):
+            return {"id": "dict123", "version_id": "ver456", "name": "brands"}
+
+    class Http:
+        def post(self, url, **kw):
+            captured["url"] = url
+            captured["data"] = kw.get("data")
+            captured["files"] = kw.get("files")
+            captured["headers"] = kw.get("headers")
+            return Resp()
+
+    result = add_pronunciation_dictionary(lexicon, "brands", http=Http())
+
+    assert result == {
+        "pronunciation_dictionary_id": "dict123",
+        "version_id": "ver456",
+    }
+    assert captured["url"].endswith("/v1/pronunciation-dictionaries/add-from-file")
+    assert captured["data"]["name"] == "brands"
+    assert captured["headers"]["xi-api-key"] == "k"
+    assert captured["files"]  # файл лексикона приложен
+
+
+def test_add_pronunciation_dictionary_без_version_id_падает(tmp_path, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "k")
+    lexicon = tmp_path / "brands.pls"
+    lexicon.write_text("<lexicon/>", encoding="utf-8")
+
+    class Resp:
+        def raise_for_status(self): pass
+        def json(self):
+            return {"id": "dict123"}  # ElevenLabs не вернул version_id
+
+    class Http:
+        def post(self, url, **kw):
+            return Resp()
+
+    with pytest.raises(RuntimeError, match="version_id"):
+        add_pronunciation_dictionary(lexicon, "brands", http=Http())
 
 
 def test_delete_voice_шлёт_delete_на_voice_id(monkeypatch):

@@ -57,6 +57,28 @@ Master path делает один `POST /v1/text-to-speech/{voice_id}/with-times
 word timings и manifest. Whisper остаётся для входящих пользовательских медиа и
 legacy/fallback, но не подменяет утверждённый текст после TTS.
 
+Словарь произношений заводится один раз командой (файл — `.pls`-лексикон,
+формат ElevenLabs):
+
+```
+python -m reels_factory pronunciation-dict --file brands.pls --name brands
+```
+
+Ответ — `pronunciation_dictionary_id`/`version_id`; их и кладут локатором в
+`tts.pronunciation_dictionary_locators` (до трёх штук). Значения — только в
+конфиге, не в коде.
+
+### Два текста у блока (speech / speech_tts)
+
+У блока сценария `speech` — то, что видит и утверждает человек (экран
+утверждения, титр); `speech_tts` — необязательное поле для фонетической
+записи брендов/чисел под ElevenLabs (пишет только режим `phonetics` скилла
+`humanizing-speech`, путь «дословно»). `build_canonical_script(...,
+prefer_tts=True)` в `master_audio.py` берёт `speech_tts`, если он задан,
+иначе `speech`, и добавляет точку на конце блока перед отправкой в TTS —
+без неё ElevenLabs обрывал интонацию блока на середине фразы. Блока без
+`speech_tts` это не меняет: озвучка идёт по `speech`, как раньше.
+
 Параметры Multilingual v2 зафиксированы по контрольному русскому клону.
 Эмоциональные v3 audio tags в текст не добавляются. Лимит модели — 10 000
 символов; движок проверяет его до HTTP. Наш сценарный лимит значительно ниже,

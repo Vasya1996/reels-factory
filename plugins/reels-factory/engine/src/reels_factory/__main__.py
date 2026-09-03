@@ -466,6 +466,19 @@ def _cmd_clone_voice(args, cfg):
     print(json.dumps({"ok": True, "voice_id": vid}, ensure_ascii=False))
 
 
+def _cmd_pronunciation_dict(args):
+    from reels_factory.tts import add_pronunciation_dictionary
+
+    try:
+        result = add_pronunciation_dictionary(
+            args.file, args.name, description=args.description,
+        )
+    except Exception as e:
+        print(json.dumps({"ok": False, "error": str(e)[:500]}, ensure_ascii=False))
+        sys.exit(1)
+    print(json.dumps({"ok": True, **result}, ensure_ascii=False))
+
+
 def main():
     ap = argparse.ArgumentParser(prog="reels_factory")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -580,6 +593,15 @@ def main():
     p_cv.add_argument("--audio", required=True, help="запись голоса (1-2 мин чистой речи)")
     p_cv.add_argument("--name", required=True, help="имя голоса в ElevenLabs")
 
+    p_pd = sub.add_parser(
+        "pronunciation-dict",
+        help="загрузить .pls словарь произношений ElevenLabs -> "
+             "pronunciation_dictionary_id/version_id",
+    )
+    p_pd.add_argument("--file", required=True, help=".pls файл с правилами произношения")
+    p_pd.add_argument("--name", required=True, help="имя словаря в ElevenLabs")
+    p_pd.add_argument("--description", default=None)
+
     args = ap.parse_args()
 
     # edit работает на произвольном файле — factory/config.yaml ему не нужен
@@ -600,6 +622,11 @@ def main():
     # clone-voice не требует активного конфига
     if args.cmd == "clone-voice":
         _cmd_clone_voice(args, None)
+        return
+
+    # pronunciation-dict — разовая загрузка словаря, тоже без активного конфига
+    if args.cmd == "pronunciation-dict":
+        _cmd_pronunciation_dict(args)
         return
 
     try:

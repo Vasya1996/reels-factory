@@ -26,6 +26,9 @@ TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 TTS_TIMESTAMPS_URL = TTS_URL + "/with-timestamps"
 VOICES_ADD_URL = "https://api.elevenlabs.io/v1/voices/add"
 VOICES_URL = "https://api.elevenlabs.io/v1/voices/{voice_id}"
+PRONUNCIATION_DICTIONARY_ADD_URL = (
+    "https://api.elevenlabs.io/v1/pronunciation-dictionaries/add-from-file"
+)
 MODEL_ID = "eleven_multilingual_v2"
 V3_MODEL_ID = "eleven_v3"
 V3_MAX_CHARACTERS = 5000
@@ -339,6 +342,47 @@ def synth_voice(text: str, out_wav: Path, voice_id: str | None = None,
 
     mp3_tmp.unlink(missing_ok=True)
     return out_wav
+
+
+def add_pronunciation_dictionary(
+    file_path: Path, name: str, *, description: str | None = None, http=None,
+) -> dict:
+    """Загрузить .pls-лексикон в ElevenLabs один раз -> id/version словаря.
+
+    Задача 15 (д): произношение брендов — не наш код, а словарь на стороне
+    ElevenLabs (`POST /v1/pronunciation-dictionaries/add-from-file`,
+    подтверждено доками elevenlabs.io/docs/api-reference/pronunciation-
+    dictionary/add-from-file 2026-09-03). Результат кладётся в
+    build-config.yaml (tts.pronunciation_dictionary_locators — см. README) и
+    уходит в каждый TTS-запрос через `convert_with_timestamps`; сам файл и
+    его содержимое в код/конфиг не попадают — значения появляются только у
+    Васи, который запускает эту команду один раз.
+    """
+    api_key = _api_key()
+    if http is None:
+        import requests
+        http = requests
+    file_path = Path(file_path)
+    data: dict[str, Any] = {"name": name}
+    if description:
+        data["description"] = description
+    with open(file_path, "rb") as f:
+        resp = http.post(
+            PRONUNCIATION_DICTIONARY_ADD_URL,
+            data=data,
+            files={"file": (file_path.name, f)},
+            headers={"xi-api-key": api_key},
+            timeout=60,
+        )
+    resp.raise_for_status()
+    payload = resp.json()
+    dictionary_id = payload.get("id")
+    version_id = payload.get("version_id")
+    if not dictionary_id or not version_id:
+        raise RuntimeError(
+            f"ElevenLabs не вернул id/version_id словаря: {payload!r}"
+        )
+    return {"pronunciation_dictionary_id": dictionary_id, "version_id": version_id}
 
 
 def create_voice_clone(audio_path, name: str, http=None) -> str:

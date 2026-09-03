@@ -207,7 +207,8 @@ tts:
   # Provider MP3 без требования Pro-тарифа; затем локально -> PCM 48 kHz stereo.
   output_format: mp3_44100_128
 
-  # До трёх словарей ElevenLabs.
+  # До трёх словарей ElevenLabs. Завести словарь: python -m reels_factory
+  # pronunciation-dict --file brands.pls --name brands (см. engine/README.md).
   pronunciation_dictionary_locators: []
   #  - pronunciation_dictionary_id: "..."
   #    version_id: "..."
