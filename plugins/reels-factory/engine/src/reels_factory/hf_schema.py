@@ -92,6 +92,19 @@ _DURATION_ATTR = re.compile(r'(?<![-\w])data-duration="[\d.]+"')
 #: (`packages/core/src/runtime/compositionLoader.ts:516-524`). Пока корень
 #: говорил 1920, обрезанный до 980 хост распрямлялся обратно во весь кадр.
 _ROOT_HEIGHT = re.compile(r'(?<![-\w])data-height="\d+"')
+#: Сам тег корня — тот же признак, что различает корень в `hf_compose.
+#: block_root` (`id="…"` и `data-composition-id="…"` в одном теге, в любом
+#: порядке атрибутов). Дублируем здесь, а не импортируем: `hf_compose` сам
+#: импортирует `hf_schema`, обратный импорт дал бы цикл.
+#: Нужен, чтобы `_ROOT_HEIGHT` не ушёл дальше корня: у настоящего блока
+#: (`registry/blocks/gallery-tunnel/gallery-tunnel.html:68`) тот же атрибут
+#: стоит ещё раз в примере использования — внутри HTML-комментария, ДО
+#: настоящего корня. Замена по всему файлу переписала бы оба вхождения;
+#: замена только внутри найденного тега трогает исключительно корень.
+_ROOT_TAG = re.compile(
+    r'<[^>]*\bid="[^"]+"[^>]*\bdata-composition-id="[^"]+"[^>]*>'
+    r'|<[^>]*\bdata-composition-id="[^"]+"[^>]*\bid="[^"]+"[^>]*>'
+)
 _COMPOSITION_DURATION = re.compile(r'data-composition-duration="[\d.]+"')
 _DURATION_VAR = re.compile(r"\bDUR = [\d.]+")
 _STYLE_END = re.compile(r"</style>")
@@ -162,7 +175,11 @@ def port_block(html: str, *, duration: float, config: dict,
     бесполезно — коробка распрямляется обратно во весь кадр.
     """
     if elastic and height:
-        html = _ROOT_HEIGHT.sub(f'data-height="{int(height)}"', html)
+        root_tag = _ROOT_TAG.search(html)
+        if root_tag:
+            patched = _ROOT_HEIGHT.sub(f'data-height="{int(height)}"',
+                                       root_tag.group(0))
+            html = html[:root_tag.start()] + patched + html[root_tag.end():]
     if not elastic:
         # Их ширина 1920 становится нашей 1080, их высота 1080 — нашей 1920.
         # Через метку, иначе вторая замена переписала бы результат первой.

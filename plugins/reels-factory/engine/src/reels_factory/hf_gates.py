@@ -226,7 +226,7 @@ def elements_problems(scenes: list[dict]) -> list[str]:
         found = scene.get("elements")
         if found is not None and not isinstance(found, list):
             problems.append(f"{scene_id}: `elements` — список объектов "
-                            "`{name, words?, variables?, at?}`")
+                            "`{name, words?, variables?}`")
             continue
         for element in scene_elements(scene):
             problems += _element_problems(scene_id, element, cards, skipped)

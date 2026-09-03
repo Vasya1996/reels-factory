@@ -1440,9 +1440,10 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             kind = str(card.get("kind") or "")
             start, end = _q(scene["startSec"]), _q(scene["endSec"])
             # Срез — это начало сцены, и элемент стыка встаёт ЗА него: накладка
-            # кроет кадр серединой своего хода, а не началом.
-            cut = str(element.get("at")
-                      or ("cut" if kind == "overlay" else "start")) == "cut"
+            # кроет кадр серединой своего хода, а не началом. Решает вид
+            # карточки, а не план: агенту не из чего выбирать иначе — только
+            # стык живёт на границе сцен, остальные виды — внутри своей.
+            cut = kind == "overlay"
             begin = max(0.0, _q(start - STITCH_LEAD)) if cut else start
             # У стыка длительность своя — родная длительность позиции: резать
             # чужой ход значит показать полперехода. У остальных элемент живёт
