@@ -520,6 +520,128 @@ def test_telegram_voice_с_большим_пропуском_сценария_о
         )
 
 
+# ---------------------------------------------------------------------------
+# Задача 14: слова титра — из утверждённого сценария, тайминг — из ASR/TTS.
+
+from reels_factory.master_audio import _align_script_words, _assign_user_words_to_blocks
+
+
+def test_случай_артёма_delete_и_equal_текст_сценария_время_asr():
+    # Сценарий: «Нужен просто Клод код.» ASR услышала «код -код» вместо
+    # «Клод код» — «-код» токенизируется в «код» (ведущий дефис не буква).
+    canonical = build_canonical_script(
+        {"blocks": [{"role": "hook",
+                     "speech": "Нужен просто Клод код."}]},
+        {"language": "ru"},
+    )
+    raw_words = [
+        {"text": "Нужен", "start": 0.0, "end": 0.3},
+        {"text": "просто", "start": 0.3, "end": 0.6},
+        {"text": "код", "start": 0.6, "end": 0.8},
+        {"text": "-код", "start": 0.85, "end": 1.1},
+    ]
+    words, match_ratio = _assign_user_words_to_blocks(raw_words, canonical)
+
+    assert [w["text"] for w in words] == ["Нужен", "просто", "Клод", "код."]
+    # equal: первые два слова получают тайминг ровно тех же слов ASR
+    assert (words[0]["start"], words[0]["end"]) == (0.0, 0.3)
+    assert (words[1]["start"], words[1]["end"]) == (0.3, 0.6)
+    # delete: «Клод» не услышан — прижат к концу «просто», минимальная длительность
+    assert words[2]["start"] == pytest.approx(0.6)
+    assert 0.0 < words[2]["end"] - words[2]["start"] <= 0.02
+    # equal: «код» сценария сопоставлен с ПЕРВЫМ услышанным «код» (0.6-0.8) —
+    # SequenceMatcher матчит по самой ранней позиции; второе услышанное «код»
+    # (0.85-1.1, из «-код») — insert, лишнее слово ASR, отброшено
+    assert (words[3]["start"], words[3]["end"]) == (0.6, 0.8)
+    assert all(w["block_id"] == canonical["blocks"][0]["id"] for w in words)
+    assert 0.0 < match_ratio < 1.0
+
+
+def test_align_script_words_replace_делит_интервал_поровну():
+    canonical = build_canonical_script(
+        {"blocks": [{"role": "hook", "speech": "Привет друзья"}]},
+        {"language": "ru"},
+    )
+    spoken = [
+        {"text": "хай", "start": 1.0, "end": 1.4},
+        {"text": "чуваки", "start": 1.4, "end": 2.0},
+    ]
+    words, _ = _align_script_words(canonical, spoken)
+    assert [w["text"] for w in words] == ["Привет", "друзья"]
+    # replace: два слова сценария делят интервал [1.0, 2.0] поровну
+    assert (words[0]["start"], words[0]["end"]) == pytest.approx((1.0, 1.5))
+    assert (words[1]["start"], words[1]["end"]) == pytest.approx((1.5, 2.0))
+
+
+def test_align_script_words_insert_лишнее_слово_asr_отброшено():
+    canonical = build_canonical_script(
+        {"blocks": [{"role": "hook", "speech": "Кофе бодрит"}]},
+        {"language": "ru"},
+    )
+    spoken = [
+        {"text": "ну", "start": 0.0, "end": 0.1},   # лишнее (insert), в текст не входит
+        {"text": "кофе", "start": 0.1, "end": 0.4},
+        {"text": "бодрит", "start": 0.4, "end": 0.9},
+    ]
+    words, _ = _align_script_words(canonical, spoken)
+    assert [w["text"] for w in words] == ["Кофе", "бодрит"]
+    assert (words[0]["start"], words[0]["end"]) == (0.1, 0.4)
+    assert (words[1]["start"], words[1]["end"]) == (0.4, 0.9)
+
+
+def test_align_script_words_без_гварда_расходится_и_не_падает():
+    # speech_tts — намеренная фонетика поверх speech, не шум: без порогов
+    # функция не должна падать даже на сильном расхождении.
+    canonical = build_canonical_script(
+        {"blocks": [{"role": "hook", "speech": "Мы внедрили Qaz AI Research"}]},
+        {"language": "ru"},
+    )
+    spoken = [
+        {"text": "мы", "start": 0.0, "end": 0.1},
+        {"text": "внедрили", "start": 0.1, "end": 0.4},
+        {"text": "казак", "start": 0.4, "end": 0.7},
+        {"text": "эй", "start": 0.7, "end": 0.8},
+        {"text": "ай", "start": 0.8, "end": 0.9},
+        {"text": "рисёрч", "start": 0.9, "end": 1.2},
+    ]
+    words, match_ratio = _align_script_words(canonical, spoken)
+    assert [w["text"] for w in words] == ["Мы", "внедрили", "Qaz", "AI", "Research"]
+    assert match_ratio < 0.6  # сильно разошлось — и это ожидаемо, не повод падать
+
+
+def test_user_voice_caption_words_идут_из_сценария_а_не_из_asr():
+    # Интеграционно через build_user_master_audio: в титре остаётся слово
+    # сценария («Кофе»/«вкусный.»), даже если ASR расслышала его иначе.
+    source = Path("/dev/null")
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"pcm")
+
+    def fake_transcribe(src, workdir, language):
+        out = Path(workdir) / "words.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"words": [
+            {"id": 0, "start": 0.1, "end": 0.4, "text": "Кофэ"},
+            {"id": 1, "start": 0.4, "end": 0.8, "text": "вкусный"},
+            {"id": 2, "start": 1.0, "end": 1.3, "text": "Кофе"},
+            {"id": 3, "start": 1.3, "end": 1.8, "text": "бодрит"},
+        ]}, ensure_ascii=False), encoding="utf-8")
+        return {"out": str(out)}
+
+    import tempfile
+    src_file = Path(tempfile.mkstemp()[1])
+    src_file.write_bytes(b"telegram-opus")
+    built = build_user_master_audio(
+        _scenario(), {"language": "ru"}, Path(tempfile.mkdtemp()) / "audio" / "user",
+        src_file,
+        transcribe_fn=fake_transcribe,
+        run_cmd=fake_run,
+        duration_fn=lambda _: 2.0,
+    )
+    # «Кофэ» (опечатка распознавания) не попадает в титр — там «Кофе» сценария
+    assert [w["text"] for w in built.words] == ["Кофе", "вкусный.", "Кофе", "бодрит!"]
+
+
 def test_build_master_audio_v3_дефолтная_stability_дискретна(tmp_path):
     # kk-ролик идёт на eleven_v3; без явной stability в конфиге провайдер
     # должен получить v3-безопасное значение 0.5, а не production-дефолт v2 0.2.

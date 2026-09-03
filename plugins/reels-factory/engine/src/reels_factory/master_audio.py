@@ -77,7 +77,38 @@ def _write_json(path: Path, value) -> None:
     )
 
 
-def build_canonical_script(scenario: dict, config: dict) -> dict:
+_SENTENCE_END = ".!?…"
+
+
+def _ensure_sentence_end(text: str) -> str:
+    """Гарантирует конец предложения перед отправкой блока в TTS.
+
+    Без точки на конце блока ElevenLabs 31.08 обрывал интонацию блока
+    посередине фразы вместо естественного спада — с точкой модель слышит
+    конец мысли и доигрывает интонацию до конца. Каждый блок озвучивается
+    как отдельная фраза (см. `build_canonical_script`), поэтому знак нужен
+    на границе каждого, а не только в конце всего текста.
+    """
+    text = text.rstrip()
+    if not text or text[-1] in _SENTENCE_END:
+        return text
+    return text + "."
+
+
+def build_canonical_script(scenario: dict, config: dict, *,
+                           prefer_tts: bool = False) -> dict:
+    """Канонический текст блоков сценария — сумма плюс character ranges.
+
+    `prefer_tts=True` — канонический текст ОЗВУЧКИ: для блока берётся
+    `speech_tts` (фонетическая запись брендов/чисел для ElevenLabs), если он
+    задан, иначе `speech`; конец каждого блока получает точку
+    (`_ensure_sentence_end`). По умолчанию (`prefer_tts=False`) — канонический
+    текст ПОКАЗА: всегда `speech`, тот же текст, что видит человек на экране
+    утверждения и что попадает в титр. Два канонических текста для одного
+    сценария — задача 15 (два текста у блока, ADR у Васи 2026-09):
+    произношение бренда не должно менять то, что читает и утверждает
+    человек.
+    """
     blocks = scenario.get("blocks")
     if not isinstance(blocks, list) or not blocks:
         raise ValueError("scenario.blocks должен быть непустым списком")
@@ -86,7 +117,11 @@ def build_canonical_script(scenario: dict, config: dict) -> dict:
     canonical_blocks: list[dict] = []
     cursor = 0
     for index, block in enumerate(blocks):
-        speech = str(block.get("speech") or "").strip()
+        if prefer_tts:
+            speech = str(block.get("speech_tts") or block.get("speech") or "").strip()
+            speech = _ensure_sentence_end(speech)
+        else:
+            speech = str(block.get("speech") or "").strip()
         if not speech:
             raise ValueError(
                 f"блок {index} ({block.get('role')}): пустой speech"
@@ -355,7 +390,13 @@ def build_master_audio(
         run_cmd = render.run
     duration_fn = duration_fn or media_dur
 
-    canonical = build_canonical_script(scenario, config)
+    # canonical — то, что реально уходит в ElevenLabs (speech_tts или speech,
+    # с точкой на конце блока) и потому единственный источник identity/денег
+    # (text_sha256, cache_key, script.canonical.json). caption_canonical —
+    # то, что видел и утвердил человек (всегда speech); слова для титра
+    # получают текст отсюда, тайминги — из ответа ElevenLabs на canonical.
+    canonical = build_canonical_script(scenario, config, prefer_tts=True)
+    caption_canonical = build_canonical_script(scenario, config)
     _write_json(wd / "script.canonical.json", canonical)
     options = _tts_options(config)
     result = provider.convert_with_timestamps(
@@ -388,10 +429,14 @@ def build_master_audio(
     if duration <= 0:
         raise ValueError("voice_master.wav имеет неположительную длительность")
 
-    words = alignment_to_words(
+    tts_words = alignment_to_words(
         canonical["text"], result.alignment, canonical["blocks"]
     )
-    ranges = _block_audio_ranges(canonical["blocks"], words, duration)
+    # Слова для титра/утверждения — из caption_canonical (speech), тайминги —
+    # от ElevenLabs (tts_words, char-perfect). Без гварда: расхождение между
+    # speech и speech_tts — намеренная фонетическая правка, не шум.
+    words, _match_ratio = _align_script_words(caption_canonical, tts_words)
+    ranges = _block_audio_ranges(caption_canonical["blocks"], words, duration)
     timed_scenario = json.loads(json.dumps(scenario, ensure_ascii=False))
     for block, timing in zip(timed_scenario["blocks"], ranges):
         block["start"] = timing["start"]
@@ -514,10 +559,18 @@ def load_master_audio(
     scenario: dict,
     config: dict,
     artifact_dir,
+    *,
+    prefer_tts: bool = False,
 ) -> MasterAudioArtifacts:
-    """Загрузить готовые master artifacts и проверить их immutable contract."""
+    """Загрузить готовые master artifacts и проверить их immutable contract.
+
+    `prefer_tts` должен совпадать с тем, каким canonical эти artifacts
+    записаны: `audio/tts` (ElevenLabs, `build_master_audio`) — True, `audio/
+    user` (голосовое Telegram, `build_user_master_audio`) — False. Иначе
+    text_sha256 никогда не совпадёт: у одного canonical — speech_tts или
+    speech, у другого — всегда speech."""
     wd = Path(artifact_dir)
-    canonical = build_canonical_script(scenario, config)
+    canonical = build_canonical_script(scenario, config, prefer_tts=prefer_tts)
     saved_canonical = json.loads(
         (wd / "script.canonical.json").read_text(encoding="utf-8")
     )
@@ -615,7 +668,11 @@ def load_approved_master_audio(
         artifact_dir.relative_to(job_wd)
     except ValueError as exc:
         raise ValueError("audio approval ссылается за пределы job workdir") from exc
-    artifacts = load_master_audio(scenario, config, artifact_dir)
+    # source различает canonical: только ElevenLabs-путь мог использовать
+    # speech_tts (approve_master_audio(source=...) в bot.py:
+    # "elevenlabs_approved" | "telegram_user_audio").
+    prefer_tts = approval.get("source") == "elevenlabs_approved"
+    artifacts = load_master_audio(scenario, config, artifact_dir, prefer_tts=prefer_tts)
     if approval.get("input_sha256") != artifacts.canonical["text_sha256"]:
         raise ValueError("audio approval создан для другого сценария")
     actual = _sha256_bytes(artifacts.wav.read_bytes())
@@ -631,70 +688,181 @@ def _normalized_tokens(text: str) -> list[str]:
     ]
 
 
-def _assign_user_words_to_blocks(
-    raw_words: list[dict],
+def _script_words(canonical: dict) -> list[dict]:
+    """Слова УТВЕРЖДЁННОГО текста canonical["text"] со своим блоком.
+
+    Тот же `_word_spans`, что режет ElevenLabs alignment на слова
+    (`alignment_to_words`) — один способ узнать, где в тексте слово, для
+    любого источника таймингов."""
+    text = canonical["text"]
+    words = []
+    for start, core_end, display_end in _word_spans(text):
+        block = next(
+            (
+                b for b in canonical["blocks"]
+                if b["character_start"] <= start < b["character_end"]
+            ),
+            None,
+        )
+        if block is None:
+            raise ValueError(f"слово на character offset {start} не принадлежит блоку")
+        words.append({
+            "block_id": block["id"],
+            "block_index": block["index"],
+            "role": block.get("role"),
+            "token": text[start:core_end].casefold(),
+            "text": text[start:display_end],
+        })
+    return words
+
+
+# Тайминг слова сценария, которого нет в услышанной речи (opcode "delete") —
+# не ноль (соседние слова не должны схлопнуться в одну отметку времени), но
+# и не заметная зрителю длительность.
+_MIN_WORD_DURATION = 0.01
+
+
+def _align_script_words(
     canonical: dict,
+    spoken_words: list[dict],
+    *,
+    min_match_ratio: float | None = None,
+    word_ratio_bounds: tuple[float, float] | None = None,
 ) -> tuple[list[dict], float]:
-    canonical_tokens = _normalized_tokens(canonical["text"])
-    spoken_tokens = [
-        token
-        for word in raw_words
-        for token in _normalized_tokens(str(word.get("text") or ""))
+    """Слова УТВЕРЖДЁННОГО текста (canonical["text"]) + тайминги слов, которые
+    услышали/выровняли (`spoken_words`, каждое — {"text","start","end"}).
+
+    Титр показывает то, что утверждено, а не то, что распознала машина —
+    случай Артёма: сценарий «нужен просто Клод код», ASR услышала «код -код»
+    (0.52 порог ниже это ещё пропускает), и в титре должно остаться «Клод
+    код» с временем ASR, а не «код -код» с экрана. Разбор по словам —
+    `SequenceMatcher.get_opcodes()` на нормализованных токенах:
+    - equal — слово сценария забирает тайминг ровно того же слова речи;
+    - replace — слова сценария внутри разошедшегося куска делят между собой
+      интервал [начало первого услышанного слова куска, конец последнего]
+      поровну;
+    - insert (лишнее услышанное слово) — отбрасывается, в титр не идёт;
+    - delete (слово сценария, которого не услышали) — тайминга не получает
+      сразу и во втором проходе прижимается к ближайшему уже расставленному
+      соседу с длительностью `_MIN_WORD_DURATION`.
+
+    `min_match_ratio`/`word_ratio_bounds` — тот же гвард, что раньше проверял
+    только общее сходство (SequenceMatcher.ratio()) голосового с утверждённым
+    сценарием: он остаётся для пути «голосовое пользователя», где расхождение
+    — это шум записи и повод отклонить её. Для пути «синтез ElevenLabs» текст
+    озвучки (`speech_tts`) — намеренная фонетическая запись поверх `speech`
+    (не шум), поэтому там оба параметра остаются None и гварда нет.
+    """
+    script_words = _script_words(canonical)
+    script_tokens = [w["token"] for w in script_words]
+
+    clean_spoken = []
+    for word in spoken_words:
+        text = str(word.get("text") or "").strip()
+        if not text:
+            continue
+        try:
+            start, end = float(word["start"]), float(word["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if start < 0 or end <= start:
+            continue
+        clean_spoken.append({"text": text, "start": start, "end": end})
+
+    spoken_tokens_meta = [
+        {"token": token, "start": word["start"], "end": word["end"]}
+        for word in clean_spoken
+        for token in _normalized_tokens(word["text"])
     ]
-    if not canonical_tokens or not spoken_tokens:
-        raise ValueError("не удалось распознать речь в голосовом")
-    match_ratio = SequenceMatcher(
-        None, canonical_tokens, spoken_tokens, autojunk=False
-    ).ratio()
-    word_ratio = len(spoken_tokens) / len(canonical_tokens)
-    if match_ratio < 0.52 or not 0.60 <= word_ratio <= 1.55:
+    spoken_tokens = [meta["token"] for meta in spoken_tokens_meta]
+
+    if not script_tokens or not spoken_tokens:
+        raise ValueError("не удалось сопоставить слова сценария с озвучкой")
+
+    matcher = SequenceMatcher(None, script_tokens, spoken_tokens, autojunk=False)
+    match_ratio = matcher.ratio()
+    word_ratio = len(spoken_tokens) / len(script_tokens)
+    if min_match_ratio is not None and match_ratio < min_match_ratio:
+        raise ValueError(
+            "голосовое заметно отличается от утверждённого сценария или "
+            "записано не целиком"
+        )
+    if word_ratio_bounds is not None and not (
+        word_ratio_bounds[0] <= word_ratio <= word_ratio_bounds[1]
+    ):
         raise ValueError(
             "голосовое заметно отличается от утверждённого сценария или "
             "записано не целиком"
         )
 
-    clean_words = []
-    for word in raw_words:
-        text = str(word.get("text") or "").strip()
-        if not text:
+    timings: list[tuple[float, float] | None] = [None] * len(script_tokens)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for offset in range(i2 - i1):
+                meta = spoken_tokens_meta[j1 + offset]
+                timings[i1 + offset] = (meta["start"], meta["end"])
+        elif tag == "replace":
+            span_start = spoken_tokens_meta[j1]["start"]
+            span_end = spoken_tokens_meta[j2 - 1]["end"]
+            count = i2 - i1
+            if span_end <= span_start:
+                span_end = span_start + count * _MIN_WORD_DURATION
+            step = (span_end - span_start) / count
+            for offset in range(count):
+                timings[i1 + offset] = (
+                    span_start + offset * step,
+                    span_start + (offset + 1) * step,
+                )
+        # insert: лишнее услышанное слово — script_tokens его не касается.
+        # delete: заполняется вторым проходом ниже, от соседей.
+
+    for index in range(len(timings)):
+        if timings[index] is not None:
             continue
-        start, end = float(word["start"]), float(word["end"])
-        if start < 0 or end <= start:
+        before = next(
+            (timings[i][1] for i in range(index - 1, -1, -1) if timings[i]),
+            None,
+        )
+        if before is not None:
+            timings[index] = (before, before + _MIN_WORD_DURATION)
             continue
-        clean_words.append({**word, "text": text, "start": start, "end": end})
-    block_weights = [
-        max(1, len(_normalized_tokens(block["speech"])))
-        for block in canonical["blocks"]
-    ]
-    if len(clean_words) < len(block_weights):
-        raise ValueError("в голосовом недостаточно речи для всех блоков сценария")
-    boundaries = [0]
-    consumed = 0
-    total_weight = sum(block_weights)
-    for index, weight in enumerate(block_weights[:-1]):
-        consumed += weight
-        raw = round(len(clean_words) * consumed / total_weight)
-        minimum = boundaries[-1] + 1
-        maximum = len(clean_words) - (len(block_weights) - index - 1)
-        boundaries.append(max(minimum, min(raw, maximum)))
-    boundaries.append(len(clean_words))
+        after = next(
+            (timings[i][0] for i in range(index + 1, len(timings)) if timings[i]),
+            None,
+        )
+        anchor = after if after is not None else 0.0
+        timings[index] = (max(0.0, anchor - _MIN_WORD_DURATION), anchor)
 
     words = []
-    for block_index, block in enumerate(canonical["blocks"]):
-        for word in clean_words[boundaries[block_index]:boundaries[block_index + 1]]:
-            words.append({
-                "id": len(words),
-                "block_id": block["id"],
-                "block_index": block_index,
-                "role": block.get("role"),
-                "character_start": None,
-                "character_end": None,
-                "start": word["start"],
-                "end": word["end"],
-                "text": word["text"],
-                "prob": word.get("prob"),
-            })
+    for index, script_word in enumerate(script_words):
+        start, end = timings[index]
+        words.append({
+            "id": index,
+            "block_id": script_word["block_id"],
+            "block_index": script_word["block_index"],
+            "role": script_word["role"],
+            "character_start": None,
+            "character_end": None,
+            "start": start,
+            "end": end,
+            "text": script_word["text"],
+        })
     return words, match_ratio
+
+
+def _assign_user_words_to_blocks(
+    raw_words: list[dict],
+    canonical: dict,
+) -> tuple[list[dict], float]:
+    """Голосовое пользователя -> слова УТВЕРЖДЁННОГО сценария с таймингом ASR.
+
+    Тонкая обёртка над `_align_script_words` с прежним порогом похожести:
+    расхождение здесь — шум записи (не читал, сбился, записал не то), а не
+    намеренная правка текста, поэтому гвард остаётся включённым."""
+    return _align_script_words(
+        canonical, raw_words,
+        min_match_ratio=0.52, word_ratio_bounds=(0.60, 1.55),
+    )
 
 
 def build_user_master_audio(
