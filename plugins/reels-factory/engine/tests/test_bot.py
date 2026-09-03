@@ -2852,23 +2852,14 @@ def test_ролик_больше_50мб_не_отправляется(work, кл
     assert bot._job_store().get(job.job_id).status == "delivery_failed"
 
 
-def _зачесть_расход_на_job(job_id: str) -> None:
-    """Сымитировать реальный платный шаг сборки: build-субпроцесс уже
-    списал деньги через свой собственный LedgerStore до провала QA/доставки."""
-    bot._ledger().charge(
-        7, entry_id=f"heygen:{job_id}", job_id=job_id, provider="heygen",
-        unit="seconds", quantity=10.0, unit_price_micro=50_000,
-        cost_micro=500_000, charged_micro=1_000_000,
-    )
-
-
-def test_сбой_сборки_сообщает_сколько_уже_стоил_рендер(work, клиент):
-    """Fix 8: build-субпроцесс уже списал деньги до настоящей поломки — баланс
-    просел, а бот раньше говорил только про отказ, не упоминая списание.
-    Формулировка выровнена с квитанцией (Fix C): не «списано», а «стоил сам
-    рендер» — без Клода, который тратится отдельно и в этот breakdown не
-    входит. Раньше сценарий этого теста строился на провале QA — с решения 05
-    красный гейт больше не отменяет доставку (см.
+def test_сбой_сборки_сообщает_названную_цену(work, клиент):
+    """Task 7: цена списывается одной строкой при постановке в очередь
+    (enqueue_build), до первого платного шага у провайдера. Поэтому при
+    настоящей поломке бот говорит про НАЗВАННУЮ цену — не «рендер уже
+    стоил»: списание не зависит от того, сколько рендера реально успело
+    пройти до сбоя (JobMeter пишет провайдерские шаги себестоимостью,
+    charged_micro=0, не списанием). Раньше сценарий строился на провале QA —
+    с решения 05 красный гейт больше не отменяет доставку (см.
     test_ролик_с_непройденным_qa_всё_равно_отправляется), и «charged but
     undelivered» остаётся только у настоящих поломок: этот же build_fn."""
     def fake_run_build(chat_id, workdir):
@@ -2876,18 +2867,18 @@ def test_сбой_сборки_сообщает_сколько_уже_стоил
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    цена = bot.path_prices(7, bot.load_session(7), bot._billing())["plain"]
     _press("build:plain", _Msg())
     job = _claim_job()
-    _зачесть_расход_на_job(job.job_id)
     api = _BotAPI()
 
     asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
 
-    assert "уже стоил" in api.messages[-1][1]
-    assert "$1.00" in api.messages[-1][1]
+    assert "Названная цена" in api.messages[-1][1]
+    assert bot.format_usd(цена) in api.messages[-1][1]
 
 
-def test_слишком_большой_файл_сообщает_сколько_уже_стоил_рендер(work, клиент, monkeypatch):
+def test_слишком_большой_файл_сообщает_названную_цену(work, клиент, monkeypatch):
     monkeypatch.setattr(bot, "MAX_TG_VIDEO_BYTES", 3)
 
     def fake_run_build(chat_id, workdir):
@@ -2896,18 +2887,18 @@ def test_слишком_большой_файл_сообщает_сколько_
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    цена = bot.path_prices(7, bot.load_session(7), bot._billing())["plain"]
     _press("build:plain", _Msg())
     job = _claim_job()
-    _зачесть_расход_на_job(job.job_id)
     api = _BotAPI()
 
     asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
 
-    assert "уже стоил" in api.messages[-1][1]
-    assert "$1.00" in api.messages[-1][1]
+    assert "Названная цена" in api.messages[-1][1]
+    assert bot.format_usd(цена) in api.messages[-1][1]
 
 
-def test_отказ_telegram_принять_файл_сообщает_сколько_уже_стоил_рендер(
+def test_отказ_telegram_принять_файл_сообщает_названную_цену(
     work, клиент
 ):
     def fake_run_build(chat_id, workdir):
@@ -2921,15 +2912,15 @@ def test_отказ_telegram_принять_файл_сообщает_сколь
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    цена = bot.path_prices(7, bot.load_session(7), bot._billing())["plain"]
     _press("build:plain", _Msg())
     job = _claim_job()
-    _зачесть_расход_на_job(job.job_id)
     api = _ОтказывающийАпи()
 
     asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
 
-    assert "уже стоил" in api.messages[-1][1]
-    assert "$1.00" in api.messages[-1][1]
+    assert "Названная цена" in api.messages[-1][1]
+    assert bot.format_usd(цена) in api.messages[-1][1]
     assert bot._job_store().get(job.job_id).status == "delivery_failed"
 
 
@@ -2987,7 +2978,6 @@ def test_успешная_доставка_с_битым_breakdown_всё_рав
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
     _press("build:plain", _Msg())
     job = _claim_job()
-    _зачесть_расход_на_job(job.job_id)
     api = _BotAPI()
 
     with caplog.at_level(logging.WARNING):
@@ -2997,28 +2987,37 @@ def test_успешная_доставка_с_битым_breakdown_всё_рав
     assert "database is locked" in caplog.text
 
 
-def test_receipt_называет_сумму_рендером_а_не_общим_списанием(work, клиент):
-    """Fix 7: _charge_claude пишет свои строки с job_id=None, поэтому
+def test_receipt_называет_названную_цену_а_не_общим_списанием(work, клиент):
+    """Fix 7 + Task 7: _charge_claude пишет свои строки с job_id=None, поэтому
     job_breakdown никогда не содержит траты на подготовку сценария — сумма
-    в квитанции не должна выдавать себя за «списано всего»."""
+    в квитанции не должна выдавать себя за «списано всего». А с Task 7 total
+    — это ровно одна строка списания на job_id: цена с кнопки (enqueue_build),
+    не сумма провайдерского разбора — JobMeter пишет HeyGen/озвучку/монтаж
+    только себестоимостью (charged_micro=0).
+
+    Ревью 06-07 нашло несостыковку: эта квитанция ещё звучала как «Сам рендер
+    стоил X» — то же самое число, но без слова «цена», хотя
+    `_charged_but_undelivered_notice` уже говорит про «Названную цену».
+    Обе квитанции должны называть одну и ту же вещь одним словом."""
     def fake_run_build(chat_id, workdir):
         (workdir / "reel.mp4").write_bytes(b"x")
         return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    цена = bot.path_prices(7, bot.load_session(7), bot._billing())["plain"]
     _press("build:plain", _Msg())
     job = _claim_job()
-    _зачесть_расход_на_job(job.job_id)
     api = _BotAPI()
 
     asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
 
     text = api.messages[-1][1]
     assert "Списано" not in text  # больше не звучит как «итог за ролик»
-    assert "рендер" in text.lower()
+    assert "рендер" not in text.lower()  # не «рендер стоил» — списание было до него
+    assert "цена" in text.lower()  # то же слово, что и в _charged_but_undelivered_notice
     assert "Баланс" in text
-    assert "$1.00" in text
+    assert bot.format_usd(цена) in text
 
 
 def test_сбой_статусного_сообщения_не_теряет_durable_job(work, клиент):
@@ -3098,6 +3097,63 @@ def test_нехватки_баланса_блокирует_enqueue_build_и_н�
 
     # workdir так и не появился — отказ не оставил следов на диске.
     assert not jobs_root.exists()
+
+
+def test_списание_на_кнопку_совпадает_с_ценой_и_идёт_одной_строкой(work, клиент):
+    """Задача 07: раньше баланс списывался по факту каждого платного шага
+    (JobMeter, с наценкой) — цена на кнопке была оценкой, а не тем, что
+    спишется. Теперь ровно цена с кнопки уходит одной строкой ledger при
+    постановке в очередь (enqueue_build), с job_id и provider="quote"."""
+    bot.save_session(7, _паспорт(step=bot.READY, scenario=SCENARIO,
+                                 scenario_approved=True))
+    цена = bot.path_prices(7, bot.load_session(7), bot._billing())["plain"]
+    до = bot._ledger().balance(7)
+
+    _press("build:plain", _Msg())
+
+    job = bot._job_store().latest_for_chat(7)
+    assert bot._ledger().balance(7) == до - цена
+    with bot._ledger()._connect() as conn:
+        rows = conn.execute(
+            "SELECT provider, charged_micro, cost_micro FROM spend_log"
+            " WHERE job_id = ?", (job.job_id,),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["provider"] == "quote"
+    assert rows[0]["charged_micro"] == цена
+    assert rows[0]["cost_micro"] == 0
+
+
+def test_баланс_не_уходит_в_минус_даже_когда_факт_дороже_оценки(work, клиент):
+    """Раньше факт списывался поверх уже достаточного баланса: HeyGen
+    отрендерил дольше расчётного — и баланс, которого хватало на кнопке,
+    уходил в минус (Артём −$1.94, Nagimash −$1.01). Теперь единственное
+    списание — цена с кнопки; реальный перерасход у провайдеров (JobMeter)
+    остаётся в журнале себестоимостью и баланса не касается, даже когда
+    факт заметно дороже названного."""
+    from reels_factory.billing import JobMeter
+
+    bot.save_session(7, _паспорт(step=bot.READY, scenario=SCENARIO,
+                                 scenario_approved=True))
+    цена = bot.path_prices(7, bot.load_session(7), bot._billing())["plain"]
+    # ровно хватает на кнопку, ни цента больше
+    _charge_flat(7, bot._ledger().balance(7) - цена)
+    assert bot._ledger().balance(7) == цена
+
+    _press("build:plain", _Msg())
+
+    job = bot._job_store().latest_for_chat(7)
+    assert bot._ledger().balance(7) == 0
+
+    billing = bot._billing()
+    meter = JobMeter(bot._ledger(), chat_id=7, job_id=job.job_id,
+                     rates=billing["rates"], markup=billing["markup"])
+    # Заведомо больше, чем стоил бы любой настоящий ролик — имитирует HeyGen,
+    # отрендеривший намного дольше расчётного.
+    meter.heygen(1000.0)
+    meter.elevenlabs(50_000)
+
+    assert bot._ledger().balance(7) == 0
 
 
 def _оценка_сборки(*, montage: bool = True, share: float | None = None) -> int:
@@ -3436,7 +3492,9 @@ def test_пополнение_меняет_кнопки_в_том_же_сооб�
     assert bot.load_session(7)["pay_currency"] == "rub"
     assert msg.kinds[-1] == "edit"
     assert "Выберите сумму для пополнения" in msg.replies[-1]
-    assert _labels(msg.markups[-1])[1:] == ["1000 ₽", "2500 ₽", "5000 ₽", "← Назад"]
+    # Путь не выбран (topup_path пуст) — «ровно на этот ролик» считать не по
+    # чему, список начинается прямо с номиналов.
+    assert _labels(msg.markups[-1]) == ["1000 ₽", "2500 ₽", "5000 ₽", "← Назад"]
 
 
 def test_прогулка_по_пополнению_живёт_одним_сообщением(work, магазин):
@@ -3459,7 +3517,7 @@ def test_прогулка_по_пополнению_живёт_одним_соо
     подписи = _labels(msg.markups[-1])
     assert подписи[0].startswith("🎬 С монтажом — $")
     assert подписи[1].startswith("🎥 Без монтажа — $")
-    assert подписи[-2:] == ["💳 Пополнить баланс", "← Назад"]
+    assert подписи[-1] == "← Назад"
 
 
 def _нехватка_на_ролик(chat_id: int, было: int) -> int:
@@ -3477,7 +3535,9 @@ def test_кнопка_ровно_на_ролик_стоит_первой(work, �
     """Первый номинал $10 отпугивал тех, чей ролик стоит втрое дешевле: сумма,
     которой не хватает именно на этот ролик, стоит выше готовых номиналов."""
     было = 2_000_000
-    bot.save_session(7, _паспорт(step=bot.READY, scenario=_сценарий_на(700)))
+    # topup_path — как после тапа по кнопке пути: без него считать не по чему.
+    bot.save_session(7, _паспорт(step=bot.READY, scenario=_сценарий_на(700),
+                                 topup_path="montage"))
     _пополнить(7, было)
     msg = _Msg()
 
@@ -3498,7 +3558,8 @@ def test_кнопка_ровно_на_ролик_в_рублях_целым_чи
     """Рубли считаются тем же курсом, каким вебхук зачисляет платёж, и вверх —
     иначе человек заплатит по кнопке и всё равно не доберёт до оценки."""
     было = 2_000_000
-    bot.save_session(7, _паспорт(step=bot.READY, scenario=_сценарий_на(700)))
+    bot.save_session(7, _паспорт(step=bot.READY, scenario=_сценарий_на(700),
+                                 topup_path="montage"))
     _пополнить(7, было)
     msg = _Msg()
 
@@ -3555,21 +3616,52 @@ def test_ровная_сумма_считается_от_пути_чью_кно�
     assert дорогая != дешёвая
 
 
-def test_без_нажатой_кнопки_ровная_сумма_считается_от_дешёвого_пути(work, магазин):
-    """Пополнение открыто с экрана выбора, пути человек не назвал. Нижняя
-    граница — дешёвый путь: после неё доступен хотя бы один ролик, а обещать
-    «ровно на этот ролик» больше неё значит собирать за то, чего не выбирали."""
+def test_сценарий_артёма_один_счёт_ровно_на_путь(work, магазин, monkeypatch):
+    """Воспроизводит боевой случай: баланс 0, экран цены, монтаж стоит 735 ₽.
+    Раньше кнопка «Пополнить баланс» без пути считала нехватку по дешёвому
+    plain — Артём получил счёт на 371 ₽, не добрал до монтажа и заплатил ещё
+    365 ₽ доплаты. Тап по самой кнопке пути (кнопка без пути убрана) обязан
+    дать ровно один счёт на её цену."""
+    montage_micro = 8_085_000    # 735 ₽ ровно при fx["rub"] = 0.011
+    monkeypatch.setattr(
+        bot, "path_prices",
+        lambda chat_id, s, billing: {"montage": montage_micro, "plain": 4_000_000},
+    )
+    bot.save_session(7, _паспорт(step=bot.READY, scenario=SCENARIO,
+                                 scenario_approved=True))
+    assert bot._ledger().balance(7) == 0
+    msg = _Msg()
+
+    _press("build:montage", msg)                # денег нет — уводит в пополнение
+    assert bot.load_session(7)["topup_path"] == "montage"
+    _press("topup:cur:rub", msg)
+
+    подписи = _labels(msg.markups[-1])
+    assert подписи[0] == "735 ₽ — ровно на этот ролик"
+    _press(_данные_кнопки(msg.markups[-1], подписи[0]), msg)
+
+    assert магазин["created"] == [{
+        "amount": 73500, "currency": "rub", "customerId": "7",
+        "title": "Пополнение баланса 735 ₽",
+    }]
+
+
+def test_без_нажатой_кнопки_ровная_сумма_не_показывается(work, магазин):
+    """Пополнение открыто с экрана выбора, пути человек не назвал (topup_path
+    пуст — кнопку build: ещё не жали). Раньше здесь подставлялся дешёвый
+    `plain` — и Артём получил счёт на путь, который не выбирал (решение Васи,
+    пачка 2). Теперь считать «ровно на этот ролик» не по чему — остаются
+    одни номиналы."""
     bot.save_session(7, _паспорт(step=bot.READY, scenario=_сценарий_на(700),
                                  scenario_approved=True))
-    цены = bot.path_prices(7, bot.load_session(7), bot._billing())
+    assert bot.load_session(7).get("topup_path") is None
     msg = _Msg()
 
     _press("topup:start", msg)
     _press("topup:cur:usd", msg)
 
-    ровно = bot.format_minor(
-        bot.exact_topup_minor(цены["plain"], "usd", bot._billing()["fx"]), "usd")
-    assert _labels(msg.markups[-1])[0] == f"{ровно} — ровно на этот ролик"
+    assert _labels(msg.markups[-1]) == ["$10", "$25", "$50", "← Назад"]
+    assert bot._topup_gap_minor(7, bot.load_session(7), "usd") is None
 
 
 def test_без_ролика_кнопки_ровной_суммы_нет(work, магазин):
@@ -3609,7 +3701,8 @@ def test_ровная_сумма_не_ниже_минимума_магазина
 def test_дешёвый_ролик_показывает_минимальный_платёж(work, магазин):
     """Не хватает меньше минимального счёта: обещать «ровно на этот ролик»
     нельзя — человек заплатит больше и должен видеть, за что."""
-    bot.save_session(7, _паспорт(step=bot.READY, scenario=SCENARIO))
+    bot.save_session(7, _паспорт(step=bot.READY, scenario=SCENARIO,
+                                 topup_path="plain"))
     # Баланс почти покрывает ролик: не хватает копеек, а счёт меньше доллара
     # платёжный шлюз не примет.
     _пополнить(7, bot.path_prices(7, bot.load_session(7),
@@ -3635,7 +3728,8 @@ def test_дешёвый_ролик_создаёт_счёт_не_ниже_мин�
 
 def test_назад_с_выбора_валюты_возвращает_прежние_кнопки(work, магазин):
     """«Назад» с валюты — на экран выбора пути, с которого пополнение и
-    открыли: одна кнопка «Пополнить баланс» здесь была бы тупиком."""
+    открыли: голый экран с одной кнопкой «Пополнить баланс» здесь был бы
+    тупиком без цен обоих путей."""
     bot.save_session(7, _паспорт(step=bot.READY, scenario=SCENARIO))
     msg = _Msg("Всё на месте…")
 
@@ -3646,7 +3740,7 @@ def test_назад_с_выбора_валюты_возвращает_прежн
     подписи = _labels(msg.markups[-1])
     assert подписи[0].startswith("🎬 С монтажом — $")
     assert подписи[1].startswith("🎥 Без монтажа — $")
-    assert подписи[-2:] == ["💳 Пополнить баланс", "← Назад"]
+    assert подписи[-1] == "← Назад"
 
 
 def test_сумма_создаёт_счёт_с_chat_id_в_customerId(work, магазин):
@@ -3715,7 +3809,10 @@ def test_после_оплаты_с_нехваткой_оставляет_пут
     assert "оплата ещё не дошла" not in msg.replies[-1].lower()
     подписи = _labels(msg.markups[-1])
     assert подписи[0].endswith(bot.NO_FUNDS_SUFFIX)
-    assert подписи[-2:] == ["💳 Пополнить баланс", "← Назад"]
+    # Кнопки без пути тут больше нет: пометка на самой кнопке пути уже ведёт
+    # в пополнение с её ценой (решение Васи о пачке 2).
+    assert "💳 Пополнить баланс" not in подписи
+    assert подписи[-1] == "← Назад"
 
 
 def test_вебхук_правит_то_же_сообщение_со_счётом(work, магазин):
@@ -3825,8 +3922,8 @@ def _charge_flat(chat_id: int, micro: int) -> None:
 
 def test_нехватка_баланса_видна_только_на_выборе_пути(work, monkeypatch):
     """С нулём человек проходит весь бесплатный путь и упирается в деньги
-    ровно там, где выбирает ролик: обе кнопки помечены нехваткой, рядом стоит
-    пополнение, а «Назад» уводит к сценарию — тупика нет."""
+    ровно там, где выбирает ролик: обе кнопки помечены нехваткой и сами ведут
+    в пополнение по своей цене, а «Назад» уводит к сценарию — тупика нет."""
     monkeypatch.setattr(
         bot, "step_verbatim", lambda chat_id, text, language: SCENARIO
     )
@@ -3844,7 +3941,8 @@ def test_нехватка_баланса_видна_только_на_выбор
     подписи = _labels(msg.markups[-1])
     assert подписи[0].endswith(bot.NO_FUNDS_SUFFIX)
     assert подписи[1].endswith(bot.NO_FUNDS_SUFFIX)
-    assert подписи[-2:] == ["💳 Пополнить баланс", "← Назад"]
+    assert "💳 Пополнить баланс" not in подписи
+    assert подписи[-1] == "← Назад"
 
 
 def test_второе_утверждение_не_повторяет_ни_слов_ни_воронки(work, monkeypatch):
@@ -4079,7 +4177,8 @@ def test_нехватка_на_один_путь_метит_только_его_
     assert подписи[0].endswith(bot.NO_FUNDS_SUFFIX)
     assert not подписи[1].endswith(bot.NO_FUNDS_SUFFIX)
     assert подписи[1].startswith("🎥 Без монтажа — $")
-    assert подписи[-2:] == ["💳 Пополнить баланс", "← Назад"]
+    assert "💳 Пополнить баланс" not in подписи
+    assert подписи[-1] == "← Назад"
 
 
 def test_доступный_путь_собирается_даже_когда_на_дорогой_не_хватает(
@@ -4224,7 +4323,8 @@ def test_отказ_очереди_по_деньгам_перерисовыва�
     assert msg.replies[-1].startswith(bot.READY_MSG)
     подписи = _labels(msg.markups[-1])
     assert подписи[0].endswith(bot.NO_FUNDS_SUFFIX)
-    assert подписи[-2:] == ["💳 Пополнить баланс", "← Назад"]
+    assert "💳 Пополнить баланс" not in подписи
+    assert подписи[-1] == "← Назад"
 
 
 def test_отказ_сборки_возвращает_к_готовому_сценарию(work, клиент):
@@ -4722,7 +4822,11 @@ def test_оплата_вне_ролика_не_запирает_человека
 
 def test_выбранный_путь_протухает_при_возврате_на_экран_выбора(work, магазин):
     """topup_path жил до конца цикла: тапнув однажды по дорогому пути, человек
-    считал нехватку по нему и после того, как передумал и вернулся."""
+    считал нехватку по нему и после того, как передумал и вернулся. При
+    возврате путь стирается (`_show_ready_screen`), и, раз он больше не
+    выбран, «ровно на этот ролик» не всплывает вовсе — угадывать за человека
+    путь, который он не подтвердил заново, та же ошибка, что дала Артёму
+    лишний счёт (решение Васи, пачка 2)."""
     bot.save_session(7, _паспорт(step=bot.READY, scenario=_сценарий_на(700),
                                  scenario_approved=True))
     msg = _Msg()
@@ -4736,10 +4840,7 @@ def test_выбранный_путь_протухает_при_возврате_
     _press("topup:start", msg)
     _press("topup:cur:usd", msg)
 
-    цены = bot.path_prices(7, bot.load_session(7), bot._billing())
-    ровно = bot.format_minor(
-        bot.exact_topup_minor(цены["plain"], "usd", bot._billing()["fx"]), "usd")
-    assert _labels(msg.markups[-1])[0] == f"{ровно} — ровно на этот ролик"
+    assert _labels(msg.markups[-1]) == ["$10", "$25", "$50", "← Назад"]
 
 
 def test_экран_сценария_без_сценария_возвращает_на_материал(work):

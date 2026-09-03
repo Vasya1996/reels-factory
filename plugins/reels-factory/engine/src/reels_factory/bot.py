@@ -355,13 +355,6 @@ BTN_PLAIN = "🎥 Без монтажа — {price}"
 #: пополнять.
 NO_FUNDS_SUFFIX = " (недостаточно средств)"
 
-#: Имена провайдеров в чеке: человек платит за ведущую и монтаж, а не за
-#: heygen и claude — названия наших подрядчиков ему ничего не говорят.
-PROVIDER_NAMES = {
-    "heygen": "ведущая",
-    "elevenlabs": "озвучка",
-    "claude": "монтаж",
-}
 WISH_THANKS = "Записал, спасибо. Учту в работе."
 WISH_SKIPPED = "Хорошо, без пожеланий."
 WISH_EMPTY = "Жду пожелание текстом — одним сообщением."
@@ -1261,6 +1254,7 @@ def enqueue_build(
     voice_id: str | None = None,
     montage: bool = True,
     session: dict | None = None,
+    quoted_micro: int | None = None,
 ) -> BuildJob:
     """Подготовить immutable scenario/config и лишь затем показать job worker.
 
@@ -1270,31 +1264,44 @@ def enqueue_build(
     ``session`` — сессия чата, из которой берётся уже посчитанная доля ведущей
     (см. island_avatar_share). Без неё доля считается заново, и оценка очереди
     может разойтись с числом на кнопке, по которому человек пополнял баланс.
+
+    ``quoted_micro`` — цена ровно с той кнопки, по которой человек согласился
+    платить (`path_prices` на экране выбора пути). Списывается она, а не
+    заново посчитанная оценка: тот же расчёт (`estimate_micro` с теми же
+    `montage`/`script=False`/`avatar_share`) дважды — риск разойтись на
+    копейку и списать не то, что было названо. Не задан (ручной прогон,
+    старые вызовы без сессии) — считаем как раньше, тем же вызовом, и эта
+    оценка и есть цена, которую спишем.
     """
     from reels_factory.clients import load_client
 
     billing = _billing()
+    need = None
     if billing["enabled"]:
-        # Оценка ДО первого платного шага: после него деньги уже не вернуть.
-        # Символы берём из тех же блоков, что уйдут в синтез речи
-        # (pipeline.run_make озвучивает scenario["blocks"][i]["speech"]).
-        chars = sum(
-            len(b.get("speech") or "") for b in (scenario.get("blocks") or [])
-        )
-        # С островами HeyGen в кадре не весь ролик — без доли оценка завышена и
-        # может отказать в сборке тем, кому денег хватало. Условие, профиль и
-        # обработка его поломок — в island_avatar_share: то же число называет
-        # человеку экран выбора пути.
-        share = island_avatar_share(chat_id, billing, montage=bool(montage),
-                                    session=session)
-        estimate_kwargs = {} if share is None else {"avatar_share": share}
-        # script=False: сценарий на руках, его подготовку уже списал
-        # _charge_claude. Иначе очередь требовала бы за него второй раз — и
-        # отказала бы тому, кому по экрану цены денег хватало.
-        need = estimate_micro(
-            chars, billing["rates"], billing["markup"],
-            montage=bool(montage), script=False, **estimate_kwargs
-        )
+        if quoted_micro is not None:
+            need = int(quoted_micro)
+        else:
+            # Оценка ДО первого платного шага: после него деньги уже не
+            # вернуть. Символы берём из тех же блоков, что уйдут в синтез
+            # речи (pipeline.run_make озвучивает scenario["blocks"][i]["speech"]).
+            chars = sum(
+                len(b.get("speech") or "") for b in (scenario.get("blocks") or [])
+            )
+            # С островами HeyGen в кадре не весь ролик — без доли оценка
+            # завышена и может отказать в сборке тем, кому денег хватало.
+            # Условие, профиль и обработка его поломок — в
+            # island_avatar_share: то же число называет человеку экран
+            # выбора пути.
+            share = island_avatar_share(chat_id, billing, montage=bool(montage),
+                                        session=session)
+            estimate_kwargs = {} if share is None else {"avatar_share": share}
+            # script=False: сценарий на руках, его подготовку уже списал
+            # _charge_claude. Иначе очередь требовала бы за него второй раз —
+            # и отказала бы тому, кому по экрану цены денег хватало.
+            need = estimate_micro(
+                chars, billing["rates"], billing["markup"],
+                montage=bool(montage), script=False, **estimate_kwargs
+            )
         have = _ledger().balance(chat_id)
         if have < need:
             raise InsufficientBalance(need=need, have=have)
@@ -1375,17 +1382,40 @@ def enqueue_build(
             "scenario_sha256": hashlib.sha256(scenario_bytes).hexdigest(),
             "config_path": config_path.name,
         }
+        if need is not None:
+            # Цена, которую спишем ниже в этой же функции — кладём и в
+            # snapshot job'а: след того, что было названо, живёт рядом с
+            # тем, что реально ушло в рендер.
+            input_doc["quoted_micro"] = int(need)
         input_path = workdir / "job.input.json"
         input_path.write_text(
             json.dumps(input_doc, ensure_ascii=False, indent=1), encoding="utf-8"
         )
-        return store.enqueue_prepared(
+        job = store.enqueue_prepared(
             chat_id,
             job_id=job_id,
             workdir=workdir,
             initial_status="audio_queued",
             initial_stage="audio_preview",
         )
+        if need is not None:
+            # Списание — одной строкой, ровно на названную цену, и только
+            # здесь: после того как job уже дурабельно встала в очередь (не
+            # раньше — сбой enqueue_prepared не должен списать без job).
+            # Дальше провайдерские шаги (JobMeter) баланс уже не трогают —
+            # только себестоимость, charged_micro=0.
+            _ledger().charge(
+                chat_id,
+                entry_id=f"{job_id}:quote",
+                job_id=job_id,
+                provider="quote",
+                unit="usd",
+                quantity=1.0,
+                unit_price_micro=need,
+                cost_micro=0,
+                charged_micro=need,
+            )
+        return job
     except Exception:
         # Не удаляем непустую папку автоматически: scenario/input могут быть
         # полезны для диагностики. В БД такой job нет, worker её не увидит.
@@ -1655,13 +1685,16 @@ def _kb_ready(prices: dict | None = None, have: int | None = None):
     prices=None — биллинг выключен, называть нечего.
 
     Путь дороже баланса кнопку не теряет: она помечена нехваткой и ведёт на
-    пополнение. Убрать её значило бы спрятать и цену — то самое число, ради
-    которого человек и пошёл бы пополнять.
+    пополнение — уже с ценой ИМЕННО этого пути (`build:` запоминает, какую
+    кнопку жали, раньше, чем проверяет баланс). Отдельной кнопки «Пополнить
+    баланс» без пути здесь нет: у неё нет своего числа — топ-ап открывался бы
+    без выбранного пути (topup_path), а подставлять вместо него дешёвый путь
+    значило бы обещать сумму, которой может не хватить на путь, который
+    человек в итоге выберет.
     """
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     rows = []
-    не_хватает = False
     for code, шаблон in (("montage", BTN_MONTAGE), ("plain", BTN_PLAIN)):
         if prices is None:
             label = шаблон.format(price="").rstrip(" —")
@@ -1669,12 +1702,7 @@ def _kb_ready(prices: dict | None = None, have: int | None = None):
             label = шаблон.format(price=format_usd(prices[code]))
             if have is not None and have < prices[code]:
                 label += NO_FUNDS_SUFFIX
-                не_хватает = True
         rows.append([InlineKeyboardButton(label, callback_data=f"build:{code}")])
-    if не_хватает:
-        rows.append([InlineKeyboardButton(
-            "💳 Пополнить баланс", callback_data="topup:start"
-        )])
     rows.append([InlineKeyboardButton("← Назад", callback_data="back")])
     return InlineKeyboardMarkup(rows)
 
@@ -2607,8 +2635,10 @@ async def _show_ready_screen(msg, chat_id: int, s: dict):
     s["step"] = READY
     # Путь выбирается заново каждый раз, когда человек видит этот экран:
     # прошлый тап по дорогой кнопке не должен считать нехватку за него, если
-    # он вернулся и передумал.
+    # он вернулся и передумал. quoted_micro — та же цена, что и topup_path:
+    # протухшую кнопку нельзя ни списать, ни предложить пополнить на неё.
     s.pop("topup_path", None)
+    s.pop("quoted_micro", None)
     # ready_screen может запомнить в сессии долю ведущей, поэтому сохраняем
     # после неё, а не до.
     text, kb = ready_screen(chat_id, s)
@@ -3324,6 +3354,11 @@ async def on_button(update, context):
         billing = _billing()
         if billing["enabled"]:
             need = path_prices(chat_id, s, billing)[s["topup_path"]]
+            # Цена ровно с этой кнопки — то, что спишется при постановке в
+            # очередь (enqueue_build), а не оценка, посчитанная там ещё раз:
+            # тот же расчёт дважды рискует разойтись на копейку.
+            s["quoted_micro"] = need
+            save_session(chat_id, s)
             if _ledger().balance(chat_id) < need:
                 # Кнопка помечена «недостаточно средств» и ведёт на пополнение,
                 # а не в сборку: числа те же, что на ней и написаны.
@@ -3557,20 +3592,26 @@ def _topup_gap_minor(chat_id: int, s: dict, currency: str) -> int | None:
     вовсе, позже сборка уже оплачена.
 
     Считаем от пути, чью кнопку жали (topup_path): за ним человек сюда и
-    пришёл. Если он открыл пополнение с самого экрана, не выбирая пути, берём
-    дешёвый — это нижняя граница, после которой доступен хотя бы один путь, и
-    обещать «ровно на этот ролик» больше неё было бы враньём.
+    пришёл. Пути ещё не выбрал (topup_path пуст — экран цены только
+    показался, кнопку выбора пути не жали) — тоже None: угадывать за него
+    путь, которого он не выбирал, значит подставить дешёвый и обещать сумму,
+    которой может не хватить, если он в итоге выберет монтаж (решение Васи:
+    ошибка второго счёта Артёма шла отсюда — `plain` подставлялся по
+    умолчанию).
 
     Оценку берём заново: пока экран пополнения висел в чате, сценарий мог
     смениться.
     """
     if (s or {}).get("step") != READY:
         return None
+    topup_path = s.get("topup_path")
+    if topup_path not in ("montage", "plain"):
+        return None
     billing = _billing()
     if not billing["enabled"]:
         return None
     prices = path_prices(chat_id, s, billing)
-    need = prices["montage"] if s.get("topup_path") == "montage" else prices["plain"]
+    need = prices[topup_path]
     gap = need - _ledger().balance(chat_id)
     if gap <= 0:
         return None
@@ -3768,6 +3809,7 @@ async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
             voice_id=s.get("voice_id"),
             montage=bool(s.get("montage", True)),
             session=s,
+            quoted_micro=s.get("quoted_micro"),
         )
     except InsufficientBalance as exc:
         # Раньше общего except: иначе нехватка баланса покажется как
@@ -4030,11 +4072,18 @@ async def _process_audio_job(bot_api, job: BuildJob, preview_fn=None) -> None:
 
 
 def _charged_but_undelivered_notice(job_id: str) -> str:
-    """Реальная поломка, размер файла или доставка провалились ПОСЛЕ платного
-    рендера — баланс уже просел, а автоматических возвратов нет (осознанно вне
-    плана). Пользователь должен узнать сумму из того же сообщения, а не
-    заметить её сам в /balance. QA сюда с решения 05 не входит: красный гейт
-    больше не отменяет доставку, ролик уходит без этого уведомления.
+    """Реальная поломка, размер файла или доставка провалились уже ПОСЛЕ
+    того, как названная на кнопке цена списалась одной строкой при
+    постановке в очередь (enqueue_build) — до первого платного шага у
+    провайдера. Автоматических возвратов нет (осознанно вне плана). Человек
+    должен узнать сумму из того же сообщения, а не заметить её сам в
+    /balance. QA сюда с решения 05 не входит: красный гейт больше не
+    отменяет доставку, ролик уходит без этого уведомления.
+
+    Не «рендер уже стоил X»: списание случилось ДО рендера и не зависит от
+    того, сколько его реально успело пройти до поломки — JobMeter пишет
+    провайдерские шаги себестоимостью (charged_micro=0), не списанием.
+    Честная формулировка — про названную цену, а не про факт работы.
 
     Вызывается вне защиты _safe_job_message — job уже завершён, повторов не
     будет, поэтому чтение бухгалтерии не должно уметь уронить обработчик:
@@ -4046,17 +4095,11 @@ def _charged_but_undelivered_notice(job_id: str) -> str:
     except Exception as e:
         log.warning("не удалось прочитать breakdown для job %s: %s", job_id, e)
         return ""
-    if not breakdown:
-        return ""
-    parts = ", ".join(
-        f"{name} {format_usd(value)}" for name, value in sorted(breakdown.items())
-    )
     total = sum(breakdown.values())
-    # Как и в чеке успешной доставки: total — это стоимость самого рендера
-    # (job_id проставлен), подготовка сценария Клодом сюда не входит и
-    # списывается отдельно — не называем total «списано за попытку целиком».
+    if not total:
+        return ""
     return (
-        f"\n\nСам рендер уже стоил {format_usd(total)} ({parts}) — "
+        f"\n\nНазванная цена ({format_usd(total)}) уже списана — "
         "разберёмся вручную."
     )
 
@@ -4207,19 +4250,20 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         log.warning("не удалось прочитать breakdown для job %s: %s", job.job_id, e)
         breakdown = None
     if breakdown:
-        parts = ", ".join(
-            f"{PROVIDER_NAMES.get(name, name)} {format_usd(value)}"
-            for name, value in sorted(breakdown.items())
-        )
         total = sum(breakdown.values())
-        # Это стоимость самого рендера (job_id проставлен): работа агента
-        # монтажа сюда уже входит, а подготовка сценария Клодом списывается
-        # раньше, без job_id, и в чек не попадает — поэтому не называем total
-        # «списано за ролик», баланс ниже точнее.
+        # total — одна строка списания на job_id: названная на кнопке цена
+        # (enqueue_build, quoted_micro), а не сумма провайдерского разбора —
+        # JobMeter пишет HeyGen/озвучку/монтаж только себестоимостью
+        # (charged_micro=0), списывать по факту второй раз здесь нечего.
+        # Не «рендер стоил X»: списание случилось до рендера и не зависит от
+        # факта — это та же названная цена, что и в
+        # _charged_but_undelivered_notice, тем же словом «цена». Подготовка
+        # сценария Клодом списывается раньше, без job_id, и в чек не
+        # попадает — поэтому total не «весь ролик», а именно цена пути.
         await _safe_job_message(
             bot_api,
             job.chat_id,
-            f"Сам рендер стоил {format_usd(total)} ({parts}).\n"
+            f"Цена ролика — {format_usd(total)}, списана с баланса.\n"
             f"Баланс: {format_usd(_ledger().balance(job.chat_id))}",
         )
     _update_session_after_job(job.chat_id, job.job_id, DONE)

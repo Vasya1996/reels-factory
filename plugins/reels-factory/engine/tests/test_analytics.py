@@ -177,13 +177,14 @@ def test_запись_не_падает_на_битой_базе(tmp_path):
     store.record(1, 1, "start")  # не должно бросить
 
 def test_три_самых_дорогих_сбоя_названы_в_журнале(store):
-    """Сбой сборки, провал проверок и несоздавшаяся озвучка — самые дорогие
-    отвалы продукта. Без своего ключа в ERROR_EVENTS событие не попадает ни в
-    счётчик сбоев, ни в подписи сводки: render_funnel берёт названия отсюда, и
-    незнакомое событие показалось бы человеку голым `error:audio`."""
+    """Сбой сборки, доставка с непройденным QA и несоздавшаяся озвучка —
+    самые дорогие отвалы продукта. Без своего ключа в ERROR_EVENTS событие не
+    попадает ни в счётчик сбоев, ни в подписи сводки: render_funnel берёт
+    названия отсюда, и незнакомое событие показалось бы человеку голым
+    `error:audio`."""
     from reels_factory.analytics import ERROR_EVENTS
 
-    for key in ("error:build", "error:qa", "error:audio"):
+    for key in ("error:build", "delivered:qa_fail", "error:audio"):
         assert key in ERROR_EVENTS, key
         assert ERROR_EVENTS[key] and not ERROR_EVENTS[key].startswith("error")
 
@@ -192,3 +193,21 @@ def test_три_самых_дорогих_сбоя_названы_в_журна�
     assert store.errors()["error:audio"] == 1
     сводка = render_funnel(store, 0.0, title="Воронка")
     assert ERROR_EVENTS["error:audio"] in сводка
+
+
+def test_доставленный_с_браком_виден_в_сбоях_но_не_в_остановившихся(store):
+    """delivered:qa_fail пишется ПОСЛЕ reel_delivered (bot.py:_process_job) —
+    цикл доехал, просто с изъяном. Он обязан посчитаться в «Сбои:» (иначе
+    брак невидим), но не в «Остановились на:» — тот раздел читает последнее
+    событие цикла, и без исключения доставленный ролик выглядел бы
+    оборвавшимся на голом `delivered:qa_fail`."""
+    from reels_factory.analytics import ERROR_EVENTS
+
+    _цикл(store, 1, 1, "start", "build_queued", "reel_delivered", "delivered:qa_fail")
+
+    assert store.errors()["delivered:qa_fail"] == 1
+    сводка = render_funnel(store, 0.0, title="Воронка")
+    assert f"— {ERROR_EVENTS['delivered:qa_fail']}: 1" in сводка
+    # Единственный цикл доехал (reel_delivered в его событиях) — «Остановились
+    # на:» не должно появиться вовсе, иначе qa_fail посчитался бы обрывом.
+    assert "Остановились на:" not in сводка
