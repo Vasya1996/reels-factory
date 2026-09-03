@@ -63,7 +63,18 @@ insufficient_credit/subscription_required), 403 → HeyGenConfigError, 404 и
 знаками тела.
 
 ensure_balance_for_order() — задача 10, п.3: перед первым платным POST
-заказа проверяет GET /v3/users/me → wallet.remaining_balance. Ниже
+заказа проверяет GET /v3/users/me → wallet.remaining_balance. Форма ответа —
+по доке (https://developers.heygen.com/user-profile, снята 2026-09-03,
+heygen-docs.md в scratchpad задачи): "Endpoint: GET
+https://api.heygen.com/v3/users/me ... Returns the authenticated user's
+profile, remaining credits or balance, and billing details", ответ ветвится
+по billing_type, и у "wallet" — "wallet.currency — 'usd' or 'credits';
+wallet.remaining_balance — Current balance." У self-serve/API-ключа это
+billing_type "wallet", валюта usd — пересчитывать из кредитов не нужно.
+Дока НЕ даёт пример тела ответа для этого эндпоинта (обёрнут ли `wallet` в
+`data`, как это точно видно на /v3/videos/{id} — heygen-docs.md §3, `.json()
+["data"]`, — или лежит на верхнем уровне, не показано); код и тест поэтому
+читают обе формы (`payload.get("data") or payload`), а не гадают. Ниже
 HEYGEN_LOW_BALANCE_USD — алерт Васе (см. alerts.py; зовётся один раз на
 сборку — это гарантирует сама точка вызова: render_avatar_islands/
 _run_plain_avatar зовут её один раз до цикла заказа шотов, а не на каждый
@@ -77,17 +88,22 @@ HeyGenCreditsExhausted. Сбой самой проверки остатка (с�
 pause_heygen_orders()/heygen_orders_paused()/clear_heygen_pause() — задача
 10, п.4: файл-флаг в WORK_ROOT (общий на весь сервис — кошелёк HeyGen один на
 всех клиентов, а не на job). HeyGenCreditsExhausted ставит флаг при
-возникновении (что 402 от HeyGen, что наш предварительный отказ по оценке).
-Следующая же успешная проверка остатка выше порога снимает его сама — ручных
-кнопок нет. bot.py читает heygen_orders_paused() на экране цены, до
-списания: без этого чтения платный тап всё равно уходил бы в HeyGen,
-который откажет уже после того, как деньги списаны с баланса клиента.
+возникновении (что 402 от HeyGen, что наш предварительный отказ по оценке) и
+тут же шлёт алерт Васе через _alert_pause_if_due() — не чаще раза в час,
+метка последнего алерта в самом файле флага, а не в памяти процесса (см.
+докстринг у _alert_pause_if_due: _credits_exhausted исполняется в подпроцессе
+рендера, у каждого своя память). Следующая же успешная проверка остатка выше
+порога снимает флаг сама — ручных кнопок нет. bot.py читает
+heygen_orders_paused() на экране цены, до списания: без этого чтения платный
+тап всё равно уходил бы в HeyGen, который откажет уже после того, как деньги
+списаны с баланса клиента.
 """
 import hashlib
 import json
 import logging
 import os
 import threading
+import time
 from pathlib import Path
 
 from reels_factory.config import BILLING_DEFAULTS, WORK_ROOT
@@ -263,8 +279,63 @@ def clear_heygen_pause() -> None:
     _pause_flag_path().unlink(missing_ok=True)
 
 
+# Тот же часовой троттлинг, что и у алерта про тап человека по уже
+# приостановленной цене (bot.py: _alert_heygen_pause_tap), но не через
+# process-локальную переменную: эта пауза ставится из _credits_exhausted,
+# который исполняется в подпроцессе рендера (`python -m reels_factory make`,
+# см. docstring модуля и _send_alert_sync) — у каждого запуска своя память,
+# и in-memory троттлинг обнулялся бы на каждом новом 402. Метка последнего
+# алерта живёт в самом файле флага паузы — его читают и пишут все процессы.
+_PAUSE_ALERT_INTERVAL_S = 3600
+
+
+def _pause_and_alert_if_due(reason: str) -> None:
+    """Ставит флаг паузы (pause_heygen_orders) и, не чаще раза в час, шлёт
+    Васе алерт про сам момент постановки (независимая проверка пачки 08-10,
+    п. b): раньше он уходил только при низком остатке кошелька
+    (ensure_balance_for_order) и при тапе человека по уже приостановленной
+    цене (bot.py) — сам момент установки флага молчал.
+
+    Метку last_alerted_at читаем ДО pause_heygen_orders: та безусловно
+    перезаписывает файл флага свежими reason/since на каждый 402 (в том
+    числе повторный, пока пауза уже висит) — прочитать метку ПОСЛЕ записи
+    значило бы каждый раз находить пустой файл и слать алерт заново.
+    """
+    path = _pause_flag_path()
+    last_alerted_at = None
+    if path.is_file():
+        try:
+            last_alerted_at = json.loads(path.read_text(encoding="utf-8")).get(
+                "last_alerted_at"
+            )
+        except Exception:
+            last_alerted_at = None
+    now = time.time()
+    due = last_alerted_at is None or now - float(last_alerted_at) >= _PAUSE_ALERT_INTERVAL_S
+
+    pause_heygen_orders(reason)
+
+    if not due:
+        return
+    _send_alert_sync(
+        "HeyGen: приём заказов поставлен на паузу\n"
+        f"Причина: {reason[:500]}"
+    )
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["last_alerted_at"] = now
+        path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception as exc:
+        # Флаг паузы уже стоит (pause_heygen_orders отработал строкой выше)
+        # — несохранённая метка алерта означает лишь чуть более частые
+        # повторы уведомления, не потерю самой паузы.
+        log.warning("не удалось записать last_alerted_at в флаг паузы: %s", exc)
+
+
 def _credits_exhausted(message: str, *, code: str | None = None) -> HeyGenCreditsExhausted:
-    pause_heygen_orders(message)
+    _pause_and_alert_if_due(message)
     return HeyGenCreditsExhausted(message, code=code)
 
 

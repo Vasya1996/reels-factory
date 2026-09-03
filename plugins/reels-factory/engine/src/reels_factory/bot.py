@@ -1271,6 +1271,8 @@ def enqueue_build(
     montage: bool = True,
     session: dict | None = None,
     quoted_micro: int | None = None,
+    username: str | None = None,
+    first_name: str | None = None,
 ) -> BuildJob:
     """Подготовить immutable scenario/config и лишь затем показать job worker.
 
@@ -1280,6 +1282,13 @@ def enqueue_build(
     ``session`` — сессия чата, из которой берётся уже посчитанная доля ведущей
     (см. island_avatar_share). Без неё доля считается заново, и оценка очереди
     может разойтись с числом на кнопке, по которому человек пополнял баланс.
+
+    ``username``/``first_name`` — из `update.effective_user` в момент, когда
+    человек жмёт кнопку сборки (см. `_enqueue_build`). Сессия чата это не
+    хранит, а job переживает сессию: алерт о поломке (`_alert_job_trouble`)
+    читает их из `job.meta`, а не заново из сессии, которая к моменту алерта
+    могла уже уйти в следующий цикл. Не заданы (ручной прогон, старые вызовы)
+    — `job.meta` остаётся `None`, и алерт печатает только chat_id.
 
     ``quoted_micro`` — цена ровно с той кнопки, по которой человек согласился
     платить (`path_prices` на экране выбора пути). Списывается она, а не
@@ -1407,12 +1416,18 @@ def enqueue_build(
         input_path.write_text(
             json.dumps(input_doc, ensure_ascii=False, indent=1), encoding="utf-8"
         )
+        meta = {}
+        if username:
+            meta["username"] = str(username)
+        if first_name:
+            meta["first_name"] = str(first_name)
         job = store.enqueue_prepared(
             chat_id,
             job_id=job_id,
             workdir=workdir,
             initial_status="audio_queued",
             initial_stage="audio_preview",
+            meta=meta or None,
         )
         if need is not None:
             # Списание — одной строкой, ровно на названную цену, и только
@@ -3282,7 +3297,7 @@ async def on_button(update, context):
         if not client_profile_ready(chat_id):
             await q.message.reply_text(CLIENT_NOT_FOUND_MSG)
             return
-        await _enqueue_build(q.message, chat_id, s)
+        await _enqueue_build(q.message, chat_id, s, update)
     elif data == "ready:show":
         # Сборка упала, но текст цел: возвращаем к выбору пути, а не гоним
         # человека писать сценарий заново.
@@ -3700,8 +3715,15 @@ async def cmd_stats(update, context) -> None:
     await update.message.reply_text(text)
 
 
-async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
-    """Поставить job в durable FIFO; платный pipeline здесь не запускается."""
+async def _enqueue_build(msg, chat_id: int, s: dict, update=None) -> BuildJob | None:
+    """Поставить job в durable FIFO; платный pipeline здесь не запускается.
+
+    ``update`` — тот же Update, что и у обработчика кнопки: `effective_user`
+    из него кладётся в job.meta (см. enqueue_build), чтобы алерт о поломке
+    печатал не только chat_id. Не передан (тесты, вызовы в обход кнопки) —
+    job.meta просто пуст, как и раньше.
+    """
+    user = getattr(update, "effective_user", None)
     try:
         job = enqueue_build(
             chat_id,
@@ -3711,6 +3733,8 @@ async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
             montage=bool(s.get("montage", True)),
             session=s,
             quoted_micro=s.get("quoted_micro"),
+            username=getattr(user, "username", None),
+            first_name=getattr(user, "first_name", None),
         )
     except InsufficientBalance as exc:
         # Раньше общего except: иначе нехватка баланса покажется как
@@ -4079,16 +4103,19 @@ async def _alert_job_trouble(job: BuildJob, *, stage: str, detail: str) -> None:
     """Алерт Васе в отдельный телеграм-бот (задача 08): реальная поломка
     сборки/доставки или доставка с красным гейтом. `alerts.send_alert` сам
     решает, включены ли алерты (ALERT_BOT_TOKEN/ALERT_CHAT_ID) и сам глотает
-    сбой отправки — здесь же защищаемся от сбоя СБОРКИ текста алерта (сессия
-    не читается, ledger заблокирован): job уже (или вот-вот будет) finished,
-    и упавший алерт не должен забрать с собой ответ человеку."""
+    сбой отправки — здесь же защищаемся от сбоя СБОРКИ текста алерта (ledger
+    заблокирован): job уже (или вот-вот будет) finished, и упавший алерт не
+    должен забрать с собой ответ человеку."""
     try:
-        s = load_session(job.chat_id)
-        # Сессия сегодня не хранит имя/username — оно попадёт сюда, как
-        # только появится источник (задача вне 08). До тех пор — просто
-        # chat_id, без выдумывания персистентных полей заранее.
-        name = s.get("username") or s.get("first_name")
-        who = f"{job.chat_id}" + (f" ({name})" if name else "")
+        # job.meta — username/first_name из Telegram на момент enqueue (см.
+        # bot.py: enqueue_build). Не сессия: та к моменту алерта могла уже
+        # уйти в следующий цикл человека. Пусто у задач без источника (старые
+        # job, ручной прогон) — тогда просто chat_id, без имени.
+        meta = job.meta or {}
+        username = meta.get("username")
+        first_name = meta.get("first_name")
+        label = f"@{username}" if username else first_name
+        who = f"{job.chat_id}" + (f" ({label})" if label else "")
         paid = format_usd(_named_price_micro(job.job_id))
         text = (
             "Сборка с изъяном\n"

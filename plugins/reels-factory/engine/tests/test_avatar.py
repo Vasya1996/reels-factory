@@ -560,7 +560,77 @@ def test_402_даёт_credits_exhausted_ставит_паузу_и_шлёт_ал
         c.generate(audio, tmp_path / "out.mp4")
 
     assert heygen_orders_paused() is not None
-    assert len(отправлено) == 0  # алерт про 402 отдельно не шлётся — только пауза
+    assert len(отправлено) == 1  # момент установки паузы шлёт алерт
+    assert "паузе" in отправлено[0] or "паузу" in отправлено[0]
+    assert "insufficient_credit" in отправлено[0]
+
+
+def test_повторный_402_за_тот_же_час_не_шлёт_второй_алерт(tmp_path, monkeypatch):
+    """Независимая проверка пачки 08-10, п. b: алерт о паузе — один раз, тот
+    же часовой троттлинг, что у алерта про тап человека в уже приостановленный
+    приём (bot.py: _alert_heygen_pause_tap)."""
+    monkeypatch.setenv("ALERT_BOT_TOKEN", "t")
+    monkeypatch.setenv("ALERT_CHAT_ID", "42")
+    отправлено = []
+
+    class _FakeAlertBot:
+        def __init__(self, token):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def send_message(self, chat_id, text):
+            отправлено.append(text)
+
+    import reels_factory.alerts as alerts_module
+    monkeypatch.setattr(alerts_module, "Bot", _FakeAlertBot)
+
+    from reels_factory.avatar import _credits_exhausted
+
+    with pytest.raises(HeyGenCreditsExhausted):
+        raise _credits_exhausted("нет денег 1", code="insufficient_credit")
+    with pytest.raises(HeyGenCreditsExhausted):
+        raise _credits_exhausted("нет денег 2", code="insufficient_credit")
+
+    assert len(отправлено) == 1
+    assert "нет денег 1" in отправлено[0]
+
+
+def test_алерт_о_паузе_повторяется_через_час(tmp_path, monkeypatch):
+    monkeypatch.setenv("ALERT_BOT_TOKEN", "t")
+    monkeypatch.setenv("ALERT_CHAT_ID", "42")
+    отправлено = []
+
+    class _FakeAlertBot:
+        def __init__(self, token):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def send_message(self, chat_id, text):
+            отправлено.append(text)
+
+    import reels_factory.alerts as alerts_module
+    monkeypatch.setattr(alerts_module, "Bot", _FakeAlertBot)
+
+    import reels_factory.avatar as avatar_module
+
+    часы = [1000.0]
+    monkeypatch.setattr(avatar_module.time, "time", lambda: часы[0])
+
+    avatar_module._credits_exhausted("нет денег 1", code="insufficient_credit")
+    часы[0] += avatar_module._PAUSE_ALERT_INTERVAL_S + 1
+    avatar_module._credits_exhausted("нет денег 2", code="insufficient_credit")
+
+    assert len(отправлено) == 2
 
 
 def test_403_даёт_config_error_без_v2(tmp_path):

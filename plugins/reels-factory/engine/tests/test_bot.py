@@ -3205,6 +3205,75 @@ def test_алерт_при_поломке_сборки(work, клиент, ал�
     assert str(job.workdir) in text
 
 
+def test_username_из_telegram_попадает_в_алерт(work, клиент, алерты):
+    """Кто поставил job — берётся из update.effective_user в момент тапа по
+    кнопке сборки (см. bot.py: _enqueue_build/enqueue_build), а не из сессии
+    чата: она username не хранит. Хранится в job.meta, поэтому алерт видит
+    его даже если сессия к моменту поломки успела уйти в новый цикл."""
+    def fake_run_build(chat_id, workdir):
+        return {"ok": False, "stage": "voice", "error": "HeyGen отказал"}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    msg = _Msg()
+    upd = type("U", (), {"callback_query": _Query("build:plain", msg)})()
+    upd.effective_user = type("U", (), {"username": "vasya", "first_name": "Вася"})()
+    asyncio.run(bot.on_button(upd, None))
+
+    job = _claim_job()
+    assert job.meta == {"username": "vasya", "first_name": "Вася"}
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert len(алерты) == 1
+    text = алерты[0]["text"]
+    assert "@vasya" in text
+    assert "7" in text
+
+
+def test_алерт_без_username_печатает_имя(work, клиент, алерты):
+    """Не у всех в Telegram есть username — тогда в алерт идёт first_name."""
+    def fake_run_build(chat_id, workdir):
+        return {"ok": False, "stage": "voice", "error": "HeyGen отказал"}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    msg = _Msg()
+    upd = type("U", (), {"callback_query": _Query("build:plain", msg)})()
+    upd.effective_user = type("U", (), {"username": None, "first_name": "Вася"})()
+    asyncio.run(bot.on_button(upd, None))
+
+    job = _claim_job()
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert "Вася" in алерты[0]["text"]
+    assert "@" not in алерты[0]["text"]
+
+
+def test_старая_job_без_meta_алерт_без_имени_не_падает(work, клиент, алерты):
+    """job, поставленная до этого поля (или в обход бота) — meta пуст, алерт
+    печатает только chat_id и не падает."""
+    def fake_run_build(chat_id, workdir):
+        return {"ok": False, "stage": "voice", "error": "HeyGen отказал"}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())  # без effective_user — как раньше
+    job = _claim_job()
+    assert job.meta is None
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert len(алерты) == 1
+    text = алерты[0]["text"]
+    assert "Кто: 7\n" in text
+    assert "@" not in text
+
+
 def test_алерт_когда_файла_ролика_нет(work, клиент, алерты):
     def fake_run_build(chat_id, workdir):
         return {"ok": True, "mp4": str(workdir / "нет-такого.mp4"),
