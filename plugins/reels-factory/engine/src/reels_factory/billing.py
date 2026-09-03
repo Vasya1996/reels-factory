@@ -252,6 +252,32 @@ class LedgerStore:
             ).fetchall()
         return {row["provider"]: int(row["total"]) for row in rows}
 
+    def job_provider_stats(self, job_id: str) -> dict[str, dict]:
+        """Себестоимость по провайдеру для карточки сборки (задача 19) —
+        не списание (`job_breakdown`/`charged_micro`, всегда 0 у JobMeter,
+        см. его docstring), а настоящая себестоимость каждого шага
+        (`cost_micro`) вместе с её объёмом (`quantity`: секунды HeyGen, доллары
+        Клода) и числом записей. `JobMeter._record` пишет обе колонки уже
+        сейчас — здесь только агрегат по тому, что уже в `spend_log`."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT provider, SUM(cost_micro) AS cost, SUM(quantity) AS qty,
+                       COUNT(*) AS n
+                FROM spend_log WHERE job_id = ? AND refunded_at IS NULL
+                GROUP BY provider
+                """,
+                (job_id,),
+            ).fetchall()
+        return {
+            row["provider"]: {
+                "cost_micro": int(row["cost"] or 0),
+                "quantity": float(row["qty"] or 0.0),
+                "count": int(row["n"] or 0),
+            }
+            for row in rows
+        }
+
 
 def heygen_cost_micro(seconds: float, rates: dict, *, twin: bool = False) -> int:
     """Стоимость рендера HeyGen.

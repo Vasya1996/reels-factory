@@ -1,0 +1,7 @@
+{
+ "format_version": 1,
+ "provider": "elevenlabs",
+ "input_sha256": "cafef00d",
+ "input_characters": 512,
+ "duration_seconds": 42.1
+}

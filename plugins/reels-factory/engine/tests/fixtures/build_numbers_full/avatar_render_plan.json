@@ -1,0 +1,16 @@
+{
+ "format_version": 1,
+ "status": "planned",
+ "generated_by": "reels_factory.avatar_islands",
+ "summary": {
+  "duration_seconds": 42.53,
+  "avatar_visible_seconds": 18.2,
+  "avatar_requested_seconds": 21.4,
+  "avatar_billed_seconds": 21.4,
+  "avatar_visible_ratio": 0.4279,
+  "saved_vs_full_avatar_seconds": 21.13,
+  "estimated_cost_usd": 1.07,
+  "island_count": 3,
+  "shot_count": 4
+ }
+}

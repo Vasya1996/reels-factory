@@ -50,6 +50,9 @@ from pathlib import Path
 from reels_factory import alerts
 from reels_factory.analytics import EventStore, render_funnel
 from reels_factory.avatar import heygen_orders_paused
+from reels_factory.avatar_islands import (
+    RENDER_MANIFEST_FILENAME, RENDER_PLAN_FILENAME,
+)
 from reels_factory.billing import (
     LedgerStore, claude_cost_micro, claude_run_cost_usd, estimate_micro,
 )
@@ -58,7 +61,7 @@ from reels_factory.config import (
     load_config,
 )
 from reels_factory.feedback import FeedbackStore
-from reels_factory.hf_render import reset_montage_steps, run_step
+from reels_factory.hf_render import RETRY_REASON_FILE, reset_montage_steps, run_step
 from reels_factory.jobs import RESUMABLE_STATUSES, BuildJob, JobStore
 from reels_factory.language import (
     SUPPORTED_LANGUAGES,
@@ -1451,6 +1454,136 @@ def enqueue_build(
         # Не удаляем непустую папку автоматически: scenario/input могут быть
         # полезны для диагностики. В БД такой job нет, worker её не увидит.
         raise
+
+
+def collect_build_numbers(job_dir, *, ledger: LedgerStore | None = None,
+                          job_id: str | None = None,
+                          job_attempts: int | None = None,
+                          job_resumes: int | None = None) -> dict:
+    """Карточка сборки (задача 19): числа, которые сейчас находят раскопками
+    по папке job и по логам, — собранные в одно место в `result_json`.
+
+    Каждое число — то, что движок уже посчитал и записал сам; здесь только
+    чтение. Источники (файл:строка, кто пишет):
+
+    * заказ ведущей секундами и её оценённая себестоимость —
+      `avatar_render_plan.json` (`RENDER_PLAN_FILENAME`,
+      avatar_islands.py:46-47), поле `summary`, которое пишет
+      `build_avatar_render_plan` (avatar_islands.py:929-958) и сохраняет на
+      диск `save_avatar_render_plan`;
+    * статусы клипов ведущей (video_id/таймаут/отказ) —
+      `avatar_render_manifest.json` (`RENDER_MANIFEST_FILENAME`), которую
+      пишет и обновляет `render_avatar_islands` по ходу рендера
+      (avatar_islands.py:1318-1453); `provider_job_id` — это HeyGen video_id,
+      его кладёт туда только ветка таймаута (avatar_islands.py:1404-1412);
+    * плановая длительность ролика — `audio.approved.json` в корне job_dir
+      (пишет `approve_master_audio`, master_audio.py:680) указывает на папку
+      с `audio_manifest.json` (пишет `build_master_audio`,
+      master_audio.py:489/522), поле `duration_seconds` — длительность
+      утверждённой озвучки, на которую ложится монтаж;
+    * фактическая длительность ролика — `scenario.timed.json`, поле `total`,
+      которое `assemble_hyperframes` пишет последним шагом, уже после рендера
+      и нормализации громкости (hf_render.py:1839-1841);
+    * гейты готового ролика — `gates.json` (пишет тот же `assemble_hyperframes`,
+      hf_render.py:1791 и 1828), плоский словарь имя гейта -> вердикт;
+    * причина последней пересдачи — `retry_reason.txt`
+      (`RETRY_REASON_FILE`, hf_render.py:166), пишет `save_retry_reason`;
+    * себестоимость по провайдерам и факт секунд HeyGen/число прогонов агента
+      монтажа — `LedgerStore.job_provider_stats` (billing.py), агрегат по
+      `spend_log`, куда одни и те же числа пишет `JobMeter._record`
+      (billing.py:461-472: `cost_micro` — настоящая себестоимость,
+      `quantity` — секунды HeyGen или сумма в долларах у Клода) при каждом
+      прогоне сборки;
+    * попытки job на уровне очереди (перехваты worker'ом и нажатия
+      «продолжить» человеком) — `BuildJob.attempts`/`.resumes`
+      (jobs.py:112-113, 229-230, 318, 472); эта функция файлов не читает,
+      значения передаёт вызывающий код (`_process_job`), у которого уже есть
+      сам `job`.
+
+    Устойчива к отсутствию любого файла и к отсутствию `ledger`/`job_id` —
+    старые папки и упавшие на середине сборки читаются частично, а не роняют
+    сбор карточки."""
+    jd = Path(job_dir)
+    numbers: dict = {}
+
+    def _read_json(path: Path):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    plan = _read_json(jd / RENDER_PLAN_FILENAME)
+    summary = (plan or {}).get("summary") if isinstance(plan, dict) else None
+    if summary:
+        numbers["avatar_seconds_requested"] = summary.get("avatar_requested_seconds")
+        numbers["avatar_seconds_billed_planned"] = summary.get("avatar_billed_seconds")
+        numbers["avatar_estimated_cost_usd"] = summary.get("estimated_cost_usd")
+
+    manifest = _read_json(jd / RENDER_MANIFEST_FILENAME)
+    shots = (manifest or {}).get("shots") if isinstance(manifest, dict) else None
+    if shots is not None:
+        by_status: dict[str, int] = {}
+        problems = []
+        for shot in shots:
+            status = shot.get("status") or "unknown"
+            by_status[status] = by_status.get(status, 0) + 1
+            if status != "ready":
+                problems.append({
+                    "shot_id": shot.get("shot_id"),
+                    "status": status,
+                    "video_id": shot.get("provider_job_id"),
+                    "error": shot.get("error"),
+                })
+        numbers["avatar_shots_by_status"] = by_status
+        numbers["avatar_shot_problems"] = problems
+
+    approval = _read_json(jd / "audio.approved.json")
+    if isinstance(approval, dict) and approval.get("artifact_dir"):
+        audio_manifest = _read_json(
+            jd / str(approval["artifact_dir"]) / "audio_manifest.json")
+        if isinstance(audio_manifest, dict):
+            numbers["video_duration_planned_seconds"] = audio_manifest.get(
+                "duration_seconds")
+
+    timed = _read_json(jd / "scenario.timed.json")
+    if isinstance(timed, dict) and "total" in timed:
+        numbers["video_duration_actual_seconds"] = timed.get("total")
+
+    gates = _read_json(jd / "gates.json")
+    if isinstance(gates, dict):
+        failed = [name for name, verdict in gates.items()
+                  if str(verdict).startswith("FAIL")]
+        numbers["gates_all_pass"] = not failed
+        numbers["gates_failed"] = failed
+
+    try:
+        reason = (jd / RETRY_REASON_FILE).read_text(encoding="utf-8").strip()
+        numbers["retry_reason"] = reason or None
+    except OSError:
+        numbers["retry_reason"] = None
+
+    if ledger is not None and job_id:
+        try:
+            stats = ledger.job_provider_stats(job_id)
+        except Exception as e:
+            log.warning("не удалось прочитать job_provider_stats для %s: %s",
+                        job_id, e)
+            stats = {}
+        numbers["cost_by_provider_usd"] = {
+            provider: round(row["cost_micro"] / 1_000_000, 4)
+            for provider, row in stats.items()
+        }
+        if "heygen" in stats:
+            numbers["avatar_seconds_actual"] = stats["heygen"]["quantity"]
+        if "claude" in stats:
+            numbers["montage_agent_charges"] = stats["claude"]["count"]
+
+    if job_attempts is not None:
+        numbers["job_attempts"] = job_attempts
+    if job_resumes is not None:
+        numbers["job_resumes"] = job_resumes
+
+    return numbers
 
 
 def run_build(chat_id: int, workdir: Path, on_line=None) -> dict:
@@ -4101,13 +4234,18 @@ async def _alert_heygen_pause_tap(chat_id: int, paused: dict) -> None:
     )
 
 
-async def _alert_job_trouble(job: BuildJob, *, stage: str, detail: str) -> None:
+async def _alert_job_trouble(job: BuildJob, *, stage: str, detail: str,
+                             result: dict | None = None) -> None:
     """Алерт Васе в отдельный телеграм-бот (задача 08): реальная поломка
     сборки/доставки или доставка с красным гейтом. `alerts.send_alert` сам
     решает, включены ли алерты (ALERT_BOT_TOKEN/ALERT_CHAT_ID) и сам глотает
     сбой отправки — здесь же защищаемся от сбоя СБОРКИ текста алерта (ledger
     заблокирован): job уже (или вот-вот будет) finished, и упавший алерт не
-    должен забрать с собой ответ человеку."""
+    должен забрать с собой ответ человеку.
+
+    `result` — тот же словарь, что `_process_job` кладёт в `result_json`
+    (задача 19): если в нём уже посчитана карточка `build_numbers`, алерт
+    печатает те же числа как есть — новой формы для них не заводим."""
     try:
         # job.meta — username/first_name из Telegram на момент enqueue (см.
         # bot.py: enqueue_build). Не сессия: та к моменту алерта могла уже
@@ -4128,6 +4266,12 @@ async def _alert_job_trouble(job: BuildJob, *, stage: str, detail: str) -> None:
             f"job_id: {job.job_id}\n"
             f"Папка: {job.workdir}"
         )
+        numbers = {
+            k: v for k, v in ((result or {}).get("build_numbers") or {}).items()
+            if v not in (None, [], {})
+        }
+        if numbers:
+            text += "\nЧисла: " + json.dumps(numbers, ensure_ascii=False)
         await alerts.send_alert(text)
     except Exception as e:
         log.warning("алерт по job %s не собрался: %s", job.job_id, e)
@@ -4177,6 +4321,20 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
     except Exception as e:
         result = {"ok": False, "stage": "build", "error": str(e)[:500]}
 
+    # Карточка сборки (задача 19): числа, которые движок уже посчитал по
+    # ходу — заказ и факт секунд ведущей, план и факт длительности, гейты,
+    # причина пересдачи, себестоимость по провайдерам, попытки. Кладём в
+    # ОБЩИЙ `result` до первого `store.finish` ниже: он передаётся во все
+    # ветки (успех, падение, `delivered:qa_fail`), и карточка пишется в
+    # `result_json` при любом исходе, а не только при успехе.
+    try:
+        result["build_numbers"] = collect_build_numbers(
+            job.workdir, ledger=_ledger(), job_id=job.job_id,
+            job_attempts=job.attempts, job_resumes=job.resumes,
+        )
+    except Exception as e:
+        log.warning("карточка сборки job %s не собралась: %s", job.job_id, e)
+
     if not result.get("ok"):
         error = result.get("error") or "неизвестная ошибка"
         store.finish(
@@ -4193,7 +4351,8 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
                   result.get("stage") or "build", error)
         _track_job(job, "error:build", str(error)[:120])
         await _alert_job_trouble(
-            job, stage=result.get("stage") or "build", detail=f"Ошибка: {error}"
+            job, stage=result.get("stage") or "build", detail=f"Ошибка: {error}",
+            result=result,
         )
         markup = _failed_markup(job.chat_id, job.job_id)
         await _safe_job_message(
@@ -4217,7 +4376,8 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
         _track_job(job, "error:build", "файла ролика нет")
-        await _alert_job_trouble(job, stage="output", detail=f"Ошибка: {MISSING_FILE_MSG}")
+        await _alert_job_trouble(job, stage="output",
+                                 detail=f"Ошибка: {MISSING_FILE_MSG}", result=result)
         await _safe_job_message(bot_api, job.chat_id, MISSING_FILE_MSG,
                                 _failed_markup(job.chat_id, job.job_id))
         return
@@ -4249,7 +4409,8 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
         _track_job(job, "error:delivery", "больше лимита Telegram")
-        await _alert_job_trouble(job, stage="delivery_too_big", detail=f"Ошибка: {error}")
+        await _alert_job_trouble(job, stage="delivery_too_big",
+                                 detail=f"Ошибка: {error}", result=result)
         await _safe_job_message(
             bot_api,
             job.chat_id,
@@ -4278,7 +4439,8 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
         _track_job(job, "error:delivery", str(e)[:120])
-        await _alert_job_trouble(job, stage="delivery", detail=f"Ошибка: {e}")
+        await _alert_job_trouble(job, stage="delivery", detail=f"Ошибка: {e}",
+                                 result=result)
         await _safe_job_message(
             bot_api,
             job.chat_id,
@@ -4306,6 +4468,7 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         await _alert_job_trouble(
             job, stage="delivery",
             detail=f"Красные гейты: {failed_gates or 'нет расшифровки'}",
+            result=result,
         )
     # Чтение бухгалтерии вне защиты _safe_job_message — видео уже доставлено,
     # повторов не будет. Если SQLite заблокирован или битый, чтение не должно
