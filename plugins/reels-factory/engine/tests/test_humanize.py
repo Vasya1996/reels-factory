@@ -38,7 +38,10 @@ def test_humanize_writes_task_and_applies_reply(tmp_path):
 
     out = humanize_scenario(runner, tmp_path, SC, mode="phonetics", language="ru")
 
-    assert out["blocks"][0]["speech"] == "Мы внедрили Майкрософт Си-Ар-Эм."
+    # phonetics правит только speech_tts — то, что видит и утверждает
+    # человек (speech), остаётся его собственным текстом нетронутым
+    assert out["blocks"][0]["speech"] == "Мы внедрили Microsoft CRM."
+    assert out["blocks"][0]["speech_tts"] == "Мы внедрили Майкрософт Си-Ар-Эм."
     assert out["blocks"][0]["start"] == 0.0  # тайминги сохранены
     skill, payload_path = runner.calls[0]
     assert skill == "humanizing-speech"
@@ -46,6 +49,25 @@ def test_humanize_writes_task_and_applies_reply(tmp_path):
     assert task["mode"] == "phonetics"
     assert task["language"] == "ru"
     assert [b["role"] for b in task["blocks"]] == ["hook", "development"]
+
+
+def test_humanize_phonetics_пропущенный_блок_сохраняет_старый_speech_tts(tmp_path):
+    # Скилл вернул пустой speech для развития — старый speech_tts блока
+    # (если уже был) остаётся, а не стирается в пустоту.
+    sc = {**SC, "blocks": [
+        SC["blocks"][0],
+        {**SC["blocks"][1], "speech_tts": "Продажи. Уже. Выросли."},
+    ]}
+    reply = json.dumps({"blocks": [
+        {"role": "hook", "speech": "Майкрософт Си-Ар-Эм."},
+        {"role": "development", "speech": ""},
+    ]}, ensure_ascii=False)
+    runner = FakeSkillRunner([reply])
+
+    out = humanize_scenario(runner, tmp_path, sc, mode="phonetics", language="ru")
+
+    assert out["blocks"][1]["speech"] == "Продажи выросли."  # не тронут
+    assert out["blocks"][1]["speech_tts"] == "Продажи. Уже. Выросли."  # сохранён
 
 
 def test_humanize_rejects_block_mismatch(tmp_path):

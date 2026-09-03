@@ -642,6 +642,83 @@ def test_user_voice_caption_words_идут_из_сценария_а_не_из_as
     assert [w["text"] for w in built.words] == ["Кофе", "вкусный.", "Кофе", "бодрит!"]
 
 
+# ---------------------------------------------------------------------------
+# Задача 15: у блока два текста — speech (показ/утверждение/титр) и
+# speech_tts (произношение для ElevenLabs).
+
+def test_canonical_script_prefer_tts_берёт_speech_tts_и_добавляет_точку():
+    scenario = {"blocks": [
+        {"role": "hook", "speech": "Мы внедрили Qaz AI",
+         "speech_tts": "Мы внедрили Казак Эй Ай"},   # без точки на конце
+        {"role": "cta", "speech": "Сохрани себе."},   # speech_tts нет вовсе
+    ]}
+    tts = build_canonical_script(scenario, {"language": "ru"}, prefer_tts=True)
+    display = build_canonical_script(scenario, {"language": "ru"})
+
+    assert tts["blocks"][0]["speech"] == "Мы внедрили Казак Эй Ай."  # точка добавлена
+    assert tts["blocks"][1]["speech"] == "Сохрани себе."  # нет speech_tts — фолбэк на speech
+    # display (то, что видит человек) не знает о speech_tts вовсе
+    assert display["blocks"][0]["speech"] == "Мы внедрили Qaz AI"
+    assert display["text"] != tts["text"]
+
+
+def test_build_master_audio_озвучивает_speech_tts_а_слова_титра_из_speech(tmp_path):
+    scenario = {"blocks": [
+        {"role": "hook", "speech": "Мы внедрили Qaz AI",
+         "speech_tts": "Мы внедрили Казак Эй Ай"},
+    ]}
+    calls = []
+
+    class Provider:
+        def convert_with_timestamps(self, text, **kwargs):
+            calls.append(text)
+            return TimestampedSpeech(audio=b"mp3", alignment=_alignment(text),
+                                     normalized_alignment=None, request_id="req")
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"generated")
+
+    result = build_master_audio(
+        scenario, {"language": "ru", "voice_id": "v1"}, tmp_path,
+        provider=Provider(), run_cmd=fake_run, duration_fn=lambda _: 5.0,
+    )
+
+    # в ElevenLabs ушла фонетика с точкой на конце, не то, что видит человек
+    assert calls[0] == "Мы внедрили Казак Эй Ай."
+    assert calls[0].endswith(".")
+    # а в титре/утверждении остаются слова speech — «Qaz AI», не «Казак Эй Ай»
+    assert [w["text"] for w in result.words[:2]] == ["Мы", "внедрили"]
+    assert "Qaz" in [w["text"] for w in result.words]
+    assert "AI" in [w["text"] for w in result.words]
+    assert not any("Казак" in w["text"] for w in result.words)
+    # identity/деньги считаются по тексту озвучки (speech_tts), не по показу
+    assert result.canonical["text"] == "Мы внедрили Казак Эй Ай."
+
+
+def test_build_master_audio_без_speech_tts_озвучивает_speech_как_раньше(tmp_path):
+    fixture = _fixture()
+    response = fixture["response"]
+
+    class Provider:
+        def convert_with_timestamps(self, text, **kwargs):
+            return TimestampedSpeech(
+                audio=b"fake-mp3", alignment=response["alignment"],
+                normalized_alignment=response["normalized_alignment"],
+                request_id=response["request_id"],
+            )
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"generated")
+
+    result = build_master_audio(
+        _scenario(), {"language": "ru", "voice_id": "v1"}, tmp_path,
+        provider=Provider(), run_cmd=fake_run, duration_fn=lambda _: 1.3,
+    )
+    assert [w["text"] for w in result.words] == [
+        "Кофе", "вкусный.", "Кофе", "бодрит!",
+    ]
+
+
 def test_build_master_audio_v3_дефолтная_stability_дискретна(tmp_path):
     # kk-ролик идёт на eleven_v3; без явной stability в конфиге провайдер
     # должен получить v3-безопасное значение 0.5, а не production-дефолт v2 0.2.

@@ -4,6 +4,15 @@
 устную речь (факты неприкосновенны); phonetics — только фонетическая запись
 терминов/брендов и числа прописью, больше ничего (путь «дословно»).
 
+У блока два текста (задача 15): `speech` — как показать (человеку на экране
+утверждения и в титре), `speech_tts` — как произнести (ElevenLabs). polish
+правит `speech` — это переписывание самой речи, его видит и утверждает
+человек. phonetics правит только `speech_tts`: «Qaz AI Research» на экране
+должно остаться латиницей, как написал человек, а ElevenLabs получит
+«Казак Эй-Ай Рисёрч» отдельным полем — `build_canonical_script(...,
+prefer_tts=True)` в master_audio.py берёт speech_tts, если он задан, иначе
+speech.
+
 Плюс цикл редактор -> судья (refine_loop): polish -> judge, при браке -
 повторный polish с претензиями судьи -> judge, до max_rounds или до pass.
 """
@@ -13,6 +22,7 @@ from pathlib import Path
 from reels_factory.scenario import _skill_json, ScenarioError
 
 MODES = ("polish", "phonetics")
+_TARGET_FIELD = {"polish": "speech", "phonetics": "speech_tts"}
 
 #: --json-schema для humanizing-speech (задача 12): форма, которую сам скилл
 #: обещает вернуть (skills/humanizing-speech/SKILL.md:28) и которую
@@ -47,12 +57,16 @@ class HumanizeError(RuntimeError):
     человеку, и алерта Васе."""
 
 
-def _call_humanizer(runner, workdir, sc: dict, payload: dict) -> dict:
+def _call_humanizer(runner, workdir, sc: dict, payload: dict, *,
+                    target_field: str = "speech") -> dict:
     """Пишет payload в humanize_task.json, вызывает humanizing-speech через
     тот же _skill_json, что и писатель (scenario.py) — один повтор на
     таймаут/сбой claude -p или кривой JSON, а не немедленный провал с первой
     попытки. Раньше здесь стоял голый runner.run_skill() без повтора —
-    асимметрия с writing-scenario, не заявленная в коммите c7d4b20."""
+    асимметрия с writing-scenario, не заявленная в коммите c7d4b20.
+    Проверяет роли блоков в ответе, кладёт результат в `target_field` блока
+    (остальные поля блока, включая `speech`, если target_field другой —
+    нетронуты)."""
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
     payload_path = workdir / "humanize_task.json"
@@ -71,8 +85,12 @@ def _call_humanizer(runner, workdir, sc: dict, payload: dict) -> dict:
         raise HumanizeError(
             f"скилл вернул блоки с другими ролями/количеством: {new_blocks!r}")
 
-    return {**sc, "blocks": [dict(orig, speech=str(nb.get("speech") or orig["speech"]))
-                            for orig, nb in zip(sc["blocks"], new_blocks)]}
+    return {**sc, "blocks": [
+        dict(orig, **{target_field: str(
+            nb.get("speech") or orig.get(target_field) or orig["speech"]
+        )})
+        for orig, nb in zip(sc["blocks"], new_blocks)
+    ]}
 
 
 def humanize_scenario(runner, workdir, sc: dict, mode: str, language: str) -> dict:
@@ -83,7 +101,8 @@ def humanize_scenario(runner, workdir, sc: dict, mode: str, language: str) -> di
         "language": language,
         "blocks": [{"role": b["role"], "speech": b["speech"]} for b in sc["blocks"]],
     }
-    return _call_humanizer(runner, workdir, sc, payload)
+    return _call_humanizer(runner, workdir, sc, payload,
+                           target_field=_TARGET_FIELD[mode])
 
 
 def _polish_with_task(runner, workdir, sc: dict, language: str, task: dict) -> dict:
