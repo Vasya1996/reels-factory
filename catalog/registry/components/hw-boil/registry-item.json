@@ -1,0 +1,31 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "hw-boil",
+  "type": "hyperframes:component",
+  "title": "Hand-Drawn Boil",
+  "description": "Hand-drawn jitter that re-poses every N frames, as seek-safe helpers: pose derives from quantized timeline time through a seeded hash; includes the shared onUpdate dispatcher and a wobbled-ellipse path generator",
+  "tags": [
+    "handwritten",
+    "effect",
+    "annotation"
+  ],
+  "files": [
+    {
+      "path": "hw-boil.html",
+      "target": "compositions/components/hw-boil.html",
+      "type": "hyperframes:snippet"
+    },
+    {
+      "path": "assets/fonts/Caveat-700-latin.woff2",
+      "target": "compositions/components/assets/fonts/Caveat-700-latin.woff2",
+      "type": "hyperframes:asset"
+    }
+  ],
+  "reels": {
+    "kind": "effect",
+    "mount": "composition",
+    "decor_texts": [],
+    "text_slots": [],
+    "skip": "layout:container_overflow:#hw-boil-root:Element extends outside a clipping layout container.; contrast:contrast_aa_failure:div > div > div > div:nth-of-type(2):Contrast is 4.15:1; WCAG AA requires 4.5:1.; contrast:contrast_aa_failure:div > div > div > div:nth-of-type(3):Contrast is 4.15:1; WCAG AA requires 4.5:1."
+  }
+}

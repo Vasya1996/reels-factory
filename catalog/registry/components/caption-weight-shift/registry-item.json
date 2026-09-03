@@ -1,0 +1,31 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "caption-weight-shift",
+  "type": "hyperframes:component",
+  "title": "Weight Shift",
+  "description": "Elegant font-weight transition between caption lines",
+  "tags": [
+    "captions",
+    "caption-style",
+    "minimal",
+    "typography"
+  ],
+  "files": [
+    {
+      "path": "caption-weight-shift.html",
+      "target": "compositions/components/caption-weight-shift.html",
+      "type": "hyperframes:snippet"
+    }
+  ],
+  "preview": {
+    "video": "https://static.heygen.ai/hyperframes-oss/registry/components/caption-weight-shift/preview-v2.mp4",
+    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-weight-shift.png"
+  },
+  "reels": {
+    "kind": "effect",
+    "mount": "composition",
+    "decor_texts": [],
+    "text_slots": [],
+    "skip": "runtime:http_error:[data-composition-id]:404 loading caption-overrides.json; runtime:request_failed:[data-composition-id]:Failed to load caption-overrides.json: net::ERR_ABORTED; layout:content_overlap:#caption-group-0-line-0 > span:nth-of-type(2):Two text blocks overlap and may render unreadable."
+  }
+}

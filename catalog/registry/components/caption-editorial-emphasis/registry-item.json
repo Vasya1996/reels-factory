@@ -1,0 +1,32 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "caption-editorial-emphasis",
+  "type": "hyperframes:component",
+  "title": "Editorial Emphasis",
+  "description": "Dual-font system with dramatic size contrast for emphasis words",
+  "tags": [
+    "captions",
+    "caption-style",
+    "editorial",
+    "typography",
+    "emphasis"
+  ],
+  "files": [
+    {
+      "path": "caption-editorial-emphasis.html",
+      "target": "compositions/components/caption-editorial-emphasis.html",
+      "type": "hyperframes:snippet"
+    }
+  ],
+  "preview": {
+    "video": "https://static.heygen.ai/hyperframes-oss/registry/components/caption-editorial-emphasis/preview.mp4?v=1779051416",
+    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-editorial-emphasis.png"
+  },
+  "reels": {
+    "kind": "effect",
+    "mount": "composition",
+    "decor_texts": [],
+    "text_slots": [],
+    "skip": "layout:container_overflow:#editorial-emphasis:Element extends outside a clipping layout container.; layout:content_overlap:#b1L1w0:Two text blocks overlap and may render unreadable.; layout:content_overlap:#b1L1w1:Two text blocks overlap and may render unreadable."
+  }
+}

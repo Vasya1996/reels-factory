@@ -1,0 +1,31 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "hw-underline",
+  "type": "hyperframes:component",
+  "title": "Squiggle Marks",
+  "description": "Hand-drawn squiggle underline, double-pass strikethrough, and bracket marks that draw on",
+  "tags": [
+    "handwritten",
+    "annotation",
+    "text-treatment"
+  ],
+  "files": [
+    {
+      "path": "hw-underline.html",
+      "target": "compositions/components/hw-underline.html",
+      "type": "hyperframes:snippet"
+    },
+    {
+      "path": "assets/fonts/Caveat-700-latin.woff2",
+      "target": "compositions/components/assets/fonts/Caveat-700-latin.woff2",
+      "type": "hyperframes:asset"
+    }
+  ],
+  "reels": {
+    "kind": "effect",
+    "mount": "composition",
+    "decor_texts": [],
+    "text_slots": [],
+    "skip": "layout:escaped_container:#hw-un-scene > div:nth-of-type(1):Positioned element renders far outside its offset parent — its coordinates were likely computed in a different frame (canvas/viewport pixels).; layout:escaped_container:#hw-un-scene > div:nth-of-type(2):Positioned element renders far outside its offset parent — its coordinates were likely computed in a different frame (canvas/viewport pixels).; layout:escaped_container:#hw-un-scene > div:nth-of-type(3):Positioned element renders far outside its offset parent — its coordinates were likely computed in a different frame (canvas/viewport pixels)."
+  }
+}

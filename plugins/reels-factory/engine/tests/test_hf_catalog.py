@@ -1,9 +1,21 @@
 """Наш каталог блоков, отданный агенту их способом — через поле registry."""
 import json
 
+import pytest
+
 from reels_factory.hf_catalog import (
-    overlay_names, serve_catalog, texture_overlays, write_project_config,
+    CATALOG_DIR, REGISTRY_SUBDIR, block_names, component_names, overlay_names,
+    serve_catalog, texture_overlays, write_project_config,
 )
+
+#: 12 блоков работы B1 (10 вертикальных сцен + 2 накладки-перехода) — те, что
+#: физически лежат в `catalog/registry/blocks`, но реестра их клона в нашем
+#: репозитории нет, поэтому имена перечислены явно.
+_B1_BLOCKS = ["ai-chat-reveal", "chatgpt-exchange", "claude-exchange",
+              "flowchart-vertical", "heygen-avatar-promo-card",
+              "message-thread-reveal", "notes-reveal", "notification-cascade",
+              "share-sheet-carousel", "slack-notification-ad",
+              "hw-scribble-transition", "mk-clone-wall-transition"]
 
 REGISTRY = {"$schema": "https://hyperframes.heygen.com/schema/registry.json",
             "name": "golden", "items": [{"name": "g01", "type": "hyperframes:block"}]}
@@ -103,3 +115,72 @@ def test_без_разложенного_реестра_сборка_не_нач
     with pytest.raises(RuntimeError, match="реестр"):
         with serve_catalog(tmp_path):
             pass
+
+
+def _card(kind_dir: str, name: str) -> dict:
+    root = CATALOG_DIR / REGISTRY_SUBDIR
+    return json.loads((root / kind_dir / name / "registry-item.json")
+                      .read_text(encoding="utf-8"))
+
+
+def test_блоки_работы_b1_несут_reels_kind():
+    """Каждая карточка, добавленная импортом 13 вертикальных блоков и 3
+    накладок (работа B1), несёт `reels.kind` — без него B2 нечем судить, на
+    весь кадр её ставить, на стык или в зону."""
+    for name in _B1_BLOCKS:
+        kind = _card("blocks", name).get("reels", {}).get("kind")
+        assert kind in ("scene", "overlay", "effect"), name
+
+
+def test_каждый_компонент_несёт_reels_effect_и_контракт_монтажа():
+    names = component_names()
+    assert len(names) > 100, "компоненты не разложены реестром"
+    for name in names:
+        reels = _card("components", name).get("reels", {})
+        assert reels.get("kind") == "effect", name
+        assert reels.get("mount") in ("composition", "paste"), name
+
+
+def test_block_names_не_включает_компоненты():
+    """`block_names` открывает файл по пути `blocks/<имя>` — отдай он имя
+    компонента, следующий читатель (`block_backing`, `skipped_blocks`, …)
+    получил бы `FileNotFoundError` на `blocks/count-up`."""
+    blocks = set(block_names())
+    comps = set(component_names())
+    assert not (blocks & comps)
+    assert "count-up" in comps and "count-up" not in blocks
+
+
+def test_overlay_names_не_отдаёт_компоненты_и_новые_сцены_как_плашки():
+    """Компонент не тегирован их полем `tags` вовсе (он лежит в другой папке
+    и `overlay_names` его не видит), а наши новые вертикальные сцены не несут
+    тег `overlay` — обе причины проверяем прямо на живом каталоге."""
+    names = overlay_names()
+    comps = set(component_names())
+    assert not (set(names) & comps)
+    for name in ("ai-chat-reveal", "chatgpt-exchange", "heygen-avatar-promo-card",
+                 "notification-cascade"):
+        assert name not in names
+
+
+@pytest.mark.slow
+def test_add_реально_ставит_сцену_накладку_и_компонент(tmp_path):
+    """`hyperframes add` — единственный способ их CLI забрать карточку из
+    реестра, и он смотрит по путям `hyperframes.json#paths`, не по нашей
+    раскладке диска. Живой вызов на одной сцене, одной накладке и одном
+    компоненте — доказательство, что наш HTTP-реестр отдаёт их ровно там, где
+    `add` их ищет (что для сцены/накладки, что для компонента —
+    `compositions/` и `compositions/components/`)."""
+    from reels_factory.hf_render import _cli
+
+    with serve_catalog() as url:
+        write_project_config(tmp_path, url)
+        for name in ("heygen-avatar-promo-card", "hw-scribble-transition", "count-up"):
+            _cli("add", name, "--no-clipboard", cwd=tmp_path)
+
+    assert (tmp_path / "public" / "compositions"
+            / "heygen-avatar-promo-card.html").exists()
+    assert (tmp_path / "public" / "compositions"
+            / "hw-scribble-transition.html").exists()
+    assert (tmp_path / "public" / "compositions" / "components"
+            / "count-up.html").exists()

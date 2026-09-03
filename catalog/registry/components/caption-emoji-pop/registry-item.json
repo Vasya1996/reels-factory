@@ -1,0 +1,31 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "caption-emoji-pop",
+  "type": "hyperframes:component",
+  "title": "Emoji Pop",
+  "description": "Emoji integration with stroked text and horizontal squeeze entrance",
+  "tags": [
+    "captions",
+    "caption-style",
+    "emoji",
+    "social"
+  ],
+  "files": [
+    {
+      "path": "caption-emoji-pop.html",
+      "target": "compositions/components/caption-emoji-pop.html",
+      "type": "hyperframes:snippet"
+    }
+  ],
+  "preview": {
+    "video": "https://static.heygen.ai/hyperframes-oss/registry/components/caption-emoji-pop/preview.mp4?v=1779051416",
+    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-emoji-pop.png"
+  },
+  "reels": {
+    "kind": "effect",
+    "mount": "composition",
+    "decor_texts": [],
+    "text_slots": [],
+    "skip": "runtime:http_error:[data-composition-id]:404 loading caption-overrides.json; runtime:request_failed:[data-composition-id]:Failed to load caption-overrides.json: net::ERR_ABORTED; layout:content_overlap:div.caption-emoji:Two text blocks overlap and may render unreadable."
+  }
+}
