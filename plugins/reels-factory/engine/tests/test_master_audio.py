@@ -602,16 +602,75 @@ def test_случай_артёма_delete_и_equal_текст_сценария_�
     assert [w["text"] for w in words] == ["Нужен", "просто", "Клод", "код."]
     # equal: первые два слова получают тайминг ровно тех же слов ASR
     assert (words[0]["start"], words[0]["end"]) == (0.0, 0.3)
-    assert (words[1]["start"], words[1]["end"]) == (0.3, 0.6)
-    # delete: «Клод» не услышан — прижат к концу «просто», минимальная длительность
-    assert words[2]["start"] == pytest.approx(0.6)
+    # «просто» и «код» (равно услышанное) звучат впритык, без паузы — под
+    # «Клод» между ними места ровно ноль, и делить нечего не у кого, кроме
+    # самих соседей: у каждого отступает по половине _MIN_WORD_DURATION
+    # (0.005с), это меньше кадра сетки 30fps (~33мс) и не видно.
+    assert (words[1]["start"], words[1]["end"]) == pytest.approx((0.3, 0.595))
+    # delete: «Клод» не услышан — минимальная длительность в промежутке,
+    # который освободили соседи, без наложения ни на «просто», ни на «код»
+    assert words[2]["start"] == pytest.approx(words[1]["end"])
     assert 0.0 < words[2]["end"] - words[2]["start"] <= 0.02
     # equal: «код» сценария сопоставлен с ПЕРВЫМ услышанным «код» (0.6-0.8) —
     # SequenceMatcher матчит по самой ранней позиции; второе услышанное «код»
-    # (0.85-1.1, из «-код») — insert, лишнее слово ASR, отброшено
-    assert (words[3]["start"], words[3]["end"]) == (0.6, 0.8)
+    # (0.85-1.1, из «-код») — insert, лишнее слово ASR, отброшено. Начало
+    # чуть позже исходных 0.6 — по той же причине, что и конец «просто».
+    assert (words[3]["start"], words[3]["end"]) == pytest.approx((0.605, 0.8))
+    assert words[2]["end"] == pytest.approx(words[3]["start"])
     assert all(w["block_id"] == canonical["blocks"][0]["id"] for w in words)
     assert 0.0 < match_ratio < 1.0
+
+
+def test_delete_первое_слово_текста_не_получает_нулевую_длительность():
+    """Дефект A1: слово сценария, отсутствующее в озвучке (delete), которое
+    стоит первым во всём тексте, раньше получало start==end==0.0, если
+    следующее сопоставленное слово ASR/TTS звучало без паузы от начала
+    (anchor=0.0) — минус упирался в физический пол 0.0 (аудио не может
+    начаться раньше нуля), и слово теряло длительность целиком (титр не
+    подсвечивал его вовсе, hf_captions/компонент не проверяют end>start)."""
+    canonical = build_canonical_script(
+        {"blocks": [{"role": "hook", "speech": "Эй Привет мир."}]},
+        {"language": "ru"},
+    )
+    spoken = [
+        {"text": "привет", "start": 0.0, "end": 0.3},
+        {"text": "мир", "start": 0.3, "end": 0.6},
+    ]
+    words, _ = _align_script_words(canonical, spoken)
+    assert [w["text"] for w in words] == ["Эй", "Привет", "мир."]
+    assert words[0]["start"] == 0.0
+    assert words[0]["end"] > words[0]["start"]  # не схлопнулось в точку
+    assert words[0]["end"] <= words[1]["start"]  # без наложения на соседа
+    assert (words[1]["start"], words[1]["end"]) == pytest.approx((0.01, 0.3))
+    assert (words[2]["start"], words[2]["end"]) == (0.3, 0.6)
+
+
+def test_align_script_words_delete_слова_никогда_не_накладываются_на_соседей():
+    """Общий инвариант прижатия delete-слов (A1/A2): для любой раскладки
+    (delete перед первым сопоставленным словом, несколько delete подряд
+    впритык между двумя сопоставленными без паузы, delete после последнего)
+    слова получают отдельные непересекающиеся промежутки времени — ни одно
+    не начинается раньше, чем кончилось предыдущее, и ни одно не схлопнуто
+    в нулевую длительность."""
+    canonical = build_canonical_script(
+        {"blocks": [{"role": "hook",
+                     "speech": "Раз Два Три Четыре Пять Шесть."}]},
+        {"language": "ru"},
+    )
+    # ASR слышит только «Два» и «Пять», впритык друг к другу (без паузы) —
+    # «Раз» (перед первым сопоставленным), «Три»/«Четыре» (между двумя
+    # сопоставленными без зазора) и «Шесть.» (после последнего) все delete.
+    spoken = [
+        {"text": "два", "start": 1.0, "end": 1.2},
+        {"text": "пять", "start": 1.2, "end": 1.4},
+    ]
+    words, _ = _align_script_words(canonical, spoken)
+    assert [w["text"] for w in words] == [
+        "Раз", "Два", "Три", "Четыре", "Пять", "Шесть."]
+    for prev, cur in zip(words, words[1:]):
+        assert prev["end"] <= cur["start"] + 1e-9
+    for word in words:
+        assert word["end"] > word["start"]
 
 
 def test_align_script_words_replace_делит_интервал_поровну():

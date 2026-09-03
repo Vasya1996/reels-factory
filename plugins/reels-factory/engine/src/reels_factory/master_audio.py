@@ -774,8 +774,11 @@ def _align_script_words(
       поровну;
     - insert (лишнее услышанное слово) — отбрасывается, в титр не идёт;
     - delete (слово сценария, которого не услышали) — тайминга не получает
-      сразу и во втором проходе прижимается к ближайшему уже расставленному
-      соседу с длительностью `_MIN_WORD_DURATION`.
+      сразу; во втором проходе подряд идущие delete одного промежутка
+      заполняются вместе, минимум `_MIN_WORD_DURATION` на слово, без
+      наложений на соседей (если соседи звучат впритык без паузы — граница
+      сдвигается у самих соседей не больше чем на половину
+      `_MIN_WORD_DURATION`, это меньше кадра сетки 30fps и не видно).
 
     `min_match_ratio`/`word_ratio_bounds` — тот же гвард, что раньше проверял
     только общее сходство (SequenceMatcher.ratio()) голосового с утверждённым
@@ -847,22 +850,70 @@ def _align_script_words(
         # insert: лишнее услышанное слово — script_tokens его не касается.
         # delete: заполняется вторым проходом ниже, от соседей.
 
-    for index in range(len(timings)):
+    # Второй проход: delete-слова (тайминга ещё нет) заполняются промежутком
+    # между соседями, которых уже расставил первый проход выше. Идём run'ами
+    # подряд идущих delete, а не по одному слову — иначе второе delete подряд
+    # прижималось бы к первому delete, а не к настоящему соседу.
+    index = 0
+    while index < len(timings):
         if timings[index] is not None:
+            index += 1
             continue
-        before = next(
-            (timings[i][1] for i in range(index - 1, -1, -1) if timings[i]),
-            None,
-        )
-        if before is not None:
-            timings[index] = (before, before + _MIN_WORD_DURATION)
-            continue
-        after = next(
-            (timings[i][0] for i in range(index + 1, len(timings)) if timings[i]),
-            None,
-        )
-        anchor = after if after is not None else 0.0
-        timings[index] = (max(0.0, anchor - _MIN_WORD_DURATION), anchor)
+        run_start = index
+        while index < len(timings) and timings[index] is None:
+            index += 1
+        run_end = index  # исключая — timings[run_end] уже расставлен или его нет
+        run_length = run_end - run_start
+
+        left = timings[run_start - 1][1] if run_start > 0 else None
+        right = timings[run_end][0] if run_end < len(timings) else None
+        needed = run_length * _MIN_WORD_DURATION
+
+        if left is None and right is None:
+            # До сюда не доходит: script_tokens/spoken_tokens оба непустые
+            # (проверено выше), значит хотя бы один opcode equal/replace уже
+            # расставил тайминг. Оставлено как защита, а не ожидаемый путь.
+            left, right = 0.0, needed
+        elif left is None:
+            # Run у самого начала текста — соседа слева нет вовсе, только
+            # первое произнесённое слово справа. Раньше здесь брали
+            # max(0.0, right - MIN): если right тоже 0.0 (первое слово ASR/TTS
+            # звучит без паузы), результат — (0.0, 0.0), слово без
+            # длительности и без видимой подсветки в титре (дефект A1).
+            left = max(0.0, right - needed)
+        elif right is None:
+            # Run в самом конце текста — соседа справа нет, время ничем не
+            # ограничено; синтезируем запас под все delete-слова run'а.
+            right = left + needed
+
+        available = right - left
+        if available < needed:
+            # Соседи звучат впритык, паузы нет вовсе (случай Артёма: «просто»
+            # кончается и «код» начинается в одну и ту же секунду) — делить
+            # уже нечего, единственный источник места — сами соседи. Сдвиг не
+            # больше половины _MIN_WORD_DURATION на сторону — меньше кадра
+            # сетки 30fps (~33мс), тем же доводом, на котором стоит сама
+            # _MIN_WORD_DURATION. У начала текста (left упёрся в физический
+            # пол 0.0, соседа слева нет) весь сдвиг забирает правая сторона.
+            deficit = needed - available
+            if run_start > 0:
+                shift = deficit / 2.0
+                left -= shift
+                right += shift
+                prev_start, _ = timings[run_start - 1]
+                timings[run_start - 1] = (prev_start, left)
+            else:
+                right += deficit
+            if run_end < len(timings):
+                _, next_end = timings[run_end]
+                timings[run_end] = (right, next_end)
+            available = right - left
+
+        slot = available / run_length
+        for offset in range(run_length):
+            timings[run_start + offset] = (
+                left + offset * slot, left + (offset + 1) * slot,
+            )
 
     words = []
     for index, script_word in enumerate(script_words):
