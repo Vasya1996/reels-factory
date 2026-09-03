@@ -67,18 +67,19 @@ from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.hf_captions import caption_snippet, write_caption_data
 from reels_factory.hf_frame import DEFAULTS as FRAME_DEFAULTS
 from reels_factory.hf_layout import (
-    VIDEO_RECTS, avatar_gaps, icon_fits, in_avatar_gap, insert_rect, quantize,
+    VIDEO_RECTS, avatar_gaps, effect_rect, icon_fits, in_avatar_gap,
+    insert_rect, quantize,
 )
 from reels_factory.hf_media import insert_problem
 from reels_factory.hf_montage import (
     cut_into_plans, drop_schema, flash_moments, insert_of, refill_scene,
-    shot_queries,
+    scene_elements, shot_queries,
     shots_for, split_series, zoom_ladder,
 )
 from reels_factory.hf_schema import (
     FORMS, SAFE_BOTTOM as SCHEMA_SAFE_BOTTOM, build as schema_build,
     is_elastic as schema_is_elastic, min_seconds as schema_min_seconds,
-    port_block,
+    palette_css, port_block,
 )
 
 #: Дорожки времени. На одной дорожке клипы не пересекаются — это единственное,
@@ -144,6 +145,23 @@ TRACK_SFX = 98
 #: ротация по двум дорожкам это разводит.
 TRACK_OVERLAY = 40
 
+#: Полоса дорожек под элементы каталога, названные агентом в `elements`.
+#: Двадцать дорожек ротацией: элемент вида `overlay` стартует ЗА срез сцены и
+#: потому нарочно пересекается по времени с элементом соседней сцены, а клипы
+#: на одной дорожке пересекаться не могут (`overlapping_clips_same_track`).
+#: Полоса 60..79 свободна: ниже сидят накладки (40, 41), выше — титр (90) и
+#: вспышки (95). В счёт плотности элементы не идут — они маунты (см.
+#: `TRACK_SCHEMA`).
+TRACK_ELEMENT = 60
+ELEMENT_TRACKS = 20
+
+#: За сколько до среза сцены встаёт элемент вида `overlay`. Число их: «place
+#: this block spanning the host's cut point (e.g. start 0.9s before the cut)»
+#: (registry/blocks/mk-clone-wall-transition/mk-clone-wall-transition.html:
+#: 117-121, то же у `hw-scribble-transition`:76-78). Накладка кроет кадр в
+#: середине своего хода, и срез должен прийтись именно туда.
+STITCH_LEAD = 0.9
+
 #: Дорожка схем. Отдельная от накладок: схема занимает кадр целиком и с
 #: плашкой в одной сцене не встречается, а на одной дорожке клипы пересекаться
 #: не могут — их линтер зовёт это `overlapping_clips_same_track`.
@@ -205,6 +223,27 @@ def _overlay_wide_top(box_height: float) -> int:
     return max(0, CAPTION_BAND_TOP - CAPTION_BAND_SAFETY - round(box_height))
 
 
+def _overlay_geometry(block: str, canvas: tuple) -> tuple[float, str]:
+    """Масштаб и место плашки в кадре по её канвасу.
+
+    Фактура кроет кадр целиком, плашка стоит полосой над титром. Обе приезжают
+    канвасом 1920x1080, и различить их можно только по метке каталога — той
+    же, которой помечены их собственные обработки кадра. Вертикальная позиция
+    встаёт во весь кадр как есть.
+
+    Одна арифметика на два места: по этому же правилу встаёт и позиция
+    каталога, у которой вид в карточке не объявлен, — это сегодняшняя плашка,
+    и вести себя она обязана так же.
+    """
+    if str(block) in _texture_blocks():
+        scale = OUT_H / canvas[1]
+        return scale, f"left:{-round((canvas[0] * scale - OUT_W) / 2)}px;top:0"
+    if canvas[0] > canvas[1]:
+        scale = OUT_W / canvas[0]
+        return scale, f"left:0;top:{_overlay_wide_top(canvas[1] * scale)}px"
+    return OUT_W / canvas[0], "left:0;top:0"
+
+
 @functools.lru_cache(maxsize=1)
 def _texture_blocks() -> frozenset:
     """Имена накладок-фактур из каталога. Каталога может не быть (тесты,
@@ -245,6 +284,22 @@ def _known_overlays() -> frozenset:
         return frozenset(overlay_names())
     except (OSError, ValueError):
         return frozenset()
+
+
+@functools.lru_cache(maxsize=1)
+def _catalog_cards() -> dict:
+    """Карточки позиций, которые агент вправе назвать в `elements`.
+
+    Тот же словарь читает ранняя сверка плана (`hf_gates.elements_problems`):
+    два разных чтения каталога означали бы, что до денег план судят по одному
+    списку, а собирают по другому. Каталога может не быть (тесты, чужая
+    машина) — тогда позиций нет, и элементы снимаются как неизвестные.
+    """
+    from reels_factory.hf_catalog import catalog_cards
+    try:
+        return dict(catalog_cards())
+    except (OSError, ValueError):
+        return {}
 
 
 @functools.lru_cache(maxsize=1)
@@ -628,6 +683,55 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     return unique, native, canvas
 
 
+#: Корневой элемент позиции: тот, что несёт `data-composition-id`. Его id
+#: нужен правилу палитры и шрифта — целиться в `:root` их контракт тем прямо
+#: запрещает (`themes/CONTRACT.md:3`). Атрибуты идут в обоих порядках:
+#: `<div id="root" data-composition-id="…">` у их полки,
+#: `<div data-composition-id="…" id="mk-ps-root">` у части блоков.
+_ROOT_ID = re.compile(
+    r'id="([^"]+)"[^>]*data-composition-id="(?P<a>[^"]+)"'
+    r'|data-composition-id="(?P<b>[^"]+)"[^>]*id="([^"]+)"')
+
+
+def block_root(html: str) -> str:
+    """Id корня позиции. Пустая строка — корень без id."""
+    match = _ROOT_ID.search(html)
+    if not match:
+        return ""
+    return match.group(1) or match.group(4) or ""
+
+
+def declare_box(path, unique: str, width: int, height: int) -> None:
+    """Объявить копии позиции размер её коробки в кадре.
+
+    Упругая позиция полки размеров не объявляет нарочно — «no data-width or
+    data-height; it fills whatever box the host clip gives it»
+    (`registry/components/count-up/README.md:33`). Их же линтер зовёт это
+    `root_missing_dimensions` (severity error), и под `--strict` ошибка роняет
+    сборку целиком: файл он судит сам по себе, о хосте не зная.
+
+    Коробку считает код — зону эффекта или весь кадр, — поэтому её и
+    объявляем. Хосту это ничего не ломает: их загрузчик копирует размеры корня
+    на хост только когда хост их не объявил
+    (`inlineSubCompositions.ts:392-394`), а числа здесь те же самые.
+    """
+    path = Path(path)
+    html = path.read_text(encoding="utf-8")
+    marker = f'data-composition-id="{unique}"'
+    out = []
+    for piece in html.split(marker):
+        out.append(piece)
+    if len(out) < 2:
+        return
+    fixed = out[0]
+    for piece in out[1:]:
+        tail = piece.split(">", 1)[0]
+        fixed += marker + ("" if "data-width" in tail else
+                           f' data-width="{int(width)}"'
+                           f' data-height="{int(height)}"') + piece
+    path.write_text(fixed, encoding="utf-8")
+
+
 def needed_blocks(storyboard: dict) -> list[str]:
     """Какие блоки каталога сборка поставит их же `hyperframes add`.
 
@@ -641,6 +745,10 @@ def needed_blocks(storyboard: dict) -> list[str]:
             if isinstance(scene.get("overlay"), dict) else None
         if block and block not in found and str(block) not in _skipped_blocks():
             found.append(str(block))
+        for element in scene_elements(scene):
+            name = str(element["name"]).strip()
+            if name not in found and name not in _skipped_blocks():
+                found.append(name)
         # Блоки схем ставим по любой названной форме — и выбранной агентом, и
         # запасной: какая из них понадобится, выяснится уже после подбора, а
         # реестр к тому времени опущен.
@@ -950,6 +1058,24 @@ def overlay_problem(block: str) -> str | None:
     return None
 
 
+def element_problem(name: str) -> str | None:
+    """Почему эту позицию каталога в кадр не поставить. `None` — можно.
+
+    Тот же вопрос задан трижды и одним кодом: ранняя сверка плана до заказа
+    ведущей (`hf_gates.elements_problems`), проход `settle_fillers` до разбора
+    пустых сцен и сама вёрстка слоя. Разойдись они — план прошёл бы сверку,
+    проход посчитал бы кадр закрытым, а сборка сняла бы элемент.
+    """
+    reason = _skipped_blocks().get(str(name))
+    if reason:
+        return reason
+    cards = _catalog_cards()
+    if cards and str(name) not in cards:
+        return ("такой позиции в каталоге нет — они перечислены в "
+                "`catalog.index.md` рядом с заданием")
+    return None
+
+
 def settle_fillers(board: dict, resolved: dict[str, dict]) -> list[str]:
     """Снять с раскадровки то, чего в кадре не будет: значок без файла и
     накладку с непригодным блоком.
@@ -992,6 +1118,18 @@ def settle_fillers(board: dict, resolved: dict[str, dict]) -> list[str]:
         if reason:
             print(f"{name}: накладка {block} снята — {reason}")
             scene.pop("overlay", None)
+            if name not in touched:
+                touched.append(name)
+        elements = scene_elements(scene)
+        kept = []
+        for element in elements:
+            reason = element_problem(str(element["name"]))
+            if reason:
+                print(f'{name}: элемент {element["name"]} снят — {reason}')
+                continue
+            kept.append(element)
+        if len(kept) != len(elements):
+            scene["elements"] = kept
             if name not in touched:
                 touched.append(name)
     return touched
@@ -1232,18 +1370,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                   f"{min_card_seconds(native):g}")
             scene.pop("overlay", None)
             continue
-        # Фактура кроет кадр целиком, плашка стоит полосой над титром. Обе
-        # приезжают канвасом 1920x1080, и различить их можно только по метке
-        # каталога — той же, которой помечены их собственные обработки кадра.
-        if str(overlay["block"]) in _texture_blocks():
-            scale = OUT_H / canvas[1]
-            box = f"left:{-round((canvas[0] * scale - OUT_W) / 2)}px;top:0"
-        elif canvas[0] > canvas[1]:
-            scale = OUT_W / canvas[0]
-            box = f"left:0;top:{_overlay_wide_top(canvas[1] * scale)}px"
-        else:
-            scale = OUT_W / canvas[0]
-            box = "left:0;top:0"
+        scale, box = _overlay_geometry(str(overlay["block"]), canvas)
         # Накладке без своей подложки нужен слой читаемости: их проверка
         # контраста меряет пиксели под буквами, а `text-shadow` не
         # засчитывает — на светлом биролле белый текст проваливается. Градиент
@@ -1285,6 +1412,161 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             f' data-width="{canvas[0]}" data-height="{canvas[1]}"></div>'
             f"</div></div>")
         staged_overlays += 1
+
+    # ── элементы каталога ─────────────────────────────────────────────────
+    # Имя позиции агент выбирает поиском по смыслу в `catalog.index.md` — так
+    # велит их же скилл реестра («Search by intent before browsing»,
+    # hyperframes-registry/SKILL.md:88). Всё остальное считает код: секунды,
+    # зону, подстановку слов, установку. Чем позиция становится в кадре,
+    # решает её карточка (`reels.kind`), а не поле плана:
+    #
+    # - `scene` — во весь кадр, их же портом под вертикаль (как схема);
+    # - `effect` — коробкой в свободной зоне кадра (`effect_rect`);
+    # - `overlay` — на стык сцен поверх всего, за `STITCH_LEAD` до среза;
+    # - вида нет — это сегодняшняя плашка, и геометрия у неё та же
+    #   (`_overlay_geometry`).
+    band_top = CAPTION_BAND_TOP - CAPTION_BAND_SAFETY
+    staged_elements = 0
+    stencils: list[str] = []
+    for scene in scenes:
+        kept = []
+        for element in scene_elements(scene):
+            name = str(element["name"]).strip()
+            reason = element_problem(name)
+            if reason:
+                print(f'{scene["id"]}: элемент {name} снят — {reason}')
+                continue
+            card = _catalog_cards().get(name) or {}
+            kind = str(card.get("kind") or "")
+            start, end = _q(scene["startSec"]), _q(scene["endSec"])
+            # Срез — это начало сцены, и элемент стыка встаёт ЗА него: накладка
+            # кроет кадр серединой своего хода, а не началом.
+            cut = str(element.get("at")
+                      or ("cut" if kind == "overlay" else "start")) == "cut"
+            begin = max(0.0, _q(start - STITCH_LEAD)) if cut else start
+            # У стыка длительность своя — родная длительность позиции: резать
+            # чужой ход значит показать полперехода. У остальных элемент живёт
+            # свою сцену.
+            length = (float(card.get("duration") or FLASH_NATIVE)
+                      if kind == "overlay" else end - begin)
+            length = round(min(length, duration - begin), 4)
+            if length <= 0.2:
+                print(f'{scene["id"]}: элемент {name} снят — до конца ролика '
+                      f"остаётся {duration - begin:.2f} с")
+                continue
+            rect = None
+            if kind == "effect":
+                position = str(scene.get("presenter") or "none")
+                rect = effect_rect(position, band_top=band_top)
+                if rect is None:
+                    print(f'{scene["id"]}: элемент {name} снят — ведущая '
+                          f"{position!r} не оставила в кадре свободной зоны "
+                          f"выше полосы титра")
+                    continue
+            # Слова агента идут в слоты по порядку: имена слотов знает карточка,
+            # подставляет их существующий слой (`hf_slots.fill_ops`) по
+            # видимому тексту.
+            text = dict(zip([str(slot) for slot in card.get("text_slots") or []],
+                            [str(word) for word in element.get("words") or []]))
+            source = Path(public) / "compositions" / f"{name}.html"
+            root = (block_root(source.read_text(encoding="utf-8"))
+                    if source.exists() else "")
+            dimensions = card.get("dimensions") or {}
+            landscape = (int(dimensions.get("width") or 0)
+                         > int(dimensions.get("height") or 0))
+            # Канвас переносим только ландшафтной сцене: сплошная замена
+            # литералов меняет 1920 и 1080 местами, и вертикальную позицию она
+            # уложила бы на бок. Палитра и гарнитура — правилом CSS ниже по
+            # файлу: `_FONT_FAMILY` выше стирает типографику позиции целиком.
+            port = {"duration": length,
+                    "elastic": not (kind == "scene" and landscape),
+                    "height": OUT_H if kind == "scene" else None,
+                    "config": {},
+                    "css": palette_css(name, colors, root=root)}
+            try:
+                unique, _, canvas = _stage_overlay(
+                    public, name, scene["id"], sdk=sdk if text else None,
+                    text=text or None, port=port)
+            except RuntimeError as error:
+                print(f'{scene["id"]}: элемент {name} снят — {error}')
+                continue
+            if not dimensions and kind in ("scene", "effect"):
+                box = ((OUT_W, OUT_H) if kind == "scene"
+                       else (rect["width"], rect["height"]))
+                declare_box(
+                    Path(public) / "compositions" / f"{unique}.html",
+                    unique, box[0], box[1])
+                canvas = box
+                if name not in stencils:
+                    stencils.append(name)
+            # Значения переменных — одним JSON на хосте, их штатным каналом
+            # (`add.ts:64-72`): в файл позиции их не вписывают, чтобы два
+            # маунта одной позиции могли нести разное.
+            values = (" data-variable-values='"
+                      + json.dumps(element.get("variables") or {},
+                                   ensure_ascii=False).replace("'", "&#39;")
+                      + "'") if element.get("variables") else ""
+            at = markup_time(begin)
+            span = markup_time(begin + length) - at
+            mount = f'el-{scene["id"]}-{staged_elements}'
+            track = TRACK_ELEMENT + staged_elements % ELEMENT_TRACKS
+            common = (f' data-composition-id="{unique}"'
+                      f' data-composition-src="compositions/{unique}.html"'
+                      f' data-start="{at:.4f}" data-duration="{span:.4f}"'
+                      f' data-track-index="{track}"')
+            if kind == "scene":
+                body.append(
+                    f'    <div class="ovl">'
+                    f'<div id="{mount}" class="clip"{common}'
+                    f' data-width="{OUT_W}" data-height="{OUT_H}"'
+                    f' style="position:absolute;left:0;top:0;'
+                    f'width:{OUT_W}px;height:{OUT_H}px"{values}></div></div>')
+            elif kind == "effect":
+                body.append(
+                    f'    <div class="ovl" style="left:{rect["left"]}px;'
+                    f'top:{rect["top"]}px;width:{rect["width"]}px;'
+                    f'height:{rect["height"]}px">'
+                    f'<div id="{mount}" class="clip"{common}'
+                    f' style="position:absolute;left:0;top:0;'
+                    f'width:{rect["width"]}px;'
+                    f'height:{rect["height"]}px"{values}></div></div>')
+            else:
+                # Стык и плашка приезжают чужим канвасом, и вписывает их в
+                # кадр обёртка с `transform`: их загрузчик жёстко ставит хосту
+                # пиксели канваса позиции (compositionLoader.ts:517-524).
+                if kind == "overlay":
+                    scale = OUT_H / canvas[1]
+                    place = (f"left:{-round((canvas[0] * scale - OUT_W) / 2)}px"
+                             ";top:0")
+                    layer = "fx"
+                else:
+                    scale, place = _overlay_geometry(name, canvas)
+                    layer = "ovl"
+                body.append(
+                    f'    <div class="{layer}" style="{place}">'
+                    f'<div data-layout-allow-overflow="true"'
+                    f' style="position:absolute;left:0;top:0;'
+                    f'transform:scale({scale:.4f});transform-origin:0 0">'
+                    f'<div id="{mount}" class="clip"'
+                    f' data-layout-allow-overflow="true"{common}'
+                    f' data-width="{canvas[0]}" data-height="{canvas[1]}"'
+                    f"{values}></div></div></div>")
+            staged_elements += 1
+            kept.append(element)
+        if scene.get("elements") is not None:
+            # Раскадровка на диске обязана описывать собранный кадр: по ней
+            # судят гейты, и элемент, которого в кадре нет, закрывал бы сцену
+            # на бумаге.
+            scene["elements"] = kept
+    # Исходник упругой позиции остаётся на диске после `hyperframes add` и в
+    # кадр не едет — с него сняты копии, — но их `check` судит каждый файл
+    # отдельно и отвечает на него тем же `root_missing_dimensions`. Объявляем
+    # ему кадр: числа стенсиля ни на что не влияют, а сборку он больше не
+    # роняет. Правится ПОСЛЕ копий: копии снимаются с него, и своя коробка у
+    # каждой уже проставлена.
+    for name in stencils:
+        declare_box(Path(public) / "compositions" / f"{name}.html",
+                    name, OUT_W, OUT_H)
 
     # ── значки фоновых сцен ──────────────────────────────────────────────
     # Значок из их подбора лежит на подложке, за подложкой светит фирменный

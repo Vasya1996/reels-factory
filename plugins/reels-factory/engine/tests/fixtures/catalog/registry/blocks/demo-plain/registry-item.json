@@ -1,0 +1,29 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "demo-plain",
+  "type": "hyperframes:block",
+  "title": "Demo Plain",
+  "description": "Yesterday's lower third: the card declares no kind",
+  "tags": [
+    "demo",
+    "overlay"
+  ],
+  "dimensions": {
+    "width": 1920,
+    "height": 1080
+  },
+  "duration": 4.0,
+  "files": [
+    {
+      "path": "demo-plain.html",
+      "target": "compositions/demo-plain.html",
+      "type": "hyperframes:composition"
+    }
+  ],
+  "reels": {
+    "backing": "none",
+    "text_slots": [
+      "line"
+    ]
+  }
+}

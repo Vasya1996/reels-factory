@@ -23,6 +23,7 @@
 """
 from __future__ import annotations
 
+import functools
 from itertools import combinations
 
 from reels_factory.hf_layout import avatar_gaps, in_avatar_gap
@@ -306,6 +307,57 @@ def schema_scene(scene: dict) -> bool:
     return bool(scene.get("schemaShown"))
 
 
+def scene_elements(scene: dict) -> list[dict]:
+    """Позиции каталога, названные сценой. Поле `elements` — список объектов.
+
+    Живёт здесь, а не в сборке: то же поле читают гейты кадра, а импортировать
+    сборку им нельзя — она сама импортирует этот модуль.
+    """
+    found = scene.get("elements")
+    if not isinstance(found, list):
+        return []
+    return [item for item in found
+            if isinstance(item, dict) and str(item.get("name") or "").strip()]
+
+
+#: Виды позиции каталога, которые закрывают кадр наравне со вставкой и схемой:
+#: `scene` кроет его целиком, `effect` занимает свободную зону (`effect_rect`).
+#: Стык (`overlay`) сюда не входит — он живёт секунду на срезе и в остальное
+#: время кадра не держит.
+FRAME_KINDS = ("scene", "effect")
+
+
+@functools.lru_cache(maxsize=1)
+def _element_kinds() -> dict:
+    """Вид каждой позиции каталога по её карточке. Каталога может не быть —
+    тогда виды неизвестны, и элемент кадра не закрывает.
+
+    Кэш на один вызов, как у читателей каталога в сборке: гейт кадра
+    спрашивает вид у каждой сцены, а карточек в каталоге сотни."""
+    from reels_factory.hf_catalog import catalog_cards
+
+    try:
+        return {name: card.get("kind")
+                for name, card in catalog_cards().items()}
+    except (OSError, ValueError):
+        return {}
+
+
+def filling_element(scene: dict) -> str:
+    """Имя элемента каталога, которым закрыт кадр сцены. Пусто — такого нет.
+
+    Один ответ на двоих: `frame_filler` (D25) и `frame_filled_problems` (D20)
+    спрашивают его одинаково. Прежде эти двое расходились на плашке — она
+    закрывала кадр для одного и не закрывала для другого, — и повторять это
+    расхождение на элементах незачем.
+    """
+    kinds = _element_kinds()
+    for element in scene_elements(scene):
+        if kinds.get(str(element["name"]).strip()) in FRAME_KINDS:
+            return str(element["name"]).strip()
+    return ""
+
+
 def frame_filler(scene: dict) -> str:
     """Чем закрыт кадр этой сцены — одним словом. Пустая строка значит, что
     зритель увидит фон с титром и прочтёт это обрывом рассказа.
@@ -320,6 +372,8 @@ def frame_filler(scene: dict) -> str:
         return "вставка"
     if schema_scene(scene):
         return "схема"
+    if filling_element(scene):
+        return "элемент"
     if scene.get("icon"):
         return "значок"
     if scene.get("overlay"):

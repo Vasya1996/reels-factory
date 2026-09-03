@@ -1,9 +1,11 @@
 """Гейты раскадровки: их `check` её не читает вовсе, значит проверяем мы."""
 import pytest
 
+from pathlib import Path
+
 from reels_factory.hf_gates import (
     check_frame_filled, check_media, check_placeholders, check_storyboard,
-    min_scenes,
+    elements_problems, frame_filled_problems, min_scenes,
 )
 from reels_factory.hf_layout import quantize
 
@@ -532,3 +534,114 @@ def test_уголок_ведущей_под_запасной_схемой_зак
                fallback={"form": "steps", "why": "порядок",
                          "nodes": ["раз", "два"]})]})
     assert result["D20_frame_filled"] == "PASS"
+
+
+# ---------- элементы каталога: сверка до денег ----------
+
+FIXTURE_CATALOG = Path(__file__).resolve().parent / "fixtures" / "catalog"
+
+
+@pytest.fixture
+def каталог(monkeypatch):
+    """Гейты судят по фикстурному каталогу, а не по боевому."""
+    from reels_factory import hf_catalog, hf_montage
+
+    cards, skipped = hf_catalog.catalog_cards, hf_catalog.skipped_blocks
+    monkeypatch.setattr(hf_catalog, "catalog_cards",
+                        lambda *a, **k: cards(FIXTURE_CATALOG))
+    monkeypatch.setattr(hf_catalog, "skipped_blocks",
+                        lambda *a, **k: skipped(FIXTURE_CATALOG))
+    monkeypatch.setattr(hf_montage, "_element_kinds",
+                        lambda: {name: card.get("kind")
+                                 for name, card in cards(FIXTURE_CATALOG).items()})
+    return FIXTURE_CATALOG
+
+
+def _элементы(*elements):
+    scene = _scene(1, 0.0, 4.0, presenter="full")
+    scene["elements"] = list(elements)
+    return [scene]
+
+
+def test_неизвестное_имя_позиции_ловится_до_заказа(каталог):
+    """Их `add` неизвестное имя не ставит вовсе, а ставит он блоки уже после
+    оплаченного заказа ведущей: тот же вопрос задаётся плану заранее."""
+    problems = elements_problems(_элементы({"name": "нет-такого"}))
+    assert len(problems) == 1
+    assert "catalog.index.md" in problems[0]
+
+
+def test_позиция_с_причиной_отказа_планом_не_называется(каталог):
+    problems = elements_problems(_элементы({"name": "demo-skip"}))
+    assert len(problems) == 1 and "--strict" in problems[0]
+
+
+def test_чужая_переменная_и_чужой_тип_ловятся_по_карточке(каталог):
+    чужая = elements_problems(_элементы(
+        {"name": "count-up", "variables": {"finish": 250}}))
+    assert len(чужая) == 1 and "finish" in чужая[0]
+    тип = elements_problems(_элементы(
+        {"name": "count-up", "variables": {"end": "двести"}}))
+    assert len(тип) == 1 and "number" in тип[0]
+    # Булево не число и число не булево: в Python `True` — это `int`, и без
+    # оговорки `glow: 1` прошло бы за флаг.
+    флаг = elements_problems(_элементы(
+        {"name": "count-up", "variables": {"glow": 1}}))
+    assert len(флаг) == 1 and "boolean" in флаг[0]
+    assert elements_problems(_элементы(
+        {"name": "count-up", "variables": {"end": 250, "glow": True,
+                                           "suffix": " ₽"}})) == []
+
+
+def test_лишние_слова_ловятся_по_числу_слотов(каталог):
+    problems = elements_problems(_элементы(
+        {"name": "demo-scene", "words": ["Первая", "Вторая"]}))
+    assert len(problems) == 1 and "слотов у позиции 1" in problems[0]
+    assert elements_problems(_элементы(
+        {"name": "demo-scene", "words": ["Первая"]})) == []
+
+
+def test_сверку_элементов_делает_и_d11(каталог):
+    """Один код на два места: до заказа его зовёт `D36_elements`, после сборки —
+    D11. Разойтись им нечем."""
+    board = _board(_элементы({"name": "нет-такого"}))
+    verdict = check_storyboard(board, clips=CLIPS, duration=DURATION)
+    assert verdict["D11_schema"].startswith("FAIL")
+    assert "catalog.index.md" in verdict["D11_schema"]
+
+
+def test_элемент_кадра_считают_одинаково_d20_и_d25(каталог):
+    """Расхождение D20 и D25 на плашке было дефектом: элемент вида `scene` или
+    `effect` закрывает кадр для обоих гейтов сразу."""
+    from reels_factory.hf_gates import _empty_frame_problems
+
+    сцена = _scene(1, 0.0, 4.0, presenter="pip-tr")
+    сцена["elements"] = [{"name": "demo-scene"}]
+    assert frame_filled_problems([сцена]) == []
+    пустая = dict(сцена, presenter="none")
+    assert _empty_frame_problems([пустая]) == []
+
+    # Стык кадра не держит: он живёт секунду на срезе.
+    стык = _scene(2, 0.0, 4.0, presenter="pip-tr")
+    стык["elements"] = [{"name": "demo-stitch"}]
+    assert frame_filled_problems([стык])
+    assert _empty_frame_problems([dict(стык, presenter="none")])
+
+
+def test_рисованный_текст_гейт_берёт_из_карточки(monkeypatch, tmp_path):
+    """Белый список D22 переехал в карточку: каждая новая позиция иначе
+    требовала бы правки кода гейта."""
+    from reels_factory import hf_catalog
+    from reels_factory.hf_gates import check_placeholders
+
+    decor = hf_catalog.decor_texts
+    monkeypatch.setattr(hf_catalog, "decor_texts",
+                        lambda *a, **k: decor(FIXTURE_CATALOG))
+    compositions = tmp_path / "public" / "compositions"
+    compositions.mkdir(parents=True)
+    page = "<div><span>Заголовок</span><h1>{}</h1></div>"
+    (compositions / "demo-stitch.html").write_text(page.format("Демо"),
+                                                   encoding="utf-8")
+    (compositions / "demo-stitch--s-01.html").write_text(
+        page.format("Ролик про аватара"), encoding="utf-8")
+    assert check_placeholders(tmp_path)["D22_placeholders"] == "PASS"

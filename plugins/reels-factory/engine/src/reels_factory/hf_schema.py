@@ -228,7 +228,7 @@ def _mix(base: str, toward: str, share: float) -> str:
         f"{round(a + (b - a) * share):02x}" for a, b in zip(left, right))
 
 
-def palette_css(block: str, colors: dict) -> str:
+def palette_css(block: str, colors: dict, root: str | None = None) -> str:
     """Правило палитры и шрифта для корня блока.
 
     Гарнитуру объявляем ДВАЖДЫ — обычным `font-family` и их токеном. Их же
@@ -236,8 +236,14 @@ def palette_css(block: str, colors: dict) -> str:
     (`inject-fonts.cjs:93`), и имя, живущее лишь в переменной, она не увидит:
     тогда кириллица уедет в подменный шрифт, а казахские буквы не отрисуются
     вовсе.
+
+    `root` — корень позиции, если она не из таблицы форм: у произвольной
+    позиции каталога корневой id код читает из её же разметки
+    (`hf_compose._root_id`). Правило целится в корень, а не в `:root`: их
+    контракт тем прямо запрещает объявлять токены глобально — «those
+    declarations escape composition scoping» (`themes/CONTRACT.md:3`).
     """
-    root = _ROOTS.get(block)
+    root = root or _ROOTS.get(block)
     if not root:
         return ""
     ink = colors.get("ink", "#ffffff")
@@ -246,6 +252,13 @@ def palette_css(block: str, colors: dict) -> str:
     return (
         f"\n      #{root} {{ font-family: 'Manrope', sans-serif;"
         f" --mk-font: 'Manrope', sans-serif;"
+        # Типографские токены их же контракта тем (`themes/CONTRACT.md:9-14`):
+        # позиции полки читают гарнитуру через `var(--font-display, …)`, а наш
+        # `_FONT_FAMILY` стирает объявление, к которому этот `var` подставлен.
+        # Без токена шрифт вернулся бы к их запасной Inter.
+        f" --font-display: 'Unbounded', sans-serif;"
+        f" --font-body: 'Manrope', sans-serif;"
+        f" --font-mono: 'Manrope', sans-serif;"
         f" --hw-font-print: 'Manrope', sans-serif;"
         f" --hw-font-script: 'Unbounded', sans-serif;"
         f" --mk-ink: {ink}; --mk-ink-dim: {ink}b3; --mk-ink-dark: {ink};"

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>demo-scene</title>
+    <style>
+      #demo-scene-root { position: absolute; inset: 0; font-family: Inter, sans-serif; }
+      .dm-line { color: #ffffff; font-size: 64px; }
+    </style>
+  </head>
+  <body>
+    <div id="demo-scene-root" data-composition-id="demo-scene" data-width="1920" data-height="1080" data-duration="4">
+      <div class="dm-line">Заголовок</div>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      window.__timelines["demo-scene"] = null;
+    </script>
+  </body>
+</html>

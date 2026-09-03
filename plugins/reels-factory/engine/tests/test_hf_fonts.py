@@ -194,3 +194,26 @@ def test_обрабатываются_все_html_включая_вложенн�
     assert len(hf_fonts.inject_fonts(public, work_dir=tmp_path)) == 2
     card = (public / "cards" / "card-01.html").read_text(encoding="utf-8")
     assert "@font-face" in card and "Unbounded" in card
+
+
+@pytestmark_node
+def test_врезка_уезжает_внутрь_шаблона_позиции(tmp_path):
+    """Позиции их полки держат разметку и стиль в `<template>`: рантайм клонирует
+    только его. Врезчик кладёт начертания в `<head>`, то есть снаружи, и их
+    линтер отвечает `font_family_without_font_face` — под `--strict` это
+    упавшая сборка. Проверено живым `check` на копии `count-up`.
+    """
+    public = tmp_path / "public"
+    _write(public, "count-up--s-02.html",
+           "<html><head><title>t</title></head><body><template>"
+           '<div id="root" data-composition-id="count-up--s-02" '
+           'data-width="1080" data-height="397">'
+           "<style>#root{font-family:'Manrope',sans-serif}</style>"
+           "<b>Привет</b></div></template></body></html>")
+
+    hf_fonts.inject_fonts(public, work_dir=tmp_path)
+    page = (public / "count-up--s-02.html").read_text(encoding="utf-8")
+    assert "@font-face" in page
+    assert page.index("@font-face") > page.index("<template>"), (
+        "начертания остались снаружи шаблона — их линтер их не увидит")
+    assert 'id="hf-embedded-fonts"' not in page.split("<template>")[0]

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "demo-stitch",
+  "type": "hyperframes:block",
+  "title": "Demo Stitch",
+  "description": "Overlay transition: bands cover the frame, the host cuts beneath, the bands clear",
+  "tags": [
+    "demo",
+    "transition",
+    "wipe"
+  ],
+  "dimensions": {
+    "width": 1920,
+    "height": 1080
+  },
+  "duration": 2.2,
+  "files": [
+    {
+      "path": "demo-stitch.html",
+      "target": "compositions/demo-stitch.html",
+      "type": "hyperframes:composition"
+    }
+  ],
+  "reels": {
+    "kind": "overlay",
+    "decor_texts": [
+      "Заголовок"
+    ]
+  }
+}

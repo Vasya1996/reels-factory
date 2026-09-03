@@ -1,11 +1,13 @@
 """Наш каталог блоков, отданный агенту их способом — через поле registry."""
 import json
+from pathlib import Path
 
 import pytest
 
 from reels_factory.hf_catalog import (
-    CATALOG_DIR, REGISTRY_SUBDIR, block_names, component_names, overlay_names,
-    serve_catalog, texture_overlays, write_project_config,
+    CATALOG_DIR, REGISTRY_SUBDIR, block_names, catalog_cards, catalog_index,
+    component_names, decor_texts, overlay_names, serve_catalog, skipped_blocks,
+    texture_overlays, write_catalog_files, write_project_config,
 )
 
 #: 12 блоков работы B1 (10 вертикальных сцен + 2 накладки-перехода) — те, что
@@ -68,8 +70,6 @@ def test_накладка_со_смешанным_заголовком_не_пр
     уезжает в акцент и снимается вместе с ним как незаполненный слот, демо-
     строки `h1` остаются в кадре — D22 валит сборку при любом заполнении, и
     починить это агенту нечем."""
-    from reels_factory.hf_catalog import skipped_blocks
-
     assert "news-ticker" in skipped_blocks()
     assert "news-ticker" not in overlay_names()
 
@@ -184,3 +184,71 @@ def test_add_реально_ставит_сцену_накладку_и_комп
             / "hw-scribble-transition.html").exists()
     assert (tmp_path / "public" / "compositions" / "components"
             / "count-up.html").exists()
+
+
+# ---------- индекс каталога для агента ----------
+
+FIXTURE = Path(__file__).resolve().parent / "fixtures" / "catalog"
+
+
+def test_индекс_отдаёт_карточки_всех_трёх_видов():
+    """Формат — их же `catalog --json` плюс наши поля: агент ищет по описанию и
+    тегам, а вид позиции говорит коду, чем она станет в кадре."""
+    cards = catalog_cards(FIXTURE)
+    assert {name: card.get("kind") for name, card in cards.items()} == {
+        "count-up": "effect", "demo-scene": "scene", "demo-stitch": "overlay",
+        # Карточка без `reels.kind` — сегодняшняя плашка: вид у неё не объявлен.
+        "demo-plain": None}
+    поля = set(cards["demo-scene"])
+    assert {"name", "type", "title", "description", "tags", "dimensions",
+            "duration"} <= поля, "формат разошёлся с `catalog --json`"
+    assert cards["demo-scene"]["text_slots"] == ["line"]
+    assert cards["count-up"]["variables"]["end"] == {"type": "number",
+                                                     "default": 100}
+    # У упругой позиции размеров нет вовсе — она меряет себя коробкой хоста.
+    assert "dimensions" not in cards["count-up"]
+
+
+def test_позиция_с_причиной_отказа_в_индекс_не_попадает(capsys):
+    """Причина отказа записана в карточке, и агенту такую позицию не
+    предлагают: исправить её он не может — это дефект каталога, а не плана."""
+    assert "demo-skip" not in catalog_cards(FIXTURE)
+    assert "demo-skip" in skipped_blocks(FIXTURE)
+    assert "demo-skip" in capsys.readouterr().out
+
+
+def test_карточка_без_вида_остаётся_плашкой_по_старому_правилу():
+    """Обратная совместимость: пока вид в карточке не объявлен, позиция живёт
+    по нынешнему правилу — тег `overlay` и старое поле плана."""
+    assert overlay_names(FIXTURE) == ["demo-plain"]
+    assert catalog_cards(FIXTURE)["demo-plain"].get("kind") is None
+
+
+def test_индекс_печатается_json_ом_с_нашими_полями():
+    text = catalog_index(FIXTURE)
+    body = json.loads(text.split("```json")[1].split("```")[0])
+    assert [item["name"] for item in body] == sorted(
+        ["count-up", "demo-plain", "demo-scene", "demo-stitch"])
+    assert "Search by intent" not in text, "правило поиска живёт в своде правил"
+    assert "`kind`" in text and "`text_slots`" in text and "`variables`" in text
+
+
+def test_рисованный_текст_читается_из_карточки():
+    """Белый список гейта заглушек живёт в карточке, а не литералом в коде."""
+    assert decor_texts(FIXTURE) == {"demo-stitch": {"Заголовок"}}
+
+
+def test_индекс_и_справочники_кладутся_рядом_с_заданием(tmp_path):
+    written = write_catalog_files(tmp_path, FIXTURE)
+    assert (tmp_path / "catalog.index.md").exists()
+    assert [path.name for path in written][0] == "catalog.index.md"
+
+
+def test_справочники_фреймворка_лежат_в_репозитории():
+    """Клона фреймворка на проде нет, поэтому полка и карта категорий едут
+    копиями в каталоге — как и сам каталог блоков."""
+    from reels_factory.hf_catalog import (
+        CATALOG_DIR, REFERENCE_FILES, REFERENCE_SUBDIR,
+    )
+    for name in REFERENCE_FILES:
+        assert (CATALOG_DIR / REFERENCE_SUBDIR / name).exists(), name

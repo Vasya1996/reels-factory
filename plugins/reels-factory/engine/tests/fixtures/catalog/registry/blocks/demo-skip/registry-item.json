@@ -1,0 +1,27 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "demo-skip",
+  "type": "hyperframes:block",
+  "title": "Demo Skip",
+  "description": "Broken demo position",
+  "tags": [
+    "demo",
+    "overlay"
+  ],
+  "dimensions": {
+    "width": 1920,
+    "height": 1080
+  },
+  "duration": 4.0,
+  "files": [
+    {
+      "path": "demo-skip.html",
+      "target": "compositions/demo-skip.html",
+      "type": "hyperframes:composition"
+    }
+  ],
+  "reels": {
+    "kind": "effect",
+    "skip": "их же проверка валит блок под --strict"
+  }
+}

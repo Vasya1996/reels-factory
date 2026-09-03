@@ -8,6 +8,7 @@
 """
 import base64
 import functools
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -174,4 +175,41 @@ def inject_fonts(public_dir, *, work_dir=None) -> list[str]:
         raise RuntimeError(
             f"inject-fonts упал ({result.returncode}): "
             f"{(result.stderr or result.stdout)[:500]}")
+    for page in pages:
+        _faces_into_template(Path(page))
     return pages
+
+
+#: Врезка их скрипта: один `<style>` с этим id в `<head>` страницы
+#: (inject-fonts.cjs). Ищем его же, чтобы перенести, а не врезать заново.
+_FACES_STYLE = re.compile(r'<style id="hf-embedded-fonts">.*?</style>\s*', re.S)
+_TEMPLATE_STYLE = re.compile(r"(<template[^>]*>.*?<style[^>]*>)", re.S)
+
+
+def _faces_into_template(page: Path) -> None:
+    """Перенести врезанные начертания внутрь `<template>`, если корень там.
+
+    Позиции их полки примитивов держат разметку и стиль в `<template>` — «the
+    runtime clones only this template» (`registry/components/count-up/
+    count-up.html:30`). Их врезчик кладёт `@font-face` в `<head>`, то есть
+    снаружи, и их же линтер отвечает `font_family_without_font_face` на каждую
+    такую позицию: объявления и использование он сводит в пределах одного
+    корня. Под `--strict` это ошибка, то есть упавшая сборка — проверено
+    живым `check` на копии `count-up`.
+
+    Клон шаблона несёт стиль с собой, поэтому в кадре ничего не меняется:
+    начертания те же, просто объявлены там, где они и применяются.
+    """
+    html = page.read_text(encoding="utf-8")
+    faces = _FACES_STYLE.search(html)
+    if not faces or "<template" not in html or faces.start() > html.index(
+            "<template"):
+        return
+    moved = html[:faces.start()] + html[faces.end():]
+    place = _TEMPLATE_STYLE.search(moved)
+    if not place:
+        return
+    body = faces.group(0)
+    page.write_text(moved[:place.end()] + body[body.index(">") + 1:
+                                               body.rindex("</style>")]
+                    + moved[place.end():], encoding="utf-8")
