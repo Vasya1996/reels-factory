@@ -791,70 +791,88 @@ def _scene_phrases(scenes: list[dict],
     return [(scene, pockets[id(scene)]) for scene in ordered]
 
 
-def _order_phrases(scenes: list[dict], phrases: list[dict]) -> list[dict]:
-    """Фразы в том виде, в каком их читает нарезка островов.
+def _restored_scenes(covered: dict, scenes: list[dict]) -> list[str]:
+    """Сцены, которым код вернул ведущую вместо решения агента.
 
-    Нарезке нужны ровно четыре вещи: покрытие, секунды, роль и пластика. Первые
-    три известны уже здесь, а пластику назначает `editplan` позже, и на разбивку
-    она влияет только различием: одинаковая пластика границы куска не создаёт
-    (`_group_allowed` в `avatar_islands.py`). Поэтому всем фразам кладётся один
-    и тот же профиль, и оценка выходит снизу — настоящий заказ режет куски там
-    же, где мы, и вдобавок на сменах выразительности.
+    `agent_coverage.restored_windows` называет ОКНА, а агент правит СЦЕНЫ и
+    других имён не знает: скажи ему «окно window-011», и чинить он будет
+    вслепую. Сцену ищем по середине окна — тем же правилом, каким заказ
+    раздаёт решения сцен фразам (`_scene_at` в `avatar_islands.py`), чтобы имя
+    в отказе и имя в заказе не разъехались.
     """
-    items = []
-    for scene, own in _scene_phrases(scenes, phrases):
-        covered = _avatar_ordered_scene(scene)
-        for phrase in own:
-            items.append({
-                "id": phrase["id"],
-                "index": phrase["id"],
-                "role": phrase.get("role"),
-                "coverage": "avatar" if covered else "full_broll",
-                "final_timing": {"start": float(phrase["start"]),
-                                 "end": float(phrase["end"])},
-                "avatar_performance": {"expressiveness": "medium",
-                                       "motion_prompt": ""},
-            })
-    return items
+    from reels_factory.avatar_islands import _scene_at
+
+    ordered = sorted(scenes or [],
+                     key=lambda scene: float(scene.get("startSec", 0)))
+    restored = set((covered.get("agent_coverage") or {})
+                   .get("restored_windows") or [])
+    names: list[str] = []
+    for window in covered.get("windows") or []:
+        if window.get("id") not in restored:
+            continue
+        timing = window.get("final_timing") or {}
+        middle = (float(timing.get("start", 0))
+                  + float(timing.get("end", 0))) / 2
+        scene = _scene_at(ordered, middle)
+        name = str(scene.get("id", "?")) if scene is not None else "?"
+        if name not in names:
+            names.append(name)
+    return names
 
 
-def _avatar_order_seconds(scenes: list[dict], phrases: list[dict],
-                          duration: float, settings: dict) -> float:
-    """Сколько секунд ведущей выставит HeyGen по этому плану.
+def order_facts(edit_plan: dict, scenes: list[dict],
+                config: dict | None = None) -> dict:
+    """Настоящий заказ ведущей по этому плану — тот, который выставит HeyGen.
 
-    Меряем на ЗАКАЗЕ, а не на показе: клип покупается кусками, и с каждого
-    края куска код докупает `handle_seconds`, а короткий кусок дорастает до
-    `min_request_seconds` за счёт соседнего звука (`_request_timing` в
-    `avatar_islands.py`) — доплаченное в ролик не попадает, но в счёт попадает.
+    Оценку заказа мы держали здесь своей арифметикой, и прогон `06eb0a8f`
+    (01.09.2026) её оплатил: по сценам агента выходило 29,4 с, а собранный
+    заказ — 36,2 с. Оценка не знала про `_restore_short_faceless`
+    (`avatar_islands.py`), который возвращает ведущую куску короче
+    `MIN_FULLSCREEN_S`; допуск покрывал 1,0 с из 6,8, гейт бюджета завернул
+    план, `pipeline.py` из-за красного гейта выбросил решение агента, ведущую
+    купили по эвристике — и сборка легла уже после оплаты. $18 за
+    недоставленный ролик.
 
-    Арифметику берём у самого заказа, тремя его же функциями: непрерывные
-    фразы с ведущей — остров (`_islands_from_phrases`), остров режется на куски
-    (`_partition_island`), и КАЖДЫЙ кусок покупается отдельно со своей парой
-    ручек (`_request_timing`). Прежний счёт брал остров целиком, и на острове
-    из двух кусков гейт говорил PASS, а счёт приходил на пару ручек больше.
+    Поэтому числа берутся у самого заказа: решение агента переносится на план
+    монтажа (`apply_agent_coverage`), и по нему строится заказ
+    (`build_avatar_render_plan`). Это чистая арифметика — HeyGen тут не зовут,
+    и стоит она ноль.
 
-    Соседние сцены с ведущей дают один остров — ровно за это агенту сказано
-    ставить сцены с ведущей подряд.
+    Возвращает словарь:
+    `plan` — заказ или None, если он не собрался;
+    `edit_plan` — план монтажа с покрытием агента, то есть РОВНО тот, по
+    которому посчитан заказ: сохранять на диск надо его, иначе заморозка
+    заказа (`edit_plan_sha256`) укажет на другой файл;
+    `billed_seconds` — сколько секунд выставит HeyGen;
+    `restored` — имена сцен, которым код вернул ведущую сам;
+    `error` — чем заказ не собрался.
+
+    Несобравшийся заказ авария не поднимает: до заказа это причина пересдачи,
+    а после неё — повод остаться на прежней разметке. И то и другое решает
+    вызывающий, поэтому исключение превращается в текст.
     """
     from reels_factory.avatar_islands import (
-        _islands_from_phrases, _partition_island, _request_timing,
+        apply_agent_coverage, build_avatar_render_plan,
     )
 
-    total = 0.0
-    for island in _islands_from_phrases(_order_phrases(scenes, phrases)):
-        try:
-            groups = _partition_island(island, settings)
-        except ValueError:
-            # Разбить не удалось — считаем остров одним куском. Это оценка
-            # снизу, и она честнее отказа: гейт судит план до заказа, а
-            # настоящий отказ разбивки прилетит из самого заказа.
-            groups = [island]
-        for group in groups:
-            total += _request_timing(
-                float(group[0]["final_timing"]["start"]),
-                float(group[-1]["final_timing"]["end"]),
-                duration, settings)["duration"]
-    return total
+    facts = {"plan": None, "edit_plan": edit_plan, "billed_seconds": 0.0,
+             "restored": [], "error": ""}
+    try:
+        covered = apply_agent_coverage(edit_plan, scenes)
+    except Exception as error:
+        facts["error"] = f"покрытие агента не легло на план монтажа: {error}"
+        return facts
+    facts["edit_plan"] = covered
+    facts["restored"] = _restored_scenes(covered, scenes)
+    try:
+        plan = build_avatar_render_plan(covered, config or {})
+    except Exception as error:
+        facts["error"] = str(error)
+        return facts
+    facts["plan"] = plan
+    facts["billed_seconds"] = float(
+        plan["summary"]["avatar_billed_seconds"])
+    return facts
 
 
 #: Чем открытие и финал закрывают кадр целиком. Пересечение полнокадровых
@@ -865,11 +883,6 @@ def _avatar_order_seconds(scenes: list[dict], phrases: list[dict],
 BOOKEND_PRESENTER = FULL_FRAME_PRESENTER & {name for name, *_ in POSITIONS}
 
 
-#: Роли, которые ролик обязан говорить лицом. Прятать их запрещает валидатор
-#: плана монтажа (`validate_edit_plan`, editplan.py:2558-2562), и запрет тот же
-#: самый: сорванный на нём план роняет сборку, когда озвучка уже оплачена.
-SPEAKING_ROLES = ("hook", "cta")
-
 #: Запас к порогам, которые меряются по фразам. Наши фразы округлены к
 #: миллисекунде, а валидатор меряет неокруглённые (`final_timing` в
 #: `finalize_edit_plan`), поэтому фразу ровно на пороге гейт заворачивает: промах
@@ -878,21 +891,6 @@ SPEAKING_ROLES = ("hook", "cta")
 #: лица (D32) — в обоих случаях в сторону строгости.
 PHRASE_TIME_MARGIN = 0.002
 
-#: Сколько непредсказанных швов оплачивает допуск бюджета. Наш счёт заказа
-#: кладёт всем фразам одну пластику (`_order_phrases`), потому что на этом шаге
-#: её ещё нет: `avatar_performance` назначает `editplan` позже. Настоящая
-#: нарезка режет остров ещё и на сменах выразительности (`_group_allowed` в
-#: `avatar_islands.py`), и каждый такой шов докупает по ручке с обеих сторон.
-#: Смоделировать смену подачи нечем — данных нет, — поэтому цена швов отдаётся
-#: допуску.
-#:
-#: Швов держим два. Раньше стоял один (замер давал 0,4 с при ручке 0,2 с), но
-#: сплошной перебор расстановок показал расхождение до 1,95 с на быстрой речи:
-#: заказ добирает секунды ещё и там, где код сам возвращает ведущую слишком
-#: короткому куску (`_restore_short_faceless` в `avatar_islands.py`). Запас в
-#: один шов такие планы заворачивал, хотя заказ по ним собирается.
-_UNPREDICTED_SEAMS = 2
-
 
 def _blind_stretches(scenes: list[dict],
                      phrases: list[dict]) -> list[dict]:
@@ -900,7 +898,7 @@ def _blind_stretches(scenes: list[dict],
 
     Считаем так же, как валидатор плана монтажа: он ведёт отсчёт от начала
     первого окна без лица и сбрасывает его на первом же окне с ведущей
-    (`validate_edit_plan`, editplan.py:2548-2556). Сцена без фраз ни отсчёта не
+    (`validate_edit_plan`, editplan.py:2672-2680). Сцена без фраз ни отсчёта не
     начинает, ни не сбрасывает: окна заводятся по фразам, и такой сцены в плане
     монтажа не будет вовсе.
 
@@ -934,7 +932,8 @@ def _blind_stretches(scenes: list[dict],
 
 
 def _early_plan_gates(scenes: list[dict], duration: float,
-                      phrases: list[dict], settings: dict) -> dict:
+                      phrases: list[dict], settings: dict,
+                      order: dict | None = None) -> dict:
     """Что проверяем в плане ДО заказа аватара (работа D).
 
     Все проверки — про то, что после заказа уже не поправить. Ведущую на
@@ -947,6 +946,12 @@ def _early_plan_gates(scenes: list[dict], duration: float,
     Провал не отклоняет план, а становится причиной пересдачи: формулировка
     называет виноватую сцену и говорит, что сделать, — этот же текст уезжает
     агенту разделом пересдачи в BRIEF.md вместе с именем гейта.
+
+    `order` — построенный заказ (`order_facts`). Бюджет судится по нему и
+    только по нему: своей оценки заказа у гейта больше нет, потому что она
+    разошлась с настоящим счётом на 6,8 с и стоила прогону `06eb0a8f` $18.
+    Заказа нет или он не собрался — `D29_avatar_budget` снимается в SKIP:
+    выдуманный PASS тут дороже честного «судить нечем».
     """
     from reels_factory.avatar_islands import avatar_budget_targets
 
@@ -964,28 +969,29 @@ def _early_plan_gates(scenes: list[dict], duration: float,
         "встречает зрителя и провожает его. Поставь этим сценам presenter "
         "`full` или `punch` и `avatarNeeded: true`: " + "; ".join(wrong))
 
-    ordered = _avatar_order_seconds(scenes, phrases, duration, settings)
     budget = avatar_budget_targets(duration, settings)
-    # Допуск островов на их собственном замере заказа
-    # (`build_avatar_render_plan` в `avatar_islands.py`) — полпроцента
-    # хронометража: это округления сетки кадров, а не перерасход. Здесь к нему
-    # добавляется цена непредсказанных швов (`_UNPREDICTED_SEAMS`), по ручке с
-    # каждой стороны шва.
-    slack = (0.005 * duration
-             + 2 * _UNPREDICTED_SEAMS * settings["handle_seconds"])
-    # Запас прибавляется к НАШЕЙ оценке, а не к границе. Прежде он двигал
-    # границу вверх, и объявленные 70 % на деле превращались в 71,9 %, а на
-    # длинной ручке клиента — заметно больше: перебор поймал 106 принятых
-    # планов выше объявленного потолка. Неуверенность в собственном счёте
-    # должна стоить нам пересдачи, а не заказчику лишних секунд HeyGen.
-    #
     # Судим по ГРАНИЦЕ, а не по ориентиру: ориентир 60 % — то, куда агенту
     # велено целиться, и промах по нему монтажа не портит, а пересдача стоит
     # новой сессии планировщика. Перебор расстановок показал, почему полоса
     # нужна: расстановка квантована сценой, соседние планы отличаются на целую
     # сцену (27,3 → 34,5 с на ролике 56,1 с), и ориентир 33,7 с стоял ровно в
     # провале между ступенями.
-    if duration <= 0 or ordered + slack <= budget["hard_ceiling_seconds"]:
+    #
+    # Допуска здесь нет намеренно. Прежний допуск (полпроцента хронометража
+    # плюс два «непредсказанных шва») лечил неточность НАШЕЙ оценки заказа —
+    # оценки больше нет, судим построенный заказ, и прибавлять к нему нечего.
+    # Заодно это снимает вред допуска: на прогоне `06eb0a8f` он покрывал 1,0 с
+    # из 6,8 промаха и при этом заворачивал планы, чей заказ в границу
+    # укладывался.
+    billed = float((order or {}).get("billed_seconds") or 0.0)
+    if order is None or order.get("plan") is None:
+        причина = str((order or {}).get("error") or "")
+        result["D29_avatar_budget"] = (
+            f"{SKIPPED_VERDICT}: заказ ведущей по этому плану не построен — "
+            "судить бюджет нечем. Секунды бюджета берутся у самого заказа "
+            "(`order_facts` в hf_render.py), и без него вердикт был бы "
+            "выдуман" + (f": {причина}" if причина else "."))
+    elif duration <= 0 or billed <= budget["hard_ceiling_seconds"]:
         result["D29_avatar_budget"] = "PASS"
     else:
         paid = ", ".join(str(scene.get("id", "?")) for scene in scenes
@@ -997,39 +1003,40 @@ def _early_plan_gates(scenes: list[dict], duration: float,
                             for scene, pocket in _scene_phrases(scenes, phrases)
                             if _avatar_ordered_scene(scene)
                             for phrase in pocket)
+        # Сцены, где ведущую вернул КОД, а не агент. Без этой строки агент
+        # видит перебор, которого не заказывал: на прогоне `06eb0a8f` таких
+        # окон было пять, и 6,8 с из промаха пришли именно оттуда — пересдача
+        # без имён сцен ушла бы в пустоту.
+        вернули = ""
+        restored = list((order or {}).get("restored") or [])
+        if restored:
+            вернули = (
+                "Часть этих секунд заказал не ты: кусок без ведущей короче "
+                f"{seconds(MIN_FULLSCREEN_S)} код возвращает ведущей сам, "
+                "иначе сборка упадёт после оплаты, — и здесь это случилось в "
+                f'сценах {", ".join(restored)}. Их и чини первыми: удлини '
+                "такую сцену или отдай её ведущей целиком. ")
         result["D29_avatar_budget"] = (
             "FAIL: секунда ведущей — самая дорогая секунда ролика, и её "
             "бюджет меряется сложением длительностей фраз: у сцен с "
             f"`avatarNeeded: true` сейчас выходит {seconds(spoken_avatar)} из "
             f"{seconds(duration)} ролика, а целься в "
             f'{seconds(budget["target_seconds"])} — это то же число, что '
-            "названо тебе в задании. Заказ выходит длиннее показа на ручки по "
-            f"краям кусков, поэтому HeyGen выставит {seconds(ordered)}, и это "
-            f'выше границы {seconds(budget["hard_ceiling_seconds"])}, за '
-            "которой план не берут; в твоём счёте фразами та же граница — "
+            "названо тебе в задании. Заказ по этому плану уже собран, и HeyGen "
+            f"выставит за него {seconds(billed)} — выше границы "
+            f'{seconds(budget["hard_ceiling_seconds"])}, за которой план не '
+            "берут; в твоём счёте фразами та же граница — "
             f'{seconds(budget["hard_target_seconds"])}, и это то же число, что '
-            "стоит пунктом сверки в задании. Отдай одну сцену из середины "
-            "вставке или схеме, поставив ей `avatarNeeded: false`: хватит "
-            "самой длинной, "
-            "которая не несёт фраз ролей hook и cta. Сейчас с ведущей идут: "
-            f"{paid}")
+            "стоит пунктом сверки в задании. " + вернули
+            + "Отдай одну сцену из середины вставке или схеме, поставив ей "
+            "`avatarNeeded: false`: хватит самой длинной сцены середины. "
+            f"Сейчас с ведущей идут: {paid}")
 
-    # Роль тянется по фразам, а не по сценам, поэтому D28 её не ловит: он
-    # смотрит только первую и последнюю сцену ролика, а хук занимает несколько
-    # фраз и может уехать во вторую сцену.
-    hidden_roles = []
     short = []
     for scene, own in _scene_phrases(scenes, phrases):
         if _avatar_ordered_scene(scene):
             continue
         name = str(scene.get("id", "?"))
-        speaking = [phrase for phrase in own
-                    if phrase.get("role") in SPEAKING_ROLES]
-        if speaking:
-            hidden_roles.append(
-                f"{name} — " + ", ".join(
-                    f'фраза {phrase["id"]} роли {phrase.get("role")}'
-                    for phrase in speaking))
         # Меряем сцену, а не каждую её фразу: заказ склеивает окна одного
         # решения агента в одно (`_merge_agent_windows` в `avatar_islands.py`),
         # и валидатор увидит длину всей сцены. Считаем сложением длительностей
@@ -1040,13 +1047,6 @@ def _early_plan_gates(scenes: list[dict], duration: float,
             named = (f'фраза {own[0]["id"]}' if len(own) == 1
                      else f'фразы {own[0]["id"]}–{own[-1]["id"]}')
             short.append(f"{name} — {named}, вместе {seconds(spoken)}")
-
-    result["D30_avatar_roles"] = "PASS" if not hidden_roles else (
-        "FAIL: хук и призыв ролик говорит лицом. На первых секундах зритель "
-        "решает, смотреть ли дальше, а призыву без лица он не верит, и заказ "
-        "по плану, где эти фразы спрятаны, не состоится вовсе. Поставь этим "
-        "сценам `avatarNeeded: true` либо отдай фразы ролей hook и cta "
-        "соседней сцене с ведущей: " + "; ".join(hidden_roles))
 
     # Смягчать D31 до мерки валидатора нельзя, и это замерено. Валидатор
     # такие планы принимает — но только потому, что код сам возвращает
@@ -1063,7 +1063,7 @@ def _early_plan_gates(scenes: list[dict], duration: float,
         "`avatarNeeded: true`: " + "; ".join(short))
 
     # Тот же запрет, что и у валидатора (`validate_edit_plan`,
-    # editplan.py:2548-2556): план, где сцены без ведущей идут подряд дольше
+    # editplan.py:2672-2680): план, где сцены без ведущей идут подряд дольше
     # предела, роняет сборку уже с оплаченной озвучкой. Запас берём в сторону
     # строгости — наши секунды округлены к миллисекунде, а меряют неокруглённые.
     blind = [stretch for stretch in _blind_stretches(scenes, phrases)
@@ -1253,6 +1253,7 @@ def _fill_frame_holes(rdir: Path, board: dict, scenes: list[dict]) -> list[str]:
 
 
 def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
+                       edit_plan: dict | None = None,
                        config: dict | None = None,
                        agent_runner=None, agent_spend=None) -> dict:
     """План агента ДО заказа аватара (работа 9).
@@ -1278,10 +1279,16 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
     своим расходом, и работа планировщика (по замеру $0,45 за ролик) в счёт бы
     не попала.
 
-    Возвращает `{"board": план, "scenes": сцены с секундами, "gates": отчёт}` —
-    по сценам считаются интервалы заказа, `gates` уезжает в отчёт по сборке.
-    Фреймворка это не касается: заказ у HeyGen идёт до композиции, HyperFrames
-    видит уже готовые клипы.
+    `edit_plan` — финальный план монтажа. По нему на каждой попытке строится
+    НАСТОЯЩИЙ заказ (`order_facts`), и по нему судит бюджет: своей оценки у
+    гейта больше нет. Без плана монтажа заказ не строится вовсе, и бюджет
+    уходит в SKIP — так зовут только те, кому вердикт бюджета не нужен.
+
+    Возвращает `{"board": план, "scenes": сцены с секундами, "order": заказ,
+    "gates": отчёт}` — по сценам считаются интервалы заказа, `order` забирает
+    `pipeline.py` (в нём лежит и размеченный решением агента план монтажа), а
+    `gates` уезжает в отчёт по сборке. Фреймворка это не касается: заказ у
+    HeyGen идёт до композиции, HyperFrames видит уже готовые клипы.
     """
     rdir = Path(rdir).resolve()
     (rdir / "public").mkdir(parents=True, exist_ok=True)
@@ -1306,9 +1313,15 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
         board = json.loads(source.read_text(encoding="utf-8"))
         scenes = lay_out_scenes(board.get("scenes") or [], phrases,
                                 duration=duration)
-        return {"board": board, "scenes": scenes,
+        # Заказ считаем и здесь. Пропустить его на пересборке значит навсегда
+        # оставить бюджет в SKIP: вердикт по замороженному плану всё равно
+        # уезжает в отчёт (`frozen_plan_gates`), и «судить нечем» вместо числа
+        # спрятало бы ровно тот промах, который стоил прогону `06eb0a8f` $18.
+        order = (order_facts(edit_plan, scenes, config)
+                 if edit_plan is not None else None)
+        return {"board": board, "scenes": scenes, "order": order,
                 "gates": _early_plan_gates(scenes, duration, phrases,
-                                           settings)}
+                                           settings, order=order)}
 
     try:
         passports = catalog_overlay_passports()
@@ -1319,6 +1332,7 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
     board: dict = {}
     scenes: list[dict] = []
     gates: dict = {}
+    order: dict | None = None
     reason = None
     with serve_catalog() as registry_url:
         write_project_config(rdir, registry_url)
@@ -1326,7 +1340,8 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
             write_brief(rdir, scenario=timed_scenario, face=None,
                         duration=duration, clips=[], phrases=phrases,
                         overlay_passports=passports, retry_reason=reason,
-                        avatar_ordered=False, islands=islands)
+                        avatar_ordered=False, islands=islands,
+                        attempt=attempt, max_attempts=MAX_PLAN_ATTEMPTS)
             # Ход без плана — такая же причина пересдачи, как и план, не легший
             # на озвучку: сессия обрывается по своим причинам, а стоит эта
             # осечка одного переспроса против всей сборки. Ловим только пустой
@@ -1357,9 +1372,23 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
                 if attempt == MAX_PLAN_ATTEMPTS - 1:
                     raise RuntimeError("план не лёг на озвучку — " + reason)
                 continue
-            gates = _early_plan_gates(scenes, duration, phrases, settings)
+            # Заказ строим на КАЖДОЙ попытке: гейт бюджета судит его, а не
+            # оценку, и после правки плана заказ выходит другой. Денег это не
+            # стоит — HeyGen тут не зовут.
+            order = (order_facts(edit_plan, scenes, config)
+                     if edit_plan is not None else None)
+            gates = _early_plan_gates(scenes, duration, phrases, settings,
+                                      order=order)
             failed = [f"{key}: {value}" for key, value in gates.items()
                       if value.startswith("FAIL")]
+            if order is not None and order["plan"] is None:
+                # Заказ, который не собирается, — такая же причина пересдачи,
+                # как план, не легший на озвучку: чинит его агент. Отказом это
+                # не становится даже на последней попытке — озвучка уже
+                # оплачена, и прогон доедет на прежней разметке покрытия
+                # (`pipeline.py`), отдав человеку ролик.
+                failed.append("заказ ведущей по этому плану не собирается: "
+                              + order["error"])
             if not failed:
                 break
             reason = "; ".join(failed)
@@ -1372,8 +1401,14 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
     # вечный SKIP. Это последняя точка, где план ещё чей-то, а не оплаченный.
     if _fill_frame_holes(rdir, board, scenes):
         # В отчёт и в снимок обязан уйти вердикт по тому плану, который
-        # действительно поедет в заказ, а не по тому, что вернул агент.
-        gates = _early_plan_gates(scenes, duration, phrases, settings)
+        # действительно поедет в заказ, а не по тому, что вернул агент. Заказ
+        # пересчитываем вместе с вердиктом: починка трогает только `presenter`,
+        # но связка «вердикт считан по этому заказу» должна держаться сама, а
+        # не на памяти о том, что именно правит починка.
+        order = (order_facts(edit_plan, scenes, config)
+                 if edit_plan is not None else None)
+        gates = _early_plan_gates(scenes, duration, phrases, settings,
+                                  order=order)
 
     # Задание последней попытки — это то самое, по которому сделан лежащий
     # план: копию снимаем до того, как сборка перепишет оригинал.
@@ -1386,7 +1421,7 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
     # Память о том, чей план лежит в `plan.json`: аватар закажут ровно по нему,
     # и сборка второй план спрашивать не вправе.
     _marker(rdir, EARLY_PLAN_STEP).write_text("ok", encoding="utf-8")
-    return {"board": board, "scenes": scenes, "gates": gates}
+    return {"board": board, "scenes": scenes, "order": order, "gates": gates}
 
 
 def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
@@ -1441,7 +1476,8 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         hf_captions.stage(rdir)
         write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
                     duration=duration, clips=clips, phrases=phrases,
-                    overlay_passports=_passports(), wishes=wishes)
+                    overlay_passports=_passports(), wishes=wishes,
+                    attempt=0, max_attempts=MAX_COMPOSE_ATTEMPTS)
         (rdir / "phrases.json").write_text(
             json.dumps(phrases, ensure_ascii=False, indent=1), encoding="utf-8")
         (rdir / "clips.json").write_text(
@@ -1483,7 +1519,8 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                             face=load_face(rdir), duration=duration,
                             clips=saved_clips, retry_reason=reason,
                             phrases=phrases,
-                            overlay_passports=_passports(), wishes=wishes)
+                            overlay_passports=_passports(), wishes=wishes,
+                            attempt=attempt, max_attempts=MAX_COMPOSE_ATTEMPTS)
 
             # Обёртку заводим здесь, а не внутри `plan_with_agent`: там она
             # осталась бы при функции вместе со своим расходом, и работа

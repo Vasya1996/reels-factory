@@ -291,8 +291,17 @@ _GLYPH_RATIO = 0.55
 
 #: Сколько знаков держит коробка узла у `hw-pipeline`. Ширина коробки падает с
 #: числом узлов (три коробки с зазорами занимают весь кадр), поэтому и предел
-#: разный: на глаз он мерился по кадру, а не по формуле блока.
-_NODE_CHARS = {1: 14, 2: 11, 3: 8}
+#: разный: на глаз он мерился по кадру, а не по формуле блока. Без подчёркивания
+#: — заданию нужно называть агенту эти же числа, а не переписывать их литералом
+#: рядом (`hf_montage_skill.py`).
+NODE_CHARS = {1: 14, 2: 11, 3: 8}
+
+#: Сколько знаков держат подписи остальных форм — те же числа, которыми режет
+#: их `_fit_label` ниже. Заданию нужны они же, а не переписанные рядом литералы.
+METRIC_LABEL_CHARS = 28
+ITEMS_LABEL_CHARS = 20
+PAIRS_LABEL_CHARS = 22
+PAIRS_VALUE_CHARS = 26
 
 
 #: Значки карточек перечисления — закрытый набор, из которого агент выбирает по
@@ -410,7 +419,7 @@ def build(form: str, content: dict, *, duration: float, colors: dict,
         config = {
             "scheme": "dark", "value": number, "suffix": suffix,
             "max": base or number or 1,
-            "label": _fit_label(content.get("label"), 28),
+            "label": _fit_label(content.get("label"), METRIC_LABEL_CHARS),
             "caption": "",
             "trackWidth": 620,
             "x": 120, "y": round(OUT_H * 0.30),
@@ -432,7 +441,7 @@ def build(form: str, content: dict, *, duration: float, colors: dict,
         # Двадцать знаков — последняя ступень, на которой кегль ещё
         # максимальный: с двадцать первого их подгонка начинает уменьшать
         # шрифт, ничего не выигрывая (проверено лестницей кадров).
-        cards = [{"label": _fit_label(item.get("label"), 20).upper(),
+        cards = [{"label": _fit_label(item.get("label"), ITEMS_LABEL_CHARS).upper(),
                   "icon": item["icon"]}
                  for item in (content.get("items") or [])[:LIMITS["items"]]]
         labels = ",".join(card["label"] for card in cards)
@@ -457,8 +466,8 @@ def build(form: str, content: dict, *, duration: float, colors: dict,
         # Поэтому значение обязательно, и его отсутствие — ошибка плана.
         rows = []
         for row in (content.get("rows") or [])[:LIMITS["pairs"]]:
-            label = _fit_label(row.get("label"), 22)
-            value = _fit_label(row.get("value"), 26)
+            label = _fit_label(row.get("label"), PAIRS_LABEL_CHARS)
+            value = _fit_label(row.get("value"), PAIRS_VALUE_CHARS)
             if not value.strip():
                 raise ValueError(
                     f"строка «{label}» без значения: их список рисует пару "
@@ -475,7 +484,7 @@ def build(form: str, content: dict, *, duration: float, colors: dict,
 
     if form == "steps":
         nodes = list((content.get("nodes") or [])[:LIMITS["steps"]])
-        limit = _NODE_CHARS.get(len(nodes), 8)
+        limit = NODE_CHARS.get(len(nodes), 8)
         nodes = [_fit_label(node, limit) for node in nodes]
         count = max(1, len(nodes))
         font = 46

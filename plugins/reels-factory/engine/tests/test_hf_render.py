@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from reels_factory.avatar_islands import avatar_budget_targets
+from reels_factory.editplan import MIN_FULLSCREEN_S
 from reels_factory.hf_montage_skill import seconds
 from reels_factory.hf_render import STEPS, reset_step, run_step, step_done
 
@@ -281,6 +282,136 @@ FIT = _board([{"id": f"s-{index:02d}", "intent": "зачем", "phrases": span,
              duration=EARLY_TOTAL)
 
 
+#: Настройки клиента для заказа. Без фото-аватара заказ не строится вовсе
+#: (`validate_photo_avatar_iv_config`), а гейт бюджета судит ПОСТРОЕННЫЙ заказ —
+#: значит и раннему шагу настройки нужны те же, по которым пойдут деньги.
+ISLAND_CONFIG = {"format": "avatar",
+                 "avatar": {"heygen_asset_id": "photo-asset",
+                            "engine": "avatar_iv"},
+                 "avatar_islands": {"enabled": True}}
+
+
+def _early_edit_plan():
+    """Финальный план монтажа раннего материала — вход настоящего заказа.
+
+    Подделывать его нельзя: заказ строится ровно из него (`order_facts` в
+    hf_render.py), и словарь-заглушка обошёл бы ту самую арифметику, из-за
+    расхождения с которой прогон `06eb0a8f` отдал $18 и не отдал ролика.
+    """
+    from reels_factory.editplan import build_edit_plan, finalize_edit_plan
+
+    draft = build_edit_plan(EARLY_TIMED, {}, index={},
+                            require_asset_files=False)
+    return finalize_edit_plan(draft, EARLY_TIMED, EARLY_WORDS,
+                              require_asset_files=False)
+
+
+EARLY_EDIT_PLAN = _early_edit_plan()
+
+
+#: План монтажа, где фразу 12 держит схема (`hyperframes`). Такие окна заводили
+#: случай прогона `06eb0a8f`: отказ агента их не трогал (HeyGen там не заказан),
+#: сцена без ведущей разваливалась на кусок вставки и кусок схемы, кусок вставки
+#: выходил короче `MIN_FULLSCREEN_S`, и `_restore_short_faceless` возвращал ему
+#: ведущую вместе с секундами в счёт. Теперь отказ накрывает и графику
+#: (`apply_agent_coverage`), и на этом плане держится, что заказ больше не
+#: растёт.
+def _scheme_edit_plan():
+    plan = json.loads(json.dumps(EARLY_EDIT_PLAN))
+    for window in plan["windows"]:
+        if window["id"] == "window-012":
+            window["coverage"] = "hyperframes"
+    for phrase in plan["phrases"]:
+        if phrase["id"] == "phrase-012":
+            phrase["coverage"] = "hyperframes"
+    return plan
+
+
+SCHEME_EDIT_PLAN = _scheme_edit_plan()
+
+# Сцена s-07 отдана вставке целиком (фразы 11–12, вместе 5,4 с — выше пола
+# D31), а фразу 12 держит схема. До правки вставке доставался кусок 1,8 с, код
+# возвращал ему ведущую, и в счёт приходили секунды, которых агент не заказывал.
+_RESTORED = [([0, 1], "punch", None, True),
+             ([2], "full", None, True),
+             ([3, 4], "none", "разложить бумаги", False),
+             ([5], "stack", "листает записи", True),
+             ([6, 7], "none", "печатает на ноутбуке", False),
+             ([8], "full", None, True),
+             ([9, 10], "stack", "считает на калькуляторе", True),
+             ([11, 12], "none", "закрывает блокнот", False),
+             ([13], "stack", "гасит лампу", True),
+             ([14, 15], "punch", None, True)]
+
+
+def _restored_board(spec):
+    return _board([{"id": f"s-{index:02d}", "intent": "зачем", "phrases": span,
+                    "presenter": presenter, "avatarNeeded": needed,
+                    "insert": _series(look) if look else None}
+                   for index, (span, presenter, look, needed)
+                   in enumerate(spec)], duration=EARLY_TOTAL)
+
+
+#: План прогона `06eb0a8f`: сцена s-07 отдана вставке, фразу 12 держит схема.
+#: Заказ по нему 37,9 с при границе 39,3 с — и возврата больше нет.
+RESTORED_OVER = _restored_board(_RESTORED)
+
+
+#: План монтажа, где ОДНО окно несёт фразы 11 (1,8 с) и 12 (3,6 с) — так их и
+#: склеивает черновик, когда обе несут один материал. Это единственная
+#: оставшаяся причина возврата ведущей: границу сцены ставит режиссёр, окно
+#: заведено по раскадровке, и одно окно достаётся двум разным решениям агента.
+#: Внутри ОДНОЙ сцены разойтись кускам больше нечем — отказ накрывает и графику.
+def _cut_edit_plan():
+    plan = json.loads(json.dumps(EARLY_EDIT_PLAN))
+    windows = plan["windows"]
+    keep = next(item for item in windows if item["id"] == "window-011")
+    drop = next(item for item in windows if item["id"] == "window-012")
+    keep["phrase_ids"] = ["phrase-011", "phrase-012"]
+    for key in ("estimated_timing", "final_timing"):
+        keep[key] = {"start": keep[key]["start"], "end": drop[key]["end"],
+                     "duration": round(drop[key]["end"] - keep[key]["start"], 6)}
+    windows.remove(drop)
+    for phrase in plan["phrases"]:
+        if phrase["id"] == "phrase-012":
+            phrase["window_id"] = "window-011"
+    for index, window in enumerate(windows):
+        window["index"] = index
+    return plan
+
+
+CUT_EDIT_PLAN = _cut_edit_plan()
+
+# Сцена s-07 — одна фраза 11 (1,8 с), и граница сцены режет окно 11+12 пополам:
+# кусок 1,8 с уходит во вставку, кусок фразы 12 остаётся ведущей. Возврат
+# срабатывает на куске, склеить его внутри сцены не с чем.
+#
+# Такая сцена короче пола `MIN_FULLSCREEN_S`, и D31 её и правда заворачивает —
+# в обоих планах ниже одинаково. Так и должно быть: план, который гейты
+# приняли, возврата больше не заводит. Возврат остался страховкой для плана,
+# который гейты завернули, а агент попытки исчерпал: `plan_before_avatar`
+# доезжает до заказа и с красными гейтами, и там короткий кусок уронил бы
+# сборку уже с оплаченной озвучкой.
+_CUT = [([0, 1], "punch", None, True),
+        ([2], "stack", "открывает ноутбук", True),
+        ([3, 4], "none", "разложить бумаги", False),
+        ([5], "stack", "листает записи", True),
+        ([6, 7], "none", "печатает на ноутбуке", False),
+        ([8], "full", None, True),
+        ([9, 10], "stack", "считает на калькуляторе", True),
+        ([11], "none", "закрывает блокнот", False),
+        ([12, 13], "stack", "гасит лампу", True),
+        ([14, 15], "punch", None, True)]
+
+#: Возврат случился, и заказ вышел за границу: 43,3 с при границе 39,3 с.
+CUT_OVER = _restored_board(_CUT)
+#: Тот же возврат, но сцена s-06 тоже отдана вставке: заказ 36,1 с — внутри
+#: границы. Прочие правила читают оба плана одинаково.
+CUT_FIT = _restored_board(
+    [(([9, 10], "none", "считает на калькуляторе", False) if index == 6
+      else item) for index, item in enumerate(_CUT)])
+
+
 def _needed(board, flags):
     """Копия плана с проставленным `avatarNeeded` по порядку сцен."""
     marked = json.loads(json.dumps(board))
@@ -307,16 +438,12 @@ NO_FINALE = _hidden(FIT, -1, "гасит свет в офисе")
 # занимает целиком, но агенту его никто не предлагал.
 OVERLAY_END = json.loads(json.dumps(FIT))
 OVERLAY_END["scenes"][-1]["presenter"] = "overlay"
-# Хук уехал во вторую сцену и там спрятан. Открытие и финал ролика при этом с
-# ведущей — D28 такой план принимает.
-HIDDEN_HOOK = _hidden(FIT, 1, "листает ежедневник")
 # Короткая фраза (1,8 с) досталась сцене без ведущей: вставке нечем закрыть
 # кадр, и заказ по такому плану не состоится.
 SHORT_FACELESS = _hidden(FIT, 7, "закрывает ноутбук")
 # Сцена, разделявшая две сцены без ведущей, сама отдана вставке: лицо пропадает
 # на пяти фразах подряд (18 с) при пределе 10 с. Ни одна фраза этого куска не
-# короче пола и ни одна не несёт роли hook или cta — то есть ловит план ровно
-# новый гейт.
+# короче пола — то есть ловит план ровно новый гейт.
 LONG_BLIND = _hidden(FIT, 5, "смотрит в окно")
 
 
@@ -494,13 +621,19 @@ def test_второй_промах_финала_попадает_в_отчёт_�
 def test_превышение_бюджета_ведущей_тоже_даёт_пересдачу(tmp_path, monkeypatch):
     """Работа D: бюджет ведущей меряется на ЗАКАЗЕ (`avatarNeeded`), а не на
     показе — клипы платные. Сейчас превышение печатается только в stderr
-    (avatar_islands.py около 511), то есть агент о нём не узнаёт никогда."""
+    (avatar_islands.py около 511), то есть агент о нём не узнаёт никогда.
+
+    Заказ ранний шаг строит сам, из плана монтажа: с прогона `06eb0a8f` гейт
+    судит построенный заказ, а не оценку по сценам.
+    """
     from reels_factory import hf_render
 
     calls = _plan_fakes(monkeypatch, tmp_path, [OVER, FIT])
 
     res = hf_render.plan_before_avatar(tmp_path, EARLY_TIMED,
-                                       alignment_words=EARLY_WORDS)
+                                       alignment_words=EARLY_WORDS,
+                                       edit_plan=EARLY_EDIT_PLAN,
+                                       config=ISLAND_CONFIG)
 
     планы = [text for name, text in calls if name == "plan"]
     assert len(планы) == 2, "превышение бюджета пересдачи не вызвало"
@@ -621,27 +754,60 @@ def test_порог_вставки_меряется_сценой_а_не_каж�
     assert "s-01 — фраза 2, вместе 2,4 с" in gates["D31_faceless_scenes"]
 
 
-def test_роль_hook_в_сцене_без_ведущей_даёт_пересдачу(tmp_path, monkeypatch):
-    """Дефект 2: роли hook и cta валидатор прятать запрещает
-    (editplan.py:2558-2562), а D28 смотрит только первую и последнюю сцену
-    ролика. Хук тянется по нескольким фразам и уезжает во вторую сцену —
-    такой план проходил все гейты и падал уже в сборке, без пересдачи."""
+def test_фраза_роли_hook_в_средней_сцене_без_ведущей_проходит_гейты():
+    """Решение Васи: правило «роли `hook` и `cta` ролик всегда говорит лицом»
+    снято, остаётся только край ролика (`D28_avatar_bookends`) — открытие
+    и финал. Хук тянется на три фразы
+    (`_EARLY_BLOCKS`), фраза 2 — во второй, не крайней, сцене; сцена s-01
+    отдана вставке (`avatarNeeded: false`), а s-00 (открытие) и s-09 (финал)
+    остаются с ведущей. План обязан пройти ранние гейты и `validate_edit_plan`
+    без единого упоминания роли."""
     from reels_factory import hf_render
+    from reels_factory.avatar_islands import apply_agent_coverage
+    from reels_factory.editplan import (
+        build_edit_plan, finalize_edit_plan, validate_edit_plan,
+    )
+    from reels_factory.hf_phrases import lay_out_scenes, phrase_timeline
 
-    calls = _plan_fakes(monkeypatch, tmp_path, [HIDDEN_HOOK, FIT])
+    board = json.loads(json.dumps(FIT))
+    # Фраза 2 несёт роль hook (`_EARLY_BLOCKS`) и лежит в сцене s-01 — код
+    # переводит эту сцену на вставку. Соседнюю s-02 держим с ведущей, иначе
+    # два отказа подряд сливаются в один промежуток дольше `MAX_FACE_ABSENCE_S`
+    # (`D32_face_absence`) — это другой, не наш, гейт.
+    board["scenes"][1].update({"presenter": "none", "avatarNeeded": False,
+                               "insert": _series("листает ежедневник")})
+    board["scenes"][2].update({"presenter": "full", "avatarNeeded": True,
+                               "insert": None})
 
-    res = hf_render.plan_before_avatar(tmp_path, EARLY_TIMED,
-                                       alignment_words=EARLY_WORDS)
+    phrases = phrase_timeline(EARLY_TIMED, EARLY_WORDS)
+    scenes = lay_out_scenes(json.loads(json.dumps(board["scenes"])), phrases,
+                            duration=EARLY_TOTAL)
 
-    планы = [text for name, text in calls if name == "plan"]
-    assert len(планы) == 2, "спрятанный хук пересдачи не вызвал"
-    причина = _причина(планы[1])
-    assert "D30_avatar_roles" in причина
-    assert "фраза 2 роли hook" in причина
-    # Открытие и финал у этого плана с ведущей — то есть поймал его именно
-    # новый гейт, а не D28.
-    assert "D28_avatar_bookends" not in причина
-    assert _fails(res.get("gates")) == []
+    draft = build_edit_plan(EARLY_TIMED, {}, index={}, require_asset_files=False)
+    edit_plan = finalize_edit_plan(draft, EARLY_TIMED, EARLY_WORDS,
+                                   require_asset_files=False)
+
+    facts = hf_render.order_facts(edit_plan, scenes, ISLAND_CONFIG)
+    assert facts["plan"] is not None, facts.get("error")
+    gates = hf_render._early_plan_gates(scenes, EARLY_TOTAL, phrases,
+                                        hf_render.islands_settings(None),
+                                        order=facts)
+    assert _fails(gates) == [], gates
+    # Гейтов ровно столько, сколько судит план сейчас — роли среди них больше
+    # нет: снятое правило не оставило ни ключа, ни молчаливого PASS.
+    assert set(gates) == {"D28_avatar_bookends", "D29_avatar_budget",
+                          "D31_faceless_scenes", "D32_face_absence",
+                          "D33_avatar_decisions", "D34_inserts",
+                          "D35_frame_filled"}, gates
+
+    out = apply_agent_coverage(edit_plan, scenes)
+    report = validate_edit_plan(out, require_final=True,
+                                require_asset_files=False)
+    assert report["all_pass"] is True, report["errors"]
+    hook_windows = [w for w in out["windows"] if w.get("role") == "hook"]
+    assert hook_windows, "окно роли hook пропало из плана"
+    assert any(w["coverage"] not in {"avatar", "mixed"} for w in hook_windows), (
+        "тест бессмыслен: ни одно окно роли hook не спрятано")
 
 
 def test_долгая_пропажа_лица_даёт_пересдачу(tmp_path, monkeypatch):
@@ -666,10 +832,8 @@ def test_долгая_пропажа_лица_даёт_пересдачу(tmp_pa
     assert "идут подряд без ведущей 18 с" in причина
     for индекс in (4, 5, 6):
         assert LONG_BLIND["scenes"][индекс]["id"] in причина
-    # Остальные гейты этот план принимают: фразы куска не короче пола и ролей
-    # hook и cta не несут.
+    # Остальной гейт этот план принимает: фразы куска не короче пола.
     assert "D31_faceless_scenes" not in причина
-    assert "D30_avatar_roles" not in причина
     assert _fails(res.get("gates")) == []
 
 
@@ -677,11 +841,14 @@ def test_бюджет_считает_ручки_каждого_куска_зак
     """Дефект 3б: остров длиннее `max_shot_seconds` заказ режет на несколько
     кусков (`_partition_island`), и каждый кусок покупается со своей парой
     ручек. Счёт по острову целиком говорил PASS, а счёт HeyGen приходил
-    больше."""
+    больше.
+
+    Своей арифметики у гейта больше нет вовсе: `order_facts` строит настоящий
+    заказ и берёт `avatar_billed_seconds` — число, которое выставит HeyGen. Тут
+    и проверяется, что берётся именно оно: сумма длительностей ЗАПРОСОВ, где
+    ручки каждого шва уже учтены.
+    """
     from reels_factory import hf_render
-    from reels_factory.avatar_islands import (
-        _islands_from_phrases, _partition_island,
-    )
     from reels_factory.hf_phrases import lay_out_scenes, phrase_timeline
 
     phrases = phrase_timeline(EARLY_TIMED, EARLY_WORDS)
@@ -689,22 +856,25 @@ def test_бюджет_считает_ручки_каждого_куска_зак
                             duration=EARLY_TOTAL)
     settings = hf_render.islands_settings(None)
 
-    острова = _islands_from_phrases(hf_render._order_phrases(scenes, phrases))
-    куски = [_partition_island(island, settings) for island in острова]
-    assert len(острова) == 1, "весь ролик с ведущей — это один остров"
-    assert len(куски[0]) > 1, (
+    факты = hf_render.order_facts(EARLY_EDIT_PLAN, scenes, ISLAND_CONFIG)
+    заказ = факты["plan"]
+    assert заказ is not None, факты["error"]
+    assert len(заказ["islands"]) == 1, "весь ролик с ведущей — это один остров"
+    assert len(заказ["shots"]) > 1, (
         f"остров {EARLY_TOTAL} с обязан разрезаться: предел куска "
         f'{settings["max_shot_seconds"]} с')
 
-    заказ = hf_render._avatar_order_seconds(scenes, phrases, EARLY_TOTAL,
-                                            settings)
-    # Крайние ручки упираются в границы ролика и не покупаются, поэтому платных
-    # ручек ровно две на каждый внутренний шов.
-    швы = len(куски[0]) - 1
-    assert заказ == pytest.approx(
+    # Ручки внутренних швов в счёте есть: крайние упираются в границы ролика и
+    # не покупаются, поэтому платных ручек ровно две на каждый шов.
+    швы = len(заказ["shots"]) - 1
+    assert факты["billed_seconds"] == pytest.approx(
         EARLY_TOTAL + 2 * швы * settings["handle_seconds"], abs=0.001), (
         "ручки внутренних швов в бюджет не попали — гейт скажет PASS, а счёт "
         "придёт больше")
+    # И это ровно то число, которым гейт судит: сумма длительностей запросов.
+    assert факты["billed_seconds"] == pytest.approx(sum(
+        shot["request_timing"]["duration"] for shot in заказ["shots"]),
+        abs=0.001)
 
 
 def test_гейты_берут_числа_из_настроек_клиента(tmp_path, monkeypatch):
@@ -715,10 +885,11 @@ def test_гейты_берут_числа_из_настроек_клиента(t
 
     # Профиль клиента: ручка втрое длиннее умолчания и куски вдвое короче —
     # значит швов больше, и каждый докупает свою пару ручек.
-    config = {"avatar_islands": {"handle_seconds": 0.9,
-                                 "min_request_seconds": 3.0,
-                                 "target_shot_seconds": 6.0,
-                                 "max_shot_seconds": 6.0}}
+    config = json.loads(json.dumps(ISLAND_CONFIG))
+    config["avatar_islands"].update({"handle_seconds": 0.9,
+                                     "min_request_seconds": 3.0,
+                                     "target_shot_seconds": 6.0,
+                                     "max_shot_seconds": 6.0})
     # План с ведущей на семи сценах из десяти: на умолчаниях заказ выходит
     # 36,9 с при границе 39,3 с и проходит, на профиле клиента — 50,7 с и не
     # проходит. Тот же план на умолчаниях брать нельзя: между ориентиром 60 %
@@ -733,11 +904,12 @@ def test_гейты_берут_числа_из_настроек_клиента(t
 
     res = hf_render.plan_before_avatar(tmp_path, EARLY_TIMED,
                                        alignment_words=EARLY_WORDS,
+                                       edit_plan=EARLY_EDIT_PLAN,
                                        config=config)
 
     планы = [text for name, text in calls if name == "plan"]
-    # На умолчаниях этот же план проходит (см. соседние тесты) — значит гейт
-    # посчитал ручки по настройкам клиента, а не по DEFAULTS.
+    # На умолчаниях этот же план проходит (см. соседние тесты) — значит и заказ
+    # собран по настройкам клиента, а не по DEFAULTS.
     assert len(планы) == 2, "ручка клиента в бюджет гейта не попала"
     assert "D29_avatar_budget" in _причина(планы[1])
     # Те же числа уехали в задание: агент целится в бюджет той арифметикой,
@@ -770,57 +942,343 @@ def test_сцена_без_решения_агента_не_доходит_до_
     assert _fails(res.get("gates")) == []
 
 
-def _гейт_бюджета(monkeypatch, scenes, phrases, settings):
-    """Вердикт D29 при заказе ровно в названные секунды."""
+def _гейт_бюджета(scenes, phrases, settings, duration=EARLY_TOTAL):
+    """Вердикт D29 при заказе ровно в названные секунды.
+
+    Заказ подаём готовым словарём `order_facts`: настоящий заказ строится из
+    плана монтажа, и подогнать его секунды к границе с точностью до одной
+    нельзя — а проверять надо именно черту, по которой гейт делит PASS и FAIL.
+    Ключ `plan` при этом непустой: пустой означает «заказ не собрался», и гейт
+    тогда снимается в SKIP, а не судит.
+    """
     from reels_factory import hf_render
 
-    def гейт(заказ: float) -> str:
-        monkeypatch.setattr(hf_render, "_avatar_order_seconds",
-                            lambda *a, **kw: заказ)
-        return hf_render._early_plan_gates(scenes, EARLY_TOTAL, phrases,
-                                           settings)["D29_avatar_budget"]
+    def гейт(заказ: float, restored=()) -> str:
+        order = {"plan": {"summary": {"avatar_billed_seconds": заказ}},
+                 "edit_plan": {}, "billed_seconds": заказ,
+                 "restored": list(restored), "error": ""}
+        return hf_render._early_plan_gates(
+            scenes, duration, phrases, settings,
+            order=order)["D29_avatar_budget"]
 
     return гейт
 
 
-def test_допуск_бюджета_покрывает_два_непредсказанных_шва(monkeypatch):
-    """Счёт заказа занижен на швы. `_order_phrases` кладёт всем фразам одну
-    пластику, потому что на этом шаге её ещё нет — `avatar_performance`
-    назначает `editplan` позже, — а настоящая нарезка режет остров ещё и на
-    сменах выразительности (`_group_allowed` в `avatar_islands.py`).
-    Смоделировать смену нечем, поэтому цена непредсказанных швов отдаётся
-    допуску. Швов замерено до двух (перебор расстановок на быстрой речи: заказ
-    расходился с нашей оценкой на 1,95 с при паре ручек 0,4 с), и допуск
-    держит именно два.
-
-    Допуск прибавляется к нашей ОЦЕНКЕ, а не к границе: иначе объявленные
-    заказчику 70 % хронометража на деле становились 71,9 %, а на длинной ручке
-    клиента — заметно выше. Неуверенность в собственном счёте стоит пересдачи,
-    а не лишних секунд HeyGen."""
-    from reels_factory import hf_render
+def _разложить(board, duration=EARLY_TOTAL, timed=None, words=None):
+    """Сцены плана с проставленными секундами — так их читают гейты."""
     from reels_factory.hf_phrases import lay_out_scenes, phrase_timeline
 
-    phrases = phrase_timeline(EARLY_TIMED, EARLY_WORDS)
-    scenes = lay_out_scenes(json.loads(json.dumps(FIT["scenes"])), phrases,
-                            duration=EARLY_TOTAL)
+    phrases = phrase_timeline(timed or EARLY_TIMED, words or EARLY_WORDS)
+    scenes = lay_out_scenes(json.loads(json.dumps(board["scenes"])), phrases,
+                            duration=duration)
+    return scenes, phrases
+
+
+def test_бюджет_судит_построенный_заказ_а_не_оценку():
+    """Черта бюджета — это `avatar_billed_seconds` построенного заказа против
+    `hard_ceiling_seconds`, и ничего между ними не стоит.
+
+    До прогона `06eb0a8f` (01.09.2026) гейт судил СВОЮ оценку заказа по сценам
+    агента и прибавлял к ней допуск на собственную неточность. Оценка не знала
+    про `_restore_short_faceless` (`avatar_islands.py`), который возвращает
+    ведущую куску короче `MIN_FULLSCREEN_S`: на том прогоне она дала 29,383 с
+    при настоящем заказе 36,213 с. Число, которого никто не заказывал, судить
+    нельзя ни в ту, ни в другую сторону.
+    """
+    from reels_factory import hf_render
+
+    scenes, phrases = _разложить(FIT)
     settings = hf_render.islands_settings(None)
     граница = avatar_budget_targets(EARLY_TOTAL,
                                     settings)["hard_ceiling_seconds"]
-    assert hf_render._UNPREDICTED_SEAMS == 2
-    швы = 2 * hf_render._UNPREDICTED_SEAMS * settings["handle_seconds"]
-    допуск = 0.005 * EARLY_TOTAL + швы
-    assert швы > 0.005 * EARLY_TOTAL, (
-        "швы дешевле округлений — тест ничего не проверяет")
 
-    гейт = _гейт_бюджета(monkeypatch, scenes, phrases, settings)
-    assert гейт(граница - допуск - 0.01) == "PASS"
-    assert гейт(граница - допуск + 0.01).startswith("FAIL")
-    # Объявленная граница — настоящая: план, который наша оценка ставит ровно
-    # на неё, уже не проходит, потому что швы могут довести заказ выше.
-    assert гейт(граница).startswith("FAIL")
+    гейт = _гейт_бюджета(scenes, phrases, settings)
+    assert гейт(граница - 1.0) == "PASS"
+    assert гейт(граница) == "PASS", "граница объявлена годной — она годна"
+    assert гейт(граница + 1.0).startswith("FAIL")
 
 
-def test_план_между_ориентиром_и_границей_годен(monkeypatch):
+def test_прогон_06eb0a8f_допуск_заворачивал_заказ_укладывающийся_в_границу():
+    """Регрессия боевого прогона `06eb0a8f` (01.09.2026): $18 списаны, ролик не
+    отдан.
+
+    Числа того прогона: ролик 42,533 с, граница 29,773 с, оценка гейта
+    29,383 с, настоящий заказ 36,213 с, окон с возвращённой ведущей — пять.
+    Оценка укладывалась в границу, а завернул план ДОПУСК: полпроцента
+    хронометража плюс два «непредсказанных шва» по паре ручек — 1,013 с,
+    прибавленные к нашей же оценке. Дальше красный гейт заставил `pipeline.py`
+    выбросить решение агента о покрытии, ведущую купили по старой эвристике, и
+    сборка легла на `D12_faceless_cover` уже после оплаты.
+
+    Допуск снят: прибавлять к построенному заказу нечего. План, чей ЗАКАЗ
+    укладывается в границу, гейт не заворачивает.
+    """
+    from reels_factory import hf_render
+
+    длина, граница, оценка, заказ = 42.533, 29.773, 29.383, 36.213
+    допуск = 0.005 * длина + 2 * 2 * 0.2
+    assert оценка <= граница < оценка + допуск, (
+        "тест бессмыслен: на этих числах прежний допуск плана бы не завернул")
+
+    scenes, phrases = _разложить(FIT)
+    settings = hf_render.islands_settings(None)
+    гейт = _гейт_бюджета(scenes, phrases, settings, duration=длина)
+    assert граница == pytest.approx(
+        avatar_budget_targets(длина, settings)["hard_ceiling_seconds"], abs=0.001)
+
+    assert гейт(оценка) == "PASS", (
+        "заказ внутри границы завернули — вернулся допуск на нашу неточность")
+    # Настоящий заказ того прогона границу и правда перешёл, и это гейт обязан
+    # сказать вслух: перебор в 6,4 с — не округление.
+    assert гейт(заказ).startswith("FAIL")
+
+
+def test_несобравшийся_заказ_снимает_бюджет_а_не_пропускает_его():
+    """Заказ не построен — судить бюджет нечем, и вердикт обязан это сказать.
+
+    PASS тут был бы выдуманным: он означает «ведущая в границе», а на деле
+    никто не считал. Именно выдуманное число и стоило прогону `06eb0a8f` $18.
+    """
+    from reels_factory import hf_render
+
+    scenes, phrases = _разложить(FIT)
+    settings = hf_render.islands_settings(None)
+
+    for заказ in (None,
+                  {"plan": None, "edit_plan": {}, "billed_seconds": 0.0,
+                   "restored": [], "error": "avatar islands требует "
+                                            "avatar.heygen_asset_id"}):
+        вердикт = hf_render._early_plan_gates(
+            scenes, EARLY_TOTAL, phrases, settings,
+            order=заказ)["D29_avatar_budget"]
+        assert вердикт.startswith(hf_render.SKIPPED_VERDICT), вердикт
+        assert not вердикт.startswith("PASS")
+    assert "heygen_asset_id" in вердикт, (
+        "не сказано, чем именно заказ не собрался")
+
+
+def test_заказ_с_возвращённой_ведущей_судится_по_своим_секундам():
+    """Тот же случай, но на настоящем заказе, а не на подставленном числе.
+
+    Прогон `06eb0a8f`: сцену агент отдал вставке целиком, а код вернул ведущую
+    её куску — окну короче `MIN_FULLSCREEN_S`, которое иначе уронило бы сборку
+    после оплаты (`_restore_short_faceless`). Секунды возврата в счёт идут, и
+    гейт обязан судить по ним, а не по замыслу агента.
+
+    Обе стороны черты проверяются одним и тем же возвратом: план, чей заказ
+    уложился (36,1 с при границе 39,3 с), гейт берёт; тот, чей вышел за
+    границу (43,3 с), — заворачивает.
+
+    Возврат берётся с той причины, которая решением агента не лечится вовсе, —
+    с разреза окна границей сцены (`CUT_EDIT_PLAN`). Прежняя причина (фраза со
+    схемой внутри отказанной сцены) кончилась: отказ агента накрывает и её,
+    и держит это `test_прогон_06eb0a8f_отказ_накрывает_графику_и_заказ_не_растёт`.
+    """
+    from reels_factory import hf_render
+
+    settings = hf_render.islands_settings(None)
+    граница = avatar_budget_targets(EARLY_TOTAL,
+                                    settings)["hard_ceiling_seconds"]
+
+    прочие = {}
+    for board, ждём in ((CUT_FIT, "PASS"), (CUT_OVER, "FAIL")):
+        scenes, phrases = _разложить(board)
+        факты = hf_render.order_facts(CUT_EDIT_PLAN, scenes, ISLAND_CONFIG)
+        assert факты["plan"] is not None, факты["error"]
+        assert факты["restored"] == ["s-07"], (
+            "код ведущую не возвращал — тест проверяет не тот случай: "
+            f'{факты["restored"]}')
+        гейты = hf_render._early_plan_gates(scenes, EARLY_TOTAL, phrases,
+                                            settings, order=факты)
+        # Прочие правила читают оба плана одинаково: разводит их только заказ.
+        # PASS у всех тут потребовать нельзя — сцену короче `MIN_FULLSCREEN_S`
+        # D31 заворачивает, и это ровно та сцена, ради возврата на которой
+        # план и построен.
+        свои = {key: str(value)[:40] for key, value in гейты.items()
+                if key != "D29_avatar_budget"}
+        assert not прочие or прочие == свои, (
+            "планы разошлись не только заказом: " + json.dumps(
+                {key: (прочие.get(key), свои.get(key)) for key in свои
+                 if прочие.get(key) != свои.get(key)}, ensure_ascii=False))
+        прочие = свои
+        вердикт = гейты["D29_avatar_budget"]
+        assert вердикт.startswith(ждём), (
+            f'заказ {факты["billed_seconds"]} с при границе {граница:.1f} с: '
+            f"{вердикт}")
+        if ждём == "PASS":
+            assert факты["billed_seconds"] <= граница
+        else:
+            assert факты["billed_seconds"] > граница
+
+
+def test_прогон_06eb0a8f_отказ_накрывает_графику_и_заказ_не_растёт():
+    """Регрессия боевого прогона `06eb0a8f` (01.09.2026), причина вторая.
+
+    Сцену s-07 агент отдал вставке целиком, но фразу 12 держала схема
+    (`hyperframes`), и отказ её не трогал. Сцена разваливалась на кусок схемы и
+    кусок вставки, склейка пару разных покрытий не берёт, кусок выходил короче
+    `MIN_FULLSCREEN_S` — и код возвращал туда ведущую вместе с секундами в
+    счёт. На том прогоне так вернулись два окна, и заказ вырос с 30,8 до 37,4 с.
+
+    Теперь отказ агента накрывает и графику: покрытие у сцены одно, склейка
+    собирает её обратно, возврата нет, и заказ по тому же плану ниже — 37,9 с
+    против 39,7 с, то есть внутри границы 39,3 с.
+    """
+    from reels_factory import hf_render
+
+    settings = hf_render.islands_settings(None)
+    граница = avatar_budget_targets(EARLY_TOTAL,
+                                    settings)["hard_ceiling_seconds"]
+
+    scenes, phrases = _разложить(RESTORED_OVER)
+    факты = hf_render.order_facts(SCHEME_EDIT_PLAN, scenes, ISLAND_CONFIG)
+
+    assert факты["plan"] is not None, факты["error"]
+    assert факты["restored"] == [], (
+        "код вернул ведущую туда, где агент её не заказывал: "
+        f'{факты["restored"]}')
+    assert факты["billed_seconds"] < 39.7, (
+        "заказ не уменьшился — фраза со схемой снова держит ведущую")
+    assert факты["billed_seconds"] <= граница
+    гейты = hf_render._early_plan_gates(scenes, EARLY_TOTAL, phrases,
+                                        settings, order=факты)
+    assert [key for key, value in гейты.items()
+            if not str(value).startswith("PASS")] == [], гейты
+
+
+def test_отказ_бюджета_называет_сцены_которым_ведущую_вернул_код():
+    """Пересдача без имён сцен уходит в пустоту.
+
+    Возврат ведущей делает КОД, и в счёте появляются секунды, которых агент не
+    заказывал: на прогоне `06eb0a8f` так пришли пять окон. Агент видит перебор,
+    смотрит в свой план — там всё как он задумал, — и вторая попытка повторяет
+    первую. `agent_coverage.restored_windows` называет окна, а агент правит
+    сцены, поэтому в отказе стоят имена СЦЕН.
+
+    Причина возврата тут оставшаяся — разрез окна границей сцены
+    (`CUT_EDIT_PLAN`): внутри одной сцены куски больше не расходятся.
+    """
+    from reels_factory import hf_render
+
+    scenes, phrases = _разложить(CUT_OVER)
+    settings = hf_render.islands_settings(None)
+    факты = hf_render.order_facts(CUT_EDIT_PLAN, scenes, ISLAND_CONFIG)
+    вердикт = hf_render._early_plan_gates(scenes, EARLY_TOTAL, phrases,
+                                          settings,
+                                          order=факты)["D29_avatar_budget"]
+
+    assert вердикт.startswith("FAIL")
+    assert "s-07" in вердикт, "сцена возврата в отказе не названа"
+    assert seconds(MIN_FULLSCREEN_S) in вердикт, (
+        "не сказано, короче чего кусок вернулся ведущей")
+    # Названо и настоящее число заказа — то, по которому судили.
+    assert seconds(факты["billed_seconds"]) in вердикт
+
+
+#: Папка задания боевого прогона `artyom-early-2` (02.09.2026), снятая с
+#: прод-сервера только на чтение (`root@134.209.80.75`,
+#: `/root/reels-workspace/work/jobs/artyom-early-2`). Три файла:
+#: `plan.json` (план агента), `edit_plan.json` (финальный план монтажа, вход
+#: настоящего заказа), `scenario.timed.json` (озвучка с таймингами блоков).
+ARTYOM_EARLY_2_DIR = Path(__file__).parent / "fixtures" / "artyom_early_2"
+
+
+def _artyom_early_2_edit_plan() -> dict:
+    return json.loads(
+        (ARTYOM_EARLY_2_DIR / "edit_plan.json").read_text(encoding="utf-8"))
+
+
+def _artyom_early_2_scenes_and_phrases() -> tuple[list[dict], list[dict]]:
+    """Сцены и фразы прогона `artyom-early-2` — секунды и без агента.
+
+    `plan.json` агента называет только диапазон фраз каждой сцены: секунды
+    достраивает `hf_phrases.lay_out_scenes` по отдельной, пословной раскладке
+    речи (`phrase_timeline`), а её сырые тайминги (ElevenLabs) с сервера не
+    сняты — в папке задания их нет, только «pretty» файлы. Секунды сцены
+    здесь берутся напрямую из `final_timing` первой и последней её фразы в
+    `edit_plan.json` — том самом файле, по которому строился настоящий заказ:
+    сцены выстилают ролик без зазоров (`lay_out_scenes`), значит граница
+    сцены и граница крайней её фразы — одно и то же число. Разбор
+    `s06-investigation.md` (02.09.2026) сверил их перед починкой кода: сумма
+    фраз сцены `s-06` (2,88+2,04+1,26=6,18 с) совпала с округлением
+    «2,9+2,0+1,3=6,2 с» из `BRIEF.plan.md` того же прогона.
+    """
+    board = json.loads(
+        (ARTYOM_EARLY_2_DIR / "plan.json").read_text(encoding="utf-8"))
+    edit_plan = _artyom_early_2_edit_plan()
+    by_index = {phrase["index"]: phrase for phrase in edit_plan["phrases"]}
+    scenes = []
+    for raw_scene in board["scenes"]:
+        first, last = raw_scene["phrases"][0], raw_scene["phrases"][-1]
+        scene = dict(raw_scene)
+        scene["startSec"] = by_index[first]["final_timing"]["start"]
+        scene["endSec"] = by_index[last]["final_timing"]["end"]
+        scenes.append(scene)
+    phrases = [
+        {"id": phrase["index"], "role": phrase["role"], "text": phrase["text"],
+         "start": phrase["final_timing"]["start"],
+         "end": phrase["final_timing"]["end"],
+         "said": [phrase["final_timing"]["start"],
+                  phrase["final_timing"]["end"]]}
+        for phrase in edit_plan["phrases"]
+    ]
+    return scenes, phrases
+
+
+def test_прогон_artyom_early_2_окно_без_ведущей_следует_сцене_агента():
+    """Регрессия боевого прогона `artyom-early-2` (02.09.2026).
+
+    Сцену `s-06` (фразы 11–13, сумма 6,18 с — выше `MIN_FULLSCREEN_S`) агент
+    отдал вставке ровно по правилу, которое ему назвали, а код всё равно
+    вернул ей ведущую. Причина — не решение агента, а домонтажное окно
+    `window-010` (`edit_plan.json`): оно держало фразы ДВУХ разных
+    `avatarNeeded: false` сцен подряд (`s-06` и соседнюю `s-07`) без разреза
+    между ними, потому что обе получили одно и то же итоговое покрытие
+    `full_broll` — разрез по одному покрытию границу между ними не находил.
+    Сосед, окно `window-009` (одна фраза `s-06`, 2,88 с), остаться с ним не
+    мог: `_merge_agent_windows` меряет сцену окна целиком, а окну на двух
+    сценах сразу сцена не приписывается (`scene_key` выходил `None`).
+    Осиротевшая фраза короче порога, и `_restore_short_faceless` покупала
+    ведущую туда, где агент честно отказался — заказ рос до 30,68 с при
+    границе 70 % 29,77 с.
+    """
+    from reels_factory import hf_render
+
+    edit_plan = _artyom_early_2_edit_plan()
+    scenes, phrases = _artyom_early_2_scenes_and_phrases()
+    settings = hf_render.islands_settings(None)
+    duration = float(edit_plan["timeline"]["final_duration_seconds"])
+    граница = avatar_budget_targets(duration, settings)["hard_ceiling_seconds"]
+    assert граница == pytest.approx(29.7731, abs=0.001), (
+        "тест мерит не тот прогон — граница разошлась с расследованием")
+
+    факты = hf_render.order_facts(edit_plan, scenes, ISLAND_CONFIG)
+
+    assert факты["error"] == "", факты["error"]
+    assert факты["plan"] is not None
+    assert факты["restored"] == [], (
+        "код вернул ведущую сцене, которую агент отдал вставке: "
+        f'{факты["restored"]}')
+
+    covered = факты["edit_plan"]
+    for window in covered["windows"]:
+        if window["coverage"] in {"avatar", "mixed"}:
+            continue
+        timing = window["final_timing"]
+        длительность = timing["end"] - timing["start"]
+        assert длительность >= MIN_FULLSCREEN_S - 1e-6, (
+            f'{window["id"]}: {длительность:.2f} с короче порога')
+
+    assert факты["billed_seconds"] <= граница, (
+        f'заказ {факты["billed_seconds"]:.2f} с превысил границу '
+        f"{граница:.2f} с")
+
+    гейты = hf_render._early_plan_gates(scenes, duration, phrases, settings,
+                                        order=факты)
+    assert гейты["D29_avatar_budget"] == "PASS", гейты["D29_avatar_budget"]
+
+
+def test_план_между_ориентиром_и_границей_годен():
     """Решение заказчика: ориентир доли ведущей остаётся 60 % хронометража, а
     заворачивает план только 70 %. Между ними план годен — пересдача стоит
     новой сессии планировщика, а лишние секунды ведущей в этой полосе стоят
@@ -831,11 +1289,8 @@ def test_план_между_ориентиром_и_границей_годен
     from reels_factory import hf_render
     from reels_factory.hf_montage import (AVATAR_ON_SCREEN_HARD_MAX,
                                           AVATAR_ON_SCREEN_MAX)
-    from reels_factory.hf_phrases import lay_out_scenes, phrase_timeline
 
-    phrases = phrase_timeline(EARLY_TIMED, EARLY_WORDS)
-    scenes = lay_out_scenes(json.loads(json.dumps(FIT["scenes"])), phrases,
-                            duration=EARLY_TOTAL)
+    scenes, phrases = _разложить(FIT)
     settings = hf_render.islands_settings(None)
     цели = avatar_budget_targets(EARLY_TOTAL, settings)
     assert цели["ceiling_seconds"] == pytest.approx(
@@ -843,7 +1298,7 @@ def test_план_между_ориентиром_и_границей_годен
     assert цели["hard_ceiling_seconds"] == pytest.approx(
         AVATAR_ON_SCREEN_HARD_MAX * EARLY_TOTAL)
 
-    гейт = _гейт_бюджета(monkeypatch, scenes, phrases, settings)
+    гейт = _гейт_бюджета(scenes, phrases, settings)
     # Ровно посередине полосы: ориентир перейдён, граница нет.
     середина = (цели["ceiling_seconds"] + цели["hard_ceiling_seconds"]) / 2
     assert гейт(середина) == "PASS"
@@ -941,15 +1396,22 @@ def test_быстрая_речь_проходит_гейты_валидатор_
 
     scenes = lay_out_scenes(json.loads(json.dumps(FAST_BOARD)), phrases,
                             duration=FAST_TOTAL)
-    gates = hf_render._early_plan_gates(scenes, FAST_TOTAL, phrases,
-                                        hf_render.islands_settings(None))
-    assert _fails(gates) == [], "гейты не пропустили план на быстрой речи"
 
     draft = build_edit_plan(FAST_TIMED, {}, index={}, require_asset_files=False)
     edit_plan = finalize_edit_plan(draft, FAST_TIMED, FAST_WORDS,
                                    require_asset_files=False)
     assert len(edit_plan["windows"]) > len(_FAST), (
         "окна edit plan не пофразные — тест не про тот случай")
+
+    # Гейты судим с построенным заказом: без него бюджет уходит в SKIP, и
+    # «гейты пропустили план» значило бы «бюджет никто не считал».
+    факты = hf_render.order_facts(edit_plan, scenes, ISLAND_CONFIG)
+    assert факты["plan"] is not None, факты["error"]
+    gates = hf_render._early_plan_gates(scenes, FAST_TOTAL, phrases,
+                                        hf_render.islands_settings(None),
+                                        order=факты)
+    assert _fails(gates) == [], "гейты не пропустили план на быстрой речи"
+    assert gates["D29_avatar_budget"] == "PASS", gates["D29_avatar_budget"]
 
     out = apply_agent_coverage(edit_plan, scenes)
     report = validate_edit_plan(out, require_final=True,

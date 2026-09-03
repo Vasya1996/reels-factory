@@ -20,6 +20,7 @@ from reels_factory.avatar_islands import (
 from reels_factory.editplan import (
     EDIT_PLAN_COVERAGE,
     EDIT_PLAN_FORMAT_VERSION,
+    covered_block_indexes,
     save_edit_plan,
     validate_edit_plan,
 )
@@ -1068,15 +1069,20 @@ def test_план_без_отказов_агента_окна_не_склеив�
     assert out["agent_coverage"]["restored_windows"] == []
 
 
-def test_короткий_кусок_вставки_возвращается_ведущей_а_не_роняет_заказ():
-    """Внутри сцены агента фразы приходят с разным покрытием: ту, где ведущей и
-    так нет (`hyperframes`), отказ не трогает. Тогда сцена делится на кусок
-    схемы и кусок вставки, и второй бывает короче `MIN_FULLSCREEN_S` — а такой
-    план валидатор заворачивает уже в `build_avatar_render_plan`, то есть с
-    оплаченной озвучкой. Спрашивать агента там некого, поэтому короткий кусок
-    возвращается ведущей."""
+def test_отказ_агента_накрывает_и_фразу_с_графикой():
+    """Отказ сцены сильнее эвристики кадра — включая фразу, где кадр держит
+    графика плана монтажа (`hyperframes`).
+
+    Прежде такую фразу отказ не трогал: берегли показ. Показывать нечего —
+    графика `edit_plan` на этом пути до кадра не доходит вовсе
+    (`build_composition` плана монтажа не получает, hf_compose.py:1076). Зато
+    сцена разваливалась на кусок схемы и кусок вставки, склейка пару разных
+    покрытий не берёт, кусок выходил короче `MIN_FULLSCREEN_S` — и ведущую
+    туда возвращал код. Прогон `06eb0a8f` (01.09.2026): два возвращённых
+    окна, заказ 30,8 → 37,4 с.
+    """
     # Сцена 4,8–12,0 с: кадр первой её фразы держит схема (4,8 с), второй
-    # остаётся 2,4 с — короче порога.
+    # остаётся 2,4 с — прежде это и был короткий кусок.
     edit_plan = _fast_edit_plan(
         hidden={2}, durations=[2.4, 2.4, 4.8, 2.4, 2.4, 2.4, 2.4, 2.4])
     scenes = _fast_scenes([(0.0, 4.8, True), (4.8, 12.0, False),
@@ -1085,13 +1091,190 @@ def test_короткий_кусок_вставки_возвращается_в�
     out = apply_agent_coverage(edit_plan, scenes)
 
     by_id = {phrase["id"]: phrase for phrase in out["phrases"]}
-    assert by_id["phrase-002"]["coverage"] == "hyperframes"  # схему не трогаем
-    assert by_id["phrase-003"]["coverage"] == "avatar"       # вернули ведущей
-    assert out["agent_coverage"]["restored_windows"], (
+    assert by_id["phrase-002"]["coverage"] == "full_broll"
+    assert by_id["phrase-003"]["coverage"] == "full_broll"
+    окно = _window_of(out, "phrase-002")
+    assert окно["phrase_ids"] == ["phrase-002", "phrase-003"], (
+        "сцена осталась двумя кусками — склейка берёт только одинаковое "
+        "покрытие")
+    assert окно["final_timing"]["start"] == 4.8
+    assert окно["final_timing"]["end"] == 12.0
+    assert окно["effect"] == {"type": "none"}, (
+        "окно рассказывает про себя две вещи: покрытие вставки и эффект схемы")
+    assert out["agent_coverage"]["restored_windows"] == [], (
+        "код вернул ведущую туда, где агент её не заказывал")
+
+    report = validate_edit_plan(out, require_final=True,
+                                require_asset_files=False)
+    assert report["all_pass"] is True, report["errors"]
+    # И ведущей в заказе нет ровно там, где отказался агент.
+    plan = build_avatar_render_plan(out, _config(), master_audio_sha256="sha")
+    ordered = {item for shot in plan["shots"] for item in shot["phrase_ids"]}
+    assert {"phrase-002", "phrase-003"}.isdisjoint(ordered)
+
+
+def test_отказ_агента_снимает_с_графики_разрешение_пропустить_heygen():
+    """Две вещи, за которые платят, если отказ заденет их мимоходом.
+
+    Первая — `safe_to_skip_avatar`. Окно графики могло нести разрешение не
+    заказывать HeyGen, а `_is_faceless` (editplan.py:1386) на `full_broll` без
+    `effect.type == "broll"` даёт False: оставь мы разрешение — валидатор
+    завернул бы план на «HeyGen skip разрешён только там, где ведущей нет в
+    кадре» (editplan.py:2662), причём уже в `build_avatar_render_plan`, то есть
+    после оплаченной озвучки. Снимает его `_retarget_window` вместе с остальным
+    материалом снятого решения.
+
+    Вторая — `blocks`. Блок с `avatar_required: false` валидатор пускает
+    только тогда, когда КАЖДОЕ его окно полноэкранное и несёт разрешение
+    (editplan.py:2793-2806), а по этому же полю читает блоки
+    `covered_block_indexes` (editplan.py:2839). Значит блоки обязаны пойти за
+    окнами: оставь их как были — план с окном графики, которому HeyGen был не
+    нужен, падал бы в `build_avatar_render_plan`, то есть после оплаченной
+    озвучки.
+    """
+    edit_plan = _fast_edit_plan(
+        hidden={2}, durations=[2.4, 2.4, 4.8, 2.4, 2.4, 2.4, 2.4, 2.4])
+    окно = edit_plan["windows"][2]
+    окно["zone"] = "fullscreen"
+    окно["safe_to_skip_avatar"] = True
+    edit_plan["blocks"] = [{"index": index, "avatar_required": index != 2}
+                           for index in range(8)]
+    assert validate_edit_plan(edit_plan, require_final=True,
+                              require_asset_files=False)["all_pass"] is True
+    scenes = _fast_scenes([(0.0, 4.8, True), (4.8, 12.0, False),
+                           (12.0, 21.6, True)])
+
+    out = apply_agent_coverage(edit_plan, scenes)
+
+    assert _window_of(out, "phrase-002")["safe_to_skip_avatar"] is False
+    assert covered_block_indexes(edit_plan) == {2}, "тест мерит не тот случай"
+    assert covered_block_indexes(out) == set(), (
+        "блок всё ещё разрешает пропустить HeyGen, хотя разрешения на окне "
+        "больше нет")
+    report = validate_edit_plan(out, require_final=True,
+                                require_asset_files=False)
+    assert report["all_pass"] is True, report["errors"]
+
+
+def test_короткий_кусок_вставки_возвращается_ведущей_а_не_роняет_заказ():
+    """Окно на стыке решений: границу сцены ставит режиссёр, а окно черновика
+    заведено по раскадровке, и одно окно достаётся двум разным решениям.
+
+    Кусок, попавший в сцену без ведущей, уходит во вставку и бывает короче
+    `MIN_FULLSCREEN_S` — а такой план валидатор заворачивает уже в
+    `build_avatar_render_plan`, то есть с оплаченной озвучкой. Спрашивать
+    агента там некого, поэтому короткий кусок возвращается тому покрытию, что
+    было у него до решения.
+
+    Внутри ОДНОЙ сцены этого больше не бывает: отказ агента накрывает и фразу
+    с графикой, покрытие у сцены одно, и склейка собирает её обратно
+    (`test_отказ_агента_накрывает_и_фразу_с_графикой`). Разрез границей сцены
+    решением агента не лечится вовсе — здесь мерится он.
+    """
+    edit_plan = _fast_edit_plan(8)
+    # Одно окно на фразы 2 и 3 (4,8–9,6 с): так их и склеивает черновик, когда
+    # обе несут один материал.
+    windows = edit_plan["windows"]
+    merged = windows[2]
+    merged["phrase_ids"] = ["phrase-002", "phrase-003"]
+    for key in ("estimated_timing", "final_timing"):
+        merged[key] = {"start": 4.8, "end": 9.6, "duration": 4.8}
+    del windows[3]
+    for phrase in edit_plan["phrases"]:
+        if phrase["id"] == "phrase-003":
+            phrase["window_id"] = merged["id"]
+    for index, window in enumerate(windows):
+        window["index"] = index
+
+    # Граница сцены режет это окно пополам: первой фразе достаётся отказ,
+    # второй — ведущая. Кусок отказа выходит 2,4 с, короче порога.
+    scenes = _fast_scenes([(0.0, 4.8, True), (4.8, 7.2, False),
+                           (7.2, 19.2, True)])
+
+    out = apply_agent_coverage(edit_plan, scenes)
+
+    короткий = _window_of(out, "phrase-002")
+    assert короткий["coverage"] == "avatar", (
+        "кусок 2,4 с остался вставкой — валидатор заворачивает такой план уже "
+        "после оплаты озвучки")
+    assert короткий["id"] in out["agent_coverage"]["restored_windows"], (
         "возврат короткого куска не попал в отчёт")
     report = validate_edit_plan(out, require_final=True,
                                 require_asset_files=False)
     assert report["all_pass"] is True, report["errors"]
+    build_avatar_render_plan(out, _config(), master_audio_sha256="sha")
+
+
+def test_домонтажное_окно_на_две_сцены_не_рвёт_сцену_агента():
+    """Регрессия прогона `artyom-early-2` (02.09.2026), синтетика.
+
+    Сцена агента `s-target` — три фразы (4,8–10,8 с, 6,0 с — выше
+    `MIN_FULLSCREEN_S`). Домонтажная сетка режет её надвое ДРУГОЙ границей:
+    одна фраза остаётся отдельным окном (`window-002`), а следующее окно
+    тянется дальше — через остаток `s-target` НАСКВОЗЬ в соседнюю сцену
+    `s-neighbor` (фразы 3–6). Обе сцены агент отдал вставке одним и тем же
+    покрытием (`full_broll`); соседняя сцена сама не короче порога (3,8 с) —
+    её нарочно взяли выше 3 с, чтобы возврат по ней не путался с проверяемым.
+    Разрез по совпадению покрытия границу между сценами не находит,
+    `window-003` держит две сцены сразу, его `scene_key` выходит `None`, и
+    `window-002` не с чем слить — осиротевшая фраза (2,0 с) короче порога
+    получала обратно ведущую, хотя сама сцена агента `s-target` порог не
+    нарушала (ровно так же, как в `s-06` прогона `artyom-early-2`:
+    `tests/fixtures/artyom_early_2/`, разбор в `s06-investigation.md`).
+    Суммарный безлицый кусок (9,8 с) остаётся ниже `MAX_FACE_ABSENCE_S`
+    (10,0 с) — иначе валится другой гейт, не тот, что здесь меряется.
+
+    После починки `_regroup_windows` режет и внутри `window-003` — по границе
+    сцены `s-target`/`s-neighbor`, даже хотя покрытие с обеих сторон
+    совпало, — и кусок `s-target` склеивается с `window-002` в одно окно.
+    """
+    edit_plan = _fast_edit_plan(
+        durations=[2.4, 2.4, 2.0, 2.0, 2.0, 1.9, 1.9, 2.4, 2.4])
+    windows = edit_plan["windows"]
+    # Домонтажное окно на четыре фразы: держит хвост `s-target` (3, 4) и всю
+    # `s-neighbor` (5, 6) одним куском — так же, как `window-010` настоящего
+    # прогона держал хвост `s-06` и всю `s-07`.
+    merged = windows[3]
+    merged["phrase_ids"] = ["phrase-003", "phrase-004", "phrase-005",
+                            "phrase-006"]
+    for key in ("estimated_timing", "final_timing"):
+        merged[key] = {"start": 6.8, "end": 14.6, "duration": 7.8}
+    del windows[4:7]
+    for phrase in edit_plan["phrases"]:
+        if phrase["id"] in {"phrase-004", "phrase-005", "phrase-006"}:
+            phrase["window_id"] = merged["id"]
+    for index, window in enumerate(windows):
+        window["index"] = index
+    assert validate_edit_plan(edit_plan, require_final=True,
+                              require_asset_files=False)["all_pass"] is True
+
+    scenes = _fast_scenes([
+        (0.0, 4.8, True),    # s-00: открытие
+        (4.8, 10.8, False),  # s-01 = s-target: три фразы, 6,0 с
+        (10.8, 14.6, False), # s-02 = s-neighbor: две фразы, 3,8 с
+        (14.6, 19.4, True),  # s-03: финал
+    ])
+
+    out = apply_agent_coverage(edit_plan, scenes)
+
+    цель = _window_of(out, "phrase-002")
+    assert цель["phrase_ids"] == ["phrase-002", "phrase-003", "phrase-004"], (
+        "сцена агента осталась разрезана унаследованной границей: "
+        f'{цель["phrase_ids"]}')
+    assert цель["final_timing"] == {"start": 4.8, "end": 10.8,
+                                    "duration": 6.0}
+    assert out["agent_coverage"]["restored_windows"] == [], (
+        "код вернул ведущую куску сцены, которая порог не нарушала: "
+        f'{out["agent_coverage"]["restored_windows"]}')
+
+    сосед = _window_of(out, "phrase-005")
+    assert сосед["phrase_ids"] == ["phrase-005", "phrase-006"], (
+        "соседняя сцена не должна была слиться с s-target")
+
+    report = validate_edit_plan(out, require_final=True,
+                                require_asset_files=False)
+    assert report["all_pass"] is True, report["errors"]
+    build_avatar_render_plan(out, _config(), master_audio_sha256="sha")
 
 
 def test_обрезанный_кусок_схемы_теряет_встроенную_графику_и_ведущую_возвращает():

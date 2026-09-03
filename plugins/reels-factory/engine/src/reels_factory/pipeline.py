@@ -23,9 +23,10 @@ HyperFrames получает тот же документ: по нему пиш�
 ``avatar``; неподдержанный конфиг отбивается до первого платного вызова.
 
 На пути avatar islands ведущую заказывают ПОСЛЕ плана агента: сперва
-``hf_render.plan_before_avatar`` (там же проверка плана и пересдача),
-затем ``avatar_islands.apply_agent_coverage`` переносит его решение
-``avatarNeeded`` на фразы, и только по размеченному плану режутся острова.
+``hf_render.plan_before_avatar`` (там же проверка плана и пересдача), он же
+переносит решение ``avatarNeeded`` на фразы и строит по нему заказ
+(``hf_render.order_facts`` поверх ``avatar_islands``), и только по
+размеченному плану режутся острова.
 Сессии агента считаются одним кошельком на прогон, и он списывается в
 ``finally``: деньги за них потрачены независимо от того, чем прогон кончился.
 
@@ -79,7 +80,6 @@ from reels_factory.editplan import (
     save_edit_plan,
 )
 from reels_factory.avatar_islands import (
-    apply_agent_coverage,
     avatar_islands_enabled,
     build_avatar_render_plan as _build_avatar_render_plan,
     load_frozen_avatar_order,
@@ -506,6 +506,10 @@ def run_make(config: dict, workdir,
                         master.timed_scenario,
                         alignment_words=apply_caption_fixes(
                             list(master.words), caption_fixes),
+                        # План монтажа нужен и здесь: по нему считается заказ,
+                        # а по заказу — вердикт бюджета. Без него `D29` уходил
+                        # бы в вечный SKIP на каждой пересборке.
+                        edit_plan=edit_plan,
                         config=config,
                         agent_spend=agent_spend,
                     ).get("gates") or {})
@@ -525,6 +529,10 @@ def run_make(config: dict, workdir,
                     master.timed_scenario,
                     alignment_words=apply_caption_fixes(
                         list(master.words), caption_fixes),
+                    # План монтажа — вход заказа: по нему ранний шаг строит
+                    # НАСТОЯЩИЙ заказ ведущей и им же судит бюджет. Своей
+                    # оценки у гейта нет — она разошлась со счётом на 6,8 с.
+                    edit_plan=edit_plan,
                     # Настройки клиента — те же, по которым пойдёт заказ:
                     # задание, гейты плана и счёт HeyGen обязаны считаться
                     # одной арифметикой (`avatar_islands` в config).
@@ -541,21 +549,34 @@ def run_make(config: dict, workdir,
                 # avatarNeeded: false уходит из заказа целиком. План на диске
                 # переписываем — по нему потом судят гейты вставок.
                 #
-                # Но только если его собственные гейты зелёные. План, который
-                # они завернули, до заказа не доходит по замеру: 95 % таких
-                # расстановок роняют build_avatar_render_plan — а озвучка к
-                # этому моменту уже оплачена. Пересдачи агенту дал ранний шаг;
-                # если и они не помогли, откатываемся на прежнюю разметку:
-                # человек получает ролик, деньги за голос не сгорают, а
-                # потерянное решение агента остаётся в гейтах ролика.
-                if any(str(value).startswith("FAIL")
-                       for value in early_gates.values()):
-                    print("[make] план агента не прошёл свои проверки — "
-                          "покрытие оставлено прежним", file=sys.stderr)
-                else:
-                    edit_plan = apply_agent_coverage(
-                        edit_plan, early_plan.get("scenes") or [])
+                # Спрашиваем сам заказ, а не цвет гейтов. Прежде любой красный
+                # ранний гейт выбрасывал решение агента целиком — по замеру
+                # «95 % таких расстановок роняют build_avatar_render_plan».
+                # Прогон 06eb0a8f (01.09.2026) этот замер опроверг: бюджет
+                # завернул план по выдуманному числу, а заказ по нему собрался
+                # нормально, шестью шотами. Выброшенное решение развело план и
+                # купленные клипы, сборка легла на `D12_faceless_cover` — $18
+                # списаны, ролика нет. Гадать больше не о чем: заказ построен
+                # ранним шагом, и он либо есть, либо его нет. Откат остался
+                # ровно для второго случая — настоящего отказа.
+                #
+                # Порядок записи критичен: `save_edit_plan` идёт только вместе
+                # с построенным заказом. Иначе `edit_plan.json` уедет вперёд, а
+                # заказ заморозится по хэшу другого плана (`edit_plan_sha256`),
+                # и возобновление прогона разойдётся с манифестом.
+                заказ = early_plan.get("order") or {}
+                if заказ.get("plan") is not None:
+                    # Берём тот план монтажа, по которому заказ и посчитан, —
+                    # второй проход `apply_agent_coverage` дал бы копию, чей
+                    # хэш совпадает случайно, а не по построению.
+                    edit_plan = заказ["edit_plan"]
                     save_edit_plan(edit_plan, wd)
+                else:
+                    print("[make] заказ ведущей по плану агента не собрался — "
+                          "покрытие оставлено прежним: "
+                          + (заказ.get("error")
+                             or "ранний шаг заказ не строил"),
+                          file=sys.stderr)
                 master_sha256 = hashlib.sha256(
                     Path(master.wav).read_bytes()).hexdigest()
                 avatar_render_plan = avatar_plan_fn(

@@ -121,24 +121,51 @@ def _fakes(monkeypatch, tmp_path, calls, captured=None):
     return fake_synth, fake_assemble
 
 
-def _fake_early_plan(monkeypatch, calls=None, scenes=None):
+def _fake_early_plan(monkeypatch, calls=None, scenes=None, gates=None,
+                     заказ=True):
     """Заглушка раннего плана агента (работа 9).
 
     После работы 9 аватар заказывается ПОСЛЕ плана агента, поэтому островной
     путь зовёт `hf_render.plan_before_avatar` — то есть настоящую сессию
     `claude -p`. В тестах она подменяется здесь.
 
+    С прогона `06eb0a8f` (01.09.2026) ранний шаг возвращает ещё и `order`:
+    построенный заказ вместе с планом монтажа, на который уже перенесено
+    решение агента. `pipeline.py` берёт оттуда готовый план, а сам
+    `apply_agent_coverage` больше не зовёт. Заглушка без `order` описывала бы
+    шаг, которого нет, и каждый прогон уходил бы в откат «покрытие оставлено
+    прежним» — то есть тест зеленел бы на ветке, которую не проверяет.
+
+    `заказ=False` — заказ не собрался: та самая ветка отката.
+
     Имя в `pipeline` заранее не известно (в модуле принят стиль
     `from … import assemble_hyperframes as _assemble`), поэтому подменяются оба
     вероятных: `_plan_before_avatar` и `plan_before_avatar`.
     """
+    from reels_factory.avatar_islands import apply_agent_coverage
+
     сцены = list(scenes or [])
 
     def fake_plan(rdir, timed_scenario, **kw):
         if calls is not None:
             calls.append(("plan_before_avatar", Path(rdir),
                           kw.get("agent_spend"), kw.get("config")))
-        return {"board": {"scenes": сцены}, "scenes": сцены, "gates": {}}
+        план = {"board": {"scenes": сцены}, "scenes": сцены,
+                "gates": dict(gates or {}), "order": None}
+        if not заказ:
+            план["order"] = {"plan": None, "edit_plan": kw.get("edit_plan"),
+                             "billed_seconds": 0.0, "restored": [],
+                             "error": "avatar islands требует valid final "
+                                      "edit plan"}
+        elif kw.get("edit_plan") is not None:
+            # Покрытие переносим настоящим кодом. Подделка спрятала бы ровно
+            # то, ради чего работа 9 делалась: в заказ обязано уехать решение
+            # агента, а не эвристика.
+            план["order"] = {
+                "plan": {"summary": {"avatar_billed_seconds": 0.0}},
+                "edit_plan": apply_agent_coverage(kw["edit_plan"], сцены),
+                "billed_seconds": 0.0, "restored": [], "error": ""}
+        return план
 
     for name in ("_plan_before_avatar", "plan_before_avatar"):
         monkeypatch.setattr(pipeline, name, fake_plan, raising=False)
@@ -611,12 +638,16 @@ def test_на_островах_работа_агента_тоже_уходит_�
 def test_ранний_план_агента_идёт_до_заказа_аватара(monkeypatch, tmp_path):
     """Работа 9 (E): аватар заказывается ПО плану агента, а не до него.
 
-    Заготовка есть, но не подключена — `hf_render.plan_before_avatar` и
-    `avatar_islands.apply_agent_coverage` никто не зовёт, поэтому поле
-    `avatarNeeded` сегодня ни на что не влияет и деньги HeyGen тратятся по
-    эвристике. Порядок обязателен именно такой: план -> разметка покрытия по
-    плану -> план заказа -> заказ. Кошелёк ролика при этом один на ранний план
-    и на сборку.
+    Порядок обязателен: план агента -> план монтажа, размеченный его решением
+    -> план заказа -> заказ. Кошелёк ролика при этом один на ранний план и на
+    сборку.
+
+    Раньше шаг разметки был отдельным вызовом `apply_agent_coverage` из
+    `pipeline.py`, и тест сторожил его по имени. После прогона `06eb0a8f`
+    (01.09.2026) разметку делает ранний шаг внутри `order_facts`: он же строит
+    по ней заказ, которым судит бюджет, и отдаёт готовый план монтажа. Сторожим
+    поэтому не имя вызова, а результат — решение агента в том плане, по
+    которому заказывают ведущую, и на диске.
     """
     calls = []
     captured = {}
@@ -630,13 +661,6 @@ def test_ранний_план_агента_идёт_до_заказа_ават�
              {"id": "s-01", "startSec": 4.0, "endSec": 8.0,
               "presenter": "none", "avatarNeeded": False}]
     _fake_early_plan(monkeypatch, calls=calls, scenes=сцены)
-
-    def fake_coverage(edit_plan, scenes):
-        calls.append(("apply_agent_coverage", scenes, None))
-        return dict(json.loads(json.dumps(edit_plan)), coverage_by_agent=True)
-
-    for name in ("apply_agent_coverage", "_apply_agent_coverage"):
-        monkeypatch.setattr(pipeline, name, fake_coverage, raising=False)
 
     заказ = {}
 
@@ -683,20 +707,26 @@ def test_ранний_план_агента_идёт_до_заказа_ават�
 
     assert res["ok"] is True, res.get("error")
     этапы = [call[0] for call in calls]
-    for шаг in ("plan_before_avatar", "apply_agent_coverage", "avatar_plan",
-                "avatar_render"):
+    for шаг in ("plan_before_avatar", "avatar_plan", "avatar_render"):
         assert шаг in этапы, f"шага {шаг} в прогоне не было"
-    assert (этапы.index("plan_before_avatar")
-            < этапы.index("apply_agent_coverage")
-            < этапы.index("avatar_plan") < этапы.index("avatar_render"))
+    assert (этапы.index("plan_before_avatar") < этапы.index("avatar_plan")
+            < этапы.index("avatar_render"))
     # план агента разложен по той же папке, куда потом идёт сборка
     ранний = next(call for call in calls if call[0] == "plan_before_avatar")
     assert ранний[1] == wd
-    # островам достались сцены агента и размеченный по ним план
-    покрытие = next(call for call in calls
-                    if call[0] == "apply_agent_coverage")
-    assert покрытие[1] == сцены
-    assert заказ["edit_plan"].get("coverage_by_agent") is True
+    # В заказ уехал план монтажа с решением агента, а не эвристика: сцен две,
+    # одну агент отдал вставке — ровно это и обязан показать `agent_coverage`.
+    покрытие = (заказ["edit_plan"] or {}).get("agent_coverage")
+    assert покрытие, "в заказ уехал план монтажа без решения агента"
+    assert покрытие["scenes"] == len(сцены)
+    assert покрытие["avatar_scenes"] == 1
+    assert покрытие["faceless_scenes"] == 1
+    assert покрытие["undecided_scenes"] == 0
+    # И тот же план лёг на диск: по нему потом судят гейты вставок, а заказ
+    # заморожен его хэшем (`edit_plan_sha256`).
+    сохранён = json.loads(
+        (wd / "edit_plan.json").read_text(encoding="utf-8"))
+    assert сохранён.get("agent_coverage") == покрытие
     # кошелёк один: расход раннего плана и сборки уходит в один счёт
     assert ранний[2] is not None, "раннему плану не передан кошелёк"
     assert captured["agent_spend"] is ранний[2]
@@ -1360,16 +1390,11 @@ def test_без_монтажа_один_проход_heygen(monkeypatch, tmp_pat
 
 
 
-def test_красный_план_не_едет_в_заказ_а_откатывается_на_эвристику(
-        monkeypatch, tmp_path):
-    """Ревизия четвёртого круга померила цену этой дыры: после последней
-    попытки код заказывал ведущую по плану с красными гейтами, а такой план
-    заваливает `build_avatar_render_plan` — то есть сборка падает с уже
-    оплаченной озвучкой (95 % расстановок обычной речи).
+def _островной_прогон_с_ранним_планом(monkeypatch, tmp_path, *, gates,
+                                      заказ):
+    """Островной прогон, где ранний шаг отвечает заданными гейтами и заказом.
 
-    Решение заказчика: откатываемся на прежнюю разметку. Клиент получает
-    ролик, деньги за озвучку не сгорают, решение агента частично теряется — и
-    это видно в гейтах ролика.
+    Возвращает результат прогона, план монтажа, ушедший в заказ, и папку.
     """
     calls = []
     fs, fa = _fakes(monkeypatch, tmp_path, calls)
@@ -1381,24 +1406,14 @@ def test_красный_план_не_едет_в_заказ_а_откатыва
               "presenter": "punch", "avatarNeeded": True},
              {"id": "s-01", "startSec": 4.0, "endSec": 8.0,
               "presenter": "none", "avatarNeeded": False}]
+    _fake_early_plan(monkeypatch, calls=calls, scenes=сцены, gates=gates,
+                     заказ=заказ)
 
-    def fake_plan(rdir, timed_scenario, **kw):
-        calls.append(("plan_before_avatar", Path(rdir), None))
-        return {"board": {"scenes": сцены}, "scenes": сцены,
-                "gates": {"D29_avatar_budget": "FAIL: заказ выше границы"}}
-
-    for name in ("_plan_before_avatar", "plan_before_avatar"):
-        monkeypatch.setattr(pipeline, name, fake_plan, raising=False)
-
-    def fake_coverage(edit_plan, scenes):
-        calls.append(("apply_agent_coverage", scenes, None))
-        return edit_plan
-
-    for name in ("apply_agent_coverage", "_apply_agent_coverage"):
-        monkeypatch.setattr(pipeline, name, fake_coverage, raising=False)
+    ушло = {}
 
     def fake_avatar_plan(edit_plan, config, *, master_audio_sha256=None):
         calls.append(("avatar_plan", None, None))
+        ушло["edit_plan"] = edit_plan
         return {"format_version": 1, "engine_scope": "photo_avatar_iv",
                 "shots": [{"id": "shot-000"}], "summary": {"island_count": 1},
                 "validation": {"all_pass": True}}
@@ -1435,14 +1450,63 @@ def test_красный_план_не_едет_в_заказ_а_откатыва
         master_audio_fn=fake_master, avatar_plan_fn=fake_avatar_plan,
         avatar_render_fn=fake_render,
     )
+    return res, ушло.get("edit_plan"), wd
+
+
+def test_красный_гейт_не_выбрасывает_решение_агента_если_заказ_собрался(
+        monkeypatch, tmp_path):
+    """Здесь стояло правило, которое стоило прогону `06eb0a8f` $18.
+
+    Правило было такое: любой красный ранний гейт — и решение агента о
+    покрытии выбрасывается целиком, ведущую заказывают по старой эвристике.
+    Держал его замер ревизии: «95 % расстановок с красными гейтами роняют
+    `build_avatar_render_plan`, а озвучка к этому моменту уже оплачена».
+
+    Прогон 01.09.2026 замер опроверг. `D29_avatar_budget` завернул план по
+    ВЫДУМАННОМУ числу (оценка 29,4 с при настоящем заказе 36,2 с), заказ по
+    этому же плану собирался нормально — шесть шотов, — но красный гейт
+    выбросил разметку. План агента и купленные клипы стали описывать разные
+    ролики, и сборка легла на `D12_faceless_cover` уже после оплаты.
+
+    Цвет гейта больше ничего не решает: заказ либо построен, либо нет.
+    """
+    res, ушло, wd = _островной_прогон_с_ранним_планом(
+        monkeypatch, tmp_path,
+        gates={"D29_avatar_budget": "FAIL: заказ выше границы"}, заказ=True)
 
     assert res["ok"] is True, res.get("error")
-    этапы = [call[0] for call in calls]
-    assert "apply_agent_coverage" not in этапы, (
-        "решение агента применили, хотя его же гейты красные")
-    assert "avatar_plan" in этапы, "ролик всё равно должен собраться"
-    assert any(str(v).startswith("FAIL")
-               for v in (res.get("gates") or {}).values())
+    assert (ушло or {}).get("agent_coverage"), (
+        "решение агента выбросили из-за красного гейта, хотя заказ по нему "
+        "собрался — это и есть дефект прогона 06eb0a8f")
+    сохранён = json.loads((wd / "edit_plan.json").read_text(encoding="utf-8"))
+    assert сохранён.get("agent_coverage") == ушло["agent_coverage"], (
+        "в заказ уехал один план монтажа, а на диск лёг другой — заморозка "
+        "заказа (`edit_plan_sha256`) укажет не на тот файл")
+    # Промах плана из отчёта не пропал: чинить его поздно, но знать о нём надо.
+    assert any(str(value).startswith("FAIL")
+               for value in (res.get("gates") or {}).values())
+
+
+def test_несобравшийся_заказ_оставляет_прежнюю_разметку_и_не_пишет_файл(
+        monkeypatch, tmp_path):
+    """Откат остался ровно для настоящего отказа: заказ не строится.
+
+    Решение заказчика прежнее — клиент получает ролик, деньги за озвучку не
+    сгорают, решение агента частично теряется, и это видно в гейтах ролика.
+
+    Файл при этом переписывать НЕЛЬЗЯ. `save_edit_plan` идёт только вместе с
+    построенным заказом: иначе `edit_plan.json` уедет вперёд, заказ заморозится
+    по хэшу другого плана, и возобновление прогона разойдётся с манифестом.
+    """
+    res, ушло, wd = _островной_прогон_с_ранним_планом(
+        monkeypatch, tmp_path, gates={}, заказ=False)
+
+    assert res["ok"] is True, res.get("error")
+    assert "agent_coverage" not in (ушло or {}), (
+        "заказали по плану агента, хотя заказ по нему не собирается")
+    сохранён = json.loads((wd / "edit_plan.json").read_text(encoding="utf-8"))
+    assert "agent_coverage" not in сохранён, (
+        "edit_plan.json переписан разметкой, по которой заказ не построен")
 
 
 # --- продолжение упавшей сборки: за что уже заплачено, то не платится снова ---
