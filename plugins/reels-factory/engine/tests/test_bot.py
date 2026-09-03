@@ -2677,6 +2677,29 @@ def test_save_client_profile_сохраняет_голоса_обоих_язык
     assert cfg["tts"]["model_id"] == "eleven_v3"
 
 
+def test_save_client_profile_не_затирает_seed_из_базового_конфига(
+        tmp_path, monkeypatch):
+    """Задача 16: save_client_profile переписывает в tts только language_code
+    и model_id — seed из factory/config.yaml обязан дожить до профиля
+    клиента, иначе кэш HeyGen (sha1 звука) не переиспользуется между
+    прогонами того же текста."""
+    monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
+    monkeypatch.setattr(
+        bot, "load_config",
+        lambda: _client_base_cfg(tts={"seed": 99, "language_code": "ru"}),
+    )
+    session = {
+        "language": "ru",
+        "photo": {"asset_id": "asset-1"},
+        "voices": {"ru": "voice-ru"},
+    }
+
+    bot.save_client_profile(7, session)
+
+    cfg = clients_mod.load_client("7")
+    assert cfg["tts"]["seed"] == 99
+
+
 def test_профиль_клиента_без_файла_не_готов(tmp_path, monkeypatch):
     monkeypatch.setattr(clients_mod, "CLIENTS_DIR", tmp_path / "clients")
     assert bot.client_profile_ready(7) is False

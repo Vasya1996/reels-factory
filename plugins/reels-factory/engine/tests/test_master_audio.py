@@ -188,6 +188,38 @@ def test_build_master_audio_один_provider_request_и_полный_contract(t
     assert "api_key" not in manifest_text.lower()
 
 
+def test_build_master_audio_без_seed_в_конфиге_берёт_дефолт(tmp_path):
+    """Задача 16: ElevenLabs без seed на одном тексте разъезжается до 0.65с, а
+    ключ кэша HeyGen — sha1 звука. Дефолт нужен, чтобы правка титров (тот же
+    текст) не перезаказывала ведущую. Конфиг здесь вовсе не задаёт `tts.seed`
+    — запрос провайдеру всё равно обязан нести DEFAULT_SEED из tts.py."""
+    from reels_factory.tts import DEFAULT_SEED
+
+    fixture = _fixture()
+    response = fixture["response"]
+    calls = []
+
+    class Provider:
+        def convert_with_timestamps(self, text, **kwargs):
+            calls.append(kwargs)
+            return TimestampedSpeech(
+                audio=b"fake-mp3", alignment=response["alignment"],
+                normalized_alignment=response["normalized_alignment"],
+                request_id=response["request_id"],
+            )
+
+    def fake_run(cmd):
+        Path(cmd[-1]).write_bytes(b"generated")
+
+    config = {"language": "ru", "voice_id": "v1", "tts": {}}  # seed не задан
+    build_master_audio(
+        _scenario(), config, tmp_path, provider=Provider(),
+        run_cmd=fake_run, duration_fn=lambda _: 1.3,
+    )
+
+    assert calls[0]["seed"] == DEFAULT_SEED
+
+
 def test_tts_cache_key_учитывает_модель_голос_текст_и_все_settings():
     options = {
         "model_id": "eleven_multilingual_v2",
