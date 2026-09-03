@@ -1,6 +1,6 @@
 import pytest
 
-from reels_factory.twin import AVATAR_V, TwinClient, TwinError
+from reels_factory.twin import AVATAR_V, POLL_INTERVAL_S, TwinClient, TwinError
 
 
 class _Resp:
@@ -97,6 +97,24 @@ def test_проваленное_обучение_падает_понятной_�
 
     with pytest.raises(TwinError, match="обучить"):
         c.create_from_video("Серик", train, consent)
+
+
+def test_пустой_статус_лука_не_считается_готовым(tmp_path):
+    """Задача 10, п.6: раньше `not status` (пустая строка) шло в ту же ветку,
+    что и "ready"/"completed"/"success" — обучение, ответившее без статуса,
+    засчитывалось готовым, хотя это могло значить лишь "ещё не заполнили
+    поле". Опрос должен продолжаться, а не выдавать лук за готовый раньше
+    срока."""
+    http = _FakeHttp(statuses=["", "", "ready"])
+    спал = []
+    c = TwinClient(api_key="k", http=http, sleep=спал.append)
+    train, consent = _videos(tmp_path)
+
+    look_id = c.create_from_video("Аружан", train, consent)
+
+    assert look_id == "look1"
+    # ждали дважды (два пустых статуса), прежде чем дошли до "ready"
+    assert спал == [POLL_INTERVAL_S, POLL_INTERVAL_S]
 
 
 def test_без_ключа_не_создаётся(monkeypatch):

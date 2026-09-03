@@ -70,6 +70,13 @@ class BuildJob:
     stage: str | None = None
     error: str | None = None
     result: dict | None = None
+    #: Кто поставил job в очередь — username/first_name из Telegram
+    #: `update.effective_user` на момент enqueue (см. `bot.py: enqueue_build`).
+    #: Сессия чата это не хранит, а к моменту алерта о поломке (`alerts.py`,
+    #: `_alert_job_trouble`) сессия под чужой ролик уже могла перезаписаться —
+    #: поле живёт в самой job. `None`/пусто у задач, поставленных до этого
+    #: поля или в обход бота (ручной прогон) — алерт тогда просто без имени.
+    meta: dict | None = None
 
 
 class JobStore:
@@ -106,18 +113,21 @@ class JobStore:
                     resumes INTEGER NOT NULL DEFAULT 0,
                     stage TEXT,
                     error TEXT,
-                    result_json TEXT
+                    result_json TEXT,
+                    meta_json TEXT
                 )
                 """
             )
-            # Колонка добавлена позже таблицы: у боевой очереди база уже лежит
-            # на диске, и CREATE TABLE IF NOT EXISTS её не тронет.
+            # Колонки добавлены позже таблицы: у боевой очереди база уже
+            # лежит на диске, и CREATE TABLE IF NOT EXISTS их не тронет.
             columns = {row["name"] for row in
                        conn.execute("PRAGMA table_info(build_jobs)")}
             if "resumes" not in columns:
                 conn.execute(
                     "ALTER TABLE build_jobs"
                     " ADD COLUMN resumes INTEGER NOT NULL DEFAULT 0")
+            if "meta_json" not in columns:
+                conn.execute("ALTER TABLE build_jobs ADD COLUMN meta_json TEXT")
             conn.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_build_jobs_status_created
@@ -158,11 +168,16 @@ class JobStore:
         workdir: Path | str,
         initial_status: str = "queued",
         initial_stage: str | None = None,
+        meta: dict | None = None,
     ) -> BuildJob:
         """Поставить в очередь уже полностью подготовленную папку job.
 
         Bot сначала атомарно пишет scenario.json и лишь затем делает job
         видимой worker — так worker не может забрать полуподготовленную сборку.
+
+        ``meta`` — необязательные служебные поля о постановке (сегодня —
+        username/first_name того, кто поставил job; см. `BuildJob.meta`).
+        Пусто/не задано — как и раньше, просто нет `meta_json` в строке.
         """
         workdir = Path(workdir)
         if not workdir.is_dir():
@@ -170,12 +185,17 @@ class JobStore:
         if initial_status not in ACTIVE_STATUSES:
             raise ValueError(f"неизвестный active status: {initial_status}")
         now = time.time()
+        meta_json = (
+            json.dumps(meta, ensure_ascii=False, separators=(",", ":"))
+            if meta
+            else None
+        )
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO build_jobs
-                (job_id, chat_id, workdir, status, created_at, updated_at, stage)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (job_id, chat_id, workdir, status, created_at, updated_at, stage, meta_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job_id,
@@ -185,6 +205,7 @@ class JobStore:
                     now,
                     now,
                     initial_stage,
+                    meta_json,
                 ),
             )
         return self.get(job_id)
@@ -194,6 +215,10 @@ class JobStore:
             return None
         raw = row["result_json"]
         result = json.loads(raw) if raw else None
+        # Старые строки (job поставлена до этого поля) хранят NULL — ALTER в
+        # _init_db гарантирует саму колонку раньше первого SELECT.
+        raw_meta = row["meta_json"]
+        meta = json.loads(raw_meta) if raw_meta else None
         return BuildJob(
             job_id=row["job_id"],
             chat_id=int(row["chat_id"]),
@@ -205,6 +230,7 @@ class JobStore:
             resumes=int(row["resumes"]),
             stage=row["stage"],
             error=row["error"],
+            meta=meta,
             result=result,
         )
 

@@ -28,7 +28,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from reels_factory.avatar import avatar_cache_key, cached_generate
+from reels_factory.avatar import (
+    HeyGenRenderTimeout, avatar_cache_key, cached_generate,
+    ensure_balance_for_order,
+)
 from reels_factory.billing import billable_seconds
 from reels_factory.config import FFMPEG
 # `_zone_for` берём у editplan, а не повторяем: зона окна — их канон
@@ -1292,6 +1295,13 @@ def render_avatar_islands(
         raise ValueError(
             "avatar_render_plan построен для другого voice_master.wav"
         )
+    # Задача 10, п.3: остаток кошелька — один раз здесь, до цикла заказа
+    # шотов ниже (первый платный POST), а не на каждый шот отдельно.
+    # avatar_billed_seconds — та же оценка, что и в summary плана
+    # (billed, не visible: HeyGen выставляет счёт за каждый запрос целиком).
+    ensure_balance_for_order(
+        client, float((plan.get("summary") or {}).get("avatar_billed_seconds") or 0.0)
+    )
     workdir = Path(workdir)
     cache_dir = Path(cache_dir)
     audio_dir = workdir / "avatar_islands_audio"
@@ -1386,6 +1396,29 @@ def render_avatar_islands(
                     "clip_path": str(clip),
                     "clip_sha256": hashlib.sha256(clip.read_bytes()).hexdigest(),
                 })
+            except HeyGenRenderTimeout as exc:
+                # Задача 10, п.5: наш таймаут ожидания — не отказ рендера.
+                # Заказ на стороне HeyGen жив и оплачен (exc.video_id), в
+                # отличие от status=="failed", где платить придётся заново.
+                # provider_job_id — то самое поле манифеста, заведённое под
+                # это ещё в build_avatar_render_plan, но до сих пор пустое.
+                # Дожидаться готового клипа по этому video_id на пересборке
+                # (вместо нового заказа) манифест сейчас не умеет — нужен
+                # отдельный метод клиента, который поллит существующий
+                # video_id без повторных upload/create (HeyGenClient.generate
+                # всегда начинает с нуля), и ветка в load_frozen_avatar_order,
+                # которая для status=="timeout" зовёт его вместо отказа всего
+                # заказа. Не реализовано в этой задаче — статус лишь верно
+                # назван, чтобы это было видно в манифесте и было на что
+                # опереться следующей правке.
+                item.update({
+                    "status": "timeout",
+                    "provider_job_id": exc.video_id,
+                    "error": str(exc)[:500],
+                })
+                failures.append((shot["id"], exc))
+                _save_json_atomic(manifest_path, manifest)
+                continue
             except Exception as exc:
                 item.update({"status": "failed", "error": str(exc)[:500]})
                 failures.append((shot["id"], exc))

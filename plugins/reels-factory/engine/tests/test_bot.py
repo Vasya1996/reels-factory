@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import json
 import logging
 import re
@@ -13,6 +14,11 @@ from reels_factory.config import ConfigError
 @pytest.fixture
 def work(tmp_path, monkeypatch):
     monkeypatch.setattr(bot, "WORK_ROOT", tmp_path / "work")
+    # avatar.py импортирует свой собственный WORK_ROOT (задача 10: флаг
+    # паузы heygen_paused.json живёт там же) — та же папка изоляции, иначе
+    # флаг пишется в реальный cwd/work мимо tmp_path теста.
+    import reels_factory.avatar as avatar_module
+    monkeypatch.setattr(avatar_module, "WORK_ROOT", tmp_path / "work")
     return tmp_path
 
 
@@ -108,6 +114,19 @@ class _BotAPI:
             "reply_markup": reply_markup,
             "title": title,
         })
+
+
+class _FakeProc:
+    """Замена subprocess.Popen для run_build (задача 09): готовые строки
+    отдаются как построчный stdout — так же, как их видит `on_line`, читая
+    ЖИВОЙ процесс, а не отчёт после его конца."""
+
+    def __init__(self, lines, returncode=0):
+        self.stdout = iter(f"{line}\n" for line in lines)
+        self.returncode = returncode
+
+    def wait(self):
+        return self.returncode
 
 
 def _press(button, msg):
@@ -2124,6 +2143,42 @@ def test_создать_ролик_сохраняет_профиль_и_став
     assert (job.workdir / "scenario.json").exists()
 
 
+def test_флаг_паузы_heygen_блокирует_тап_без_списания(work, клиент, monkeypatch):
+    """Задача 10, п.4: HeyGen отказал по 402 где-то в другой сборке — флаг
+    общий на сервис. Тап по цене не должен ни списать баланс, ни поставить
+    job в очередь: сборка гарантированно не доедет до HeyGen."""
+    import reels_factory.avatar as avatar_module
+    monkeypatch.setattr(bot, "_LAST_HEYGEN_PAUSE_ALERT_AT", 0.0)
+    avatar_module.pause_heygen_orders("402 на прошлой сборке")
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    баланс_до = bot._ledger().balance(7)
+
+    msg = _Msg()
+    _press("build:plain", msg)
+
+    assert msg.replies[-1] == bot.HEYGEN_PAUSED_MSG
+    assert bot._ledger().balance(7) == баланс_до
+    s = bot.load_session(7)
+    assert s["step"] == bot.READY  # сборка не запущена
+    assert bot._job_store().active_for_chat(7) is None
+
+
+def test_флаг_паузы_шлёт_алерт_не_чаще_раза_в_час(work, клиент, алерты, monkeypatch):
+    import reels_factory.avatar as avatar_module
+    monkeypatch.setattr(bot, "_LAST_HEYGEN_PAUSE_ALERT_AT", 0.0)
+    avatar_module.pause_heygen_orders("402 на прошлой сборке")
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+
+    _press("build:plain", _Msg())
+    _press("build:plain", _Msg())  # второй тап той же минутой — без второго алерта
+
+    assert len(алерты) == 1
+    assert "7" in алерты[0]["text"]
+
+
 def _deliver_audio_preview():
     job = _claim_job()
     api = _BotAPI()
@@ -2371,15 +2426,11 @@ def test_new_не_бросает_реально_идущий_рендер(work, 
 def test_run_build_зовёт_make_через_subprocess(tmp_path, monkeypatch):
     вызовы = {}
 
-    class Completed:
-        stdout = json.dumps({"ok": True, "mp4": "x", "qa_pass": True})
-        stderr = ""
-
-    def fake_run(cmd, **kw):
+    def fake_popen(cmd, **kw):
         вызовы["cmd"] = cmd
-        return Completed()
+        return _FakeProc([json.dumps({"ok": True, "mp4": "x", "qa_pass": True})])
 
-    monkeypatch.setattr(bot.subprocess, "run", fake_run)
+    monkeypatch.setattr(bot.subprocess, "Popen", fake_popen)
     wd = tmp_path / "wd"
 
     result = bot.run_build(7, wd)
@@ -2392,20 +2443,16 @@ def test_run_build_зовёт_make_через_subprocess(tmp_path, monkeypatch):
 def test_run_build_для_новой_job_использует_immutable_config(tmp_path, monkeypatch):
     вызовы = {}
 
-    class Completed:
-        stdout = json.dumps({"ok": True, "mp4": "x", "qa_pass": True})
-        stderr = ""
-
     wd = tmp_path / "wd"
     wd.mkdir()
     snapshot = wd / "build-config.yaml"
     snapshot.write_text("language: kk", encoding="utf-8")
 
-    def fake_run(cmd, **kw):
+    def fake_popen(cmd, **kw):
         вызовы["cmd"] = cmd
-        return Completed()
+        return _FakeProc([json.dumps({"ok": True, "mp4": "x", "qa_pass": True})])
 
-    monkeypatch.setattr(bot.subprocess, "run", fake_run)
+    monkeypatch.setattr(bot.subprocess, "Popen", fake_popen)
     result = bot.run_build(7, wd)
 
     assert вызовы["cmd"] == [
@@ -2465,11 +2512,12 @@ def test_enqueue_build_без_монтажа_пишет_флаг_в_snapshot(wor
 
 
 def test_run_build_невалидный_json_превращается_в_ошибку(tmp_path, monkeypatch):
-    class Completed:
-        stdout = "Traceback (most recent call last): ..."
-        stderr = "boom"
-
-    monkeypatch.setattr(bot.subprocess, "run", lambda cmd, **kw: Completed())
+    monkeypatch.setattr(
+        bot.subprocess, "Popen",
+        lambda cmd, **kw: _FakeProc(
+            ["Traceback (most recent call last): ...", "boom"]
+        ),
+    )
 
     result = bot.run_build(7, tmp_path / "wd")
 
@@ -2480,13 +2528,13 @@ def test_run_build_невалидный_json_превращается_в_оши�
 def test_run_build_разбирает_json_среди_шума_рендера(tmp_path, monkeypatch):
     """node/vite-рендер пишет свой вывод в stdout движка ДО финального JSON —
     реальный кейс первого платного прогона: успешная сборка выглядела провалом."""
-    class Completed:
-        stdout = ("Render progress, worker 0: 99%\n"
-                  "Rendered video to C:\\work\\reel.mp4\n"
-                  + json.dumps({"ok": True, "mp4": "x", "qa_pass": True}) + "\n")
-        stderr = "[make] assemble"
-
-    monkeypatch.setattr(bot.subprocess, "run", lambda cmd, **kw: Completed())
+    lines = [
+        "Render progress, worker 0: 99%",
+        "Rendered video to C:\\work\\reel.mp4",
+        "[make] assemble",
+        json.dumps({"ok": True, "mp4": "x", "qa_pass": True}),
+    ]
+    monkeypatch.setattr(bot.subprocess, "Popen", lambda cmd, **kw: _FakeProc(lines))
 
     result = bot.run_build(7, tmp_path / "wd")
 
@@ -2498,13 +2546,15 @@ def test_run_build_логирует_stderr_движка_даже_при_успе
     JSON — оба денежных предупреждения (_build_meter, _billable_seconds)
     пишутся в stderr движка и терялись при успешной сборке, потому что их
     никто не читал. Теперь стадийные логи и предупреждения обязаны попасть
-    в логгер бота, даже если сборка ok."""
-    class Completed:
-        stdout = json.dumps({"ok": True, "mp4": "x", "qa_pass": True})
-        stderr = ("[make] job.input.json повреждён, учёт трат отключён: "
-                   "boom\n[make] assemble")
-
-    monkeypatch.setattr(bot.subprocess, "run", lambda cmd, **kw: Completed())
+    в логгер бота, даже если сборка ok. С задачи 09 stderr движка слит с
+    stdout в один поток (Popen(stderr=STDOUT)) — построчный `on_line` должен
+    видеть и его тоже, не только финальный JSON."""
+    lines = [
+        "[make] job.input.json повреждён, учёт трат отключён: boom",
+        "[make] assemble",
+        json.dumps({"ok": True, "mp4": "x", "qa_pass": True}),
+    ]
+    monkeypatch.setattr(bot.subprocess, "Popen", lambda cmd, **kw: _FakeProc(lines))
 
     with caplog.at_level(logging.WARNING):
         result = bot.run_build(7, tmp_path / "wd")
@@ -2512,6 +2562,91 @@ def test_run_build_логирует_stderr_движка_даже_при_успе
     assert result == {"ok": True, "mp4": "x", "qa_pass": True}
     assert "job.input.json повреждён" in caplog.text
     assert "[make] assemble" in caplog.text
+
+
+def test_run_build_читает_строки_вехами_по_мере_поступления(tmp_path, monkeypatch):
+    """on_line (задача 09) видит каждую строку живого stdout, а не только
+    итоговый JSON после конца процесса — включая шум node/vite-рендера."""
+    lines = [
+        "[make] plan",
+        "[make] avatar_order",
+        "Render progress, worker 0: 50%",
+        "[make] assemble",
+        json.dumps({"ok": True, "mp4": "x", "qa_pass": True}),
+    ]
+    monkeypatch.setattr(bot.subprocess, "Popen", lambda cmd, **kw: _FakeProc(lines))
+    видено = []
+
+    result = bot.run_build(7, tmp_path / "wd", on_line=видено.append)
+
+    assert видено == lines
+    assert result == {"ok": True, "mp4": "x", "qa_pass": True}
+
+
+def test_вехи_сборки_шлют_два_сообщения_в_нужном_порядке(work, клиент, monkeypatch):
+    """Задача 09: между RUNNING_MSG и готовым файлом сборка молчит 15-50
+    минут. Обе вехи, которые печатает движок ([make] avatar_order и
+    [make] assemble — pipeline.py), обязаны обернуться ровно двумя
+    сообщениями человеку, в том порядке, в котором подпроцесс их напечатал —
+    остальные строки (шум node/vite-рендера, другие [make]-стадии) не
+    должны звать бота вовсе."""
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    job = _claim_job()
+    (job.workdir / "reel.mp4").write_bytes(b"x")
+    lines = [
+        "[make] plan",
+        "[make] avatar_order",
+        "Render progress, worker 0: 10%",
+        "[make] assemble",
+        json.dumps({"ok": True, "mp4": str(job.workdir / "reel.mp4"),
+                    "qa_pass": True}),
+    ]
+    monkeypatch.setattr(bot.subprocess, "Popen", lambda cmd, **kw: _FakeProc(lines))
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job))
+
+    вехи = [text for _, text in api.messages
+            if text in (bot.AVATAR_ORDER_STAGE_MSG, bot.ASSEMBLE_STAGE_MSG)]
+    assert вехи == [bot.AVATAR_ORDER_STAGE_MSG, bot.ASSEMBLE_STAGE_MSG]
+
+
+def test_вехи_сборки_не_дублируются_на_возобновлённом_прогоне(
+    work, клиент, monkeypatch
+):
+    """Возобновлённая job (кнопка продолжения, перезапуск сервиса) собирает
+    ту же папку заново и печатает те же строки-вехи с начала стадии — маркер
+    на диске (hf_render.run_step, тот же механизм, что бережёт заказ ведущей
+    от повторной покупки) обязан погасить повтор сообщения."""
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    job = _claim_job()
+    lines = ["[make] avatar_order", "[make] assemble"]
+    monkeypatch.setattr(
+        bot.subprocess, "Popen",
+        lambda cmd, **kw: _FakeProc(
+            lines + [json.dumps({"ok": False, "stage": "assemble",
+                                 "error": "рендер лёг"})]
+        ),
+    )
+
+    api1 = _BotAPI()
+    asyncio.run(bot._process_job(api1, job))
+    первый_прогон = [text for _, text in api1.messages
+                     if text in (bot.AVATAR_ORDER_STAGE_MSG, bot.ASSEMBLE_STAGE_MSG)]
+    assert первый_прогон == [bot.AVATAR_ORDER_STAGE_MSG, bot.ASSEMBLE_STAGE_MSG]
+
+    # Та же папка (job.workdir) собирается ещё раз — ровно то, что переживает
+    # RESUMABLE-job после отказа: маркеры вех остаются на диске между прогонами.
+    возобновлённая = dataclasses.replace(job, status="failed")
+    api2 = _BotAPI()
+    asyncio.run(bot._process_job(api2, возобновлённая))
+    повтор = [text for _, text in api2.messages
+             if text in (bot.AVATAR_ORDER_STAGE_MSG, bot.ASSEMBLE_STAGE_MSG)]
+    assert повтор == []
 
 
 def test_профиль_клиента_готов(tmp_path, monkeypatch):
@@ -3018,6 +3153,238 @@ def test_receipt_называет_названную_цену_а_не_общим
     assert "цена" in text.lower()  # то же слово, что и в _charged_but_undelivered_notice
     assert "Баланс" in text
     assert bot.format_usd(цена) in text
+
+
+@pytest.fixture
+def алерты(monkeypatch):
+    """Включает алерт-бота (задача 08: ALERT_BOT_TOKEN/ALERT_CHAT_ID) и
+    подставляет ему перехватчик вместо настоящего telegram.Bot. Возвращает
+    список отправленных алертов — по одному словарю {chat_id, text} на
+    вызов `send_message`."""
+    monkeypatch.setenv("ALERT_BOT_TOKEN", "alert-token")
+    monkeypatch.setenv("ALERT_CHAT_ID", "42")
+    отправлено = []
+
+    class _FakeAlertBot:
+        def __init__(self, token):
+            self.token = token
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def send_message(self, chat_id, text):
+            отправлено.append({"chat_id": chat_id, "text": text})
+
+    monkeypatch.setattr(bot.alerts, "Bot", _FakeAlertBot)
+    return отправлено
+
+
+def test_алерт_при_поломке_сборки(work, клиент, алерты):
+    def fake_run_build(chat_id, workdir):
+        return {"ok": False, "stage": "voice", "error": "HeyGen отказал"}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    job = _claim_job()
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert len(алерты) == 1
+    алерт = алерты[0]
+    assert алерт["chat_id"] == "42"
+    text = алерт["text"]
+    assert "7" in text  # chat_id заказчика
+    assert "voice" in text
+    assert "HeyGen отказал" in text
+    assert job.job_id in text
+    assert str(job.workdir) in text
+
+
+def test_username_из_telegram_попадает_в_алерт(work, клиент, алерты):
+    """Кто поставил job — берётся из update.effective_user в момент тапа по
+    кнопке сборки (см. bot.py: _enqueue_build/enqueue_build), а не из сессии
+    чата: она username не хранит. Хранится в job.meta, поэтому алерт видит
+    его даже если сессия к моменту поломки успела уйти в новый цикл."""
+    def fake_run_build(chat_id, workdir):
+        return {"ok": False, "stage": "voice", "error": "HeyGen отказал"}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    msg = _Msg()
+    upd = type("U", (), {"callback_query": _Query("build:plain", msg)})()
+    upd.effective_user = type("U", (), {"username": "vasya", "first_name": "Вася"})()
+    asyncio.run(bot.on_button(upd, None))
+
+    job = _claim_job()
+    assert job.meta == {"username": "vasya", "first_name": "Вася"}
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert len(алерты) == 1
+    text = алерты[0]["text"]
+    assert "@vasya" in text
+    assert "7" in text
+
+
+def test_алерт_без_username_печатает_имя(work, клиент, алерты):
+    """Не у всех в Telegram есть username — тогда в алерт идёт first_name."""
+    def fake_run_build(chat_id, workdir):
+        return {"ok": False, "stage": "voice", "error": "HeyGen отказал"}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    msg = _Msg()
+    upd = type("U", (), {"callback_query": _Query("build:plain", msg)})()
+    upd.effective_user = type("U", (), {"username": None, "first_name": "Вася"})()
+    asyncio.run(bot.on_button(upd, None))
+
+    job = _claim_job()
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert "Вася" in алерты[0]["text"]
+    assert "@" not in алерты[0]["text"]
+
+
+def test_старая_job_без_meta_алерт_без_имени_не_падает(work, клиент, алерты):
+    """job, поставленная до этого поля (или в обход бота) — meta пуст, алерт
+    печатает только chat_id и не падает."""
+    def fake_run_build(chat_id, workdir):
+        return {"ok": False, "stage": "voice", "error": "HeyGen отказал"}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())  # без effective_user — как раньше
+    job = _claim_job()
+    assert job.meta is None
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert len(алерты) == 1
+    text = алерты[0]["text"]
+    assert "Кто: 7\n" in text
+    assert "@" not in text
+
+
+def test_алерт_когда_файла_ролика_нет(work, клиент, алерты):
+    def fake_run_build(chat_id, workdir):
+        return {"ok": True, "mp4": str(workdir / "нет-такого.mp4"),
+                "qa_pass": True}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    job = _claim_job()
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert len(алерты) == 1
+    assert "output" in алерты[0]["text"]
+    assert job.job_id in алерты[0]["text"]
+
+
+def test_алерт_при_файле_больше_50мб(work, клиент, алерты, monkeypatch):
+    monkeypatch.setattr(bot, "MAX_TG_VIDEO_BYTES", 3)
+
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"1234567890")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    job = _claim_job()
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert len(алерты) == 1
+    assert "delivery_too_big" in алерты[0]["text"]
+    assert "50 МБ" in алерты[0]["text"]
+
+
+def test_алерт_при_отказе_telegram_принять_файл(work, клиент, алерты):
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    class _ОтказывающийАпи(_BotAPI):
+        async def send_video(self, chat_id, video, caption=None,
+                             reply_markup=None, width=None, height=None):
+            raise RuntimeError("Telegram отверг файл")
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    job = _claim_job()
+    api = _ОтказывающийАпи()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert len(алерты) == 1
+    assert "delivery" in алерты[0]["text"]
+    assert "Telegram отверг файл" in алерты[0]["text"]
+
+
+def test_алерт_при_доставке_с_красным_гейтом(work, клиент, алерты):
+    """Решение 05: красный гейт не отменяет доставку, но Вася должен узнать
+    про изъян — задача 08 адресует именно событие `delivered:qa_fail`."""
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": False,
+                "gates": {"D0_check": "FAIL: пустой угол кадра",
+                          "D7_other": "PASS"}}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    job = _claim_job()
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert api.videos, "ролик с красным гейтом всё равно обязан дойти до чата"
+    assert len(алерты) == 1
+    text = алерты[0]["text"]
+    assert "D0_check" in text
+    assert "FAIL" in text
+    assert "D7_other" not in text  # в алерт идут только красные гейты
+
+
+def test_без_переменных_окружения_алерт_молчит_и_не_роняет_worker(
+    work, клиент, monkeypatch
+):
+    monkeypatch.delenv("ALERT_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("ALERT_CHAT_ID", raising=False)
+
+    def упавший_бот(*a, **kw):
+        raise AssertionError("Bot не должен создаваться без переменных окружения")
+
+    monkeypatch.setattr(bot.alerts, "Bot", упавший_бот)
+
+    def fake_run_build(chat_id, workdir):
+        return {"ok": False, "stage": "voice", "error": "HeyGen отказал"}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    job = _claim_job()
+    api = _BotAPI()
+
+    # Не должно поднять исключение — упавший_бот сработал бы AssertionError,
+    # если бы send_alert попытался создать Bot без переменных окружения.
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert bot.BUILD_FAILED_MSG in api.messages[-1][1]
 
 
 def test_сбой_статусного_сообщения_не_теряет_durable_job(work, клиент):

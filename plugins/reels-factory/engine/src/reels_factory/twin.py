@@ -23,10 +23,16 @@
 кладём в factory/config.yaml как avatar.heygen_look_id (или в env
 HEYGEN_LOOK_ID), дальше его читает HeyGenClient.
 
-http/sleep — DI для тестов, как и в avatar.py.
+http/sleep — DI для тестов, как и в avatar.py. Ответы разбираются тем же
+heygen_request()/HeyGenConfigError, что и в avatar.py (задача 10, п.2) —
+кроме submit_consent(): её собственный смысл 403 (нужен уровень 1 согласия,
+не поломка ключа) ловит HeyGenConfigError и переводит в понятный TwinError,
+не давая общей ошибке накрыть более узкое сообщение.
 """
 import os
 from pathlib import Path
+
+from reels_factory.avatar import HeyGenConfigError, heygen_request
 
 UPLOAD_URL = "https://api.heygen.com/v3/assets"
 AVATARS_URL = "https://api.heygen.com/v3/avatars"
@@ -44,6 +50,23 @@ TRAINING_MIN_HEIGHT = 720
 
 AVATAR_V = "avatar_v"
 
+# Своя, отдельная от avatar.py, схема опроса (независимая проверка пачки
+# 08-10, п. d). avatar.py растит интервал 10/30/60с к потолку в час — по её
+# докстрингу это профиль их облачного рендера (HyperFrames cloud/poll.ts),
+# нужный там, где HeyGenClient._poll вызывается автоматически, без человека,
+# на каждый блок КАЖДОГО ролика (см. render_avatar_islands/_run_plain_avatar
+# в pipeline.py) — то есть многократно в день, и экономия на частых ранних
+# опросах реально что-то экономит.
+#
+# TwinClient.create_from_video/wait_ready сюда не относятся: ни bot.py, ни
+# pipeline.py их не вызывают вовсе (grep по обеим — пусто) — двойника заводят
+# один раз на клиента вручную, при онбординге (см. avatar.py:41 и
+# clients.py:16, "Онбординг самого аватара остаётся в twin.py"). Редкий,
+# ручной вызов не обязан копировать профиль опроса автоматического
+# per-блочного рендера; git-история модуля (898069b, первая версия) не
+# называет причины именно этих чисел — плоские 30с×40 (20 мин) читаются
+# по коду как достаточный, не растущий бюджет ожидания для операции, которую
+# инициирует и наблюдает человек, а не воркер.
 POLL_INTERVAL_S = 30
 POLL_MAX_ITERATIONS = 40  # 40 * 30с = 20 мин
 
@@ -81,12 +104,11 @@ class TwinClient:
     def upload_asset(self, path: Path) -> str:
         """Залить видео (обучающее или consent) и вернуть asset_id."""
         path = Path(path)
-        resp = self.http.post(
-            UPLOAD_URL, headers=self._headers,
+        resp = heygen_request(
+            self.http, self.sleep, "post", UPLOAD_URL, headers=self._headers,
             files={"file": (path.name, path.read_bytes())},
             timeout=600,
         )
-        resp.raise_for_status()
         return resp.json()["data"]["asset_id"]
 
     def create_twin(self, name: str, asset_id: str) -> dict:
@@ -99,8 +121,10 @@ class TwinClient:
             "name": name,
             "file": {"type": "asset_id", "asset_id": asset_id},
         }
-        resp = self.http.post(AVATARS_URL, json=body, headers=self._headers, timeout=120)
-        resp.raise_for_status()
+        resp = heygen_request(
+            self.http, self.sleep, "post", AVATARS_URL, json=body,
+            headers=self._headers, timeout=120,
+        )
         data = resp.json().get("data", resp.json())
         item = data["avatar_item"]
         return {
@@ -113,19 +137,21 @@ class TwinClient:
         """Согласие уровня 2 — заранее записанное видео. Доступно ТОЛЬКО
         enterprise-аккаунтам: на обычном (self-serve) ключе HeyGen отвечает 403.
         В этом случае используй request_webcam_consent() (уровень 1)."""
-        resp = self.http.post(
-            f"{AVATARS_URL}/{group_id}/consent",
-            json={"consent_video": {"type": "asset_id", "asset_id": consent_asset_id}},
-            headers=self._headers, timeout=120,
-        )
-        if getattr(resp, "status_code", 200) == 403:
+        try:
+            heygen_request(
+                self.http, self.sleep, "post", f"{AVATARS_URL}/{group_id}/consent",
+                json={"consent_video": {"type": "asset_id", "asset_id": consent_asset_id}},
+                headers=self._headers, timeout=120,
+            )
+        except HeyGenConfigError:
+            # Здесь 403 — не поломка ключа, а ожидаемый отказ self-serve
+            # аккаунту: узкое сообщение важнее общего HeyGenConfigError.
             raise TwinError(
                 "Загрузка заранее записанного consent-видео доступна только "
                 "enterprise-аккаунтам (HeyGen вернул 403). На self-serve ключе "
                 "вызови request_webcam_consent(group_id): вернётся ссылка, по "
                 "которой человек записывает согласие на камеру, затем wait_ready()."
-            )
-        resp.raise_for_status()
+            ) from None
 
     def request_webcam_consent(self, group_id: str, reroute_url: str | None = None) -> str:
         """Согласие уровня 1 (self-serve): POST с пустым телом возвращает URL
@@ -136,27 +162,36 @@ class TwinClient:
         body: dict = {}
         if reroute_url:
             body["reroute_url"] = reroute_url
-        resp = self.http.post(
-            f"{AVATARS_URL}/{group_id}/consent",
+        resp = heygen_request(
+            self.http, self.sleep, "post", f"{AVATARS_URL}/{group_id}/consent",
             json=body, headers=self._headers, timeout=60,
         )
-        resp.raise_for_status()
         return (resp.json().get("data") or {}).get("url")
 
     def fetch_look(self, look_id: str) -> dict:
-        resp = self.http.get(f"{LOOKS_URL}/{look_id}", headers=self._headers, timeout=30)
-        resp.raise_for_status()
+        # retry=False: опрос статуса не ретраится (см. avatar.py) — wait_ready
+        # и так повторяет запрос POLL_INTERVAL_S секундами позже.
+        resp = heygen_request(
+            self.http, self.sleep, "get", f"{LOOKS_URL}/{look_id}",
+            headers=self._headers, timeout=30, retry=False,
+        )
         payload = resp.json()
         return payload.get("data", payload)
 
     def wait_ready(self, look_id: str) -> dict:
-        """Ждать окончания обучения. Возвращает данные лука."""
+        """Ждать окончания обучения. Возвращает данные лука.
+
+        Пустой статус — НЕ готов (задача 10, п.6): раньше `not status`
+        считался успехом наравне с "ready"/"completed"/"success", хотя
+        пустая строка значит только "HeyGen ответ вернул, а статус не
+        заполнил" — обучение может быть ещё в процессе. Ждём дальше, как при
+        любом другом непонятном статусе."""
         for _ in range(POLL_MAX_ITERATIONS):
             look = self.fetch_look(look_id)
             status = str(look.get("status") or "").lower()
             if status in _FAILED_STATUSES:
                 raise TwinError(f"HeyGen не смог обучить двойника (look_id={look_id})")
-            if status in _READY_STATUSES or not status:
+            if status in _READY_STATUSES:
                 return look
             self.sleep(POLL_INTERVAL_S)
         raise TwinError(

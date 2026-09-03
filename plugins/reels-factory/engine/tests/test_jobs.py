@@ -354,3 +354,72 @@ def test_рестарт_не_затирает_настоящую_стадию_п
     }
     # Причину рестарта человек всё так же должен видеть.
     assert "повторной оплаты" in store.get(озвучка.job_id).error
+
+
+def test_meta_сохраняется_и_переживает_рестарт_store(tmp_path):
+    store = _store(tmp_path)
+    job_id = store.new_id()
+    workdir = store.workdir_for(job_id)
+    workdir.mkdir(parents=True)
+
+    store.enqueue_prepared(
+        7, job_id=job_id, workdir=workdir,
+        meta={"username": "vasya", "first_name": "Вася"},
+    )
+
+    заново = JobStore(tmp_path / "jobs.sqlite3", tmp_path / "jobs")
+    assert заново.get(job_id).meta == {"username": "vasya", "first_name": "Вася"}
+
+
+def test_job_без_meta_читается_пустой(tmp_path):
+    store = _store(tmp_path)
+
+    job = store.enqueue(7)  # enqueue не передаёт meta — как ручной/старый вызов
+
+    assert job.meta is None
+    assert store.get(job.job_id).meta is None
+
+
+def test_старая_база_без_колонки_meta_json_переживает_миграцию(tmp_path):
+    """Боевая очередь уже лежит на диске без этой колонки (задача из
+    независимой проверки пачки 08-10) — ALTER в _init_db обязан добавить её,
+    не потеряв старые строки."""
+    import sqlite3
+
+    db_path = tmp_path / "jobs.sqlite3"
+    workdir = tmp_path / "jobs" / "старая-job"
+    workdir.mkdir(parents=True)
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute(
+            """
+            CREATE TABLE build_jobs (
+                job_id TEXT PRIMARY KEY,
+                chat_id INTEGER NOT NULL,
+                workdir TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                started_at REAL,
+                finished_at REAL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                resumes INTEGER NOT NULL DEFAULT 0,
+                stage TEXT,
+                error TEXT,
+                result_json TEXT
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO build_jobs (job_id, chat_id, workdir, status,"
+            " created_at, updated_at) VALUES (?, ?, ?, ?, 1.0, 1.0)",
+            ("старая-job", 7, str(workdir.resolve()), "queued"),
+        )
+
+    store = JobStore(db_path, tmp_path / "jobs")
+
+    старая = store.get("старая-job")
+    assert старая is not None
+    assert старая.meta is None  # мигрировавшая колонка пуста, не падает
+
+    новая = store.enqueue(8)
+    assert новая.meta is None

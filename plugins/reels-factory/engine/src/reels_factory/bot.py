@@ -47,7 +47,9 @@ import uuid
 from contextlib import suppress
 from pathlib import Path
 
+from reels_factory import alerts
 from reels_factory.analytics import EventStore, render_funnel
+from reels_factory.avatar import heygen_orders_paused
 from reels_factory.billing import (
     LedgerStore, claude_cost_micro, claude_run_cost_usd, estimate_micro,
 )
@@ -56,7 +58,7 @@ from reels_factory.config import (
     load_config,
 )
 from reels_factory.feedback import FeedbackStore
-from reels_factory.hf_render import reset_montage_steps
+from reels_factory.hf_render import reset_montage_steps, run_step
 from reels_factory.jobs import RESUMABLE_STATUSES, BuildJob, JobStore
 from reels_factory.language import (
     SUPPORTED_LANGUAGES,
@@ -413,7 +415,21 @@ RENDER_QUEUED_MSG = (
 )
 AUDIO_ACTION_STALE = "Эта кнопка уже не относится к текущему этапу ролика."
 RUNNING_MSG = "Начинаю сборку ролика. Это займёт несколько минут…"
+#: Задача 09: между RUNNING_MSG и готовым файлом сборка идёт 15-50 минут
+#: молча. Две вехи движок печатает сам (`_log("avatar_order")` и
+#: `_log("assemble")` в pipeline.py) — на них уходит ровно по одному
+#: сообщению, на остальные стадии ничего. Числа — из журнала прогонов, не
+#: гейт: рендер HyperFrames на свободном сервере занимает ~15 минут, заказ
+#: ведущей у HeyGen — 10-30 минут (переменная длина: минуты видео и очередь
+#: у них), итого путь целиком укладывается в 35-55 минут.
+AVATAR_ORDER_STAGE_MSG = "Снимаю ведущую — это 10–30 минут."
+ASSEMBLE_STAGE_MSG = "Монтирую ролик — ещё 10–20 минут."
 BUSY_MSG = "Предыдущий ролик ещё не завершён — сначала закончим его текущий этап."
+#: Задача 10, п.4: HeyGen отказал по 402 (кредиты исчерпаны) — приём платных
+#: заказов на паузе (avatar.heygen_orders_paused()), пока остаток не
+#: подтвердится восстановленным. Без списания — человек не должен платить за
+#: сборку, которая гарантированно не доедет до HeyGen.
+HEYGEN_PAUSED_MSG = "Сборка сейчас недоступна, попробуйте позже."
 CANCELLED_PENDING_MSG = (
     "Предыдущий ролик ждал вашего решения — отменил его. Начинаем новый."
 )
@@ -1255,6 +1271,8 @@ def enqueue_build(
     montage: bool = True,
     session: dict | None = None,
     quoted_micro: int | None = None,
+    username: str | None = None,
+    first_name: str | None = None,
 ) -> BuildJob:
     """Подготовить immutable scenario/config и лишь затем показать job worker.
 
@@ -1264,6 +1282,13 @@ def enqueue_build(
     ``session`` — сессия чата, из которой берётся уже посчитанная доля ведущей
     (см. island_avatar_share). Без неё доля считается заново, и оценка очереди
     может разойтись с числом на кнопке, по которому человек пополнял баланс.
+
+    ``username``/``first_name`` — из `update.effective_user` в момент, когда
+    человек жмёт кнопку сборки (см. `_enqueue_build`). Сессия чата это не
+    хранит, а job переживает сессию: алерт о поломке (`_alert_job_trouble`)
+    читает их из `job.meta`, а не заново из сессии, которая к моменту алерта
+    могла уже уйти в следующий цикл. Не заданы (ручной прогон, старые вызовы)
+    — `job.meta` остаётся `None`, и алерт печатает только chat_id.
 
     ``quoted_micro`` — цена ровно с той кнопки, по которой человек согласился
     платить (`path_prices` на экране выбора пути). Списывается она, а не
@@ -1391,12 +1416,18 @@ def enqueue_build(
         input_path.write_text(
             json.dumps(input_doc, ensure_ascii=False, indent=1), encoding="utf-8"
         )
+        meta = {}
+        if username:
+            meta["username"] = str(username)
+        if first_name:
+            meta["first_name"] = str(first_name)
         job = store.enqueue_prepared(
             chat_id,
             job_id=job_id,
             workdir=workdir,
             initial_status="audio_queued",
             initial_stage="audio_preview",
+            meta=meta or None,
         )
         if need is not None:
             # Списание — одной строкой, ровно на названную цену, и только
@@ -1422,41 +1453,68 @@ def enqueue_build(
         raise
 
 
-def run_build(chat_id: int, workdir: Path) -> dict:
+def run_build(chat_id: int, workdir: Path, on_line=None) -> dict:
     """Сборка ролика — чёрный ящик Юли: `python -m reels_factory make` тем же
     питоном, что и бот, cwd не задаём — наследуем cwd бота (корень рабочей
     площадки), как и требует движок. Разбираем JSON из stdout; если разобрать
     не вышло (сбой на середине без валидного ответа) — честная ошибка из
-    stderr/stdout."""
+    того же вывода.
+
+    stderr слит в тот же поток, что и stdout (задача 09): и вехи сборки
+    (`[make] …` из pipeline.py), и предупреждения о деньгах читаются построчно,
+    ПОКА процесс идёт, а не только после его конца — иначе `on_line` узнавал бы
+    о заказе ведущей и начале монтажа тогда же, когда и весь остальной вывод, то
+    есть после того, как уже поздно было бы о них сказать человеку. Раздельные
+    stdout/stderr пришлось бы читать двумя потоками — реальный риск дедлока,
+    если дочерний процесс заполнит второй, никем не читаемый канал раньше, чем
+    первый закроется; общий канал этого риска не несёт.
+
+    ``on_line`` вызывается на каждой строке склеенного вывода по мере
+    поступления; сбой в нём не должен ронять сборку — только предупреждение в
+    лог."""
     config_path = Path(workdir) / "build-config.yaml"
     config_args = (
         ["--config", str(config_path)]
         if config_path.exists()
         else ["--client", str(chat_id)]  # queued job старого формата
     )
-    p = subprocess.run(
+    p = subprocess.Popen(
         [sys.executable, "-m", "reels_factory", "make",
          "--workdir", str(workdir), *config_args],
-        capture_output=True, text=True, encoding="utf-8", errors="replace")
-    if p.stderr:
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace")
+    lines: list[str] = []
+    for raw in p.stdout:
+        line = raw.rstrip("\n")
+        lines.append(line)
+        if on_line is not None:
+            try:
+                on_line(line)
+            except Exception:
+                log.warning("обработчик строки сборки упал (chat_id=%s)",
+                            chat_id, exc_info=True)
+    p.wait()
+    tail = "\n".join(lines)
+    if tail:
         # Движок пишет туда и штатные stage-логи, и предупреждения о деньгах
         # без учёта (job.input.json нечитаем, сбой замера длительности для
-        # HeyGen). Раньше при успешной сборке этот stderr никто не читал —
-        # предупреждения терялись. warning, а не info: без настроенных
-        # хендлеров logging по умолчанию печатает только WARNING и выше —
-        # иначе строка снова не попадёт в journalctl. Хвост достаточно
-        # длинный, чтобы не обрезать сообщение, но не раздувать журнал.
-        log.warning("движок (chat_id=%s): %s", chat_id, p.stderr[-2000:])
-    # node-рендер (vite) пишет свой прогресс в stdout движка, поэтому JSON-ответ
-    # make — не весь stdout, а последняя разбираемая строка-объект
-    for line in reversed((p.stdout or "").splitlines()):
-        line = line.strip()
-        if line.startswith("{"):
+        # HeyGen), и прогресс node-рендера (vite). Раньше при успешной сборке
+        # stderr никто не читал — предупреждения терялись. warning, а не info:
+        # без настроенных хендлеров logging по умолчанию печатает только
+        # WARNING и выше — иначе строка снова не попадёт в journalctl. Хвост
+        # достаточно длинный, чтобы не обрезать сообщение, но не раздувать
+        # журнал.
+        log.warning("движок (chat_id=%s): %s", chat_id, tail[-2000:])
+    # node-рендер (vite) пишет свой прогресс в тот же поток, поэтому JSON-ответ
+    # make — не весь вывод, а последняя разбираемая строка-объект
+    for line in reversed(lines):
+        stripped = line.strip()
+        if stripped.startswith("{"):
             try:
-                return json.loads(line)
+                return json.loads(stripped)
             except json.JSONDecodeError:
                 continue
-    return {"ok": False, "error": (p.stderr or p.stdout or "пустой ответ движка")[:500]}
+    return {"ok": False, "error": (tail or "пустой ответ движка")[:500]}
 
 
 def _job_meter(chat_id: int, job_id: str):
@@ -3342,6 +3400,15 @@ async def on_button(update, context):
         if _job_store().active_for_chat(chat_id):
             await q.message.reply_text(BUSY_MSG)
             return
+        paused = heygen_orders_paused()
+        if paused is not None:
+            # Задача 10, п.4: HeyGen отказал по 402 где-то в другой сборке —
+            # флаг общий на сервис. Отвечаем ДО списания (`_ledger().balance`
+            # ниже даже не читаем): человек не должен платить за тап,
+            # который гарантированно не доедет до HeyGen.
+            await q.message.reply_text(HEYGEN_PAUSED_MSG)
+            await _alert_heygen_pause_tap(chat_id, paused)
+            return
         # Путь выбирает кнопка, а не догадка по состоянию: старый callback
         # `build` живёт в истории чатов вечно и означал монтаж, поэтому и он
         # ведёт в монтаж.
@@ -3381,7 +3448,7 @@ async def on_button(update, context):
         if not client_profile_ready(chat_id):
             await q.message.reply_text(CLIENT_NOT_FOUND_MSG)
             return
-        await _enqueue_build(q.message, chat_id, s)
+        await _enqueue_build(q.message, chat_id, s, update)
     elif data == "ready:show":
         # Сборка упала, но текст цел: возвращаем к выбору пути, а не гоним
         # человека писать сценарий заново.
@@ -3799,8 +3866,15 @@ async def cmd_stats(update, context) -> None:
     await update.message.reply_text(text)
 
 
-async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
-    """Поставить job в durable FIFO; платный pipeline здесь не запускается."""
+async def _enqueue_build(msg, chat_id: int, s: dict, update=None) -> BuildJob | None:
+    """Поставить job в durable FIFO; платный pipeline здесь не запускается.
+
+    ``update`` — тот же Update, что и у обработчика кнопки: `effective_user`
+    из него кладётся в job.meta (см. enqueue_build), чтобы алерт о поломке
+    печатал не только chat_id. Не передан (тесты, вызовы в обход кнопки) —
+    job.meta просто пуст, как и раньше.
+    """
+    user = getattr(update, "effective_user", None)
     try:
         job = enqueue_build(
             chat_id,
@@ -3810,6 +3884,8 @@ async def _enqueue_build(msg, chat_id: int, s: dict) -> BuildJob | None:
             montage=bool(s.get("montage", True)),
             session=s,
             quoted_micro=s.get("quoted_micro"),
+            username=getattr(user, "username", None),
+            first_name=getattr(user, "first_name", None),
         )
     except InsufficientBalance as exc:
         # Раньше общего except: иначе нехватка баланса покажется как
@@ -4071,6 +4147,20 @@ async def _process_audio_job(bot_api, job: BuildJob, preview_fn=None) -> None:
     _update_active_session_step(job.chat_id, job.job_id, AUDIO_REVIEW)
 
 
+def _named_price_micro(job_id: str) -> int:
+    """Сумма списания job (провайдер `quote`) — та же названная на кнопке
+    цена, что видит человек и в квитанции, и в уведомлении о незавершённой
+    доставке, и в алерте Васе (задача 08). Сбой чтения ledger не поднимается
+    наверх: 0, а не исключение — вызывающий код уже отдаёт финальный ответ
+    человеку, и голый текст важнее точной суммы."""
+    try:
+        breakdown = _ledger().job_breakdown(job_id)
+    except Exception as e:
+        log.warning("не удалось прочитать breakdown для job %s: %s", job_id, e)
+        return 0
+    return sum(breakdown.values())
+
+
 def _charged_but_undelivered_notice(job_id: str) -> str:
     """Реальная поломка, размер файла или доставка провалились уже ПОСЛЕ
     того, как названная на кнопке цена списалась одной строкой при
@@ -4090,18 +4180,106 @@ def _charged_but_undelivered_notice(job_id: str) -> str:
     если SQLite заблокирован или битый, пользователь обязан получить хотя бы
     голый текст ошибки, а не остаться без всякого сообщения.
     """
-    try:
-        breakdown = _ledger().job_breakdown(job_id)
-    except Exception as e:
-        log.warning("не удалось прочитать breakdown для job %s: %s", job_id, e)
-        return ""
-    total = sum(breakdown.values())
+    total = _named_price_micro(job_id)
     if not total:
         return ""
     return (
         f"\n\nНазванная цена ({format_usd(total)}) уже списана — "
         "разберёмся вручную."
     )
+
+
+#: Строки-вехи, которые печатает движок (`_log` в pipeline.py), в порядке
+#: «строка -> сообщение человеку». Ключи — ровно то, что попадает в
+#: `on_line` построчно, без обрезки: сравнение точное, а не по подстроке,
+#: чтобы совпадение с текстом внутри JSON-ответа или чужого лога было
+#: исключено.
+_BUILD_STAGE_NOTICES = {
+    "[make] avatar_order": ("stage-notice-avatar-order", AVATAR_ORDER_STAGE_MSG),
+    "[make] assemble": ("stage-notice-assemble", ASSEMBLE_STAGE_MSG),
+}
+
+
+def _watch_build_stages(bot_api, job: BuildJob, loop: asyncio.AbstractEventLoop):
+    """`on_line` для `run_build` (задача 09): по вехам сборки шлёт короткие
+    сообщения о прогрессе — ровно по одному на веху. `on_line` вызывается из
+    рабочего потока (`asyncio.to_thread`), поэтому отправка идёт через
+    `run_coroutine_threadsafe` обратно в event loop бота.
+
+    Маркер на диске (`hf_render.run_step`, тот же механизм, что бережёт от
+    двойного заказа ведущей в pipeline.py) не даёт сообщению уйти второй раз:
+    возобновлённый job перечитывает те же строки с начала стадии, которая
+    печатает их заново."""
+
+    def on_line(line: str) -> None:
+        hit = _BUILD_STAGE_NOTICES.get(line.strip())
+        if hit is None:
+            return
+        marker, text = hit
+
+        def send() -> None:
+            asyncio.run_coroutine_threadsafe(
+                _safe_job_message(bot_api, job.chat_id, text), loop
+            )
+
+        run_step(job.workdir, marker, send)
+
+    return on_line
+
+
+#: Задача 10, п.4: тап по паузе может повторяться десятками людей за
+#: минуты — тот же флаг, та же причина. Раз в час Васе достаточно, чтобы не
+#: захлебнуться в одинаковых алертах; процесс-локальная переменная (не
+#: файл/БД) — рестарт службы просто сбросит троттлинг, что безопаснее,
+#: чем персистентное состояние ради мягкого лимита.
+_LAST_HEYGEN_PAUSE_ALERT_AT = 0.0
+_HEYGEN_PAUSE_ALERT_INTERVAL_S = 3600
+
+
+async def _alert_heygen_pause_tap(chat_id: int, paused: dict) -> None:
+    global _LAST_HEYGEN_PAUSE_ALERT_AT
+    now = time.monotonic()
+    if now - _LAST_HEYGEN_PAUSE_ALERT_AT < _HEYGEN_PAUSE_ALERT_INTERVAL_S:
+        return
+    _LAST_HEYGEN_PAUSE_ALERT_AT = now
+    await alerts.send_alert(
+        "HeyGen на паузе, но человек всё равно жмёт «Собрать»\n"
+        f"Чат: {chat_id}\n"
+        f"Причина паузы: {paused.get('reason') or 'нет описания'}\n"
+        f"С: {paused.get('since') or '?'}"
+    )
+
+
+async def _alert_job_trouble(job: BuildJob, *, stage: str, detail: str) -> None:
+    """Алерт Васе в отдельный телеграм-бот (задача 08): реальная поломка
+    сборки/доставки или доставка с красным гейтом. `alerts.send_alert` сам
+    решает, включены ли алерты (ALERT_BOT_TOKEN/ALERT_CHAT_ID) и сам глотает
+    сбой отправки — здесь же защищаемся от сбоя СБОРКИ текста алерта (ledger
+    заблокирован): job уже (или вот-вот будет) finished, и упавший алерт не
+    должен забрать с собой ответ человеку."""
+    try:
+        # job.meta — username/first_name из Telegram на момент enqueue (см.
+        # bot.py: enqueue_build). Не сессия: та к моменту алерта могла уже
+        # уйти в следующий цикл человека. Пусто у задач без источника (старые
+        # job, ручной прогон) — тогда просто chat_id, без имени.
+        meta = job.meta or {}
+        username = meta.get("username")
+        first_name = meta.get("first_name")
+        label = f"@{username}" if username else first_name
+        who = f"{job.chat_id}" + (f" ({label})" if label else "")
+        paid = format_usd(_named_price_micro(job.job_id))
+        text = (
+            "Сборка с изъяном\n"
+            f"Кто: {who}\n"
+            f"Заплатил: {paid}\n"
+            f"Стадия: {stage}\n"
+            f"{detail}\n"
+            f"job_id: {job.job_id}\n"
+            f"Папка: {job.workdir}"
+        )
+        await alerts.send_alert(text)
+    except Exception as e:
+        log.warning("алерт по job %s не собрался: %s", job.job_id, e)
 
 
 async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
@@ -4115,8 +4293,20 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
     await _safe_job_message(
         bot_api, job.chat_id, f"{RUNNING_MSG}\nID: {job.job_id[:8]}"
     )
+    effective_build_fn = build_fn
+    if build_fn is run_build:
+        # Только реальный run_build получает построчного наблюдателя стадий
+        # (задача 09): build_fn, подставленный тестами, — не подпроцесс, и
+        # у него нет построчного stdout, который можно было бы читать.
+        loop = asyncio.get_running_loop()
+        on_line = _watch_build_stages(bot_api, job, loop)
+        effective_build_fn = (
+            lambda chat_id, workdir: run_build(chat_id, workdir, on_line=on_line)
+        )
     try:
-        result = await asyncio.to_thread(build_fn, job.chat_id, job.workdir)
+        result = await asyncio.to_thread(
+            effective_build_fn, job.chat_id, job.workdir
+        )
     except Exception as e:
         result = {"ok": False, "stage": "build", "error": str(e)[:500]}
 
@@ -4135,6 +4325,9 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         log.error("job %s не собралась (%s): %s", job.job_id,
                   result.get("stage") or "build", error)
         _track_job(job, "error:build", str(error)[:120])
+        await _alert_job_trouble(
+            job, stage=result.get("stage") or "build", detail=f"Ошибка: {error}"
+        )
         markup = _failed_markup(job.chat_id, job.job_id)
         await _safe_job_message(
             bot_api,
@@ -4157,6 +4350,7 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
         _track_job(job, "error:build", "файла ролика нет")
+        await _alert_job_trouble(job, stage="output", detail=f"Ошибка: {MISSING_FILE_MSG}")
         await _safe_job_message(bot_api, job.chat_id, MISSING_FILE_MSG,
                                 _failed_markup(job.chat_id, job.job_id))
         return
@@ -4188,6 +4382,7 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
         _track_job(job, "error:delivery", "больше лимита Telegram")
+        await _alert_job_trouble(job, stage="delivery_too_big", detail=f"Ошибка: {error}")
         await _safe_job_message(
             bot_api,
             job.chat_id,
@@ -4216,6 +4411,7 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
         _track_job(job, "error:delivery", str(e)[:120])
+        await _alert_job_trouble(job, stage="delivery", detail=f"Ошибка: {e}")
         await _safe_job_message(
             bot_api,
             job.chat_id,
@@ -4240,6 +4436,10 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
             if str(verdict).startswith("FAIL")
         )
         _track_job(job, "delivered:qa_fail", failed_gates[:120] or None)
+        await _alert_job_trouble(
+            job, stage="delivery",
+            detail=f"Красные гейты: {failed_gates or 'нет расшифровки'}",
+        )
     # Чтение бухгалтерии вне защиты _safe_job_message — видео уже доставлено,
     # повторов не будет. Если SQLite заблокирован или битый, чтение не должно
     # уронить обновление сессии: доставленный ролик без чека — это приемлемая
@@ -4601,9 +4801,31 @@ def _notify_credited(bot_api, loop, event: dict) -> None:
         log.warning("не удалось сообщить о пополнении чату %s: %s", chat_id, e)
 
 
+def _check_heygen_balance_at_startup() -> None:
+    """Задача 10, п.4: флаг паузы мог остаться с прошлого падения службы,
+    пока баланс кошелька уже пополнили руками — снимаем его сразу при
+    старте, не дожидаясь первого тапа по цене. ensure_balance_for_order с
+    seconds_estimate=0 никогда не поднимет HeyGenCreditsExhausted (оценка
+    заказа — 0 всегда меньше остатка), только сверит текущий остаток с
+    порогом и очистит/подтвердит флаг по факту; сбой самой проверки (сеть,
+    ключ не задан) не должен мешать старту службы."""
+    from reels_factory.avatar import HeyGenClient, ensure_balance_for_order
+    try:
+        ensure_balance_for_order(HeyGenClient(), 0.0)
+    except Exception as e:
+        log.warning("HeyGen: проверка остатка при старте не удалась: %s", e)
+
+
 async def _post_init(app):
     """Поднять durable worker и безопасно закрыть осиротевшие running jobs."""
     from telegram import BotCommand
+
+    # Задача 08: если ALERT_BOT_TOKEN/ALERT_CHAT_ID не заданы, алерты Васе
+    # тихо выключены — единственный след об этом должен остаться в логе при
+    # старте, а не молчание, замеченное только когда алерт понадобился и не
+    # пришёл.
+    alerts.warn_if_disabled()
+    await asyncio.to_thread(_check_heygen_balance_at_startup)
 
     await app.bot.set_my_commands(
         [
