@@ -633,6 +633,50 @@ def test_алерт_о_паузе_повторяется_через_час(tmp_p
     assert len(отправлено) == 2
 
 
+def test_третий_подряд_402_за_несколько_секунд_не_шлёт_второй_алерт(tmp_path, monkeypatch):
+    """Дефект 1 независимой проверки: pause_heygen_orders() безусловно
+    переписывала файл флага без last_alerted_at на каждом вызове, стирая
+    метку — третий и последующие вызовы снова находили last_alerted_at=None
+    и слали алерт заново уже через секунды, а не через час."""
+    monkeypatch.setenv("ALERT_BOT_TOKEN", "t")
+    monkeypatch.setenv("ALERT_CHAT_ID", "42")
+    отправлено = []
+
+    class _FakeAlertBot:
+        def __init__(self, token):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def send_message(self, chat_id, text):
+            отправлено.append(text)
+
+    import reels_factory.alerts as alerts_module
+    monkeypatch.setattr(alerts_module, "Bot", _FakeAlertBot)
+
+    import reels_factory.avatar as avatar_module
+
+    часы = [1000.0]
+    monkeypatch.setattr(avatar_module.time, "time", lambda: часы[0])
+
+    avatar_module._credits_exhausted("нет денег 1", code="insufficient_credit")
+    часы[0] += 10
+    avatar_module._credits_exhausted("нет денег 2", code="insufficient_credit")
+    часы[0] += 10
+    avatar_module._credits_exhausted("нет денег 3", code="insufficient_credit")
+
+    assert len(отправлено) == 1  # ровно один алерт за три вызова в пределах 20с
+
+    часы[0] += avatar_module._PAUSE_ALERT_INTERVAL_S + 1
+    avatar_module._credits_exhausted("нет денег 4", code="insufficient_credit")
+
+    assert len(отправлено) == 2  # спустя час — второй
+
+
 def test_403_даёт_config_error_без_v2(tmp_path):
     class _Отказывает403:
         def __init__(self):

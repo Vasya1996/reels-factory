@@ -89,9 +89,9 @@ pause_heygen_orders()/heygen_orders_paused()/clear_heygen_pause() — задач
 10, п.4: файл-флаг в WORK_ROOT (общий на весь сервис — кошелёк HeyGen один на
 всех клиентов, а не на job). HeyGenCreditsExhausted ставит флаг при
 возникновении (что 402 от HeyGen, что наш предварительный отказ по оценке) и
-тут же шлёт алерт Васе через _alert_pause_if_due() — не чаще раза в час,
+тут же шлёт алерт Васе через _pause_and_alert_if_due() — не чаще раза в час,
 метка последнего алерта в самом файле флага, а не в памяти процесса (см.
-докстринг у _alert_pause_if_due: _credits_exhausted исполняется в подпроцессе
+докстринг у _pause_and_alert_if_due: _credits_exhausted исполняется в подпроцессе
 рендера, у каждого своя память). Следующая же успешная проверка остатка выше
 порога снимает флаг сама — ручных кнопок нет. bot.py читает
 heygen_orders_paused() на экране цены, до списания: без этого чтения платный
@@ -246,20 +246,32 @@ def _pause_flag_path() -> Path:
 def pause_heygen_orders(reason: str) -> None:
     """Задача 10, п.4: остановить приём платных заказов HeyGen до тех пор,
     пока баланс не подтвердится восстановленным. Флаг общий на сервис —
-    кошелёк один на всех клиентов бота, а не на конкретный job."""
+    кошелёк один на всех клиентов бота, а не на конкретный job.
+
+    Читает уже лежащий файл флага и переносит в новый `last_alerted_at`,
+    если оно там было: эта функция вызывается на КАЖДЫЙ 402/предотказ, а не
+    только на первый, и раньше безусловно писала файл с нуля — стирая метку
+    последнего алерта, которую только что поставил _pause_and_alert_if_due,
+    и тем самым ломая её часовой троттлинг уже со второго-третьего подряд
+    идущего отказа."""
     import datetime
 
     path = _pause_flag_path()
     path.parent.mkdir(parents=True, exist_ok=True)
+    existing: dict = {}
+    if path.is_file():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            existing = {}
+    data = {
+        "reason": reason[:500],
+        "since": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    if "last_alerted_at" in existing:
+        data["last_alerted_at"] = existing["last_alerted_at"]
     path.write_text(
-        json.dumps(
-            {
-                "reason": reason[:500],
-                "since": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
+        json.dumps(data, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
