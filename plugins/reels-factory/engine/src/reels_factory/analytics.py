@@ -71,7 +71,12 @@ ERROR_EVENTS = {
     # не идёт вовсе. Без своего ключа этот отвал сливался с «передумал».
     "error:audio": "озвучка не создалась",
     "error:build": "сборка упала",
-    "error:qa": "не прошло проверку качества",
+    # Не сбой в смысле «человек не дошёл»: ролик доехал (решение 05 — красный
+    # гейт не держит доставку), но с изъяном. Событие пишется ПОСЛЕ
+    # reel_delivered (bot.py:_process_job), поэтому render_funnel исключает
+    # его из «Остановились на» отдельно — иначе доставленный цикл выглядел бы
+    # как оборвавшийся.
+    "delivered:qa_fail": "доставлен с непройденным гейтом качества",
     "error:delivery": "ролик не доставлен",
     "error:blocked": "бот заблокирован",
 }
@@ -265,7 +270,9 @@ def render_funnel(store: EventStore, since: float, *, title: str) -> str:
             lines.append(f"— {ERROR_EVENTS[key]}: {count}")
     stuck = [
         (event, count) for event, count in store.dropoff(since)
-        if event != "reel_delivered"
+        # delivered:qa_fail пишется после reel_delivered — по последнему
+        # событию цикл читался бы как оборвавшийся, хотя ролик доставлен.
+        if event not in ("reel_delivered", "delivered:qa_fail")
     ][:5]
     if stuck:
         labels = dict(FUNNEL_STEPS) | dict(PAYMENT_STEPS) | ERROR_EVENTS
