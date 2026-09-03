@@ -2852,23 +2852,14 @@ def test_ролик_больше_50мб_не_отправляется(work, кл
     assert bot._job_store().get(job.job_id).status == "delivery_failed"
 
 
-def _зачесть_расход_на_job(job_id: str) -> None:
-    """Сымитировать реальный платный шаг сборки: build-субпроцесс уже
-    списал деньги через свой собственный LedgerStore до провала QA/доставки."""
-    bot._ledger().charge(
-        7, entry_id=f"heygen:{job_id}", job_id=job_id, provider="heygen",
-        unit="seconds", quantity=10.0, unit_price_micro=50_000,
-        cost_micro=500_000, charged_micro=1_000_000,
-    )
-
-
-def test_сбой_сборки_сообщает_сколько_уже_стоил_рендер(work, клиент):
-    """Fix 8: build-субпроцесс уже списал деньги до настоящей поломки — баланс
-    просел, а бот раньше говорил только про отказ, не упоминая списание.
-    Формулировка выровнена с квитанцией (Fix C): не «списано», а «стоил сам
-    рендер» — без Клода, который тратится отдельно и в этот breakdown не
-    входит. Раньше сценарий этого теста строился на провале QA — с решения 05
-    красный гейт больше не отменяет доставку (см.
+def test_сбой_сборки_сообщает_названную_цену(work, клиент):
+    """Task 7: цена списывается одной строкой при постановке в очередь
+    (enqueue_build), до первого платного шага у провайдера. Поэтому при
+    настоящей поломке бот говорит про НАЗВАННУЮ цену — не «рендер уже
+    стоил»: списание не зависит от того, сколько рендера реально успело
+    пройти до сбоя (JobMeter пишет провайдерские шаги себестоимостью,
+    charged_micro=0, не списанием). Раньше сценарий строился на провале QA —
+    с решения 05 красный гейт больше не отменяет доставку (см.
     test_ролик_с_непройденным_qa_всё_равно_отправляется), и «charged but
     undelivered» остаётся только у настоящих поломок: этот же build_fn."""
     def fake_run_build(chat_id, workdir):
@@ -2876,18 +2867,18 @@ def test_сбой_сборки_сообщает_сколько_уже_стоил
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    цена = bot.path_prices(7, bot.load_session(7), bot._billing())["plain"]
     _press("build:plain", _Msg())
     job = _claim_job()
-    _зачесть_расход_на_job(job.job_id)
     api = _BotAPI()
 
     asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
 
-    assert "уже стоил" in api.messages[-1][1]
-    assert "$1.00" in api.messages[-1][1]
+    assert "Названная цена" in api.messages[-1][1]
+    assert bot.format_usd(цена) in api.messages[-1][1]
 
 
-def test_слишком_большой_файл_сообщает_сколько_уже_стоил_рендер(work, клиент, monkeypatch):
+def test_слишком_большой_файл_сообщает_названную_цену(work, клиент, monkeypatch):
     monkeypatch.setattr(bot, "MAX_TG_VIDEO_BYTES", 3)
 
     def fake_run_build(chat_id, workdir):
@@ -2896,18 +2887,18 @@ def test_слишком_большой_файл_сообщает_сколько_
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    цена = bot.path_prices(7, bot.load_session(7), bot._billing())["plain"]
     _press("build:plain", _Msg())
     job = _claim_job()
-    _зачесть_расход_на_job(job.job_id)
     api = _BotAPI()
 
     asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
 
-    assert "уже стоил" in api.messages[-1][1]
-    assert "$1.00" in api.messages[-1][1]
+    assert "Названная цена" in api.messages[-1][1]
+    assert bot.format_usd(цена) in api.messages[-1][1]
 
 
-def test_отказ_telegram_принять_файл_сообщает_сколько_уже_стоил_рендер(
+def test_отказ_telegram_принять_файл_сообщает_названную_цену(
     work, клиент
 ):
     def fake_run_build(chat_id, workdir):
@@ -2921,15 +2912,15 @@ def test_отказ_telegram_принять_файл_сообщает_сколь
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    цена = bot.path_prices(7, bot.load_session(7), bot._billing())["plain"]
     _press("build:plain", _Msg())
     job = _claim_job()
-    _зачесть_расход_на_job(job.job_id)
     api = _ОтказывающийАпи()
 
     asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
 
-    assert "уже стоил" in api.messages[-1][1]
-    assert "$1.00" in api.messages[-1][1]
+    assert "Названная цена" in api.messages[-1][1]
+    assert bot.format_usd(цена) in api.messages[-1][1]
     assert bot._job_store().get(job.job_id).status == "delivery_failed"
 
 
@@ -2987,7 +2978,6 @@ def test_успешная_доставка_с_битым_breakdown_всё_рав
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
     _press("build:plain", _Msg())
     job = _claim_job()
-    _зачесть_расход_на_job(job.job_id)
     api = _BotAPI()
 
     with caplog.at_level(logging.WARNING):
@@ -2997,19 +2987,22 @@ def test_успешная_доставка_с_битым_breakdown_всё_рав
     assert "database is locked" in caplog.text
 
 
-def test_receipt_называет_сумму_рендером_а_не_общим_списанием(work, клиент):
-    """Fix 7: _charge_claude пишет свои строки с job_id=None, поэтому
+def test_receipt_называет_названную_цену_а_не_общим_списанием(work, клиент):
+    """Fix 7 + Task 7: _charge_claude пишет свои строки с job_id=None, поэтому
     job_breakdown никогда не содержит траты на подготовку сценария — сумма
-    в квитанции не должна выдавать себя за «списано всего»."""
+    в квитанции не должна выдавать себя за «списано всего». А с Task 7 total
+    — это ровно одна строка списания на job_id: цена с кнопки (enqueue_build),
+    не сумма провайдерского разбора — JobMeter пишет HeyGen/озвучку/монтаж
+    только себестоимостью (charged_micro=0)."""
     def fake_run_build(chat_id, workdir):
         (workdir / "reel.mp4").write_bytes(b"x")
         return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    цена = bot.path_prices(7, bot.load_session(7), bot._billing())["plain"]
     _press("build:plain", _Msg())
     job = _claim_job()
-    _зачесть_расход_на_job(job.job_id)
     api = _BotAPI()
 
     asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
@@ -3018,7 +3011,7 @@ def test_receipt_называет_сумму_рендером_а_не_общим
     assert "Списано" not in text  # больше не звучит как «итог за ролик»
     assert "рендер" in text.lower()
     assert "Баланс" in text
-    assert "$1.00" in text
+    assert bot.format_usd(цена) in text
 
 
 def test_сбой_статусного_сообщения_не_теряет_durable_job(work, клиент):
@@ -3098,6 +3091,63 @@ def test_нехватки_баланса_блокирует_enqueue_build_и_н�
 
     # workdir так и не появился — отказ не оставил следов на диске.
     assert not jobs_root.exists()
+
+
+def test_списание_на_кнопку_совпадает_с_ценой_и_идёт_одной_строкой(work, клиент):
+    """Задача 07: раньше баланс списывался по факту каждого платного шага
+    (JobMeter, с наценкой) — цена на кнопке была оценкой, а не тем, что
+    спишется. Теперь ровно цена с кнопки уходит одной строкой ledger при
+    постановке в очередь (enqueue_build), с job_id и provider="quote"."""
+    bot.save_session(7, _паспорт(step=bot.READY, scenario=SCENARIO,
+                                 scenario_approved=True))
+    цена = bot.path_prices(7, bot.load_session(7), bot._billing())["plain"]
+    до = bot._ledger().balance(7)
+
+    _press("build:plain", _Msg())
+
+    job = bot._job_store().latest_for_chat(7)
+    assert bot._ledger().balance(7) == до - цена
+    with bot._ledger()._connect() as conn:
+        rows = conn.execute(
+            "SELECT provider, charged_micro, cost_micro FROM spend_log"
+            " WHERE job_id = ?", (job.job_id,),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["provider"] == "quote"
+    assert rows[0]["charged_micro"] == цена
+    assert rows[0]["cost_micro"] == 0
+
+
+def test_баланс_не_уходит_в_минус_даже_когда_факт_дороже_оценки(work, клиент):
+    """Раньше факт списывался поверх уже достаточного баланса: HeyGen
+    отрендерил дольше расчётного — и баланс, которого хватало на кнопке,
+    уходил в минус (Артём −$1.94, Nagimash −$1.01). Теперь единственное
+    списание — цена с кнопки; реальный перерасход у провайдеров (JobMeter)
+    остаётся в журнале себестоимостью и баланса не касается, даже когда
+    факт заметно дороже названного."""
+    from reels_factory.billing import JobMeter
+
+    bot.save_session(7, _паспорт(step=bot.READY, scenario=SCENARIO,
+                                 scenario_approved=True))
+    цена = bot.path_prices(7, bot.load_session(7), bot._billing())["plain"]
+    # ровно хватает на кнопку, ни цента больше
+    _charge_flat(7, bot._ledger().balance(7) - цена)
+    assert bot._ledger().balance(7) == цена
+
+    _press("build:plain", _Msg())
+
+    job = bot._job_store().latest_for_chat(7)
+    assert bot._ledger().balance(7) == 0
+
+    billing = bot._billing()
+    meter = JobMeter(bot._ledger(), chat_id=7, job_id=job.job_id,
+                     rates=billing["rates"], markup=billing["markup"])
+    # Заведомо больше, чем стоил бы любой настоящий ролик — имитирует HeyGen,
+    # отрендеривший намного дольше расчётного.
+    meter.heygen(1000.0)
+    meter.elevenlabs(50_000)
+
+    assert bot._ledger().balance(7) == 0
 
 
 def _оценка_сборки(*, montage: bool = True, share: float | None = None) -> int:

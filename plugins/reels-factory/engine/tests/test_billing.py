@@ -357,13 +357,26 @@ def test_billable_seconds_сбой_замера_логируется_но_не_�
 from reels_factory.billing import JobMeter
 
 
-def test_meter_списывает_с_наценкой(store):
+def test_meter_не_списывает_а_только_считает_себестоимость(store):
+    """Task 7: списывает не метр — цену с кнопки списывает enqueue_build одной
+    строкой, до первого платного шага у провайдера. Метр пишет себестоимость
+    каждого шага в журнал (charged_micro=0) и баланс не трогает: иначе
+    провайдерский факт (у HeyGen — по настоящей длительности рендера) списался
+    бы поверх уже списанной цены и увёл клиента в минус (Артём −$1.94,
+    Nagimash −$1.01 — решение Васи, пачка 2)."""
     store.credit(777, 20_000_000, purchase_id="p1", amount_minor=2000, currency="usd")
     meter = JobMeter(store, chat_id=777, job_id="job1", rates=RATES, markup=2.0)
     meter.heygen(30.0)
-    # $1.50 себестоимость -> $3.00 списано
-    assert store.balance(777) == 17_000_000
-    assert meter.total_charged() == 3_000_000
+    assert store.balance(777) == 20_000_000       # баланс не тронут
+    assert meter.total_charged() == 0
+    assert store.job_breakdown("job1") == {"heygen": 0}    # charged_micro=0
+    with store._connect() as conn:
+        row = conn.execute(
+            "SELECT cost_micro, charged_micro FROM spend_log WHERE job_id = ?",
+            ("job1",),
+        ).fetchone()
+    assert row["cost_micro"] == 1_500_000          # $1.50 себестоимость видна
+    assert row["charged_micro"] == 0
 
 
 def test_meter_не_тарифицирует_кэш(store):
@@ -377,7 +390,13 @@ def test_meter_нумерует_шаги_и_не_схлопывает_одина
     meter = JobMeter(store, chat_id=777, job_id="job1", rates=RATES, markup=2.0)
     meter.heygen(30.0)
     meter.heygen(30.0)
-    assert meter.total_charged() == 6_000_000
+    assert meter.total_charged() == 0
+    with store._connect() as conn:
+        rows = conn.execute(
+            "SELECT cost_micro FROM spend_log WHERE job_id = ?", ("job1",)
+        ).fetchall()
+    assert [r["cost_micro"] for r in rows] == [1_500_000, 1_500_000]  # оба шага
+    # записаны, номер шага не дал entry_id схлопнуться в один
 
 
 def test_meter_считает_все_три_провайдера(store):
@@ -385,10 +404,18 @@ def test_meter_считает_все_три_провайдера(store):
     meter.heygen(30.0)
     meter.elevenlabs(1000)
     meter.claude(0.02)
+    # charged_micro везде 0 — метр не списывает
     assert store.job_breakdown("job1") == {
-        "heygen": 3_000_000,
-        "elevenlabs": 200_000,
-        "claude": 40_000,
+        "heygen": 0, "elevenlabs": 0, "claude": 0,
+    }
+    # себестоимость (cost_micro) видна по каждому провайдеру, без наценки
+    with store._connect() as conn:
+        rows = conn.execute(
+            "SELECT provider, cost_micro FROM spend_log WHERE job_id = ?",
+            ("job1",),
+        ).fetchall()
+    assert {r["provider"]: r["cost_micro"] for r in rows} == {
+        "heygen": 1_500_000, "elevenlabs": 100_000, "claude": 20_000,
     }
 
 
@@ -447,16 +474,19 @@ def test_meter_потокобезопасен_под_параллельной_н
     for t in threads:
         t.join()
 
-    rows = store.job_breakdown("job1")
-    expected_total = threads_n * per_thread * to_micro(RATES["heygen_usd_per_second"] * 2.0)
-    assert rows["heygen"] == expected_total
-    assert meter.total_charged() == expected_total
+    # Метр не списывает (Task 7) — job_breakdown (сумма charged_micro) и
+    # total_charged() держатся на нуле, гонка проверяется по себестоимости.
+    assert store.job_breakdown("job1") == {"heygen": 0}
+    assert meter.total_charged() == 0
 
     with store._connect() as conn:
-        count = conn.execute(
-            "SELECT COUNT(*) AS n FROM spend_log WHERE job_id = ?", ("job1",)
-        ).fetchone()["n"]
-    assert count == threads_n * per_thread
+        rows = conn.execute(
+            "SELECT COUNT(*) AS n, SUM(cost_micro) AS cost FROM spend_log"
+            " WHERE job_id = ?", ("job1",),
+        ).fetchone()
+    expected_cost = threads_n * per_thread * to_micro(RATES["heygen_usd_per_second"])
+    assert rows["n"] == threads_n * per_thread
+    assert rows["cost"] == expected_cost
 
     # Если инструментация когда-нибудь перестанет реально дёргать
     # __format__ (например, entry_id перестанет строиться f-строкой), она
@@ -466,9 +496,11 @@ def test_meter_потокобезопасен_под_параллельной_н
     assert _МедленноеЧисло._format_calls == threads_n * per_thread
 
 
-def test_meter_повтор_сборки_с_тем_же_job_id_списывает_второй_раз(store):
+def test_meter_повтор_сборки_с_тем_же_job_id_пишет_себестоимость_второй_раз(store):
     # Владелец решил: повторный ручной запуск упавшей сборки должен честно
-    # показать второй расход, а не спрятать его дедупликацией по job_id.
+    # показать второй расход в журнале, а не спрятать его дедупликацией по
+    # job_id — списания это больше не касается (Task 7): метр не списывает
+    # вовсе, баланс не трогает ни один из двух запусков.
     store.credit(777, 20_000_000, purchase_id="p1", amount_minor=2000, currency="usd")
 
     meter1 = JobMeter(store, chat_id=777, job_id="job1", rates=RATES, markup=2.0)
@@ -479,11 +511,14 @@ def test_meter_повтор_сборки_с_тем_же_job_id_списывае�
 
     with store._connect() as conn:
         rows = conn.execute(
-            "SELECT entry_id FROM spend_log WHERE job_id = ?", ("job1",)
+            "SELECT entry_id, cost_micro, charged_micro FROM spend_log"
+            " WHERE job_id = ?", ("job1",),
         ).fetchall()
     assert len(rows) == 2
     assert rows[0]["entry_id"] != rows[1]["entry_id"]
-    assert store.balance(777) == 20_000_000 - 2 * 200_000
+    assert [r["cost_micro"] for r in rows] == [100_000, 100_000]
+    assert [r["charged_micro"] for r in rows] == [0, 0]
+    assert store.balance(777) == 20_000_000
 
 
 def test_meter_защита_от_дубля_внутри_одного_запуска_сохраняется(store):

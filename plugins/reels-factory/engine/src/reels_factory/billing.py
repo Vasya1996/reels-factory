@@ -417,11 +417,24 @@ def estimate_micro(chars: int, rates: dict, markup: float, *, twin: bool = False
 
 
 class JobMeter:
-    """Учёт трат одной сборки: считает стоимость и сразу списывает.
+    """Учёт трат одной сборки: пишет себестоимость каждого платного шага в
+    журнал, но НЕ списывает её с баланса.
 
-    Списание идёт по факту каждого платного шага, а не одной суммой в конце:
-    если конвейер упадёт посередине, деньги у провайдера уже потрачены и это
-    должно остаться в журнале. Возврат за упавшую сборку делает refund_job.
+    Списание — одной строкой, ровно на названную кнопкой цену (quoted_micro),
+    делает enqueue_build при постановке в очередь, ДО первого платного шага.
+    Списывать здесь ещё раз, по факту, значило бы посчитать дважды: кнопка
+    обещала одну сумму, а провайдерский факт (особенно у HeyGen — по
+    настоящей длительности рендера) почти всегда чуть другую, и баланс
+    клиента плыл в минус на разницу (Артём −$1.94, Nagimash −$1.01 — решение
+    Васи, пачка 2). Поэтому каждая запись здесь уходит с charged_micro=0, а
+    cost_micro остаётся настоящим — источник маржи (quoted − Σ cost_micro по
+    job_id), не источник списания. Тот же приём уже был у `_charge_claude`
+    в bot.py для подготовки сценария.
+
+    `rates`/`markup` остаются в конструкторе — вызывающая сторона всё равно
+    собирает их вместе с job_id/chat_id, а по какой ставке считать
+    себестоимость знать по-прежнему нужно (см. `heygen_cost_micro`,
+    `elevenlabs_cost_micro`); markup просто больше ни на что не умножается.
     """
 
     def __init__(self, store: LedgerStore, *, chat_id: int, job_id: str,
@@ -442,24 +455,23 @@ class JobMeter:
         # (вызывающий поток), а не из рабочих потоков — гонки на self._step
         # сейчас нет. Лок — задел на случай, если метринг когда-нибудь
         # переедет в воркер: тогда несколько потоков смогут звать _record
-        # одновременно, и он должен уже держать выдачу номера шага и
-        # изменение self._charged.
+        # одновременно, и он должен уже держать выдачу номера шага.
         self._lock = threading.Lock()
 
     def _record(self, provider: str, unit: str, quantity: float,
                 unit_price_micro: int, cost_micro: int) -> None:
-        charged = apply_markup(cost_micro, self.markup)
         with self._lock:
             entry_id = f"{self.job_id}:{self.run_id}:{provider}:{self._step}"
             self._step += 1
-        if self.store.charge(
+        # charged_micro=0: себестоимость идёт в журнал для видимости маржи,
+        # а не списывается — деньги за путь уже списаны одной строкой в
+        # enqueue_build (quoted_micro).
+        self.store.charge(
             self.chat_id, entry_id=entry_id, job_id=self.job_id,
             provider=provider, unit=unit, quantity=quantity,
             unit_price_micro=unit_price_micro, cost_micro=cost_micro,
-            charged_micro=charged,
-        ):
-            with self._lock:
-                self._charged += charged
+            charged_micro=0,
+        )
 
     def heygen(self, seconds: float, *, cached: bool = False, twin: bool = False) -> None:
         # Попадание в кэш денег не стоит — фрагмент уже отрендерен раньше.
@@ -487,14 +499,23 @@ class JobMeter:
         self._record("claude", "usd", float(usd), 0, claude_cost_micro(usd))
 
     def claude_agent(self, runs: list[dict], reported_usd: float = 0.0) -> None:
-        """Учесть работу агента монтажа: план и отбор бироллов.
+        """Учесть себестоимость работы агента монтажа: план и отбор бироллов.
 
-        До этого метода агент был единственным платным шагом, который нигде не
-        считался: подготовку сценария списывает бот, HeyGen и озвучку — метр, а
-        план монтажа обходился ролику даром. По замеру это около доллара, то
-        есть примерно пятая часть себестоимости ролика.
+        До этого метода агент был единственным платным шагом, чья
+        себестоимость нигде не считалась: подготовку сценария видит бот
+        (`_charge_claude`), HeyGen и озвучку — метр, а план монтажа обходился
+        ролику даром даже в отчётах. По замеру это около доллара — примерно
+        пятая часть себестоимости ролика (см. `claude_montage_usd_per_reel`
+        в config.py).
         """
         self.claude(claude_run_cost_usd(runs, reported_usd, self.rates))
 
     def total_charged(self) -> int:
+        """Сколько этот метр списал с баланса — всегда 0.
+
+        Метр только считает себестоимость (charged_micro=0 у каждой записи,
+        см. `_record`); списание — одной строкой на цену с кнопки — делает
+        enqueue_build. Метод остаётся инвариантом «метр не списывает», а не
+        мёртвым кодом: на нём стоят тесты billing.
+        """
         return self._charged
