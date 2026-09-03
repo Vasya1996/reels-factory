@@ -49,6 +49,7 @@ from pathlib import Path
 
 from reels_factory import alerts
 from reels_factory.analytics import EventStore, render_funnel
+from reels_factory.avatar import heygen_orders_paused
 from reels_factory.billing import (
     LedgerStore, claude_cost_micro, claude_run_cost_usd, estimate_micro,
 )
@@ -424,6 +425,11 @@ RUNNING_MSG = "Начинаю сборку ролика. Это займёт н�
 AVATAR_ORDER_STAGE_MSG = "Снимаю ведущую — это 10–30 минут."
 ASSEMBLE_STAGE_MSG = "Монтирую ролик — ещё 10–20 минут."
 BUSY_MSG = "Предыдущий ролик ещё не завершён — сначала закончим его текущий этап."
+#: Задача 10, п.4: HeyGen отказал по 402 (кредиты исчерпаны) — приём платных
+#: заказов на паузе (avatar.heygen_orders_paused()), пока остаток не
+#: подтвердится восстановленным. Без списания — человек не должен платить за
+#: сборку, которая гарантированно не доедет до HeyGen.
+HEYGEN_PAUSED_MSG = "Сборка сейчас недоступна, попробуйте позже."
 CANCELLED_PENDING_MSG = (
     "Предыдущий ролик ждал вашего решения — отменил его. Начинаем новый."
 )
@@ -3228,6 +3234,15 @@ async def on_button(update, context):
         if _job_store().active_for_chat(chat_id):
             await q.message.reply_text(BUSY_MSG)
             return
+        paused = heygen_orders_paused()
+        if paused is not None:
+            # Задача 10, п.4: HeyGen отказал по 402 где-то в другой сборке —
+            # флаг общий на сервис. Отвечаем ДО списания (`_ledger().balance`
+            # ниже даже не читаем): человек не должен платить за тап,
+            # который гарантированно не доедет до HeyGen.
+            await q.message.reply_text(HEYGEN_PAUSED_MSG)
+            await _alert_heygen_pause_tap(chat_id, paused)
+            return
         # Путь выбирает кнопка, а не догадка по состоянию: старый callback
         # `build` живёт в истории чатов вечно и означал монтаж, поэтому и он
         # ведёт в монтаж.
@@ -4037,6 +4052,29 @@ def _watch_build_stages(bot_api, job: BuildJob, loop: asyncio.AbstractEventLoop)
     return on_line
 
 
+#: Задача 10, п.4: тап по паузе может повторяться десятками людей за
+#: минуты — тот же флаг, та же причина. Раз в час Васе достаточно, чтобы не
+#: захлебнуться в одинаковых алертах; процесс-локальная переменная (не
+#: файл/БД) — рестарт службы просто сбросит троттлинг, что безопаснее,
+#: чем персистентное состояние ради мягкого лимита.
+_LAST_HEYGEN_PAUSE_ALERT_AT = 0.0
+_HEYGEN_PAUSE_ALERT_INTERVAL_S = 3600
+
+
+async def _alert_heygen_pause_tap(chat_id: int, paused: dict) -> None:
+    global _LAST_HEYGEN_PAUSE_ALERT_AT
+    now = time.monotonic()
+    if now - _LAST_HEYGEN_PAUSE_ALERT_AT < _HEYGEN_PAUSE_ALERT_INTERVAL_S:
+        return
+    _LAST_HEYGEN_PAUSE_ALERT_AT = now
+    await alerts.send_alert(
+        "HeyGen на паузе, но человек всё равно жмёт «Собрать»\n"
+        f"Чат: {chat_id}\n"
+        f"Причина паузы: {paused.get('reason') or 'нет описания'}\n"
+        f"С: {paused.get('since') or '?'}"
+    )
+
+
 async def _alert_job_trouble(job: BuildJob, *, stage: str, detail: str) -> None:
     """Алерт Васе в отдельный телеграм-бот (задача 08): реальная поломка
     сборки/доставки или доставка с красным гейтом. `alerts.send_alert` сам
@@ -4579,6 +4617,21 @@ def _notify_credited(bot_api, loop, event: dict) -> None:
         log.warning("не удалось сообщить о пополнении чату %s: %s", chat_id, e)
 
 
+def _check_heygen_balance_at_startup() -> None:
+    """Задача 10, п.4: флаг паузы мог остаться с прошлого падения службы,
+    пока баланс кошелька уже пополнили руками — снимаем его сразу при
+    старте, не дожидаясь первого тапа по цене. ensure_balance_for_order с
+    seconds_estimate=0 никогда не поднимет HeyGenCreditsExhausted (оценка
+    заказа — 0 всегда меньше остатка), только сверит текущий остаток с
+    порогом и очистит/подтвердит флаг по факту; сбой самой проверки (сеть,
+    ключ не задан) не должен мешать старту службы."""
+    from reels_factory.avatar import HeyGenClient, ensure_balance_for_order
+    try:
+        ensure_balance_for_order(HeyGenClient(), 0.0)
+    except Exception as e:
+        log.warning("HeyGen: проверка остатка при старте не удалась: %s", e)
+
+
 async def _post_init(app):
     """Поднять durable worker и безопасно закрыть осиротевшие running jobs."""
     from telegram import BotCommand
@@ -4588,6 +4641,7 @@ async def _post_init(app):
     # старте, а не молчание, замеченное только когда алерт понадобился и не
     # пришёл.
     alerts.warn_if_disabled()
+    await asyncio.to_thread(_check_heygen_balance_at_startup)
 
     await app.bot.set_my_commands(
         [

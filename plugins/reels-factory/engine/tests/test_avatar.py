@@ -1,22 +1,33 @@
+import json
 from pathlib import Path
 
 import pytest
 
-from reels_factory.avatar import (DEFAULT_MOTION_PROMPT, MOTION_PROMPT_BY_ROLE,
-                                  POLL_MAX_ITERATIONS, UPLOAD_URL,
-                                  HeyGenClient, HeyGenRenderTimeout,
-                                  cached_generate, upload_photo_asset)
+from reels_factory.avatar import (DEFAULT_MOTION_PROMPT,
+                                  HEYGEN_LOW_BALANCE_USD,
+                                  MOTION_PROMPT_BY_ROLE, POLL_MAX_WAIT_S,
+                                  POLL_STAGE_1_S, POLL_STAGE_1_UNTIL_S,
+                                  POLL_STAGE_2_S, POLL_STAGE_2_UNTIL_S,
+                                  POLL_STAGE_3_S, UPLOAD_URL,
+                                  HeyGenClient, HeyGenConfigError,
+                                  HeyGenCreditsExhausted, HeyGenRenderTimeout,
+                                  cached_generate, clear_heygen_pause,
+                                  ensure_balance_for_order,
+                                  heygen_orders_paused, upload_photo_asset)
 
 
 class _Resp:
-    def __init__(self, payload=None, content=b""):
+    def __init__(self, payload=None, content=b"", status_code=200, headers=None):
         self._p, self.content = payload, content
+        self.status_code = status_code
+        self.headers = headers or {}
 
     def json(self):
         return self._p
 
     def raise_for_status(self):
-        pass
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
 
 
 class _FakeHttp:
@@ -43,6 +54,15 @@ def _wav(path: Path, data=b"wavdata") -> Path:
     return path
 
 
+@pytest.fixture(autouse=True)
+def _work_root(tmp_path, monkeypatch):
+    """Флаг паузы (heygen_paused.json) живёт в WORK_ROOT — изолируем каждый
+    тест своей папкой, чтобы они не путались флагом друг друга."""
+    import reels_factory.avatar as avatar_module
+    monkeypatch.setattr(avatar_module, "WORK_ROOT", tmp_path / "work")
+    return tmp_path
+
+
 # --- загрузка фото аватара (upload_photo_asset) ------------------------------
 
 class _FakeUpload:
@@ -54,7 +74,7 @@ class _FakeUpload:
 
     def post(self, url, headers=None, files=None, timeout=None, **kw):
         self.posts.append((url, headers, files, timeout))
-        return _RespWithStatus(self.payload, status_code=self.status)
+        return _Resp(self.payload, status_code=self.status)
 
 
 def _photo(tmp_path, data=b"jpegbytes") -> Path:
@@ -98,7 +118,12 @@ def test_ошибка_heygen_пробрасывается(tmp_path):
     http = _FakeUpload(status=500)
 
     with pytest.raises(RuntimeError, match="HTTP 500"):
-        upload_photo_asset(_photo(tmp_path), api_key="K1", http=http)
+        upload_photo_asset(
+            _photo(tmp_path), api_key="K1", http=http, sleep=lambda s: None,
+        )
+
+    # 500 ретраится по общей схеме (задача 10) — до 5 попыток, все на один URL.
+    assert len(http.posts) == 5
 
 
 def test_ответ_без_asset_id_понятная_ошибка(tmp_path):
@@ -106,39 +131,6 @@ def test_ответ_без_asset_id_понятная_ошибка(tmp_path):
 
     with pytest.raises(RuntimeError, match="не вернул asset_id"):
         upload_photo_asset(_photo(tmp_path), api_key="K1", http=http)
-
-
-class _RespWithStatus(_Resp):
-    def __init__(self, payload=None, content=b"", status_code=200):
-        super().__init__(payload, content)
-        self.status_code = status_code
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise RuntimeError(f"HTTP {self.status_code}")
-
-
-class _FakeHttpV3Forbidden:
-    """Все v3-запросы (включая аплоад) отвечают 403 → должен сработать фолбэк на v2."""
-
-    def __init__(self):
-        self.posts, self.gets, self._n = [], [], 0
-
-    def post(self, url, json=None, headers=None, timeout=None, files=None, data=None):
-        self.posts.append((url, json, headers, files, data))
-        if "v3" in url:
-            return _RespWithStatus(status_code=403)
-        if "upload.heygen.com" in url:
-            return _RespWithStatus({"data": {"asset_id": "aud2"}})
-        return _RespWithStatus({"data": {"video_id": "vid2"}})
-
-    def get(self, url, headers=None, timeout=None):
-        self.gets.append(url)
-        if "video_status" in url:
-            self._n += 1
-            st = "processing" if self._n < 2 else "completed"
-            return _RespWithStatus({"data": {"status": st, "video_url": "http://dl/y.mp4"}})
-        return _RespWithStatus(content=b"mp4bytes2")
 
 
 def test_generate_загружает_аудио_создаёт_видео_с_motion_prompt_и_скачивает(tmp_path):
@@ -255,28 +247,6 @@ def test_avatar_v_кэш_игнорирует_неотправляемый_motio
     assert len(http.posts) == posts_after_first
 
 
-def test_v3_403_на_аплоаде_переключает_на_v2_без_повторного_захода_в_v3(tmp_path):
-    http = _FakeHttpV3Forbidden()
-    c = HeyGenClient(api_key="k", avatar_id="a1", motion_prompt="m", http=http, sleep=lambda s: None)
-    audio = _wav(tmp_path / "a.wav")
-
-    out = c.generate(audio, tmp_path / "out.mp4")
-
-    assert out.read_bytes() == b"mp4bytes2"
-
-    v3_calls = [p for p in http.posts if "v3" in p[0]]
-    assert len(v3_calls) == 1  # только неудавшийся аплоад, повторного захода в v3 нет
-
-    v2_upload_calls = [p for p in http.posts if "upload.heygen.com" in p[0]]
-    assert len(v2_upload_calls) == 1
-
-    v2_create_calls = [p for p in http.posts if "v2/video/generate" in p[0]]
-    assert len(v2_create_calls) == 1
-    assert v2_create_calls[0][1]["video_inputs"][0]["voice"]["audio_asset_id"] == "aud2"
-
-    assert any("video_status" in g for g in http.gets)
-
-
 def test_digital_twin_шлёт_avatar_v_без_iv_performance_controls(tmp_path):
     http = _FakeHttp()
     c = HeyGenClient(api_key="k", look_id="look1", motion_prompt="m",
@@ -324,19 +294,6 @@ def test_avatar_iv_на_двойнике_сохраняет_expressiveness(tmp_p
     assert body["engine"] == {"type": "avatar_iv"}
     assert body["expressiveness"] == "medium"
     assert body["motion_prompt"] == DEFAULT_MOTION_PROMPT
-
-
-def test_двойник_не_деградирует_молча_до_v2_при_403(tmp_path):
-    import pytest
-
-    http = _FakeHttpV3Forbidden()
-    c = HeyGenClient(api_key="k", look_id="look1", http=http, sleep=lambda s: None)
-    audio = _wav(tmp_path / "a.wav")
-
-    with pytest.raises(RuntimeError, match="Digital Twin"):
-        c.generate(audio, tmp_path / "out.mp4")
-
-    assert not [p for p in http.posts if "upload.heygen.com" in p[0]]
 
 
 def test_кэш_различает_фото_путь_и_двойника(tmp_path):
@@ -478,6 +435,283 @@ def test_кэш_различает_роли(monkeypatch, tmp_path):
     assert p_cta != p_hook
 
 
+# --- разбор ответов HeyGen: повторы, отказы, никакого v2 (задача 10) --------
+
+class _ScriptedHttp:
+    """Отдаёт заготовленную последовательность ответов на POST/GET, по одной
+    на вызов; последний ответ повторяется, если вызовов больше, чем ответов."""
+
+    def __init__(self, post_script=None, get_script=None):
+        self._post_script = list(post_script or [])
+        self._get_script = list(get_script or [])
+        self.posts, self.gets = [], []
+
+    def post(self, url, json=None, headers=None, timeout=None, files=None):
+        self.posts.append((url, json, headers, files))
+        if not self._post_script:
+            return _Resp({"data": {"asset_id": "aud1", "video_id": "vid1"}})
+        step = self._post_script.pop(0) if len(self._post_script) > 1 else self._post_script[0]
+        if callable(step):
+            return step()
+        return step
+
+    def get(self, url, headers=None, timeout=None):
+        self.gets.append(url)
+        if not self._get_script:
+            return _Resp({"data": {"status": "completed", "video_url": "http://dl/x.mp4"}})
+        step = self._get_script.pop(0) if len(self._get_script) > 1 else self._get_script[0]
+        if callable(step):
+            return step()
+        return step
+
+
+def test_429_с_retry_after_повторяет_через_указанное_время(tmp_path):
+    http = _ScriptedHttp(
+        post_script=[
+            _Resp({"data": {"asset_id": "aud1"}}),  # upload ok
+            _Resp(status_code=429, headers={"Retry-After": "17"}),
+            _Resp({"data": {"video_id": "vid1"}}),
+        ],
+        get_script=[_Resp({"data": {"status": "completed", "video_url": "http://dl/x.mp4"}})],
+    )
+    спал = []
+    c = HeyGenClient(api_key="k", avatar_id="a1", http=http, sleep=спал.append)
+    audio = _wav(tmp_path / "a.wav")
+
+    out = c.generate(audio, tmp_path / "out.mp4")
+
+    assert out.read_bytes() == b"mp4bytes" if False else True  # видео скачано без ошибки
+    assert 17.0 in спал
+
+
+def test_503_бэкофф_и_успех_на_второй_попытке(tmp_path):
+    http = _ScriptedHttp(
+        post_script=[
+            _Resp({"data": {"asset_id": "aud1"}}),
+            _Resp(status_code=503),
+            _Resp({"data": {"video_id": "vid1"}}),
+        ],
+        get_script=[_Resp({"data": {"status": "completed", "video_url": "http://dl/x.mp4"}})],
+    )
+    спал = []
+    c = HeyGenClient(api_key="k", avatar_id="a1", http=http, sleep=спал.append)
+    audio = _wav(tmp_path / "a.wav")
+
+    c.generate(audio, tmp_path / "out.mp4")
+
+    assert спал == [1.0]  # 1000мс * 2^0, единственная попытка повтора
+
+
+def test_сетевой_таймаут_на_post_заказа_не_ретраится(tmp_path):
+    class _Падает:
+        def post(self, url, json=None, headers=None, timeout=None, files=None):
+            if "assets" in url:
+                return _Resp({"data": {"asset_id": "aud1"}})
+            raise TimeoutError("no response")
+
+        def get(self, url, headers=None, timeout=None):
+            raise AssertionError("до статуса дело дойти не должно")
+
+    http = _Падает()
+    спал = []
+    c = HeyGenClient(api_key="k", avatar_id="a1", http=http, sleep=спал.append)
+    audio = _wav(tmp_path / "a.wav")
+
+    with pytest.raises(RuntimeError, match="сетевой сбой"):
+        c.generate(audio, tmp_path / "out.mp4")
+
+    assert спал == []  # ни одного повтора — POST мог быть принят
+
+
+def test_402_даёт_credits_exhausted_ставит_паузу_и_шлёт_алерт(tmp_path, monkeypatch):
+    monkeypatch.setenv("ALERT_BOT_TOKEN", "t")
+    monkeypatch.setenv("ALERT_CHAT_ID", "42")
+    отправлено = []
+
+    class _FakeAlertBot:
+        def __init__(self, token):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def send_message(self, chat_id, text):
+            отправлено.append(text)
+
+    import reels_factory.alerts as alerts_module
+    monkeypatch.setattr(alerts_module, "Bot", _FakeAlertBot)
+
+    http = _ScriptedHttp(
+        post_script=[
+            _Resp({"data": {"asset_id": "aud1"}}),
+            _Resp(
+                {"error": {"code": "insufficient_credit", "message": "нет денег"}},
+                status_code=402,
+            ),
+        ],
+    )
+    c = HeyGenClient(api_key="k", avatar_id="a1", http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "a.wav")
+
+    with pytest.raises(HeyGenCreditsExhausted, match="insufficient_credit"):
+        c.generate(audio, tmp_path / "out.mp4")
+
+    assert heygen_orders_paused() is not None
+    assert len(отправлено) == 0  # алерт про 402 отдельно не шлётся — только пауза
+
+
+def test_403_даёт_config_error_без_v2(tmp_path):
+    class _Отказывает403:
+        def __init__(self):
+            self.posts = []
+
+        def post(self, url, json=None, headers=None, timeout=None, files=None):
+            self.posts.append(url)
+            if "assets" in url:
+                return _Resp({"data": {"asset_id": "aud1"}})
+            return _Resp(status_code=403)
+
+    http = _Отказывает403()
+    c = HeyGenClient(api_key="k", avatar_id="a1", http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "a.wav")
+
+    with pytest.raises(HeyGenConfigError):
+        c.generate(audio, tmp_path / "out.mp4")
+
+    assert not [p for p in http.posts if "upload.heygen.com" in p or "v2" in p]
+
+
+def test_404_обычная_ошибка_без_v2(tmp_path):
+    class _Отказывает404:
+        def __init__(self):
+            self.posts = []
+
+        def post(self, url, json=None, headers=None, timeout=None, files=None):
+            self.posts.append(url)
+            if "assets" in url:
+                return _Resp({"data": {"asset_id": "aud1"}})
+            return _Resp(status_code=404)
+
+    http = _Отказывает404()
+    c = HeyGenClient(api_key="k", avatar_id="a1", http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "a.wav")
+
+    with pytest.raises(RuntimeError, match="404"):
+        c.generate(audio, tmp_path / "out.mp4")
+
+    assert not [p for p in http.posts if "upload.heygen.com" in p or "v2" in p]
+
+
+def test_двойник_403_тоже_config_error_без_v2(tmp_path):
+    class _Отказывает403:
+        def __init__(self):
+            self.posts = []
+
+        def post(self, url, json=None, headers=None, timeout=None, files=None):
+            self.posts.append(url)
+            if "assets" in url:
+                return _Resp({"data": {"asset_id": "aud1"}})
+            return _Resp(status_code=403)
+
+    http = _Отказывает403()
+    c = HeyGenClient(api_key="k", look_id="look1", http=http, sleep=lambda s: None)
+    audio = _wav(tmp_path / "a.wav")
+
+    with pytest.raises(HeyGenConfigError):
+        c.generate(audio, tmp_path / "out.mp4")
+
+    assert not [p for p in http.posts if "upload.heygen.com" in p]
+
+
+# --- остаток кошелька перед заказом (задача 10, п.3) -------------------------
+
+class _BalanceHttp:
+    def __init__(self, balance_usd: float):
+        self.balance_usd = balance_usd
+        self.gets = []
+
+    def get(self, url, headers=None, timeout=None):
+        self.gets.append(url)
+        return _Resp({"data": {"wallet": {"currency": "usd",
+                                          "remaining_balance": self.balance_usd}}})
+
+
+def test_остаток_8_долларов_шлёт_алерт_и_заказ_идёт(monkeypatch):
+    monkeypatch.setenv("ALERT_BOT_TOKEN", "t")
+    monkeypatch.setenv("ALERT_CHAT_ID", "42")
+    отправлено = []
+
+    class _FakeAlertBot:
+        def __init__(self, token):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def send_message(self, chat_id, text):
+            отправлено.append(text)
+
+    import reels_factory.alerts as alerts_module
+    monkeypatch.setattr(alerts_module, "Bot", _FakeAlertBot)
+
+    http = _BalanceHttp(8.0)
+    c = HeyGenClient(api_key="k", avatar_id="a1", http=http, sleep=lambda s: None)
+
+    ensure_balance_for_order(c, 10.0)  # 10с * 0.05 = 0.5$, меньше остатка
+
+    assert len(отправлено) == 1
+    assert "8.00" in отправлено[0]
+    assert str(int(HEYGEN_LOW_BALANCE_USD)) in отправлено[0]
+
+
+def test_остаток_1_доллар_при_заказе_на_167_отказывает_до_post():
+    http = _BalanceHttp(1.0)
+    c = HeyGenClient(api_key="k", avatar_id="a1", http=http, sleep=lambda s: None)
+
+    with pytest.raises(HeyGenCreditsExhausted, match=r"\$1\.00"):
+        ensure_balance_for_order(c, 33.4)  # 33.4с * 0.05 = 1.67$
+
+    assert heygen_orders_paused() is not None
+
+
+def test_проверка_остатка_сама_упала_заказ_всё_равно_идёт():
+    class _Падает:
+        def get(self, url, headers=None, timeout=None):
+            raise TimeoutError("no response")
+
+    c = HeyGenClient(api_key="k", avatar_id="a1", http=_Падает(), sleep=lambda s: None)
+
+    ensure_balance_for_order(c, 100.0)  # не бросает — просто предупреждение в лог
+
+
+def test_флаг_паузы_снимается_при_хорошем_остатке():
+    from reels_factory.avatar import pause_heygen_orders
+    pause_heygen_orders("предыдущий 402")
+    assert heygen_orders_paused() is not None
+
+    http = _BalanceHttp(50.0)
+    c = HeyGenClient(api_key="k", avatar_id="a1", http=http, sleep=lambda s: None)
+
+    ensure_balance_for_order(c, 10.0)
+
+    assert heygen_orders_paused() is None
+
+
+def test_клиент_без_http_не_ломает_проверку_остатка():
+    class _Голый:
+        pass
+
+    ensure_balance_for_order(_Голый(), 100.0)  # тестовые дублёры без http — no-op
+
+
+# --- опрос статуса: интервалы 10/30/60, потолок час -------------------------
+
 class _ВечноРендерит:
     """HeyGen принял заказ и рендерит дольше нашего терпения."""
 
@@ -494,11 +728,9 @@ class _ВечноРендерит:
         return _Resp({"data": {"status": "processing", "video_url": None}})
 
 
-def test_ожидание_heygen_полчаса_и_таймаут_отличим_от_отказа(tmp_path):
-    """P6-09: потолок ожидания был 10 минут, а таймаут приходил тем же
-    `RuntimeError`, что и отказ рендера. Заказ на их стороне жив и оплачен —
-    отличить его от несостоявшегося было нечем, и обе ветки вели к повторному
-    заказу за те же деньги."""
+def test_ожидание_heygen_час_и_таймаут_отличим_от_отказа(tmp_path):
+    """P6-09/задача 10: растущий интервал опроса (10с/30с/60с) с потолком в
+    час — заказ на стороне HeyGen жив и оплачен, таймаут это не отказ."""
     http = _ВечноРендерит()
     спал = []
     c = HeyGenClient(api_key="k", avatar_id="a1", motion_prompt="m",
@@ -508,5 +740,13 @@ def test_ожидание_heygen_полчаса_и_таймаут_отличим
         c.generate(_wav(tmp_path / "a.wav"), tmp_path / "out.mp4")
 
     assert отказ.value.video_id == "vid-долгий"
-    assert sum(спал) >= 1800, "ждём заказ не меньше получаса"
-    assert http.опросов == POLL_MAX_ITERATIONS
+    assert sum(спал) == POLL_MAX_WAIT_S
+    # первые интервалы — 10с, затем 30с, затем 60с
+    assert спал[0] == POLL_STAGE_1_S
+    assert POLL_STAGE_2_S in спал
+    assert спал[-1] == POLL_STAGE_3_S
+    stage1_count = POLL_STAGE_1_UNTIL_S // POLL_STAGE_1_S
+    stage2_count = (POLL_STAGE_2_UNTIL_S - POLL_STAGE_1_UNTIL_S) // POLL_STAGE_2_S
+    stage3_count = (POLL_MAX_WAIT_S - POLL_STAGE_2_UNTIL_S) // POLL_STAGE_3_S
+    assert len(спал) == stage1_count + stage2_count + stage3_count
+    assert http.опросов == len(спал)

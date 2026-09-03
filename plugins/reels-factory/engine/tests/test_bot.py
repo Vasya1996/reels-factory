@@ -14,6 +14,11 @@ from reels_factory.config import ConfigError
 @pytest.fixture
 def work(tmp_path, monkeypatch):
     monkeypatch.setattr(bot, "WORK_ROOT", tmp_path / "work")
+    # avatar.py импортирует свой собственный WORK_ROOT (задача 10: флаг
+    # паузы heygen_paused.json живёт там же) — та же папка изоляции, иначе
+    # флаг пишется в реальный cwd/work мимо tmp_path теста.
+    import reels_factory.avatar as avatar_module
+    monkeypatch.setattr(avatar_module, "WORK_ROOT", tmp_path / "work")
     return tmp_path
 
 
@@ -2136,6 +2141,42 @@ def test_создать_ролик_сохраняет_профиль_и_став
     job = bot._job_store().get(s["current_job_id"])
     assert job.status == "audio_queued"
     assert (job.workdir / "scenario.json").exists()
+
+
+def test_флаг_паузы_heygen_блокирует_тап_без_списания(work, клиент, monkeypatch):
+    """Задача 10, п.4: HeyGen отказал по 402 где-то в другой сборке — флаг
+    общий на сервис. Тап по цене не должен ни списать баланс, ни поставить
+    job в очередь: сборка гарантированно не доедет до HeyGen."""
+    import reels_factory.avatar as avatar_module
+    monkeypatch.setattr(bot, "_LAST_HEYGEN_PAUSE_ALERT_AT", 0.0)
+    avatar_module.pause_heygen_orders("402 на прошлой сборке")
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    баланс_до = bot._ledger().balance(7)
+
+    msg = _Msg()
+    _press("build:plain", msg)
+
+    assert msg.replies[-1] == bot.HEYGEN_PAUSED_MSG
+    assert bot._ledger().balance(7) == баланс_до
+    s = bot.load_session(7)
+    assert s["step"] == bot.READY  # сборка не запущена
+    assert bot._job_store().active_for_chat(7) is None
+
+
+def test_флаг_паузы_шлёт_алерт_не_чаще_раза_в_час(work, клиент, алерты, monkeypatch):
+    import reels_factory.avatar as avatar_module
+    monkeypatch.setattr(bot, "_LAST_HEYGEN_PAUSE_ALERT_AT", 0.0)
+    avatar_module.pause_heygen_orders("402 на прошлой сборке")
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+
+    _press("build:plain", _Msg())
+    _press("build:plain", _Msg())  # второй тап той же минутой — без второго алерта
+
+    assert len(алерты) == 1
+    assert "7" in алерты[0]["text"]
 
 
 def _deliver_audio_preview():

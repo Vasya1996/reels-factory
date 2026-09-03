@@ -49,7 +49,8 @@ from pathlib import Path
 from reels_factory.config import WORK_ROOT, edit_settings
 from reels_factory.billing import billable_seconds
 from reels_factory.avatar import (
-    HeyGenClient, avatar_cache_key, cached_generate, render_covered_block,
+    HeyGenClient, avatar_cache_key, cached_generate, ensure_balance_for_order,
+    render_covered_block,
 )
 from reels_factory.tts import synth_voice as _synth_voice
 from reels_factory.master_audio import (
@@ -170,6 +171,10 @@ def _run_plain_avatar(config: dict, wd, scenario: dict, voice_id,
         # HeyGen на этом пути, до неё бот не может сказать человеку ничего
         # честнее «идёт подготовка».
         _log("avatar_order")
+        # Задача 10, п.3: остаток кошелька — до первого платного POST.
+        # billable_seconds (не media_dur напрямую) — тот же измеритель, что
+        # и метр ниже, со своим встроенным "сбой замера не роняет сборку".
+        ensure_balance_for_order(avatar_client, billable_seconds(master.wav))
         mp4 = avatar_client.generate(master.wav, out_mp4)
         if meter is not None:
             meter.heygen(
