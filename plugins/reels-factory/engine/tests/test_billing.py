@@ -275,16 +275,16 @@ def test_дефолтные_ставки_закладывают_не_один_п
     assert rates["claude_montage_usd_per_reel"] > 0
 
 
-def test_провизия_агента_монтажа_закладывает_доллар_на_ролик():
+def test_провизия_агента_монтажа_закладывает_два_доллара_на_ролик():
     """Решение Васи 03.09.2026: на работу агента монтажа в оценке цены
-    закладывается $1 суммарно за ролик, перерасход сверх этой провизии
+    закладывается $2 суммарно за ролик, перерасход сверх этой провизии
     ложится в нашу маржу, а не в цену клиента (см. комментарий у
     claude_montage_usd_per_reel в config.py)."""
     from reels_factory.config import BILLING_DEFAULTS
 
     rates = BILLING_DEFAULTS["rates"]
     assert (rates["claude_montage_usd_per_reel"]
-            * rates["claude_montage_attempts"]) == 1.0
+            * rates["claude_montage_attempts"]) == 2.0
 
 
 def test_оценка_без_доли_аватара_не_меняется():
