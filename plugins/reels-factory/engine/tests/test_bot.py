@@ -3020,6 +3020,169 @@ def test_receipt_называет_названную_цену_а_не_общим
     assert bot.format_usd(цена) in text
 
 
+@pytest.fixture
+def алерты(monkeypatch):
+    """Включает алерт-бота (задача 08: ALERT_BOT_TOKEN/ALERT_CHAT_ID) и
+    подставляет ему перехватчик вместо настоящего telegram.Bot. Возвращает
+    список отправленных алертов — по одному словарю {chat_id, text} на
+    вызов `send_message`."""
+    monkeypatch.setenv("ALERT_BOT_TOKEN", "alert-token")
+    monkeypatch.setenv("ALERT_CHAT_ID", "42")
+    отправлено = []
+
+    class _FakeAlertBot:
+        def __init__(self, token):
+            self.token = token
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def send_message(self, chat_id, text):
+            отправлено.append({"chat_id": chat_id, "text": text})
+
+    monkeypatch.setattr(bot.alerts, "Bot", _FakeAlertBot)
+    return отправлено
+
+
+def test_алерт_при_поломке_сборки(work, клиент, алерты):
+    def fake_run_build(chat_id, workdir):
+        return {"ok": False, "stage": "voice", "error": "HeyGen отказал"}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    job = _claim_job()
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert len(алерты) == 1
+    алерт = алерты[0]
+    assert алерт["chat_id"] == "42"
+    text = алерт["text"]
+    assert "7" in text  # chat_id заказчика
+    assert "voice" in text
+    assert "HeyGen отказал" in text
+    assert job.job_id in text
+    assert str(job.workdir) in text
+
+
+def test_алерт_когда_файла_ролика_нет(work, клиент, алерты):
+    def fake_run_build(chat_id, workdir):
+        return {"ok": True, "mp4": str(workdir / "нет-такого.mp4"),
+                "qa_pass": True}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    job = _claim_job()
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert len(алерты) == 1
+    assert "output" in алерты[0]["text"]
+    assert job.job_id in алерты[0]["text"]
+
+
+def test_алерт_при_файле_больше_50мб(work, клиент, алерты, monkeypatch):
+    monkeypatch.setattr(bot, "MAX_TG_VIDEO_BYTES", 3)
+
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"1234567890")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    job = _claim_job()
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert len(алерты) == 1
+    assert "delivery_too_big" in алерты[0]["text"]
+    assert "50 МБ" in алерты[0]["text"]
+
+
+def test_алерт_при_отказе_telegram_принять_файл(work, клиент, алерты):
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    class _ОтказывающийАпи(_BotAPI):
+        async def send_video(self, chat_id, video, caption=None,
+                             reply_markup=None, width=None, height=None):
+            raise RuntimeError("Telegram отверг файл")
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    job = _claim_job()
+    api = _ОтказывающийАпи()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert len(алерты) == 1
+    assert "delivery" in алерты[0]["text"]
+    assert "Telegram отверг файл" in алерты[0]["text"]
+
+
+def test_алерт_при_доставке_с_красным_гейтом(work, клиент, алерты):
+    """Решение 05: красный гейт не отменяет доставку, но Вася должен узнать
+    про изъян — задача 08 адресует именно событие `delivered:qa_fail`."""
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": False,
+                "gates": {"D0_check": "FAIL: пустой угол кадра",
+                          "D7_other": "PASS"}}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    job = _claim_job()
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert api.videos, "ролик с красным гейтом всё равно обязан дойти до чата"
+    assert len(алерты) == 1
+    text = алерты[0]["text"]
+    assert "D0_check" in text
+    assert "FAIL" in text
+    assert "D7_other" not in text  # в алерт идут только красные гейты
+
+
+def test_без_переменных_окружения_алерт_молчит_и_не_роняет_worker(
+    work, клиент, monkeypatch
+):
+    monkeypatch.delenv("ALERT_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("ALERT_CHAT_ID", raising=False)
+
+    def упавший_бот(*a, **kw):
+        raise AssertionError("Bot не должен создаваться без переменных окружения")
+
+    monkeypatch.setattr(bot.alerts, "Bot", упавший_бот)
+
+    def fake_run_build(chat_id, workdir):
+        return {"ok": False, "stage": "voice", "error": "HeyGen отказал"}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    job = _claim_job()
+    api = _BotAPI()
+
+    # Не должно поднять исключение — упавший_бот сработал бы AssertionError,
+    # если бы send_alert попытался создать Bot без переменных окружения.
+    asyncio.run(bot._process_job(api, job, build_fn=fake_run_build))
+
+    assert bot.BUILD_FAILED_MSG in api.messages[-1][1]
+
+
 def test_сбой_статусного_сообщения_не_теряет_durable_job(work, клиент):
     """После INSERT job уже принадлежит очереди, даже если Telegram временно
     не принял служебное сообщение о постановке."""

@@ -47,6 +47,7 @@ import uuid
 from contextlib import suppress
 from pathlib import Path
 
+from reels_factory import alerts
 from reels_factory.analytics import EventStore, render_funnel
 from reels_factory.billing import (
     LedgerStore, claude_cost_micro, claude_run_cost_usd, estimate_micro,
@@ -3920,6 +3921,20 @@ async def _process_audio_job(bot_api, job: BuildJob, preview_fn=None) -> None:
     _update_active_session_step(job.chat_id, job.job_id, AUDIO_REVIEW)
 
 
+def _named_price_micro(job_id: str) -> int:
+    """Сумма списания job (провайдер `quote`) — та же названная на кнопке
+    цена, что видит человек и в квитанции, и в уведомлении о незавершённой
+    доставке, и в алерте Васе (задача 08). Сбой чтения ledger не поднимается
+    наверх: 0, а не исключение — вызывающий код уже отдаёт финальный ответ
+    человеку, и голый текст важнее точной суммы."""
+    try:
+        breakdown = _ledger().job_breakdown(job_id)
+    except Exception as e:
+        log.warning("не удалось прочитать breakdown для job %s: %s", job_id, e)
+        return 0
+    return sum(breakdown.values())
+
+
 def _charged_but_undelivered_notice(job_id: str) -> str:
     """Реальная поломка, размер файла или доставка провалились уже ПОСЛЕ
     того, как названная на кнопке цена списалась одной строкой при
@@ -3939,18 +3954,42 @@ def _charged_but_undelivered_notice(job_id: str) -> str:
     если SQLite заблокирован или битый, пользователь обязан получить хотя бы
     голый текст ошибки, а не остаться без всякого сообщения.
     """
-    try:
-        breakdown = _ledger().job_breakdown(job_id)
-    except Exception as e:
-        log.warning("не удалось прочитать breakdown для job %s: %s", job_id, e)
-        return ""
-    total = sum(breakdown.values())
+    total = _named_price_micro(job_id)
     if not total:
         return ""
     return (
         f"\n\nНазванная цена ({format_usd(total)}) уже списана — "
         "разберёмся вручную."
     )
+
+
+async def _alert_job_trouble(job: BuildJob, *, stage: str, detail: str) -> None:
+    """Алерт Васе в отдельный телеграм-бот (задача 08): реальная поломка
+    сборки/доставки или доставка с красным гейтом. `alerts.send_alert` сам
+    решает, включены ли алерты (ALERT_BOT_TOKEN/ALERT_CHAT_ID) и сам глотает
+    сбой отправки — здесь же защищаемся от сбоя СБОРКИ текста алерта (сессия
+    не читается, ledger заблокирован): job уже (или вот-вот будет) finished,
+    и упавший алерт не должен забрать с собой ответ человеку."""
+    try:
+        s = load_session(job.chat_id)
+        # Сессия сегодня не хранит имя/username — оно попадёт сюда, как
+        # только появится источник (задача вне 08). До тех пор — просто
+        # chat_id, без выдумывания персистентных полей заранее.
+        name = s.get("username") or s.get("first_name")
+        who = f"{job.chat_id}" + (f" ({name})" if name else "")
+        paid = format_usd(_named_price_micro(job.job_id))
+        text = (
+            "Сборка с изъяном\n"
+            f"Кто: {who}\n"
+            f"Заплатил: {paid}\n"
+            f"Стадия: {stage}\n"
+            f"{detail}\n"
+            f"job_id: {job.job_id}\n"
+            f"Папка: {job.workdir}"
+        )
+        await alerts.send_alert(text)
+    except Exception as e:
+        log.warning("алерт по job %s не собрался: %s", job.job_id, e)
 
 
 async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
@@ -3984,6 +4023,9 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         log.error("job %s не собралась (%s): %s", job.job_id,
                   result.get("stage") or "build", error)
         _track_job(job, "error:build", str(error)[:120])
+        await _alert_job_trouble(
+            job, stage=result.get("stage") or "build", detail=f"Ошибка: {error}"
+        )
         markup = _failed_markup(job.chat_id, job.job_id)
         await _safe_job_message(
             bot_api,
@@ -4006,6 +4048,7 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
         _track_job(job, "error:build", "файла ролика нет")
+        await _alert_job_trouble(job, stage="output", detail=f"Ошибка: {MISSING_FILE_MSG}")
         await _safe_job_message(bot_api, job.chat_id, MISSING_FILE_MSG,
                                 _failed_markup(job.chat_id, job.job_id))
         return
@@ -4037,6 +4080,7 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
         _track_job(job, "error:delivery", "больше лимита Telegram")
+        await _alert_job_trouble(job, stage="delivery_too_big", detail=f"Ошибка: {error}")
         await _safe_job_message(
             bot_api,
             job.chat_id,
@@ -4065,6 +4109,7 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
         )
         _update_session_after_job(job.chat_id, job.job_id, BUILD_FAILED)
         _track_job(job, "error:delivery", str(e)[:120])
+        await _alert_job_trouble(job, stage="delivery", detail=f"Ошибка: {e}")
         await _safe_job_message(
             bot_api,
             job.chat_id,
@@ -4089,6 +4134,10 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
             if str(verdict).startswith("FAIL")
         )
         _track_job(job, "delivered:qa_fail", failed_gates[:120] or None)
+        await _alert_job_trouble(
+            job, stage="delivery",
+            detail=f"Красные гейты: {failed_gates or 'нет расшифровки'}",
+        )
     # Чтение бухгалтерии вне защиты _safe_job_message — видео уже доставлено,
     # повторов не будет. Если SQLite заблокирован или битый, чтение не должно
     # уронить обновление сессии: доставленный ролик без чека — это приемлемая
@@ -4447,6 +4496,12 @@ def _notify_credited(bot_api, loop, event: dict) -> None:
 async def _post_init(app):
     """Поднять durable worker и безопасно закрыть осиротевшие running jobs."""
     from telegram import BotCommand
+
+    # Задача 08: если ALERT_BOT_TOKEN/ALERT_CHAT_ID не заданы, алерты Васе
+    # тихо выключены — единственный след об этом должен остаться в логе при
+    # старте, а не молчание, замеченное только когда алерт понадобился и не
+    # пришёл.
+    alerts.warn_if_disabled()
 
     await app.bot.set_my_commands(
         [
