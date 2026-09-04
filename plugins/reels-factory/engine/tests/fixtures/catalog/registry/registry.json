@@ -1,0 +1,173 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry.json",
+  "name": "reels-factory-fixture",
+  "homepage": "https://example.invalid",
+  "items": [
+    {
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "count-up",
+      "type": "hyperframes:component",
+      "title": "Count Up",
+      "description": "A token-native stat counter that eases between values and lands with a restrained scale pulse.",
+      "tags": [
+        "motion-primitive",
+        "proof",
+        "stats",
+        "counter",
+        "number"
+      ],
+      "duration": 3.0,
+      "files": [
+        {
+          "path": "count-up.html",
+          "target": "compositions/count-up.html",
+          "type": "hyperframes:snippet"
+        }
+      ],
+      "reels": {
+        "kind": "effect",
+        "variables": {
+          "start": {
+            "type": "number",
+            "default": 0
+          },
+          "end": {
+            "type": "number",
+            "default": 100
+          },
+          "prefix": {
+            "type": "string",
+            "default": ""
+          },
+          "suffix": {
+            "type": "string",
+            "default": "%"
+          },
+          "accent": {
+            "type": "enum",
+            "default": "green"
+          },
+          "glow": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      }
+    },
+    {
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-plain",
+      "type": "hyperframes:block",
+      "title": "Demo Plain",
+      "description": "Yesterday's lower third: the card declares no kind",
+      "tags": [
+        "demo",
+        "overlay"
+      ],
+      "dimensions": {
+        "width": 1920,
+        "height": 1080
+      },
+      "duration": 4.0,
+      "files": [
+        {
+          "path": "demo-plain.html",
+          "target": "compositions/demo-plain.html",
+          "type": "hyperframes:composition"
+        }
+      ],
+      "reels": {
+        "backing": "none",
+        "text_slots": [
+          "line"
+        ]
+      }
+    },
+    {
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-scene",
+      "type": "hyperframes:block",
+      "title": "Demo Scene",
+      "description": "Full-frame demo scene with one headline slot",
+      "tags": [
+        "demo",
+        "scene"
+      ],
+      "dimensions": {
+        "width": 1920,
+        "height": 1080
+      },
+      "duration": 4.0,
+      "files": [
+        {
+          "path": "demo-scene.html",
+          "target": "compositions/demo-scene.html",
+          "type": "hyperframes:composition"
+        }
+      ],
+      "reels": {
+        "kind": "scene",
+        "text_slots": [
+          "line"
+        ]
+      }
+    },
+    {
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-skip",
+      "type": "hyperframes:block",
+      "title": "Demo Skip",
+      "description": "Broken demo position",
+      "tags": [
+        "demo",
+        "overlay"
+      ],
+      "dimensions": {
+        "width": 1920,
+        "height": 1080
+      },
+      "duration": 4.0,
+      "files": [
+        {
+          "path": "demo-skip.html",
+          "target": "compositions/demo-skip.html",
+          "type": "hyperframes:composition"
+        }
+      ],
+      "reels": {
+        "kind": "effect",
+        "skip": "их же проверка валит блок под --strict"
+      }
+    },
+    {
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-stitch",
+      "type": "hyperframes:block",
+      "title": "Demo Stitch",
+      "description": "Overlay transition: bands cover the frame, the host cuts beneath, the bands clear",
+      "tags": [
+        "demo",
+        "transition",
+        "wipe"
+      ],
+      "dimensions": {
+        "width": 1920,
+        "height": 1080
+      },
+      "duration": 2.2,
+      "files": [
+        {
+          "path": "demo-stitch.html",
+          "target": "compositions/demo-stitch.html",
+          "type": "hyperframes:composition"
+        }
+      ],
+      "reels": {
+        "kind": "overlay",
+        "decor_texts": [
+          "Заголовок"
+        ]
+      }
+    }
+  ]
+}

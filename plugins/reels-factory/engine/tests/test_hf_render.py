@@ -454,8 +454,8 @@ LONG_BLIND = _hidden(FIT, 5, "смотрит в окно")
 
 
 def _plan_fakes(monkeypatch, tmp_path, boards):
-    """Обвязка раннего плана: каталог и паспорта накладок изображены, агент
-    отдаёт планы из очереди. Возвращает журнал вызовов."""
+    """Обвязка раннего плана: каталог изображён, агент отдаёт планы из
+    очереди. Возвращает журнал вызовов."""
     from contextlib import contextmanager
 
     from reels_factory import hf_render
@@ -468,7 +468,6 @@ def _plan_fakes(monkeypatch, tmp_path, boards):
         yield "http://127.0.0.1:0"
 
     monkeypatch.setattr(hf_render, "serve_catalog", fake_catalog)
-    monkeypatch.setattr(hf_render, "catalog_overlay_passports", lambda: "")
 
     queue = list(boards)
 
@@ -804,7 +803,7 @@ def test_фраза_роли_hook_в_средней_сцене_без_ведущ
     assert set(gates) == {"D28_avatar_bookends", "D29_avatar_budget",
                           "D31_faceless_scenes", "D32_face_absence",
                           "D33_avatar_decisions", "D34_inserts",
-                          "D35_frame_filled"}, gates
+                          "D35_frame_filled", "D36_elements"}, gates
 
     out = apply_agent_coverage(edit_plan, scenes)
     report = validate_edit_plan(out, require_final=True,

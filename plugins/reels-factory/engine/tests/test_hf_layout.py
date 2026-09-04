@@ -1,10 +1,17 @@
 """Геометрия вертикального кадра: сетка кадров, безопасные полосы, лицо."""
 import pytest
 
+from reels_factory.config import OUT_H, OUT_W
 from reels_factory.hf_layout import (
-    ALLOWED_ZONES, FACELESS_ZONES, VIDEO_RECTS, ZONE_RECTS, face_box, quantize,
-    violations,
+    ALLOWED_ZONES, EFFECT_MIN_HEIGHT, FACELESS_ZONES, FULL_FRAME_PRESENTER,
+    PRESENTER_POSITIONS, VIDEO_RECTS, ZONE_RECTS, _overlap, effect_rect,
+    face_box, quantize, violations,
 )
+
+#: Тот же верх полосы титра, каким его зовёт сборка (`hf_compose.
+#: CAPTION_BAND_TOP - CAPTION_BAND_SAFETY`, 1000 - 20). Число не импортируем
+#: из `hf_compose`, чтобы тест геометрии не тянул за собой сборку.
+_BAND_TOP = 980
 
 
 def test_раскладки_и_зоны_как_у_скила():
@@ -68,3 +75,56 @@ def test_лицо_едет_вместе_с_окном_видео():
 
 def test_без_лица_проверка_лица_пропускается():
     assert face_box(None) is None
+
+
+#: Зафиксированные числа зоны элемента-эффекта при каждой позиции ведущей —
+#: те же, что подтвердил живой прогон проверки B2 (`review-b2.md`, раздел D).
+_EFFECT_RECTS = {
+    "full": None,
+    "punch": None,
+    "pip-tr": {"left": 0, "top": 583, "width": 1080, "height": 397},
+    "pip-tl": {"left": 0, "top": 583, "width": 1080, "height": 397},
+    "pip-br": {"left": 0, "top": 0, "width": 1080, "height": 980},
+    "pip-bl": {"left": 0, "top": 0, "width": 1080, "height": 980},
+    "stack": None,
+    "none": {"left": 0, "top": 0, "width": 1080, "height": 980},
+}
+
+
+@pytest.mark.parametrize("presenter", PRESENTER_POSITIONS)
+def test_зона_эффекта_числом_по_каждой_позиции(presenter):
+    assert effect_rect(presenter, band_top=_BAND_TOP) == _EFFECT_RECTS[presenter]
+
+
+@pytest.mark.parametrize("presenter", PRESENTER_POSITIONS)
+def test_зона_эффекта_не_задевает_ведущую_и_полосу_титра_и_держит_пол(presenter):
+    """Свойства, а не числа: должны сойтись при любой будущей правке
+    `VIDEO_RECTS`, а не только на сегодняшних восьми позициях."""
+    rect = effect_rect(presenter, band_top=_BAND_TOP)
+    if presenter in FULL_FRAME_PRESENTER:
+        assert rect is None
+        return
+    if rect is None:
+        # Пола не хватило (сегодня — только `stack`, 136 px < EFFECT_MIN_HEIGHT).
+        return
+    # зона внутри кадра
+    assert rect["left"] >= 0 and rect["top"] >= 0
+    assert rect["left"] + rect["width"] <= OUT_W
+    assert rect["top"] + rect["height"] <= OUT_H
+    # зона не заходит на полосу титра
+    assert rect["top"] + rect["height"] <= _BAND_TOP
+    # зона не пересекает окно ведущей
+    window = VIDEO_RECTS.get(presenter)
+    if window is not None:
+        assert not _overlap(rect, window)
+    # ширина и высота не ниже пола значка
+    assert rect["width"] >= EFFECT_MIN_HEIGHT
+    assert rect["height"] >= EFFECT_MIN_HEIGHT
+
+
+def test_зона_эффекта_снимается_ниже_пола():
+    """`stack` оставляет над окном ведущей 136 px — меньше пола в 380 px
+    (коробка значка), зоны для эффекта в кадре нет вовсе."""
+    free_height = _BAND_TOP - VIDEO_RECTS["stack"]["height"]
+    assert free_height < EFFECT_MIN_HEIGHT
+    assert effect_rect("stack", band_top=_BAND_TOP) is None

@@ -22,8 +22,8 @@ from reels_factory.hf_layout import (
     PRESENTER_POSITIONS, avatar_gaps, fills_frame, in_avatar_gap,
 )
 from reels_factory.hf_montage import (
-    SERIES_SHOTS, frame_filler, insert_of, same_look, scene_look, schema_scene,
-    shot_queries,
+    SERIES_SHOTS, filling_element, frame_filler, insert_of, same_look,
+    scene_look, schema_scene, shot_queries,
 )
 from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 
@@ -134,6 +134,105 @@ def _form_problems(scene_id: str, field: str, plan) -> list[str]:
     return problems
 
 
+#: Типы `data-composition-variables` их же полки и что мы принимаем за каждый.
+#: Список из карточки позиции (`reels.variables`), а значение — из плана: два
+#: разных типа под одним именем их рантайм не разводит вовсе, а `enum` без
+#: списка `options` принимает любую строку.
+_VARIABLE_TYPES = {
+    "number": (int, float),
+    "string": (str,),
+    "boolean": (bool,),
+    "color": (str,),
+    "enum": (str,),
+}
+
+
+def _element_problems(scene_id: str, element: dict, cards: dict,
+                      skipped: dict) -> list[str]:
+    """Одна позиция из `elements` — та же проверка, что делает их `add`.
+
+    Их `hyperframes add` неизвестное имя не ставит вовсе, а установка идёт уже
+    после того, как ведущую сняли и оплатили: имя, названное по памяти, роняет
+    попытку сборки с деньгами на руках. Здесь тот же вопрос задан плану — до
+    заказа.
+
+    Проверяется ровно то, что известно из карточки: имя, имена и типы
+    переменных, число слов под слоты. Уместность позиции не проверяется — это
+    решение агента, и гейт в него не лезет, как не лезет в выбор формы схемы.
+    """
+    name = str(element.get("name") or "").strip()
+    where = f"{scene_id}.elements[{name}]"
+    if name in skipped:
+        return [f"{scene_id}: позицию {name!r} ставить нельзя — "
+                f"{skipped[name]}"]
+    if cards and name not in cards:
+        return [f"{scene_id}: позиции {name!r} в каталоге нет — имена "
+                "перечислены в `catalog.index.md` рядом с заданием"]
+    card = cards.get(name) or {}
+    problems = []
+    declared = card.get("variables") or {}
+    named = element.get("variables")
+    if named is not None and not isinstance(named, dict):
+        problems.append(f"{where}: `variables` — объект «имя → значение»")
+        named = {}
+    for key, value in (named or {}).items():
+        rule = declared.get(key)
+        if rule is None:
+            problems.append(
+                f"{where}: переменной {key!r} у позиции нет, есть "
+                + (", ".join(f"`{one}`" for one in sorted(declared))
+                   or "ни одной"))
+            continue
+        kinds = _VARIABLE_TYPES.get(str(rule.get("type") or ""))
+        # Булево в Python — тоже int, и без этой оговорки `true` прошло бы за
+        # число, а число за булево.
+        if kinds and (not isinstance(value, kinds)
+                      or (isinstance(value, bool) and bool not in kinds)):
+            problems.append(
+                f"{where}: переменная {key!r} объявлена типом "
+                f'{rule.get("type")}, а в плане {type(value).__name__}')
+    words = element.get("words")
+    if words is not None and not isinstance(words, list):
+        problems.append(f"{where}: `words` — список строк по числу слотов")
+    elif words:
+        slots = card.get("text_slots") or []
+        if len(words) > len(slots):
+            problems.append(
+                f"{where}: слов {len(words)}, а слотов у позиции "
+                f"{len(slots)} — лишние в кадр не попадут")
+    return problems
+
+
+def elements_problems(scenes: list[dict]) -> list[str]:
+    """Позиции каталога, названные планом, каталогу не противоречат.
+
+    Список отдаётся наружу, а не сразу вердикт: по нему судят двое — D11 здесь,
+    после сборки, и `D36_elements` до заказа ведущей (hf_render.py). Судят они
+    одно и то же одним кодом — разойтись двум местам нечем.
+    """
+    from reels_factory.hf_catalog import catalog_cards, skipped_blocks
+    from reels_factory.hf_montage import scene_elements
+
+    try:
+        cards = dict(catalog_cards())
+        skipped = dict(skipped_blocks())
+    except (OSError, ValueError):
+        # Каталога нет — обвинять план в том, что не поднялся наш же реестр,
+        # незачем; сборка снимет такой элемент сама (`element_problem`).
+        cards, skipped = {}, {}
+    problems = []
+    for scene in scenes:
+        scene_id = scene.get("id", "?")
+        found = scene.get("elements")
+        if found is not None and not isinstance(found, list):
+            problems.append(f"{scene_id}: `elements` — список объектов "
+                            "`{name, words?, variables?}`")
+            continue
+        for element in scene_elements(scene):
+            problems += _element_problems(scene_id, element, cards, skipped)
+    return problems
+
+
 def _schema_problems(storyboard: dict) -> list[str]:
     """Расхождения с их схемой v3 (SKILL.md:130-165, 610-616).
 
@@ -180,6 +279,7 @@ def _schema_problems(storyboard: dict) -> list[str]:
                                 "«имя слота → строка»")
         for field in ("schema", "fallback"):
             problems += _form_problems(scene_id, field, scene.get(field))
+        problems += elements_problems([scene])
         icon = scene.get("icon")
         if icon is not None and (
                 not isinstance(icon, dict)
@@ -273,12 +373,24 @@ def _text_marks(html: str) -> set[str]:
     return found
 
 
-#: Надписи, которые в блоке нарисованы, а не подставлены. Гейт судит по
-#: совпадению с исходником, и такой текст выглядит как незаполненный слот, хотя
-#: это часть оформления: у камкордерного HUD «REC» — сама суть блока, её никто
-#: не заполняет и убирать нечего. Список закрытый и растёт только по разбору
-#: конкретного блока: иначе гейт перестанет ловить настоящие заглушки.
-DECOR_TEXTS = {"camcorder-hud": {"REC"}}
+def _decor_texts() -> dict:
+    """Надписи, которые в блоке нарисованы, а не подставлены.
+
+    Гейт судит по совпадению с исходником, и такой текст выглядит как
+    незаполненный слот, хотя это часть оформления: у камкордерного HUD «REC» —
+    сама суть блока, её никто не заполняет и убирать нечего.
+
+    Список живёт в карточке блока (`reels.decor_texts`), а не литералом здесь:
+    знает про рисованный текст тот, кто заводил карточку, и каждая новая
+    позиция каталога иначе требовала бы правки этого файла. Каталога может не
+    быть — тогда белого списка нет, и гейт судит строже, а не мягче.
+    """
+    from reels_factory.hf_catalog import decor_texts
+
+    try:
+        return dict(decor_texts())
+    except (OSError, ValueError):
+        return {}
 
 
 def check_placeholders(rdir) -> dict:
@@ -291,6 +403,7 @@ def check_placeholders(rdir) -> dict:
     их источников.
     """
     compositions = Path(rdir) / "public" / "compositions"
+    decor = _decor_texts()
     problems = []
     for copy in sorted(compositions.glob("*--*.html")
                        if compositions.exists() else []):
@@ -300,7 +413,7 @@ def check_placeholders(rdir) -> dict:
             continue
         left = (_text_marks(copy.read_text(encoding="utf-8"))
                 & _text_marks(source.read_text(encoding="utf-8")))
-        left -= DECOR_TEXTS.get(block, set())
+        left -= decor.get(block, set())
         if left:
             problems.append(f'{copy.name}: в кадр едет заглушка: '
                             + "; ".join(f"«{text}»" for text in sorted(left)[:3]))
@@ -391,6 +504,12 @@ def frame_filled_problems(scenes: list[dict]) -> list[str]:
         # она невыполнима. Прогон hf-live2 прошёл оба гейта ровно на этой
         # разнице.
         if schema_scene(scene):
+            continue
+        # Элемент каталога вида `scene` или `effect` закрывает кадр наравне со
+        # схемой — и здесь, и в `frame_filler` (D25). Считает их обоим один
+        # `filling_element`: прежде плашка закрывала кадр для одного гейта и
+        # не закрывала для другого, и повторять это расхождение незачем.
+        if filling_element(scene):
             continue
         if not fills_frame(position, _has_insert(scene)):
             problems.append(

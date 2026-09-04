@@ -1,6 +1,8 @@
 """Композицию собирает код: слои кадра, ведущая, вставки, субтитры, звук."""
 import json
 import re
+import shutil
+from pathlib import Path
 
 import pytest
 
@@ -9,6 +11,7 @@ from reels_factory.hf_compose import (
     build_composition, collect_intents, complete_storyboard, icon_intents,
     presenter_timeline, settle_inserts,
 )
+from reels_factory.hf_layout import VIDEO_RECTS
 from reels_factory.hf_sdk import sdk_session
 
 CLIPS = [{"file": "clips/clip-00.mp4", "start": 0.0, "duration": 6.0}]
@@ -1297,3 +1300,168 @@ def test_причина_негодности_накладки_считается
     assert hf_compose.overlay_problem("lt-clean-bar") is None
     assert "ломает" in (hf_compose.overlay_problem("lt-broken") or "")
     assert "OVERLAYS.md" in (hf_compose.overlay_problem("lt-нет") or "")
+
+
+# ---------- элементы каталога ----------
+
+FIXTURE_CATALOG = Path(__file__).resolve().parent / "fixtures" / "catalog"
+
+
+@pytest.fixture
+def каталог(run, monkeypatch):
+    """Фикстурный каталог вместо боевого: три вида позиции и одна без вида.
+
+    Раскладка — та же, что после `hyperframes add`, а не ручное упрощение:
+    блок ложится в плоскую `public/compositions`, компонент — в свою подпапку
+    `public/compositions/components` (`hyperframes.json#paths`,
+    `hf_catalog.py:51`; установку живьём проверяет
+    `test_hf_catalog.py::test_add_реально_ставит_сцену_накладку_и_компонент`).
+    Прогон 30 упал именно на разъезде этих путей: `_stage_overlay` читал
+    компонент по плоскому пути, `add` клал его в подпапку, и элемент
+    `count-up` валил сборку рантайм-ошибкой «не установлен» — фикстура,
+    упрощавшая раскладку до плоской, эту ошибку не ловила.
+    """
+    from reels_factory.hf_catalog import catalog_cards
+
+    cards = catalog_cards(FIXTURE_CATALOG)
+    monkeypatch.setattr(hf_compose, "_catalog_cards", lambda: cards)
+    monkeypatch.setattr(hf_compose, "_skipped_blocks",
+                        lambda: {"demo-skip": "их же проверка валит блок"})
+    monkeypatch.setattr(hf_compose, "_texture_blocks", frozenset)
+    registry = FIXTURE_CATALOG / "registry"
+    compositions = run / "public" / "compositions"
+    (compositions / "components").mkdir(parents=True, exist_ok=True)
+    for name, card in cards.items():
+        is_component = card["type"] == "component"
+        subdir = "components" if is_component else "blocks"
+        target = ((compositions / "components" / f"{name}.html") if is_component
+                  else compositions / f"{name}.html")
+        shutil.copyfile(registry / subdir / name / f"{name}.html", target)
+    return run
+
+
+def test_путь_установленной_позиции_идёт_по_её_типу(tmp_path):
+    """Одно место на обоих читателей источника (`_stage_overlay`, подстановка
+    `root` для палитры): блок — их же плоская `paths.blocks`, компонент — их
+    же `paths.components` (`hf_catalog.py:51`, `write_project_config`).
+    Разойдись эти пути — компонент читался бы там, где `add` его не клал."""
+    from reels_factory.hf_compose import _installed_path
+
+    assert (_installed_path(tmp_path, "demo-scene", "block")
+            == tmp_path / "compositions" / "demo-scene.html")
+    assert (_installed_path(tmp_path, "count-up", "component")
+            == tmp_path / "compositions" / "components" / "count-up.html")
+
+
+def _с_элементами(*elements, presenter="pip-tr"):
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = presenter
+    scenes[1]["insert"] = None
+    scenes[1]["elements"] = list(elements)
+    return scenes
+
+
+def test_элемент_сцены_встаёт_во_весь_кадр_со_словами_агента(каталог):
+    """Вид `scene` едет тем же путём, что схема: канвас под вертикаль, палитра
+    и шрифт правилом CSS, слова — существующим слоем слотов."""
+    html, _ = _build(каталог, scenes=_с_элементами(
+        {"name": "demo-scene", "words": ["Наш заголовок"]}), resolved={})
+    mount = html[html.index('id="el-s-02-0"'):]
+    assert 'data-composition-src="compositions/demo-scene--s-02.html"' in mount
+    assert "width:1080px;height:1920px" in mount[:400]
+    copy = (каталог / "public" / "compositions"
+            / "demo-scene--s-02.html").read_text(encoding="utf-8")
+    assert "Наш заголовок" in copy and "Заголовок</div>" not in copy
+    # Канвас переехал в вертикаль, а гарнитуру блок получил правилом ниже.
+    assert 'data-width="1080" data-height="1920"' in copy
+    assert "#demo-scene-root { font-family: 'Manrope'" in copy
+
+
+def test_эффект_встаёт_в_свободную_зону_кадра(каталог):
+    """Зону считает код: ниже окна ведущей и выше полосы титра. Агент её не
+    называет вовсе."""
+    html, _ = _build(каталог, scenes=_с_элементами(
+        {"name": "count-up", "variables": {"end": 250, "suffix": " ₽"}}),
+        resolved={})
+    box = html[html.index('<div class="ovl" style="left:0px;top:583px'):]
+    assert "height:397px" in box[:200], box[:200]
+    assert 'data-variable-values=' in box[:600] and '"end": 250' in box[:600]
+    # Зона не заезжает ни на окно ведущей, ни на полосу титра.
+    assert 583 >= VIDEO_RECTS["pip-tr"]["top"] + VIDEO_RECTS["pip-tr"]["height"]
+    assert 583 + 397 <= hf_compose.CAPTION_BAND_TOP
+
+
+def test_эффекту_без_свободной_зоны_места_нет(каталог, capsys):
+    """Ведущая во весь кадр не оставляет зоны — элемент снимается, а сборка
+    идёт дальше: цена ошибки равна цене элемента, а не прогона."""
+    html, board = _build(каталог, scenes=_с_элементами(
+        {"name": "count-up"}, presenter="full"), resolved={})
+    assert "el-s-02-0" not in html
+    assert "свободной зоны" in capsys.readouterr().out
+    assert board["scenes"][1]["elements"] == []
+
+
+def test_стык_встаёт_за_срез_сцены_и_живёт_свою_длительность(каталог):
+    """Их же правило размещения накладки-перехода: «place this block spanning
+    the host's cut point (e.g. start 0.9s before the cut)»."""
+    html, _ = _build(каталог, scenes=_с_элементами({"name": "demo-stitch"}),
+                     resolved={})
+    mount = html[html.index('id="el-s-02-0"'):]
+    assert 'data-start="2.1333"' in mount[:400], mount[:400]
+    assert 'data-duration="2.2000"' in mount[:400]
+    # Поверх всего, слоем вспышки: переход кроет кадр целиком.
+    assert '<div class="fx" style="left:' in html[:html.index('id="el-s-02-0"')]
+
+
+def test_позиция_без_вида_встаёт_плашкой_над_полосой_титра(каталог):
+    """Обратная совместимость: карточка без `reels.kind` — сегодняшняя плашка,
+    и геометрия у неё та же."""
+    html, _ = _build(каталог, scenes=_с_элементами(
+        {"name": "demo-plain", "words": ["Имя"]}), resolved={})
+    before = html[:html.index('id="el-s-02-0"')]
+    assert 'class="ovl" style="left:0;top:' in before
+    assert "top:0px" not in before.rsplit('class="ovl"', 1)[1]
+
+
+def test_старый_план_с_полем_overlay_собирается_как_прежде(каталог, monkeypatch):
+    """План прошлого прогона называет блок в `overlay` — он обязан собраться:
+    поле из задания убрано, а из кода нет."""
+    monkeypatch.setattr(hf_compose, "_known_overlays",
+                        lambda: frozenset({"demo-plain"}))
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["insert"] = None
+    scenes[1]["overlay"] = {"block": "demo-plain", "text": {"line": "Имя"}}
+    html, _ = _build(каталог, scenes=scenes, resolved={})
+    assert 'id="ovl-s-02"' in html
+
+
+def test_имена_элементов_попадают_в_установку_блоков():
+    """Ставит блоки их `hyperframes add`, и список ему даёт `needed_blocks`."""
+    from reels_factory.hf_compose import needed_blocks
+
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[0]["elements"] = [{"name": "demo-scene"}, {"name": "count-up"}]
+    scenes[1]["elements"] = [{"name": "demo-scene"}]
+    assert needed_blocks(_board(scenes)) == ["editorial-flash-overlay",
+                                             "demo-scene", "count-up"]
+
+
+def test_упругая_позиция_получает_коробку_в_копии_и_кадр_в_стенсиле(каталог):
+    """Их полка размеров не объявляет нарочно — позиция заполняет коробку
+    хоста. Их же линтер зовёт это `root_missing_dimensions` (severity error), и
+    под `--strict` файл роняет сборку: он судит каждый файл сам по себе.
+    Коробку считает код, поэтому её и объявляем — копии зону, стенсилю кадр.
+
+    `count-up` — компонент: исходник (стенсиль) лежит не в плоской
+    `compositions/`, а в её подпапке `components/` (`_installed_path`) — и
+    коробку код обязан объявить именно там, а не рядом с копией.
+    """
+    from reels_factory.hf_compose import _installed_path
+
+    _build(каталог, scenes=_с_элементами({"name": "count-up"}), resolved={})
+    compositions = каталог / "public" / "compositions"
+    copy = (compositions / "count-up--s-02.html").read_text(encoding="utf-8")
+    assert 'data-width="1080" data-height="397"' in copy
+    stencil = _installed_path(каталог / "public", "count-up",
+                              "component").read_text(encoding="utf-8")
+    assert 'data-width="1080" data-height="1920"' in stencil

@@ -183,6 +183,28 @@ def test_упругому_блоку_высоту_режут_на_его_кор�
     assert 'data-width="1080"' in html
 
 
+def test_упругому_блоку_режут_только_корень_а_не_весь_файл():
+    """У настоящего блока `data-height` встречается не только на корне:
+    `gallery-tunnel.html:68` несёт тот же атрибут ещё раз — в примере
+    использования внутри HTML-комментария, ДО настоящего корня. Слепая замена
+    по всему файлу переписала бы и его; здесь корень найден отдельно —
+    комментарий рядом остаётся как был."""
+    elastic = (
+        "<!-- copy me:\n"
+        '  <div data-composition-id="gt" data-width="1920" data-height="1080">'
+        "</div>\n"
+        "-->\n"
+        '<div id="gt-root" data-composition-id="gt" data-duration="4.5"'
+        ' data-width="1080" data-height="1920"></div>'
+    )
+    html = port_block(elastic, duration=3.0, config={}, elastic=True,
+                      height=SAFE_BOTTOM)
+    assert 'id="gt-root"' in html
+    assert f'data-height="{SAFE_BOTTOM}"></div>' in html.split("-->")[1]
+    # вне корня (в комментарии) число осталось нетронутым
+    assert 'data-height="1080"' in html.split("-->")[0]
+
+
 def test_перечисление_не_длиннее_предела():
     _, variables, _, _ = build(
         "items", {"items": [{"label": c, "icon": "цель"} for c in "абвгде"]},

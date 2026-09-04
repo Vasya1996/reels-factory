@@ -91,6 +91,45 @@ ICON_RECT = {"left": (OUT_W - 380) // 2, "top": 400, "width": 380,
              "height": 380}
 
 
+#: Пол высоты свободной зоны под элемент-эффект. Числом ниже эффект в кадре
+#: читается полосой, а не сценой: 380 px — это ровно та коробка, в которой код
+#: рисует значок (`ICON_RECT`), и меньше него в кадр он не ставит ничего.
+EFFECT_MIN_HEIGHT = ICON_RECT["height"]
+
+
+def effect_rect(presenter: str, *, band_top: int) -> dict | None:
+    """Свободный прямоугольник кадра под элемент каталога вида `effect`.
+
+    `None` — свободного места нет, и элемент снимается.
+
+    Зону считает код, а не агент: она выводится из двух вещей, которых в плане
+    нет, — из окна ведущей (`VIDEO_RECTS`, положение агент называет, пиксели
+    наши) и из верха полосы титра (`band_top`, ниже него идут слова субтитров).
+    Арифметика та же, что кладёт вставку и схему: вставка занимает то, что
+    осталось от ведущей (`INSERT_RECTS`), схема кончается выше полосы титра
+    (`hf_schema.SAFE_BOTTOM`). Эффект держит оба ограничения разом.
+
+    Берётся ЦЕЛЫЙ прямоугольник — тот из двух (над окном ведущей и под ним),
+    что выше. Резать зону на части незачем: элемент — это одна сабкомпозиция с
+    одной коробкой, и половинки ей всё равно не отдать.
+    """
+    free = {"left": 0, "top": 0, "width": OUT_W, "height": int(band_top)}
+    name = str(presenter or "none")
+    if name in FULL_FRAME_PRESENTER:
+        return None
+    rect = VIDEO_RECTS.get(name) if name != "none" else None
+    if rect is not None and _overlap(free, rect):
+        above = {"left": 0, "top": 0, "width": OUT_W,
+                 "height": max(0, int(rect["top"]))}
+        under_top = int(rect["top"]) + int(rect["height"])
+        under = {"left": 0, "top": under_top, "width": OUT_W,
+                 "height": max(0, int(band_top) - under_top)}
+        free = above if above["height"] >= under["height"] else under
+    if free["height"] < EFFECT_MIN_HEIGHT:
+        return None
+    return free
+
+
 def _overlap(a: dict, b: dict) -> bool:
     return (a["left"] < b["left"] + b["width"]
             and b["left"] < a["left"] + a["width"]

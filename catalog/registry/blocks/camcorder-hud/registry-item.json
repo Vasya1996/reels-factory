@@ -30,6 +30,9 @@
     "video": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/camcorder-hud.mp4"
   },
   "reels": {
-    "backing": "none"
+    "backing": "none",
+    "decor_texts": [
+      "REC"
+    ]
   }
 }

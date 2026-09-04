@@ -1,0 +1,29 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "demo-scene",
+  "type": "hyperframes:block",
+  "title": "Demo Scene",
+  "description": "Full-frame demo scene with one headline slot",
+  "tags": [
+    "demo",
+    "scene"
+  ],
+  "dimensions": {
+    "width": 1920,
+    "height": 1080
+  },
+  "duration": 4.0,
+  "files": [
+    {
+      "path": "demo-scene.html",
+      "target": "compositions/demo-scene.html",
+      "type": "hyperframes:composition"
+    }
+  ],
+  "reels": {
+    "kind": "scene",
+    "text_slots": [
+      "line"
+    ]
+  }
+}

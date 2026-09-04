@@ -25,6 +25,7 @@ from reels_factory.avatar_islands import (
 )
 from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.editplan import MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S
+from reels_factory.hf_catalog import write_catalog_files
 from reels_factory.hf_gates import min_scenes
 from reels_factory.hf_montage import (
     SERIES_MAX, SERIES_MIN, face_gap, inserts_wanted, survives_series,
@@ -133,48 +134,6 @@ WISHES = {
     "destination": "где ролик будет играть",
     "notes": "пожелания к оформлению и всё, что ещё сказал заказчик",
 }
-
-
-#: Шапка паспорта накладки: имя блока и пол сцены под него. Пишет её
-#: `hf_slots.passport` — «### `name` — сцена собирается X с, карточка не короче
-#: Y с», числа в формате `:g`, то есть с точкой.
-_PASSPORT_HEAD = re.compile(
-    r"^### `([^`]+)`.*?карточка не короче ([\d.]+) с", re.M)
-
-
-def _overlay_index(passports: str) -> str:
-    """Список установленных плашек СО СЛОВАМИ и пол сцены под каждую.
-
-    Данные, которые агент вывести не может: какие блоки лежат в каталоге этого
-    прогона и какой длины сцена под них нужна. Паспорта целиком уехали в
-    `OVERLAYS.md` (шестнадцать карточек занимали шестую часть задания), и файл
-    без единого слова о содержимом агент не открывал ни разу — в боевом плане
-    прогона плашек ноль при шестнадцати доступных. Индекс из имени и числа
-    стоит одну строку и отвечает на вопрос, который и решает выбор: влезет ли
-    плашка в эту сцену.
-
-    Плашки без текстовых слотов сюда не попадают, хотя в `OVERLAYS.md` лежат:
-    это фактуры (протечка света, вспышка, обводка кадра), они кроют кадр целиком
-    и ничего не говорят. Ровно такая — `editorial-flash-overlay` — и стояла
-    единственным содержимым в тех 2,7 с пустого кадра: назвать её ответом на
-    «чем закрыт кадр» значит повторить дефект.
-
-    Пусто, когда установленных плашек со словами нет вовсе: звать в `overlay`
-    тогда нечем, и свод правил печатает это прямым текстом.
-    """
-    cards = ("\n" + (passports or "")).split("\n### ")[1:]
-    named = []
-    for card in cards:
-        head = _PASSPORT_HEAD.search("### " + card)
-        # Слот паспорта печатается строкой «- `имя` — …»: у фактуры их нет.
-        if head and re.search(r"^- `", card, re.M):
-            named.append(f"`{head.group(1)}` — {seconds(float(head.group(2)))}")
-    if not named:
-        return ""
-    return ("Плашки со словами, установленные в этом прогоне, и пол каждой: "
-            f"{', '.join(named)}. Пол — не длина сцены под плашку, а "
-            "промежуток до следующей плашки или до конца ролика. Что лежит "
-            "в слотах каждой — в `OVERLAYS.md`.")
 
 
 def _wishes_block(wishes: dict | None) -> str:
@@ -508,7 +467,7 @@ def _add_backups(scenes: list[dict]) -> None:
     """Дописать запас каждой сцене образца, у которой стоит `insert`.
 
     Правило круга 6 безусловно: у сцены со вставкой назван запас — `fallback`,
-    `overlay` или `icon`. Образец сильнее правила, стоящего рядом с ним, и
+    `elements` или `icon`. Образец сильнее правила, стоящего рядом с ним, и
     прежний показывал `fallback` ровно у одной сцены — той, где
     `avatarNeeded: false`. Агент прогона hf-live2 воспроизвёл именно эту
     структуру: три `fallback` на трёх сценах с отказом и ни одного на сцене со
@@ -526,7 +485,8 @@ def _add_backups(scenes: list[dict]) -> None:
     for scene in scenes:
         if not scene.get("insert"):
             continue
-        if scene.get("fallback") or scene.get("icon") or scene.get("overlay"):
+        if (scene.get("fallback") or scene.get("icon")
+                or scene.get("elements") or scene.get("overlay")):
             continue
         if not shown_icon and icon_fits(str(scene.get("presenter") or "none")):
             scene["icon"] = {"query": "checklist mark"}
@@ -713,7 +673,6 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
                 clips: list[dict] | None = None, language: str = "ru",
                 retry_reason: str | None = None,
                 phrases: list[dict] | None = None,
-                overlay_passports: str = "",
                 wishes: dict | None = None,
                 avatar_ordered: bool = True,
                 islands: dict | None = None,
@@ -911,7 +870,7 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
             f"{seconds(MAX_FACE_ABSENCE_S)} подряд, значит сцены без ведущей "
             "разделены сценами с ведущей. Поэтому сцены с ведущей ставь "
             "подряд: один длинный кусок дешевле трёх коротких.\n\n"
-            "У каждой сцены с `insert` назови запас — `fallback`, `overlay` "
+            "У каждой сцены с `insert` назови запас — `fallback`, `elements` "
             "или `icon`: сток отвечает не всегда, а на сцене с "
             "`avatarNeeded: false` закрыть кадр без вставки больше нечем — "
             "ведущей в этих секундах не будет. Условие «где ведущей нет» ты "
@@ -925,7 +884,7 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
             + "\n".join(f"- фраза `{pid}`" for pid in sorted(faceless))
             + '\n\nСцены на этих фразах стоят с `presenter: "none"` — ведущей '
               "там нет, кадр держит вставка. У каждой сцены с `insert` назови "
-              "запас — `fallback`, `overlay` или `icon`: сток отвечает не "
+              "запас — `fallback`, `elements` или `icon`: сток отвечает не "
               "всегда, серия живёт целиком, и на этих фразах закрыть кадр без "
               "вставки больше нечем — ведущей в этих секундах не существует. "
               "Правило висит на самой вставке, а не на дыре заказа: считать "
@@ -1071,8 +1030,7 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
                         expected_scenes=low, char_limits=char_limits,
                         avatar_ordered=avatar_ordered,
                         min_fullscreen=MIN_FULLSCREEN_S,
-                        max_face_absence=MAX_FACE_ABSENCE_S,
-                        overlay_index=_overlay_index(overlay_passports))
+                        max_face_absence=MAX_FACE_ABSENCE_S)
 
     # Пересдача идёт в той же папке, и раздел обязан совпадать с тем, что на
     # диске: `plan_with_agent` снимает `storyboard.json` ПЕРЕД каждым запуском
@@ -1172,11 +1130,11 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     # стока, стояла последним абзацем раздела про бюджет: прогон hf-live2
     # оставил 2,7 с фона с титром, выполнив всё остальное.
     backup_step = ("Пройди сцены ещё раз: у каждой, где стоит `insert`, "
-                   "назови запас —\n   `fallback`, `overlay` или `icon`. "
+                   "назови запас —\n   `fallback`, `elements` или `icon`. "
                    "Сцена со вставкой и без запаса выходит в\n   ролик фоном "
                    "с титром, если сток не ответил. Чем закрывают кадр и что "
                    "во что\n   ложится — в своде правил, раздел «Запас»; "
-                   "паспорта плашек — в `OVERLAYS.md`\n   рядом с этим "
+                   "позиции каталога — в\n   `catalog.index.md` рядом с этим "
                    "файлом.")
     if avatar_ordered:
         steps_block = f"""{skill_step}
@@ -1220,7 +1178,7 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
 1. Сцены идут встык и покрывают фразы `0`–{last_phrase}, сцен не меньше {low}.
 2. `climax` ровно один и не в первой сцене.
 3. Соседние сцены отличаются картинкой — положением ведущей либо вставкой.
-4. У каждой сцены с `insert` заполнен запас — `fallback`, `overlay` или
+4. У каждой сцены с `insert` заполнен запас — `fallback`, `elements` или
    `icon`: сток отвечает не всегда, и без запаса вставка, которая не
    приехала, оставит сцену голым фоном с титром (`D25_empty_frame`).
 5. У каждой сцены, где `presenter` — уголок (`pip-*`) или половина (`stack`),
@@ -1253,7 +1211,7 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
 6. Сцены идут встык и покрывают фразы `0`–{last_phrase}, сцен не меньше {low}.
 7. `climax` ровно один и не в первой сцене; соседние сцены отличаются
    картинкой.
-8. У каждой сцены с `insert` заполнен запас — `fallback`, `overlay` или
+8. У каждой сцены с `insert` заполнен запас — `fallback`, `elements` или
    `icon`: сток отвечает не всегда, и сцена со вставкой без запаса, которая
    не приехала, выйдет в ролик фоном с титром (`D25_empty_frame`).
 9. У каждой сцены, где `presenter` — уголок (`pip-*`) или половина (`stack`),
@@ -1373,17 +1331,16 @@ colors:
 """
     path = rdir / "BRIEF.md"
     path.write_text(text, encoding="utf-8")
-    # Паспорта накладок — данные, а не правила: шестнадцать карточек занимали
-    # шестую часть задания и читались агентом в каждом прогоне, хотя накладка
-    # нужна ему в двух-трёх сценах из десяти. Их канон на этот счёт прямой:
-    # «No context penalty for large files» — файл, который не открыли, не стоит
-    # ничего (agent-skills/best-practices). Ссылка одна и ведёт из задания
-    # прямо сюда: глубже одного уровня их же дока ходить не советует.
-    (rdir / "OVERLAYS.md").write_text(
-        "# Паспорта накладок\n\n"
-        "Каждая карточка — имя блока, его слоты и родная длительность.\n"
-        "Имя и ключи `text` в плане пиши дословно отсюда.\n\n"
-        + (overlay_passports or "Каталог накладок недоступен — обойдись без "
-                                "`overlay`.\n"),
-        encoding="utf-8")
+    # Индекс каталога и два справочника фреймворка — данные, а не правила:
+    # какие позиции лежат в каталоге ЭТОГО прогона, агент вывести не может, а
+    # выбирает он их методом фреймворка — поиском по смыслу. Их канон на этот
+    # счёт прямой: «No context penalty for large files» — файл, который не
+    # открыли, не стоит ничего (agent-skills/best-practices). Ссылка одна и
+    # ведёт из задания прямо сюда: глубже одного уровня их же дока ходить не
+    # советует. Отказ каталога задание не роняет — агент останется без
+    # элементов, как оставался без накладок.
+    try:
+        write_catalog_files(rdir)
+    except (OSError, ValueError) as error:
+        print(f"индекс каталога не собрался: {error}")
     return path

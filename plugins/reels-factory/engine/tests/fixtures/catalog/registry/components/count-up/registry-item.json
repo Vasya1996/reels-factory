@@ -1,0 +1,51 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "count-up",
+  "type": "hyperframes:component",
+  "title": "Count Up",
+  "description": "A token-native stat counter that eases between values and lands with a restrained scale pulse.",
+  "tags": [
+    "motion-primitive",
+    "proof",
+    "stats",
+    "counter",
+    "number"
+  ],
+  "duration": 3.0,
+  "files": [
+    {
+      "path": "count-up.html",
+      "target": "compositions/count-up.html",
+      "type": "hyperframes:snippet"
+    }
+  ],
+  "reels": {
+    "kind": "effect",
+    "variables": {
+      "start": {
+        "type": "number",
+        "default": 0
+      },
+      "end": {
+        "type": "number",
+        "default": 100
+      },
+      "prefix": {
+        "type": "string",
+        "default": ""
+      },
+      "suffix": {
+        "type": "string",
+        "default": "%"
+      },
+      "accent": {
+        "type": "enum",
+        "default": "green"
+      },
+      "glow": {
+        "type": "boolean",
+        "default": false
+      }
+    }
+  }
+}
