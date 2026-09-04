@@ -4,7 +4,9 @@
   "type": "hyperframes:component",
   "title": "Demo Paste",
   "description": "Fixture paste-contract effect for tests: a badge whose script reads window.__hyperframes.getVariables()",
-  "tags": ["demo"],
+  "tags": [
+    "demo"
+  ],
   "duration": 2.0,
   "files": [
     {
@@ -14,6 +16,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названа появившаяся штука: короткая пометка выскакивает поверх кадра.",
     "kind": "effect",
     "mount": "paste",
     "variables": {

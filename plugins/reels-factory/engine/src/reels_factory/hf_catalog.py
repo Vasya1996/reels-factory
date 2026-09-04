@@ -264,9 +264,20 @@ def catalog_cards(catalog_dir=None) -> dict[str, dict]:
 
     Карточка отдаётся полями их же `hyperframes catalog --json` (`name`,
     `type`, `title`, `description`, `tags`, `dimensions`, `duration`) плюс
-    нашими тремя: `kind` — чем позиция становится в кадре, `text_slots` — имена
+    нашими: `use_when` — что этой позицией показывают, `avoid_when` — когда её
+    берут зря, `kind` — чем позиция становится в кадре, `text_slots` — имена
     слотов позиции по порядку (их выводит `hf_slots.find_slots`), `variables` —
     зеркало `data-composition-variables` из HTML.
+
+    `use_when` идёт сразу за `description` и потому попадает в ту же строку
+    индекса, что имя и теги (`catalog_index`). Причина измерена шестью живыми
+    ранними шагами: `description` реестра описывает анимацию — «Animated world
+    choropleth with country-by-country reveal … D3 Natural Earth projection», —
+    и чтобы решить, годится ли позиция сцене, агент должен был перевести
+    геометрию в монтажное суждение. В четырёх прогонах из шести он находил
+    позицию грепом по тегу и не ставил её. `use_when` отвечает на тот же вопрос
+    прямо, теми же словами, какими сцена описана в `intent`, поэтому греп по
+    слову из реплики находит позицию и по нему, а не только по тегам.
 
     Карточка без `reels.kind` — сегодняшняя плашка: вид у неё не объявлен, и в
     кадр она едет тем же путём, что и по старому полю `overlay`. Выводить вид
@@ -291,8 +302,12 @@ def catalog_cards(catalog_dir=None) -> dict[str, dict]:
         card = {"name": name,
                 "type": str(item.get("type", "")).replace("hyperframes:", ""),
                 "title": item.get("title", ""),
-                "description": item.get("description", ""),
-                "tags": list(item.get("tags") or [])}
+                "description": item.get("description", "")}
+        if reels.get("use_when"):
+            card["use_when"] = str(reels["use_when"])
+        if reels.get("avoid_when"):
+            card["avoid_when"] = str(reels["avoid_when"])
+        card["tags"] = list(item.get("tags") or [])
         if item.get("dimensions"):
             card["dimensions"] = item["dimensions"]
         if item.get("duration"):
@@ -343,16 +358,21 @@ REFERENCE_FILES = ("CATALOG.md", "catalog-map.md")
 
 _INDEX_HEAD = """# Каталог этого прогона
 
-Позиции, которые код умеет поставить в кадр. Ищи по смыслу — по `description`
-и `tags`, — а не глазами по именам: имя придумывал автор позиции, и оно редко
-совпадает с твоими словами.
+Позиции, которые код умеет поставить в кадр. Ищи по смыслу — по `use_when`,
+`description` и `tags`, — а не глазами по именам: имя придумывал автор позиции,
+и оно редко совпадает с твоими словами.
 
 Файл длиннее, чем берёт одно чтение, поэтому карточка занимает ровно одну
 строку: строку, найденную поиском, видно целиком — с именем, видом, тегами,
 слотами и переменными.
 
 Поля `name`, `type`, `title`, `description`, `tags`, `dimensions`, `duration` —
-формата `hyperframes catalog --json`. Наши три:
+формата `hyperframes catalog --json`. Наши:
+
+- `use_when` — что этой позицией показывают: признак содержания сцены, а не то,
+  как позиция выглядит. Ищи по ней теми же словами, какими написан `intent`
+  сцены: `grep -i 'сравнен' catalog.index.md`.
+- `avoid_when` — когда позицию берут зря; стоит там, где случай уже разобран.
 
 - `kind` — чем позиция становится в кадре: `scene` (во весь кадр), `overlay`
   (на стык сцен поверх всего), `effect` (в свободной зоне кадра). Позиция без
