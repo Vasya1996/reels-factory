@@ -601,13 +601,17 @@ _CDN_FONTS = re.compile(
 _FONT_FAMILY = re.compile(r"font-family:\s*[^;}]+")
 _OUR_STACK = "font-family: 'Manrope', sans-serif"
 
-#: Простой относительный src/href — без ведущего "/" (корень проекта), без
-#: "data:" (инлайн) и без "../" (тот их линтер/рантайм переписывает сам,
-#: `rewriteAssetPath`, `packages/parsers/src/rewriteSubCompPaths.ts` в
-#: исходнике клона — на нашем пине 0.7.84 у неё нет третьего параметра
-#: `assetExists`, и такой путь остаётся как есть, то есть резолвится от
-#: корня проекта буквально после монтажа `data-composition-src`).
-_REL_SRC = re.compile(r"""((?:src|href)=)(["'])(?!https?:|/|data:)([^"']+)\2""")
+#: Простой относительный src/href/xlink:href (SVG `<use>` ссылается им же) —
+#: без ведущего "/" (корень проекта), без "data:" (инлайн) и без "../" (тот
+#: их линтер/рантайм переписывает сам, `rewriteAssetPath`,
+#: `packages/parsers/src/rewriteSubCompPaths.ts` в исходнике клона — на нашем
+#: пине 0.7.84 у неё нет третьего параметра `assetExists`, и такой путь
+#: остаётся как есть, то есть резолвится от корня проекта буквально после
+#: монтажа `data-composition-src`). Исключение "../" здесь в регэксп не
+#: попадает — держит его явная проверка в `_prefixed`, а не то, что "../x"
+#: почти никогда не существует рядом с файлом позиции.
+_REL_SRC = re.compile(
+    r"""((?:src|href|xlink:href)=)(["'])(?!https?:|/|data:)([^"']+)\2""")
 _REL_URL = re.compile(r"""url\(\s*(["']?)(?!https?:|/|data:)([^)"']+)\1\s*\)""")
 
 
@@ -633,7 +637,9 @@ def _rewrite_sibling_assets(html: str, *, install_dir: Path, project_root: Path
 
     def _prefixed(value: str) -> str | None:
         clean = value.split("?", 1)[0].split("#", 1)[0]
-        if not clean or not (install_dir / clean).exists():
+        if not clean or "../" in clean:
+            return None
+        if not (install_dir / clean).exists():
             return None
         return f"{rel_dir}/{value}"
 
@@ -794,11 +800,15 @@ _PASTE_STYLE = re.compile(r"<style[^>]*>.*?</style>", re.S)
 #: компонент уже стоит в `reels.skip` по своей причине (`page_error:
 #: Cannot use import statement outside a module`) — паста этого не чинит,
 #: вставка исполняемого текста в поток документа не превращает его в модуль.
+#: Внешний `<script src="…">` (шрифт-CDN, GSAP-CDN) тоже пропускаем: внутри
+#: него извлекать нечего, а без исключения первый совпавший тег — он, а не
+#: настоящий скрипт позиции. Так устроен и `caption-highlight.html`: внешний
+#: GSAP подключён в `<head>` ДО корня, свой код — обычным `<script>` после.
 _PASTE_SCRIPT = re.compile(
-    r'<script(?![^>]*\btype="module")[^>]*>.*?</script>', re.S)
+    r'<script(?![^>]*\btype="module")(?![^>]*\bsrc=)[^>]*>.*?</script>', re.S)
 
 
-def paste_fragment(sdk, public, source, *, root_class: str | None = None
+def paste_fragment(sdk, public, source, *, selector: str | None = None
                    ) -> tuple[str, str, str]:
     """Кусок чужого файла: стиль, корень и скрипт как есть, ещё не пристроенные.
 
@@ -811,6 +821,11 @@ def paste_fragment(sdk, public, source, *, root_class: str | None = None
     (`hf_captions.py`, шапка модуля). Корень режем их же SDK, а не
     регэкспом: вложенные `<div>` регэксп с балансировкой тегов не берёт,
     `sdk.extract` — их настоящий парсер.
+
+    `selector` — готовый CSS-селектор корня для тех, кто не по конвенции
+    paste-позиций реестра (класс первым токеном): у `caption-highlight`
+    корень несёт `id="highlight"`, а не класс, и найти его можно только
+    явным `#highlight`. Не назван — ищем класс сами (`_PASTE_ROOT_CLASS`).
     """
     source = Path(source)
     html = source.read_text(encoding="utf-8")
@@ -822,17 +837,17 @@ def paste_fragment(sdk, public, source, *, root_class: str | None = None
     if fixed != html:
         source.write_text(fixed, encoding="utf-8")
         html = fixed
-    if root_class is None:
+    if selector is None:
         match = _PASTE_ROOT_CLASS.search(html)
         if not match:
             raise RuntimeError(
                 f"в {source} нет корневого div с class — разметка "
                 "paste-компонента не по контракту полки (docstring "
                 "`registry/components/*/*.html`)")
-        root_class = match.group(1)
-    found = sdk.extract(source, f".{root_class}")
+        selector = f".{match.group(1)}"
+    found = sdk.extract(source, selector)
     if not found:
-        raise RuntimeError(f"в {source} не нашёлся корень .{root_class}")
+        raise RuntimeError(f"в {source} не нашёлся корень {selector}")
     root = found[0]["outer"]
     style_match = _PASTE_STYLE.search(html)
     script_match = _PASTE_SCRIPT.search(html)
