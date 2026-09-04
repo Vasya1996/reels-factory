@@ -1321,9 +1321,13 @@ def каталог(run, monkeypatch):
     monkeypatch.setattr(hf_compose, "_skipped_blocks",
                         lambda: {"demo-skip": "их же проверка валит блок"})
     monkeypatch.setattr(hf_compose, "_texture_blocks", frozenset)
-    blocks = FIXTURE_CATALOG / "registry" / "blocks"
-    for name in cards:
-        shutil.copyfile(blocks / name / f"{name}.html",
+    registry = FIXTURE_CATALOG / "registry"
+    for name, card in cards.items():
+        # Каталог держит блоки и компоненты в разных подпапках
+        # (`blocks/<имя>`, `components/<имя>`); сборка же читает их одной
+        # плоской `compositions/<имя>.html` — так их туда кладёт `add`.
+        subdir = "components" if card["type"] == "component" else "blocks"
+        shutil.copyfile(registry / subdir / name / f"{name}.html",
                         run / "public" / "compositions" / f"{name}.html")
     return run
 
@@ -1426,6 +1430,7 @@ def test_упругая_позиция_получает_коробку_в_коп
     хоста. Их же линтер зовёт это `root_missing_dimensions` (severity error), и
     под `--strict` файл роняет сборку: он судит каждый файл сам по себе.
     Коробку считает код, поэтому её и объявляем — копии зону, стенсилю кадр.
+
     """
     _build(каталог, scenes=_с_элементами({"name": "count-up"}), resolved={})
     compositions = каталог / "public" / "compositions"

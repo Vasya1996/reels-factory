@@ -164,50 +164,77 @@ _OUR_BLOCK = re.compile(r"^g\d\d-")
 KINDS = ("scene", "overlay", "effect")
 
 
-def _offered(catalog_dir=None):
-    """Позиции, которые каталог действительно может поставить.
+def _offered_in(subdir, names, catalog_dir=None):
+    """Отсев одной подпапки реестра (`blocks` или `components`) по имени.
 
-    Один проход на всех читателей: и на индекс для агента, и на список плашек
-    старого поля `overlay`. Проходит и блоки (`blocks/<имя>`), и компоненты
-    (`components/<имя>`) — у каждого вида своя подпапка. Отсев здесь троякий и
-    весь про дефекты каталога, а не плана: наши полноэкранные блоки (прогон 20
-    получил в паспорта наш g21, поставил его, и сборку завернули D22 и их
-    `content_overlap`), позиции с записанной причиной отказа и позиции, чьи
-    файлы до каталога не доехали.
+    Правила общие — записанная причина отказа и недостающие файлы, — а
+    подпапка и список имён у каждого читателя свои: `_offered` берёт `blocks`,
+    `_offered_components` берёт `components`.
 
     Причина отказа записана в карточке: например у `lower-third-bild` текст
     приходит из переменных композиции, наши слоты его не видят, и в кадр уехал
     бы немецкий дефолт «BILD EXKLUSIV».
     """
     root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
-    kinds = (("blocks", block_names(catalog_dir)),
-             ("components", component_names(catalog_dir)))
-    for subdir, names in kinds:
-        for name in names:
-            if _OUR_BLOCK.match(name):
-                continue
-            folder = root / subdir / name
-            card = folder / "registry-item.json"
-            if not card.exists():
-                continue
-            item = json.loads(card.read_text(encoding="utf-8"))
-            skip = (item.get("reels") or {}).get("skip")
-            if skip:
-                print(f"позиция {name} не предложена: {skip}")
-                continue
-            # Карточка перечисляет свои файлы, и `hyperframes add` тянет
-            # каждый: недостающий он считает провалом установки (HTTP 404) и
-            # роняет всю попытку сборки. Прогон 28 потерял так попытку на
-            # `instagram-follow`, у которого не переехал `assets/avatar.jpg`.
-            # Агент такое исправить не может — это дефект каталога, а не
-            # плана, поэтому битая позиция ему просто не предлагается.
-            missing = [str(f.get("path")) for f in (item.get("files") or [])
-                       if not (folder / str(f.get("path"))).exists()]
-            if missing:
-                print(f"позиция {name} не предложена: в каталоге нет "
-                      + ", ".join(missing))
-                continue
-            yield name, item
+    for name in names:
+        folder = root / subdir / name
+        card = folder / "registry-item.json"
+        if not card.exists():
+            continue
+        item = json.loads(card.read_text(encoding="utf-8"))
+        skip = (item.get("reels") or {}).get("skip")
+        if skip:
+            print(f"позиция {name} не предложена: {skip}")
+            continue
+        # Карточка перечисляет свои файлы, и `hyperframes add` тянет каждый:
+        # недостающий он считает провалом установки (HTTP 404) и роняет всю
+        # попытку сборки. Прогон 28 потерял так попытку на `instagram-follow`,
+        # у которого не переехал `assets/avatar.jpg`. Агент такое исправить не
+        # может — это дефект каталога, а не плана, поэтому битая позиция ему
+        # просто не предлагается.
+        missing = [str(f.get("path")) for f in (item.get("files") or [])
+                   if not (folder / str(f.get("path"))).exists()]
+        if missing:
+            print(f"позиция {name} не предложена: в каталоге нет "
+                  + ", ".join(missing))
+            continue
+        yield name, item
+
+
+def _offered(catalog_dir=None):
+    """Блоки, которые каталог действительно может поставить.
+
+    Один проход на всех читателей блоков: индекс для агента и список плашек
+    старого поля `overlay`. Отсев здесь троякий и весь про дефекты каталога, а
+    не плана: наши полноэкранные блоки (прогон 20 получил в паспорта наш g21,
+    поставил его, и сборку завернули D22 и их `content_overlap`), позиции с
+    записанной причиной отказа и позиции, чьи файлы до каталога не доехали.
+    """
+    names = [name for name in block_names(catalog_dir)
+             if not _OUR_BLOCK.match(name)]
+    yield from _offered_in("blocks", names, catalog_dir)
+
+
+def _offered_components(catalog_dir=None):
+    """Компоненты, которые каталог действительно может поставить.
+
+    Тот же троякий отсев, что у `_offered`, но по компонентам — они лежат в
+    своей подпапке `components/<имя>`, не в `blocks/<имя>`.
+    """
+    yield from _offered_in("components", component_names(catalog_dir),
+                           catalog_dir)
+
+
+def _offered_all(catalog_dir=None):
+    """Всё, что каталог может предложить агенту — блоки и компоненты вместе.
+
+    Только для индекса (`catalog_cards`): агент выбирает позицию любого вида
+    по смыслу, не по тому, в какой подпапке она физически лежит. Остальные
+    читатели (`overlay_names`, `decor_texts`) держат старое поле плана
+    `overlay` — оно про блоки, компонент туда не встаёт.
+    """
+    yield from _offered(catalog_dir)
+    yield from _offered_components(catalog_dir)
 
 
 def overlay_names(catalog_dir=None) -> list[str]:
@@ -215,7 +242,9 @@ def overlay_names(catalog_dir=None) -> list[str]:
 
     Старое поле плана `overlay`: план прошлого прогона мог назвать блок так, и
     собираться он обязан по-прежнему. Новые позиции агент называет в
-    `elements`, и их вид берётся из `reels.kind` (`catalog_cards`).
+    `elements`, и их вид берётся из `reels.kind` (`catalog_cards`). Смотрим
+    только блоки: у части компонентов тег `overlay` тоже стоит (например,
+    `camcorder-hud`), но это не то же самое поле плана.
     """
     return [name for name, item in _offered(catalog_dir)
             if "overlay" in (item.get("tags") or [])]
@@ -234,9 +263,12 @@ def catalog_cards(catalog_dir=None) -> dict[str, dict]:
     кадр она едет тем же путём, что и по старому полю `overlay`. Выводить вид
     из тегов нельзя: тег `overlay` носят и полосы с текстом, и фактуры, и
     полнокадровые сцены, а решает это карточка, а не наша догадка.
+
+    Проходит блоки и компоненты вместе (`_offered_all`) — агент выбирает
+    позицию любого вида по смыслу, не по подпапке, где она физически лежит.
     """
     found = {}
-    for name, item in _offered(catalog_dir):
+    for name, item in _offered_all(catalog_dir):
         reels = item.get("reels") or {}
         kind = reels.get("kind")
         # Позиция без объявленного вида предлагается только там, где её
@@ -314,8 +346,13 @@ _INDEX_HEAD = """# Каталог этого прогона
 
 
 def catalog_index(catalog_dir=None) -> str:
-    """Индекс каталога для агента: чем искать и что можно назвать."""
-    cards = list(catalog_cards(catalog_dir).values())
+    """Индекс каталога для агента: чем искать и что можно назвать.
+
+    По имени, а не по порядку реестра: блоки и компоненты лежат в разных
+    подпапках (`catalog_cards`), и их естественный порядок — сперва все блоки,
+    потом все компоненты — агенту ничего не говорит.
+    """
+    cards = sorted(catalog_cards(catalog_dir).values(), key=lambda c: c["name"])
     return (_INDEX_HEAD + "```json\n"
             + json.dumps(cards, ensure_ascii=False, indent=1) + "\n```\n")
 
