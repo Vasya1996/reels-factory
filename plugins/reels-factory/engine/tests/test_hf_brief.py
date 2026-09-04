@@ -20,7 +20,9 @@ from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 from reels_factory.hf_schema import LIMITS, MINIMUM, min_seconds
 # Написание секунд одно на оба текста, и тесты обязаны искать ровно его:
 # «29,05 с» печатается как «29 с», и поиск по `f"{x:.1f}"` находил бы пустоту.
-from reels_factory.hf_montage_skill import number as _число, seconds as _секунды
+from reels_factory.hf_montage_skill import (
+    inserts_rule, number as _число, seconds as _секунды,
+)
 
 SCENARIO = {
     "total": 41.5,
@@ -473,7 +475,7 @@ def test_серия_из_двух_планов_объяснена(tmp_path):
     серий доживёт до кадра — считает код."""
     text = _skill(tmp_path)
     assert "серией из двух планов" in text
-    assert "Назови не меньше" in text
+    assert "Моментов, где картинка меняется, в плане не меньше" in text
     assert "`inserts_wanted`" in text
     assert "2,1 с лица" in text or "с лица" in text
 
@@ -1336,7 +1338,8 @@ def test_форма_запасной_схемы_выбирается_по_дли
     D25 (`_empty_frame_problems`).
     """
     text = _skill(tmp_path)
-    assert "Назови не меньше" in text, "совет про моменты под вставку пропал"
+    assert "Моментов, где картинка меняется" in text, (
+        "совет про моменты под вставку пропал")
     assert "снятая серия оставляет кадр на `fallback`" in text, (
         "не сказано, что при снятой серии кадр остаётся на запасной схеме")
     assert "выбирай по длине этой сцены" in text, (
@@ -3138,7 +3141,9 @@ def test_числа_задания_совпадают_с_числами_кода
 
     low = _ожидаемый_пол_сцен(duration, phrases)
     ждём_вставок = inserts_wanted(list(range(low)))
-    assert f"Назови не меньше {ждём_вставок} моментов" in skill, (
+    # Правило печатается словами самого гейта, из одного места
+    # (`hf_montage_skill.inserts_rule`): его же читает причина пересдачи.
+    assert inserts_rule(ждём_вставок) in skill, (
         f"{name}: inserts_wanted({low}) = {ждём_вставок} не назван")
 
     assert f"{_число(SERIES_MIN)}–{_секунды(SERIES_MAX)}" in skill, (

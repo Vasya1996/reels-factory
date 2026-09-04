@@ -195,8 +195,28 @@ def survives_series(scene: dict) -> bool:
     return SERIES_MIN - 0.001 <= size <= SERIES_MAX + 0.001
 
 
+def picture_change(scene: dict) -> bool:
+    """Меняет ли эта сцена картинку — то, что D34 считает «моментом».
+
+    Считается тем же, чем меряет кадр `frame_filler`: сменой картинки сцену
+    делает не поле `insert`, а то, что в кадре встанет вместо одной ведущей.
+    Вставка кредитуется, только если доживёт до кадра (`survives_series`);
+    позиция каталога кредитуется как есть — её ставит `hyperframes add` по
+    имени из плана, лотереи стока тут нет, а кадр она держит наравне со
+    вставкой и схемой (`filling_element`, тот же счёт у D20 и D25).
+
+    Без этого два гейта тянули план в разные стороны: D20 и D25 считали сцену
+    с позицией каталога закрытой, а D34 — потерянным моментом вставки, и на
+    трёх живых ранних шагах агент отказывался от позиции словами «по замечанию
+    пересдачи нужно больше сцен со вставкой».
+    """
+    if insert_of(scene) and survives_series(scene):
+        return True
+    return bool(filling_element(scene))
+
+
 def inserts_shortfall(scenes: list[dict]) -> str:
-    """Чего не хватает плану по вставкам. Пустая строка — хватает.
+    """Чего не хватает плану по сменам картинки. Пустая строка — хватает.
 
     Отдельно от `check_inserts`, потому что мест проверки два: до заказа
     аватара это причина пересдачи (агент ещё может поправить, и деньги целы),
@@ -204,19 +224,24 @@ def inserts_shortfall(scenes: list[dict]) -> str:
     """
     wanted = inserts_wanted(scenes)
     named = sum(1 for scene in scenes if insert_of(scene))
-    have = sum(1 for scene in scenes
+    kept = sum(1 for scene in scenes
                if insert_of(scene) and survives_series(scene))
+    have = sum(1 for scene in scenes if picture_change(scene))
     if have >= wanted:
         return ""
-    lost = ("" if named == have else
-            f" (названо {named}, но {named - have} из них отбор снимет по "
-            "длине)")
-    return (f"вставок в плане {have}, а нужно хотя бы {wanted}{lost}: часть из "
-            "них снимет отбор серий (две подряд он не ставит), и на оставшихся "
-            "ролик встаёт одним планом. Добавь моменты под вставку там, где "
-            "реплика описывает действие или предмет, и держи такую сцену "
-            f"длиной от {SERIES_MIN:g} до {SERIES_MAX:g} с — серия из двух "
-            "планов в другую длину не встаёт")
+    lost = ("" if named == kept else
+            f" (вставок названо {named}, но {named - kept} из них отбор снимет "
+            "по длине)")
+    # Правило печатают двое — эта причина пересдачи и задание агенту, — и
+    # написано оно одно, в `hf_montage_skill`: там же живут `seconds`/`number`,
+    # то есть единственная в проекте запись секунд для читателя-агента. Импорт
+    # местный: модуль правил задания сам импортирует этот.
+    from reels_factory.hf_montage_skill import inserts_rule
+
+    return (f"{inserts_rule(wanted)}. В плане их {have}{lost}, и на "
+            "оставшихся ролик встаёт одним планом. Добавь моменты там, где "
+            "реплика описывает действие или предмет: вставку с двумя "
+            "запросами либо позицию каталога под смысл сцены")
 
 
 def check_inserts(scenes: list[dict]) -> None:
