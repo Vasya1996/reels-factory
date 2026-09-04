@@ -19,11 +19,10 @@
   ],
   "reels": {
     "kind": "scene",
-    "skip": "их же проверка валит блок под --strict: CSS адресуется по собственному data-composition-id и течёт на соседние копии (тот же дефект, что у горизонтального macos-notification и всей семьи Social Overlays — x-post, reddit-post, spotify-card, tiktok-follow, instagram-follow, yt-lower-third; #root вместо этого ломает переименование `_stage_overlay` при повторном монтаже, см. hf_compose.py:585-594)",
     "text_slots": [
-      "HyperFrames",
-      "Prompt to replace this title",
-      "Prompt to change this body text, the app icon, and the app name to match your content."
+      "app-name",
+      "notification-title",
+      "notification-body"
     ],
     "decor_texts": ["now", "HF"]
   }
