@@ -31,7 +31,8 @@ from reels_factory.hf_catalog import (
 from reels_factory.hf_compose import effect_zone
 from reels_factory.hf_gates import min_scenes
 from reels_factory.hf_montage import (
-    SERIES_MAX, SERIES_MIN, face_gap, inserts_wanted, survives_series,
+    FRAME_HOLDERS, SERIES_MAX, SERIES_MIN, face_gap, frame_filler,
+    inserts_wanted, survives_series,
 )
 from reels_factory.hf_montage_skill import number, seconds, write_montage_skill
 from reels_factory.hf_phrases import MIN_SCENE, faceless_phrases
@@ -397,6 +398,55 @@ def _add_element(scenes: list[dict]) -> None:
         return
 
 
+def _add_frames(scenes: list[dict],
+                candidates: dict[int, list[dict]] | None) -> None:
+    """Дописать каждой сцене образца поле `frame` — решение про её кадр.
+
+    Ставится последним, когда у сцены уже есть всё остальное: `holder`
+    считает тот же `frame_filler`, которым отвечает код, а он смотрит на
+    вставку, схему, позицию и значок. Своего счёта у образца тут нет — иначе
+    он учил бы слову, которое гейт не примет.
+
+    Две сцены образца показывают оба исхода прохода по каталогу: одна берёт
+    позицию и говорит почему, другая называет рассмотренных кандидатов и
+    говорит, почему не взяла. Без второй агент не увидел бы, как выглядит
+    отказ, и поле оставалось бы пустым там, где позиция не подошла, — а
+    именно этот случай и был неотличим от «не смотрел» во всех шести живых
+    ранних шагах.
+
+    Имена кандидатов берутся настоящие — те же, что код нашёл под фразами
+    этой сцены. Выдуманное имя в образце учило бы плану, который не собрать.
+    """
+    for scene in scenes:
+        # Сцена образца всегда чем-то закрыта: у неё либо ведущая в кадре,
+        # либо вставка на всю сцену. Пустой ответ сюда не доходит.
+        holder = frame_filler(scene) or FRAME_HOLDERS[1]
+        taken = [str(item["name"]) for item in scene.get("elements") or []]
+        if taken:
+            reason = (f'взял `{taken[0]}`: сцена называет число, и позиция '
+                      "показывает его же")
+            scene["frame"] = {"holder": holder, "catalog_checked": taken,
+                              "catalog_reason": reason}
+            continue
+        first, last = (scene.get("phrases") or [0, 0])[:2]
+        seen, checked = set(), []
+        for pid in range(int(first), int(last) + 1):
+            for card in (candidates or {}).get(pid) or []:
+                if card["name"] not in seen:
+                    seen.add(card["name"])
+                    checked.append(card["name"])
+        checked = checked[:2]
+        if checked:
+            reason = ("рассмотрел " + ", ".join(f"`{name}`" for name in checked)
+                      + " — показывают не то, что названо в этой сцене; кадр "
+                      f"держит {holder}")
+        else:
+            reason = ("по словам фразы каталог ничего не предложил, кадр "
+                      f"держит {holder}")
+        scene["frame"] = {"holder": holder, "catalog_checked": checked,
+                          "catalog_reason": reason}
+
+
 def _series_fit(scene: dict, length: float) -> bool:
     """Доживёт ли вставка этой сцены образца до кадра.
 
@@ -415,7 +465,8 @@ def _series_fit(scene: dict, length: float) -> bool:
 
 def _sample_plan(phrases: list[dict], faceless: set[int], *,
                  duration: float, bar: float = 1.0,
-                 avatar_ordered: bool = True) -> str:
+                 avatar_ordered: bool = True,
+                 candidates: dict[int, list[dict]] | None = None) -> str:
     """Образец ответа, собранный из фраз этого же ролика.
 
     Раньше образец был написан руками и жил своей жизнью: пять сцен вместо
@@ -550,6 +601,7 @@ def _sample_plan(phrases: list[dict], faceless: set[int], *,
                            "kind": "video"}
     _add_backups(scenes)
     _add_element(scenes)
+    _add_frames(scenes, candidates)
     if len(scenes) > 1:
         scenes[-1]["beat"] = "climax"
     body = json.dumps(
@@ -1135,7 +1187,8 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     # образец учил бы расстановке, которую гейт заворачивает.
     bar = hard_target / duration if duration > 0 else 1.0
     sample_plan = _sample_plan(phrases, faceless, duration=duration, bar=bar,
-                               avatar_ordered=avatar_ordered)
+                               avatar_ordered=avatar_ordered,
+                               candidates=candidates)
     # Образец короче настоящего плана, а требование «сцен не меньше N» стоит
     # рядом. Без оговорки два соседних абзаца противоречат друг другу, и
     # образец — который сильнее правила — выигрывает: прогон отдавал ровно
@@ -1302,9 +1355,9 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
                     "кандидатов, которых код\n   нашёл под фразами этой сцены, "
                     "а если они не о том — поищи сам по её\n   `intent`; как "
                     "ищут, сказано в своде правил, раздел «Чем занять кадр:\n"
-                    "   позиция каталога». Нашлась — назови её в `elements`; "
-                    "не нашлась — сцену\n   закрывает то, что ты уже ей "
-                    "поставил.")
+                    "   позиция каталога». Взятую позицию назови в "
+                    "`elements`, а что ты решил\n   и почему — в `frame` "
+                    "сцены, у каждой.")
     if avatar_ordered:
         steps_block = f"""{skill_step}
 2. {scenes_step}
@@ -1351,17 +1404,15 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     # итоговая реплика агента перечисляла пункты сверки по порядку и каталог не
     # называла — даже там, где поисков было пять, а элементов ноль.
     #
-    # Мерка пункта — след, а не число: своего поля у отказа в плане нет, и
-    # заводить его незачем — `intent` агент и так пишет каждой сцене, а без
-    # сказанного отказа несделанный проход неотличим от сделанного. Гейт
-    # `D36_elements` этим пунктом не расширяется: он судит имя и вид названной
-    # позиции, а не то, названа ли она вообще.
+    # Мерка пункта — след, а не число: сколько позиций стоит в ролике, не
+    # меряет ни пункт, ни гейт. След у прохода теперь свой — поле `frame`, и
+    # именно его судит `D36_elements` до оплаты: без него сцена, которой
+    # каталог не подошёл, неотличима от сцены, по которой каталог не смотрели.
+    # Пункт называет ту же мерку, что и гейт, — как остальные пункты сверки.
     catalog_check = (
-        "У каждой сцены, чей `intent` попадает в таблицу признаков свода "
-        "правил\n   («Чем занять кадр: позиция каталога»), названа позиция в "
-        "`elements` — либо\n   сам `intent` говорит, почему её нет: искал и не "
-        "нашёл. Кроме `elements`\n   этот проход следа не оставляет, а "
-        "`elements` может и не быть.")
+        "У каждой сцены заполнен `frame`: чем держится кадр, какие позиции "
+        "каталога\n   ты рассмотрел и почему взял или не взял. Взятая позиция "
+        "названа ещё и в\n   `elements` (`D36_elements`).")
     if avatar_ordered:
         self_check = f"""Прежде чем записывать файлы, сверь план по списку.
 
@@ -1414,6 +1465,10 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
 Расхождение нашлось — почини план и только потом записывай файлы."""
     gaps_title = ("## Где ведущей нет" if avatar_ordered
                   else "## Бюджет ведущей")
+    # Список держателей кадра — из кода (`frame_filler`), а не из второго
+    # перечня в тексте: разойдись они, задание звало бы писать слово, которое
+    # гейт не принимает.
+    holders = ", ".join(f"`{word}`" for word in FRAME_HOLDERS)
 
     text = f"""---
 workflow: {WORKFLOW}
@@ -1512,6 +1567,14 @@ colors:
 последняя кончается фразой `{last_phrase}`.
 
 `intent` — одна строка о том, чем сцена держит зрителя.
+
+`frame` — что ты решил про кадр этой сцены. Три поля:
+`holder` — чем кадр держится, одним словом из списка: {holders};
+`catalog_checked` — имена позиций каталога, которые ты рассмотрел для этой
+сцены, списком; не подошёл ни один кандидат — список пустой;
+`catalog_reason` — одна фраза о том, почему позиция взята или почему не взята.
+Поле стоит у каждой сцены: по нему видно, что проход по каталогу был, и без
+него план возвращается на пересдачу (`D36_elements`).
 
 `brollContext` заполняется по-английски: `domain` — про что ролик одной фразой
 (это и запасной запрос, когда точный ничего не нашёл), `anti` — чего в кадрах

@@ -599,7 +599,8 @@ slow path, and it fails whenever the author's wording differs from yours»
    отвечают твоей фразе; `name` пиши дословно из найденной строки.
 4. Ни кандидаты, ни теги, ни слова `intent` ничего не дали — сцену закрывает
    вставка, схема или значок; своего имени не выдумывай, код его не поставит
-   (`D36_elements`).
+   (`D36_elements`). Кого рассмотрел и почему не взял, скажи в `frame` сцены:
+   иначе отказ не отличить от пропущенного прохода.
 
 | Что названо в сцене | Теги, по которым искать в индексе |
 | --- | --- |
@@ -657,7 +658,9 @@ slow path, and it fails whenever the author's wording differs from yours»
 уголком, и свободную зону под счётчик код найдёт сам.
 `{{"id": "s-04", "beat": "point", "presenter": "pip-br",
    "elements": [{{"name": "count-up",
-                "variables": {{"end": 12, "suffix": " раз в год"}}}}]}}`
+                "variables": {{"end": 12, "suffix": " раз в год"}}}}],
+   "frame": {{"holder": "ведущая", "catalog_checked": ["count-up"],
+             "catalog_reason": "взял: названо число"}}}}`
 </example>
 
 <example>
@@ -671,7 +674,9 @@ slow path, and it fails whenever the author's wording differs from yours»
 `{{"id": "s-06", "beat": "point", "presenter": "none", "avatarNeeded": false,
    "elements": [{{"name": "v-code-diff",
                 "words": ["service.py", "Платный сервис",
-                          "import paid_service", "import claude_code"]}}]}}`
+                          "import paid_service", "import claude_code"]}}],
+   "frame": {{"holder": "элемент", "catalog_checked": ["v-code-diff"],
+             "catalog_reason": "взял: названы старый и новый код"}}}}`
 </example>
 
 ## Запас: чем закрыть кадр, если вставки не будет

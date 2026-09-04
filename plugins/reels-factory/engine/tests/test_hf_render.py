@@ -158,7 +158,26 @@ for _i, _w in enumerate(" ".join(_SENTENCES).split()):
                   "text": _w})
 
 
+def _с_кадром(scenes):
+    """Дописать сценам фикстуры решение про кадр — поле `frame`.
+
+    `D36_elements` требует его у каждой сцены плана, а планы здешних фикстур
+    написаны про другое: про бюджет, заказ, пересдачи. Держателя считаем тем же
+    `frame_filler`, каким отвечает код, чтобы фикстура не расходилась с ним на
+    словах. Тест, который проверяет сам отказ по пустому полю, поле у своей
+    сцены снимает.
+    """
+    from reels_factory.hf_montage import frame_filler
+
+    for scene in scenes:
+        scene.setdefault("frame", {"holder": frame_filler(scene) or "ведущая",
+                                   "catalog_checked": [],
+                                   "catalog_reason": "каталог не о том"})
+    return scenes
+
+
 def _board(scenes, duration=20.0):
+    _с_кадром(scenes)
     return {"schemaVersion": 3,
             "composition": {"fps": 30, "width": 1080, "height": 1920,
                             "durationSeconds": duration, "layout": "portrait"},
@@ -1368,11 +1387,12 @@ FAST_TOTAL = FAST_TIMED["total"]
 # длиннее. Ведущая держит открытие, весь хук, середину и финал.
 _FAST = [([0, 1], True), ([2, 3], True), ([4, 5], False), ([6, 7], False),
          ([8, 9], True), ([10, 11], False), ([12, 13], False), ([14, 15], True)]
-FAST_BOARD = [{"id": f"s-{index:02d}", "intent": "зачем", "phrases": span,
-               "presenter": "full" if needed else "none",
-               "avatarNeeded": needed,
-               "insert": None if needed else _series("разложить бумаги")}
-              for index, (span, needed) in enumerate(_FAST)]
+FAST_BOARD = _с_кадром(
+    [{"id": f"s-{index:02d}", "intent": "зачем", "phrases": span,
+      "presenter": "full" if needed else "none",
+      "avatarNeeded": needed,
+      "insert": None if needed else _series("разложить бумаги")}
+     for index, (span, needed) in enumerate(_FAST)])
 
 
 def test_быстрая_речь_проходит_гейты_валидатор_и_заказ():
@@ -2727,3 +2747,61 @@ def test_обычный_ролик_второй_раз_не_кодируется
     _, команды = _громкость_без_ffmpeg(monkeypatch, tmp_path, ПОТОЛОК_В_ТЕСТЕ)
 
     assert len(команды) == 1
+
+
+def test_сцена_без_решения_про_кадр_не_доходит_до_заказа(tmp_path, monkeypatch):
+    """Проход по каталогу был единственным проходом плана без следа: когда
+    позиция не взята, отличить «искал и не подошло» от «не искал» было нечем.
+    Девять живых ранних шагов подряд кончились этим — ноль-два элемента на
+    два-три десятка сцен, и ни одной названной причины (b4d, density, usewhen).
+
+    След — поле `frame`, и требует его тот же гейт до оплаты, что судит имена
+    позиций. Это покрытие, а не порог: сколько позиций стоит в ролике, гейт не
+    меряет.
+    """
+    from reels_factory import hf_render
+
+    молчит = json.loads(json.dumps(FIT))
+    молчит["scenes"][4].pop("frame")
+    calls = _plan_fakes(monkeypatch, tmp_path, [молчит, FIT])
+
+    res = hf_render.plan_before_avatar(tmp_path, EARLY_TIMED,
+                                       alignment_words=EARLY_WORDS)
+
+    планы = [text for name, text in calls if name == "plan"]
+    assert len(планы) == 2, "сцена без решения про кадр пересдачи не вызвала"
+    причина = _причина(планы[1])
+    assert "D36_elements" in причина
+    assert молчит["scenes"][4]["id"] in причина
+    assert "`frame`" in причина, "причина не называет поля"
+    assert _fails(res.get("gates")) == []
+
+
+def test_решение_про_кадр_судят_по_закрытому_списку_кода():
+    """Слово `holder` берётся из того же списка, каким отвечает `frame_filler`:
+    свой второй список разошёлся бы с ним, и задание звало бы писать слово,
+    которого гейт не примет. Причина отказа этот список и печатает.
+    """
+    from reels_factory import hf_render
+    from reels_factory.avatar_islands import avatar_islands_settings
+    from reels_factory.hf_montage import FRAME_HOLDERS
+    from reels_factory.hf_phrases import lay_out_scenes, phrase_timeline
+
+    board = json.loads(json.dumps(FIT))
+    board["scenes"][2]["frame"]["holder"] = "биролл"
+    board["scenes"][3]["frame"]["catalog_reason"] = "  "
+    board["scenes"][5]["frame"]["catalog_checked"] = "count-up"
+    phrases = phrase_timeline(EARLY_TIMED, EARLY_WORDS)
+    scenes = lay_out_scenes(board["scenes"], phrases, duration=EARLY_TOTAL)
+    вердикт = hf_render._early_plan_gates(
+        scenes, EARLY_TOTAL, phrases,
+        avatar_islands_settings({}))["D36_elements"]
+
+    assert вердикт.startswith("FAIL"), вердикт
+    assert "`holder`" in вердикт and "биролл" in вердикт
+    for слово in FRAME_HOLDERS:
+        assert f"`{слово}`" in вердикт, f"в причине не назван {слово}"
+    assert "`catalog_reason`" in вердикт and board["scenes"][3]["id"] in вердикт
+    assert ("`catalog_checked`" in вердикт
+            and board["scenes"][5]["id"] in вердикт), (
+        "строка вместо списка рассмотренных позиций прошла")

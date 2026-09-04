@@ -358,6 +358,14 @@ def filling_element(scene: dict) -> str:
     return ""
 
 
+#: Чем вообще может быть закрыт кадр — теми же словами, какими отвечает
+#: `frame_filler`, и в том же порядке. Список отсюда берут все, кому нужен сам
+#: перечень, а не ответ по сцене: поле `frame.holder` плана, его сверка
+#: (`frame_choice_problems` в hf_gates) и задание, которое печатает агенту
+#: допустимые значения. Второй список тех же слов разошёлся бы с этим.
+FRAME_HOLDERS = ("ведущая", "вставка", "схема", "элемент", "значок", "плашка")
+
+
 def frame_filler(scene: dict) -> str:
     """Чем закрыт кадр этой сцены — одним словом. Пустая строка значит, что
     зритель увидит фон с титром и прочтёт это обрывом рассказа.
@@ -367,17 +375,17 @@ def frame_filler(scene: dict) -> str:
     значит чинить одно, а проверять другое.
     """
     if str(scene.get("presenter") or "none") != "none":
-        return "ведущая"
+        return FRAME_HOLDERS[0]
     if insert_of(scene):
-        return "вставка"
+        return FRAME_HOLDERS[1]
     if schema_scene(scene):
-        return "схема"
+        return FRAME_HOLDERS[2]
     if filling_element(scene):
-        return "элемент"
+        return FRAME_HOLDERS[3]
     if scene.get("icon"):
-        return "значок"
+        return FRAME_HOLDERS[4]
     if scene.get("overlay"):
-        return "плашка"
+        return FRAME_HOLDERS[5]
     return ""
 
 
