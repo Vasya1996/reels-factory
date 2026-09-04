@@ -39,8 +39,8 @@ from reels_factory.hf_compose import (
 from reels_factory.hf_fonts import inject_fonts
 from reels_factory.hf_frame import read_frame
 from reels_factory.hf_gates import (
-    check_media, check_placeholders, check_storyboard, elements_problems,
-    frame_filled_problems,
+    check_media, check_placeholders, check_storyboard, elements_delivered,
+    elements_problems, frame_filled_problems,
 )
 from reels_factory.hf_layout import FULL_FRAME_PRESENTER, quantize
 from reels_factory.hf_media import resolve_all
@@ -1754,6 +1754,15 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             board = json.loads(
                 (rdir / "storyboard.json").read_text(encoding="utf-8"))
             result = check_storyboard(board, clips=saved_clips, duration=duration)
+            # …а «что просил агент» знает только его собственный ответ:
+            # раскадровку сборка переписывает под собранный кадр и снятую
+            # позицию каталога из неё вычищает. Поэтому `D36_elements` после
+            # сборки сравнивает план с кадром, а не судит раскадровку саму по
+            # себе — иначе потеря позиции проходит зелёной (пересборка
+            # `artyom-rebuild-4b`, `count-up`).
+            result.update(elements_delivered(
+                json.loads((rdir / "plan.json").read_text(encoding="utf-8")),
+                board))
             result.update(check_media(rdir))
             result.update(check_placeholders(rdir))
             # Композиция, которая не открывается, — это тоже провал сборки, а не
