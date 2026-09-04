@@ -53,16 +53,17 @@ SERVICE_MARK = re.compile(r"·")
 class Slot:
     """Одно место в блоке, которое заполняет агент."""
 
-    __slots__ = ("name", "kind", "placeholder", "index", "role", "rect")
+    __slots__ = ("name", "kind", "placeholder", "index", "role", "rect", "decor")
 
     def __init__(self, name: str, kind: str, placeholder: str, index: int,
-                 role: str | None = None, rect=None):
+                 role: str | None = None, rect=None, decor: bool = False):
         self.name = name
         self.kind = kind          # "text" | "words" | "image" | "video"
         self.placeholder = placeholder
         self.index = index        # позиция элемента в разборе блока
         self.role = role
         self.rect = rect
+        self.decor = decor        # текст нарисован картой, а не плейсхолдер
 
     def __repr__(self) -> str:  # pragma: no cover — для отладки
         return f"Slot({self.name!r}, {self.kind!r}, {self.placeholder!r})"
@@ -79,10 +80,14 @@ class Slot:
 
         Цифры и значки (`01`, `✓`, `↓`) — оформление сцены, а не текст: их
         удаление ломало бы раскладку, а на экране они служебной надписью не
-        читаются.
+        читаются. Та же логика распространяется на текст из карточки
+        (`decor=True`): таймстемп «now» или SVG-глиф «HF» у
+        `v-macos-notification` тоже оформление, просто из букв, а не цифр —
+        карточка (`reels.decor_texts`) знает об этом за нас (отчёт руки B2.5:
+        настоящий SDK-мост удалял их как незаполненную заглушку).
         """
-        return self.kind in ("text", "words") and bool(
-            _LETTER.search(self.placeholder))
+        return (self.kind in ("text", "words") and not self.decor
+                and bool(_LETTER.search(self.placeholder)))
 
 
 def _slot_class(node: Node) -> str | None:
@@ -149,8 +154,17 @@ def _descendants(nodes: list[Node], index: int) -> set[int]:
     return found
 
 
-def find_slots(nodes: list[Node]) -> list[Slot]:
-    """Перечислить слоты блока в порядке появления."""
+def find_slots(nodes: list[Node],
+               decor: set[str] | frozenset[str] | None = None) -> list[Slot]:
+    """Перечислить слоты блока в порядке появления.
+
+    `decor` — видимые тексты карточки (`reels.decor_texts`, `hf_catalog.py`):
+    надписи, нарисованные в блоке, а не оставленные агенту заполнить. Слот, чей
+    текст совпал с одной из них, помечается `Slot.decor` и перестаёт быть
+    обязательным — без этого он неотличим от незаполненной заглушки и уезжает
+    из кадра.
+    """
+    decor = decor or frozenset()
     scene = _scene_indices(nodes)
     # Съеденные поддеревья: нутро слота под файл и токены слова. Ни то, ни
     # другое отдельным слотом не считается — файл кладётся целиком, строка
@@ -195,7 +209,8 @@ def find_slots(nodes: list[Node]) -> list[Slot]:
         base = _slot_class(node) or node.tag
         used[base] = used.get(base, 0) + 1
         slots.append(Slot(name=f"{base}-{used[base]}", kind=kind,
-                          placeholder=text, index=index))
+                          placeholder=text, index=index,
+                          decor=text in decor))
 
     # Имя без номера читается лучше; номер оставляем только там, где слотов с
     # этим классом действительно несколько.
@@ -217,9 +232,10 @@ def min_card_seconds(native: float) -> float:
 
 
 def passport(nodes: list[Node], *, name: str, title: str = "",
-             description: str = "", duration: float | None = None) -> str:
+             description: str = "", duration: float | None = None,
+             decor: set[str] | frozenset[str] | None = None) -> str:
     """Паспорт блока для задания: что за сцена и какие в ней слоты."""
-    slots = find_slots(nodes)
+    slots = find_slots(nodes, decor)
     head = f"### `{name}`"
     if duration:
         head += (f" — сцена собирается {duration:g} с, "
@@ -462,15 +478,19 @@ def _drop(nodes: list[Node], index: int) -> list[dict]:
 
 
 def fill_ops(nodes: list[Node], *, text: dict[str, str] | None = None,
-             media: dict[str, dict] | None = None) -> list[dict]:
+             media: dict[str, dict] | None = None,
+             decor: set[str] | frozenset[str] | None = None) -> list[dict]:
     """Правки, подставляющие содержимое в слоты блока.
 
     `text` — имя слота → строка. `media` — имя слота → `{"file": …}` и, для
-    видео, `{"start": …, "duration": …}`.
+    видео, `{"start": …, "duration": …}`. `decor` — видимые тексты карточки
+    (`reels.decor_texts`, читает их `hf_catalog.decor_texts`, тот же источник,
+    что и гейт заглушек D22): слот с таким текстом никто не заполняет, и
+    удалять его как незаполненную заглушку нельзя.
     """
     text = {k: (v or "").strip() for k, v in (text or {}).items()}
     media = media or {}
-    slots = find_slots(nodes)
+    slots = find_slots(nodes, decor)
     known = {slot.name for slot in slots if not slot.service}
     unknown = (set(text) | set(media)) - known
     if unknown:

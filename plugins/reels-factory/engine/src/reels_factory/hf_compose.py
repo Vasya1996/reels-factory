@@ -636,6 +636,13 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     (hyperframes-registry/SKILL.md:78). GSAP переводится на локальный:
     внешние ссылки в композиции запрещены её же контрактом.
 
+    Декоративный текст блока (`reels.decor_texts` карточки — таймстемп «now»
+    или SVG-глиф «HF» у `v-macos-notification`) читаем тем же `hf_catalog.
+    decor_texts`, что и гейт заглушек D22, и отдаём в `fill_ops`: без этого
+    подстановщик слотов не отличает нарисованную надпись от незаполненной
+    заглушки и удаляет её из кадра (отчёт руки B2.5, прогон через настоящий
+    SDK-мост).
+
     Исходник ищем по `card_type` (`_installed_path`) — он может лежать в
     подпапке `components/`, — а копию всегда кладём в плоскую `compositions/`:
     их загрузчик читает её буквально по
@@ -643,6 +650,7 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     (`compositionLoader.ts`), и рядом с исходником-компонентом эта ссылка не
     разрешилась бы.
     """
+    from reels_factory.hf_catalog import decor_texts
     from reels_factory.hf_slots import fill_ops, prune_timeline
 
     source = _installed_path(public, block, card_type)
@@ -654,7 +662,8 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     target = Path(public) / "compositions" / f"{unique}.html"
     if text and sdk is not None:
         sdk.open(unique, source)
-        sdk.dispatch(unique, fill_ops(sdk.elements(unique), text=text))
+        sdk.dispatch(unique, fill_ops(sdk.elements(unique), text=text,
+                                      decor=decor_texts().get(block)))
         sdk.save(unique, target)
         sdk.close(unique)
         html = target.read_text(encoding="utf-8")
