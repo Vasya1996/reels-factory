@@ -1353,6 +1353,43 @@ def test_путь_установленной_позиции_идёт_по_её_�
             == tmp_path / "compositions" / "components" / "count-up.html")
 
 
+def test_ассет_позиции_получает_префикс_её_настоящей_папки(tmp_path):
+    """На пине 0.7.84 их `rewriteAssetPath` простой относительный путь (без
+    `../`) не трогает — после монтажа `data-composition-src` браузер ищет
+    его от корня проекта буквально. А их же `add` кладёт ассет позиции
+    рядом с ЕЁ ЖЕ файлом (`remapTarget`, `add.ts`: префикс получает только
+    таргет, начинающийся с `compositions/`) — то есть на уровень глубже
+    корня. Совмещает один факт с другим код: префикс — папка, где файл
+    позиции физически лежит.
+
+    Живой пример дефекта — `ai-chat-reveal` (`assets/hyperframes-logo-
+    white.svg`): без этой правки `check --strict` даёт `missing_local_asset`
+    даже когда файл на диске есть, просто на уровень глубже, чем ищет
+    браузер после монтажа."""
+    from reels_factory.hf_compose import _rewrite_sibling_assets
+
+    public = tmp_path / "public"
+    install_dir = public / "compositions"
+    (install_dir / "assets").mkdir(parents=True)
+    (install_dir / "assets" / "logo.svg").write_bytes(b"<svg></svg>")
+
+    html = ('<img src="assets/logo.svg" alt="">'
+           '<style>@font-face{src:url(assets/font.woff2)}</style>'
+           '<img src="/root-already.svg">'
+           '<img src="https://cdn.example.com/x.svg">'
+           '<img src="assets/missing.svg">')
+    rewritten = _rewrite_sibling_assets(
+        html, install_dir=install_dir, project_root=public)
+
+    assert 'src="compositions/assets/logo.svg"' in rewritten
+    # Ссылка на несуществующий рядом файл остаётся как есть — не выдумываем
+    # путь для файла, которого физически нет.
+    assert 'src="assets/missing.svg"' in rewritten
+    # Уже корневая и уже внешняя ссылки не тронуты.
+    assert 'src="/root-already.svg"' in rewritten
+    assert 'src="https://cdn.example.com/x.svg"' in rewritten
+
+
 def _с_элементами(*elements, presenter="pip-tr"):
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["presenter"] = presenter

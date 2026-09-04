@@ -601,6 +601,58 @@ _CDN_FONTS = re.compile(
 _FONT_FAMILY = re.compile(r"font-family:\s*[^;}]+")
 _OUR_STACK = "font-family: 'Manrope', sans-serif"
 
+#: Простой относительный src/href — без ведущего "/" (корень проекта), без
+#: "data:" (инлайн) и без "../" (тот их линтер/рантайм переписывает сам,
+#: `rewriteAssetPath`, `packages/parsers/src/rewriteSubCompPaths.ts` в
+#: исходнике клона — на нашем пине 0.7.84 у неё нет третьего параметра
+#: `assetExists`, и такой путь остаётся как есть, то есть резолвится от
+#: корня проекта буквально после монтажа `data-composition-src`).
+_REL_SRC = re.compile(r"""((?:src|href)=)(["'])(?!https?:|/|data:)([^"']+)\2""")
+_REL_URL = re.compile(r"""url\(\s*(["']?)(?!https?:|/|data:)([^)"']+)\1\s*\)""")
+
+
+def _rewrite_sibling_assets(html: str, *, install_dir: Path, project_root: Path
+                            ) -> str:
+    """Простой относительный src/href/url(...) — префиксом до настоящей папки.
+
+    Их `add` кладёт ассет позиции рядом с ЕЁ ЖЕ файлом (`remapTarget`,
+    `add.ts`: префикс `paths.blocks`/`paths.components` получает только
+    таргет, начинающийся с `compositions/` — голое `assets/…` остаётся как
+    есть и приземляется МИМО `public/`, проверено живым `add`). А ссылка
+    внутри файла позиции — простой относительный путь вида `src="assets/
+    x.svg"`, который на нашем пине браузер после монтажа ищет от корня
+    проекта. Совместить одно с другим может только код: префикс — папка, где
+    ассет реально лежит (`compositions/` для блока, `compositions/
+    components/` для компонента), а не то, что написано в файле позиции.
+
+    Правим только ссылки, для которых рядом с файлом позиции на диске
+    реально есть файл — редкая намеренно-корневая ссылка (если такая
+    когда-нибудь встретится) молча не пострадает.
+    """
+    rel_dir = install_dir.relative_to(project_root).as_posix()
+
+    def _prefixed(value: str) -> str | None:
+        clean = value.split("?", 1)[0].split("#", 1)[0]
+        if not clean or not (install_dir / clean).exists():
+            return None
+        return f"{rel_dir}/{value}"
+
+    def sub_src(match: re.Match) -> str:
+        prefixed = _prefixed(match.group(3))
+        if prefixed is None:
+            return match.group(0)
+        return f"{match.group(1)}{match.group(2)}{prefixed}{match.group(2)}"
+
+    def sub_url(match: re.Match) -> str:
+        prefixed = _prefixed(match.group(2))
+        if prefixed is None:
+            return match.group(0)
+        return f"url({match.group(1)}{prefixed}{match.group(1)})"
+
+    html = _REL_SRC.sub(sub_src, html)
+    return _REL_URL.sub(sub_url, html)
+
+
 _CANVAS = re.compile(
     r'data-composition-id="[^"]+"[^>]*data-width="(\d+)"[^>]*'
     r'data-height="(\d+)"', re.S)
@@ -658,6 +710,17 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
         raise RuntimeError(
             f"накладка {block} не установлена: нет {source}. Ставит её код "
             "командой `hyperframes add` перед сборкой")
+    # Исходник на диске правим сразу и один раз: их `check` судит ЛЮБОЙ html
+    # под `compositions/`, включая неиспользуемый исходник (не только копию),
+    # и без этой правки находка `missing_local_asset` оставалась даже после
+    # того, как копия уже несла верный путь. Идемпотентно — второй заход по
+    # уже поправленному тексту ничего не меняет (`install_dir / "compositions/
+    # assets/…"` не существует, раз ассет реально лежит в `assets/`).
+    stencil_html = source.read_text(encoding="utf-8")
+    fixed_stencil = _rewrite_sibling_assets(
+        stencil_html, install_dir=source.parent, project_root=Path(public))
+    if fixed_stencil != stencil_html:
+        source.write_text(fixed_stencil, encoding="utf-8")
     unique = f"{block}--{scene_id}"
     target = Path(public) / "compositions" / f"{unique}.html"
     if text and sdk is not None:
@@ -695,6 +758,8 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     html = _CDN_GSAP.sub('src="gsap-vendor.min.js"', html)
     html = _CDN_FONTS.sub("", html)
     html = _FONT_FAMILY.sub(_OUR_STACK, html)
+    html = _rewrite_sibling_assets(html, install_dir=source.parent,
+                                   project_root=Path(public))
     if text:
         html = prune_timeline(html)
     # Блок схемы приезжает нарисованным под ландшафт и с их содержимым: канвас,
@@ -733,7 +798,7 @@ _PASTE_SCRIPT = re.compile(
     r'<script(?![^>]*\btype="module")[^>]*>.*?</script>', re.S)
 
 
-def paste_fragment(sdk, source, *, root_class: str | None = None
+def paste_fragment(sdk, public, source, *, root_class: str | None = None
                    ) -> tuple[str, str, str]:
     """Кусок чужого файла: стиль, корень и скрипт как есть, ещё не пристроенные.
 
@@ -749,6 +814,14 @@ def paste_fragment(sdk, source, *, root_class: str | None = None
     """
     source = Path(source)
     html = source.read_text(encoding="utf-8")
+    # Тот же одноразовый идемпотентный ремонт исходника, каким `_stage_overlay`
+    # чинит стенсиль composition-контракта: их `check` судит любой html под
+    # `compositions/`, включая сам исходник, не только вставленный кусок.
+    fixed = _rewrite_sibling_assets(
+        html, install_dir=source.parent, project_root=Path(public))
+    if fixed != html:
+        source.write_text(fixed, encoding="utf-8")
+        html = fixed
     if root_class is None:
         match = _PASTE_ROOT_CLASS.search(html)
         if not match:
@@ -802,7 +875,7 @@ def paste_effect(sdk, public, name: str, *, unique: str,
     граница объёма, не забытая деталь.
     """
     source = _installed_path(public, name, "component")
-    style, root, script = paste_fragment(sdk, source)
+    style, root, script = paste_fragment(sdk, public, source)
     class_match = _PASTE_ROOT_CLASS.search(root)
     if not class_match:
         raise RuntimeError(f"корень {name} потерял class при извлечении")
@@ -816,6 +889,10 @@ def paste_effect(sdk, public, name: str, *, unique: str,
     style = _CDN_FONTS.sub("", style)
     style = _FONT_FAMILY.sub(_OUR_STACK, style)
     script = _CDN_GSAP.sub('src="gsap-vendor.min.js"', script)
+    rewrite_kw = {"install_dir": source.parent, "project_root": Path(public)}
+    style = _rewrite_sibling_assets(style, **rewrite_kw)
+    root = _rewrite_sibling_assets(root, **rewrite_kw)
+    script = _rewrite_sibling_assets(script, **rewrite_kw)
 
     shim = (" <script>window.__hyperframes = window.__hyperframes || {};"
            " window.__hyperframes.getVariables = function () { return "
