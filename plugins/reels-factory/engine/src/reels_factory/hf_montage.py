@@ -388,11 +388,27 @@ def positions_for(scene: dict) -> tuple[str, ...]:
     ведущая живёт уголком поверх или половиной над ней (`stack`). Со схемой
     остаются нижние уголки: схема стоит в верхней трети, и там они не спорят.
     Без того и другого кадр закрывает сама ведущая.
+
+    С элементом каталога кадр закрыт им — тем же счётом, каким его считают
+    закрытым D20 и D25 (`filling_element`). Уголки остаются, полный кадр
+    уходит: зона под элемент вида `effect` считается ОТ окна ведущей
+    (`hf_layout.effect_rect`), и `full` не оставляет её вовсе. Прогон
+    `artyom-rebuild-4b` лёг ровно здесь: отбор серий снял со сцены `pip-br`
+    вставку, кадр посчитали пустым, ведущую подняли во весь кадр — и сборка
+    сняла `count-up`, для которого зоны уже не было. Первым идёт то
+    положение, которое назвал агент: элемент он выбрал под содержание сцены,
+    и переставлять ведущую без нужды значит переписывать его решение.
     """
     if insert_of(scene):
         return ("pip-tr", "pip-tl", "stack", "pip-br", "pip-bl")
     if schema_scene(scene):
         return ("pip-br", "pip-bl")
+    if filling_element(scene):
+        corners = ("pip-br", "pip-bl", "pip-tr", "pip-tl")
+        own = str(scene.get("presenter") or "none")
+        if own not in corners:
+            return corners
+        return (own,) + tuple(name for name in corners if name != own)
     return ("full", "punch")
 
 
@@ -538,10 +554,13 @@ def refill_scene(scenes: list[dict], index: int, gaps) -> None:
 
     1. Ведущей на этом куске нет физически — кадр остаётся за запасной схемой,
        если она есть. Нет — сцену разбирает `settle_empty_frames`.
-    2. Запасная схема из `fallback` закрывает кадр, а ведущая остаётся в
+    2. Кадр держит элемент каталога — код в такую сцену не досыпает ничего:
+       ни запасной схемы (она встала бы прямо на элемент — см. `has_fallback`
+       ниже), ни полнокадровой ведущей (`positions_for` оставляет уголки).
+    3. Запасная схема из `fallback` закрывает кадр, а ведущая остаётся в
        нижнем уголке: схема стоит в верхней трети, они не спорят. Так у ролика
        сохраняется третье окно ведущей, которого требует приёмка (D14).
-    3. Ведущая закрывает кадр сама — `full` или `punch`, и не такая, как у
+    4. Ведущая закрывает кадр сама — `full` или `punch`, и не такая, как у
        соседа с той же картинкой: две сцены подряд одним планом детектор не
        разделит (D21).
 
@@ -558,7 +577,14 @@ def refill_scene(scenes: list[dict], index: int, gaps) -> None:
     position = str(scene.get("presenter") or "full")
     faceless = in_avatar_gap(float(scene.get("startSec", 0)),
                              float(scene.get("endSec", 0)), gaps)
-    has_fallback = usable_schema(scene.get("fallback"))
+    # Запасная схема — ответ на пустой кадр, а с элементом каталога кадр не
+    # пуст: тем же счётом его считают закрытым D20 и D25 (`filling_element`).
+    # Досыпать схему туда значит поставить два рисунка друг на друга — зона
+    # элемента вида `effect` при уголке это весь кадр выше полосы титра
+    # (`effect_zone("pip-br")` даёт 0–980), и ровно там же кончается схема
+    # (`hf_schema.SAFE_BOTTOM` = 980).
+    has_fallback = usable_schema(scene.get("fallback")) \
+        and not filling_element(scene)
 
     if faceless:
         scene["presenter"] = "none"
