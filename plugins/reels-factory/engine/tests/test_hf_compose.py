@@ -1390,6 +1390,48 @@ def test_ассет_позиции_получает_префикс_её_наст
     assert 'src="https://cdn.example.com/x.svg"' in rewritten
 
 
+def test_путь_с_обходом_наверх_не_переписывается_даже_если_файл_есть(tmp_path):
+    """"../" их же рантайм резолвит сам (`rewriteAssetPath`) — переписать его
+    ещё и нашим префиксом значит подписать путь дважды. Раньше от этого
+    спасала не проверка, а случайность: `.exists()` почти никогда не находит
+    файл по выдуманному «../»-пути. Тест кладёт файл ИМЕННО туда, куда
+    «../» указывает, — чтобы отличить правило от случайности."""
+    from reels_factory.hf_compose import _rewrite_sibling_assets
+
+    public = tmp_path / "public"
+    install_dir = public / "compositions" / "components"
+    install_dir.mkdir(parents=True)
+    (public / "compositions" / "assets").mkdir(parents=True)
+    (public / "compositions" / "assets" / "shared.svg").write_bytes(
+        b"<svg></svg>")
+
+    # Файл по "../assets/shared.svg" от install_dir реально существует —
+    # старая проверка `.exists()` его бы нашла и переписала.
+    html = '<img src="../assets/shared.svg" alt="">'
+    rewritten = _rewrite_sibling_assets(
+        html, install_dir=install_dir, project_root=public)
+
+    assert rewritten == html
+
+
+def test_xlink_href_получает_тот_же_префикс(tmp_path):
+    """SVG `<use>` ссылается на соседний файл через `xlink:href`, а не через
+    голый `href` — тот же приём префикса обязан сработать и здесь, иначе
+    `<use>` после монтажа ищет ассет от корня проекта и не находит."""
+    from reels_factory.hf_compose import _rewrite_sibling_assets
+
+    public = tmp_path / "public"
+    install_dir = public / "compositions"
+    (install_dir / "assets").mkdir(parents=True)
+    (install_dir / "assets" / "icons.svg").write_bytes(b"<svg></svg>")
+
+    html = '<use xlink:href="assets/icons.svg#logo"></use>'
+    rewritten = _rewrite_sibling_assets(
+        html, install_dir=install_dir, project_root=public)
+
+    assert 'xlink:href="compositions/assets/icons.svg#logo"' in rewritten
+
+
 def _с_элементами(*elements, presenter="pip-tr"):
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["presenter"] = presenter
@@ -1464,6 +1506,34 @@ def test_paste_эффект_вставляется_литералом_а_не_с
     stencil = (каталог / "public" / "compositions" / "components"
               / "demo-paste.html")
     assert 'demo-paste-badge--' not in stencil.read_text(encoding="utf-8")
+
+
+def test_paste_копии_одной_позиции_не_делят_класс_и_переменные(каталог):
+    """Два маунта ОДНОЙ и той же paste-позиции в одном документе — то, что
+    бывает, когда агент называет её в двух разных сценах. Класс-скоуп и тень
+    `getVariables()` привязаны к конкретному маунту (`unique`), а не общие:
+    иначе вторая копия читала бы значения первой (обе слушают один и тот же
+    `querySelectorAll` по общему классу без переименования). Найдено руками
+    при ревью — тест закрепляет находку."""
+    public = каталог / "public"
+    with sdk_session() as sdk:
+        first = hf_compose.paste_effect(
+            sdk, public, "demo-paste", unique="demo-paste--s-02",
+            variables={"label": "42"})
+        second = hf_compose.paste_effect(
+            sdk, public, "demo-paste", unique="demo-paste--s-03",
+            variables={"label": "7"})
+
+    # У каждой копии свой скоуп-класс...
+    assert "demo-paste-badge--demo-paste--s-02" in first
+    assert "demo-paste-badge--demo-paste--s-03" in second
+    # ...и ни одна не несёт класс соседней — иначе их querySelectorAll нашёл
+    # бы чужие элементы в кадре.
+    assert "demo-paste-badge--demo-paste--s-03" not in first
+    assert "demo-paste-badge--demo-paste--s-02" not in second
+    # Тень getVariables() у каждой копии несёт только свои значения.
+    assert '"label": "42"' in first and '"label": "7"' not in first
+    assert '"label": "7"' in second and '"label": "42"' not in second
 
 
 def test_стык_встаёт_за_срез_сцены_и_живёт_свою_длительность(каталог):

@@ -63,9 +63,6 @@ _TRIM_CHARS = "".join((
     "*_/\\|~",        # разметочный мусор, доезжающий из выравнивания
 ))
 
-_HEAD_STYLE = re.compile(r"<style>(.*?)</style>", re.S)
-_SCRIPT = re.compile(r"<script>\s*\(function \(\).*?</script>", re.S)
-
 #: Крючок, за который титр берёт наши слова: движок компонента читает данные из
 #: `window.__HF_CAPTION__`, а мы кладём их туда первой строкой `captions.js`.
 DATA_HOOK = "__HF_CAPTION__"
@@ -126,15 +123,6 @@ def stage(rdir) -> Path:
     return target
 
 
-def _piece(pattern: re.Pattern, html: str, what: str) -> str:
-    match = pattern.search(html)
-    if not match:
-        raise RuntimeError(
-            f"в компоненте {COMPONENT} не нашлось {what}; "
-            "разметка компонента изменилась — проверь его версию")
-    return match.group(1) if match.groups() else match.group(0)
-
-
 #: Куда уезжают данные титра и движок компонента. Отдельным файлом, а не
 #: строками в композиции: их линтер считает физические строки `index.html` и
 #: за 300 даёт предупреждение `composition_file_too_large`
@@ -148,21 +136,36 @@ CAPTION_SCRIPT = "captions.js"
 def caption_snippet(sdk, public, *, track_index: int, duration: float) -> str:
     """Готовый кусок композиции: стиль, корень и ссылка на движок титра.
 
+    Разбор куска — общее место с paste-контрактными позициями каталога
+    (`hf_compose.paste_fragment`, работа B1.5): обе стороны вставляют готовый
+    чужой компонент литералом в композицию, а не саб-композицией — их полка
+    сама велит «paste the markup, CSS and script». Своё у титра — то, что
+    действительно отличается от позиции каталога:
+    - корень ищем явным `selector="#highlight"`: у компонента корень несёт
+      `id`, а не класс первым токеном, конвенции paste-позиций реестра он не
+      следует;
+    - на корень навешиваются атрибуты ТАЙМЛАЙНА (`data-duration`,
+      `data-width/height`, `data-track-index`, `data-layout-allow-caption-
+      zone`) — титр один на весь ролик и живёт своей длительностью, а не
+      длительностью сцены-хоста, как эффект каталога;
+    - движок уезжает ОТДЕЛЬНЫМ файлом (`captions.js`), а не литералом в
+      композицию, как у paste-позиций: их линтер считает физические строки
+      `index.html` (`composition_file_too_large` за 300), и тело скрипта
+      компонента одно даёт 608 строк (прогон 13);
+    - тени `getVariables()` и переименования класса под уникальный маунт
+      (`paste_effect`) титру не нужны — он встаёт единственный раз, повторных
+      копий одной и той же позиции в кадре не бывает.
+
     Внешние ссылки компонента (шрифт с Google Fonts, GSAP с CDN) не переносим:
     они запрещены контрактом композиции, GSAP уже подключён локально, а шрифты
     врезает движок.
     """
+    from reels_factory.hf_compose import paste_fragment
+
     public = Path(public)
     path = public / COMPONENT_REL
-    html = path.read_text(encoding="utf-8")
-    style = _piece(_HEAD_STYLE, html, "блока <style>")
-    script = _piece(_SCRIPT, html, "скрипта компонента")
-    found = sdk.extract(path, "#highlight")
-    if not found:
-        raise RuntimeError(
-            f"в компоненте {COMPONENT} нет корня #highlight; "
-            "разметка компонента изменилась — проверь его версию")
-    root = found[0]["outer"]
+    style, root, script = paste_fragment(sdk, public, path,
+                                         selector="#highlight")
 
     root = re.sub(r'data-duration="[^"]*"', f'data-duration="{duration:.4f}"',
                   root, count=1)
@@ -192,10 +195,12 @@ def caption_snippet(sdk, public, *, track_index: int, duration: float) -> str:
     data = (public / "caption-data.json").read_text(encoding="utf-8")
     body = script.replace(_THEIR_FONT, _OUR_FONT)
     # Тело `<script>…</script>` кладём в файл без обёртки-тега.
-    body = re.sub(r"^\s*<script>|</script>\s*$", "", body).strip()
+    body = re.sub(r"^\s*<script[^>]*>|</script>\s*$", "", body).strip()
     (public / CAPTION_SCRIPT).write_text(
         f"window.__HF_CAPTION__ = {data};\n{body}\n", encoding="utf-8")
-    return (f"    <style>{style.replace(_THEIR_FONT, _OUR_FONT)}</style>\n"
+    # `paste_fragment` уже отдаёт стиль С тегами `<style>…</style>` — второй
+    # обёртки поверх, в отличие от прежнего кода, здесь не нужно.
+    return (f"    {style.replace(_THEIR_FONT, _OUR_FONT)}\n"
             f"    {root}\n"
             f'    <script src="{CAPTION_SCRIPT}"></script>')
 
