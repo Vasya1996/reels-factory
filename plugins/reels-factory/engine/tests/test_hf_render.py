@@ -7,7 +7,9 @@ import pytest
 from reels_factory.avatar_islands import avatar_budget_targets
 from reels_factory.editplan import MIN_FULLSCREEN_S
 from reels_factory.hf_montage_skill import seconds
-from reels_factory.hf_render import STEPS, reset_step, run_step, step_done
+from reels_factory.hf_render import (CHECK_IGNORED_CODES, STEPS, _check_ok,
+                                     _check_verdict, reset_step, run_step,
+                                     step_done)
 
 
 def test_шаги_в_нужном_порядке():
@@ -1687,6 +1689,93 @@ def test_их_check_судится_по_отчёту_а_не_по_коду_вы�
     assert res["gates"]["D0_check"].startswith("FAIL")
     assert "composition_file_too_large" in (
         tmp_path / "retry_reason.txt").read_text(encoding="utf-8")
+
+
+def _check_report(*findings) -> dict:
+    """Минимальный отчёт `check --strict` с находками в секции `lint`."""
+    return {"strict": True, "lint": {"findings": list(findings)},
+            "runtime": {"findings": []}, "layout": {"findings": []},
+            "motion": {"findings": []}, "contrast": {"findings": []}}
+
+
+_IGNORED_FINDING = {"code": "composition_self_attribute_selector",
+                    "severity": "warning",
+                    "message": "Selector matches the block's own id"}
+_OTHER_FINDING = {"code": "composition_file_too_large", "severity": "warning",
+                  "message": "684 lines"}
+
+
+def test_находка_ложного_правила_одна_не_валит_check(tmp_path):
+    """Единственная находка `composition_self_attribute_selector` — их
+    `ok` был бы false под `--strict`, но для нас это не причина падения:
+    правило ложное (83ceaeb90), и `_stage_overlay` уже гарантирует
+    уникальность селектора. Проверяем и функцию, и файл-обёртку."""
+    report = _check_report(_IGNORED_FINDING)
+    assert _check_ok(report) is True
+
+    log = tmp_path / "check.json"
+    log.write_text(json.dumps({"ok": False, **report}), encoding="utf-8")
+    assert _check_verdict(log) == "PASS"
+
+
+def test_находка_другого_кода_по_прежнему_валит_check(tmp_path):
+    """Любой другой код правила остаётся фатальным под `--strict`."""
+    report = _check_report(_OTHER_FINDING)
+    assert _check_ok(report) is False
+
+    log = tmp_path / "check.json"
+    log.write_text(json.dumps({"ok": False, **report}), encoding="utf-8")
+    verdict = _check_verdict(log)
+    assert verdict.startswith("FAIL")
+    assert "composition_file_too_large" in verdict
+
+
+def test_смешанные_находки_валят_check_из_за_другого_кода(tmp_path):
+    """Ложное правило рядом с настоящей находкой не спасает сборку — падает
+    из-за находки, которая не входит в `CHECK_IGNORED_CODES`."""
+    report = _check_report(_IGNORED_FINDING, _OTHER_FINDING)
+    assert _check_ok(report) is False
+
+    log = tmp_path / "check.json"
+    log.write_text(json.dumps({"ok": False, **report}), encoding="utf-8")
+    verdict = _check_verdict(log)
+    assert verdict.startswith("FAIL")
+    assert "composition_file_too_large" in verdict
+
+
+def test_ложное_правило_названо_по_имени_и_только_оно(tmp_path):
+    assert CHECK_IGNORED_CODES == frozenset({"composition_self_attribute_selector"})
+
+
+def test_единственная_находка_ложного_правила_не_даёт_агенту_пересдачу(
+        tmp_path, monkeypatch):
+    """Интеграционно: `check` вернул `ok: false` (их собственный подсчёт
+    под `--strict`) с одной находкой `composition_self_attribute_selector`
+    — сборка проходит с первой попытки, агента на пересдачу не зовут."""
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [GOOD])
+    real_cli = hf_render._cli
+    seen = []
+
+    def fake_check(*args, cwd, log=None, err_log=None):
+        if args[0] == "check":
+            seen.append(args)
+            Path(log).write_text(
+                json.dumps({"ok": False, **_check_report(_IGNORED_FINDING)}),
+                encoding="utf-8")
+            return ""
+        return real_cli(*args, cwd=cwd, log=log, err_log=err_log)
+
+    monkeypatch.setattr(hf_render, "_cli", fake_check)
+
+    res = hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert len(seen) == 1
+    assert res["gates"]["D0_check"] == "PASS"
+    assert Path(res["mp4"]).exists()
 
 
 def test_судья_получает_реплику_своей_сцены(tmp_path, monkeypatch):

@@ -614,6 +614,51 @@ def _prepare_material(plan: dict, public: Path, rdir: Path) -> list[dict]:
 #: (packages/cli/src/utils/checkPipeline.ts:1331-1344).
 CHECK_SECTIONS = ("lint", "runtime", "layout", "motion", "contrast")
 
+#: Коды правил их линтера, чьи находки не считаются причиной провала.
+#:
+#: `composition_self_attribute_selector` (packages/lint/src/rules/
+#: core.ts:515-547 на пине 0.7.84) бьёт тревогу на СЫРОМ файле блока в
+#: изоляции: "а если тот же `data-composition-id` встретится дважды
+#: непереименованным". Сам фреймворк выше по пину признал это ложным
+#: срабатыванием и убрал правило коммитом 83ceaeb90 ("refactor(lint): drop
+#: seven rules that fire on correct compositions (#3366)", между v0.7.111
+#: и v0.8.5 — после нашего пина 0.7.84, но правило уже названо ошибочным
+#: их же словами: "It was also the pattern the rest of the toolchain
+#: prescribes"). Для нашего пайплайна вопрос вдобавок закрыт ДО check:
+#: `_stage_overlay` (hf_compose.py:585-594) переименовывает
+#: `data-composition-id` каждой сцены в `{block}--{scene_id}` и тем самым
+#: делает селектор уникальным по построению, независимо от того, работает
+#: ли их собственный пересчёт scope в компиляторе
+#: (`inlineSubCompositions.ts`/`compositionScoping.ts`). Разбор целиком —
+#: scratchpad/strict-scoping-rootcause.md. Любой другой код правила
+#: по-прежнему валит `--strict` в полную силу.
+CHECK_IGNORED_CODES = frozenset({"composition_self_attribute_selector"})
+
+
+def _check_ok(report: dict) -> bool:
+    """Пересчитать вердикт `check`, не давая находкам `CHECK_IGNORED_CODES`
+    участвовать в подсчёте.
+
+    Их формула (`checkPipeline.ts:1345`): `ok = errorCount === 0 &&
+    (!strict || warningCount === 0)`, посчитанная по ПЯТИ секциям сразу
+    (:1331-1338). Здесь та же формула, но по находкам, отфильтрованным от
+    игнорируемых кодов, а не по готовым счётчикам секций — иначе одна
+    находка `composition_self_attribute_selector` рядом с любой другой
+    сохранила бы провал за компанию, а не только за свою собственную.
+    """
+    strict = bool(report.get("strict"))
+    has_error = False
+    has_warning = False
+    for name in CHECK_SECTIONS:
+        section = report.get(name) or {}
+        for item in section.get("findings") or []:
+            if not isinstance(item, dict) or item.get("code") in CHECK_IGNORED_CODES:
+                continue
+            severity = item.get("severity")
+            has_error = has_error or severity == "error"
+            has_warning = has_warning or severity == "warning"
+    return not has_error and (not strict or not has_warning)
+
 
 def _check_findings(log: Path, *, severities=("error", "warning")) -> list[str]:
     """Находки из их отчёта `check` — чтобы они дошли до агента словами.
@@ -644,16 +689,18 @@ def _check_findings(log: Path, *, severities=("error", "warning")) -> list[str]:
 
 
 def _check_verdict(log: Path) -> str:
-    """Вердикт их `check` — по полю `ok` отчёта.
+    """Вердикт их `check` — по отчёту, но не по их полю `ok` напрямую.
 
     Код выхода у `check` есть: по построению это `report.ok ? 0 : 1`
     (check.ts:144 → checkPipeline.ts:1228), а на аварии — единица
-    (check.ts:154). Судим всё равно по полю `ok`: это та же формула
+    (check.ts:154). Их `ok` при этом не годится как есть: это формула
     `errorCount === 0 && (!strict || warningCount === 0)`
-    (packages/cli/src/utils/checkPipeline.ts:1344) без слоёв npx и shell
-    между нами и процессом, и отчёт всё равно нужен — из него берутся
-    находки для агента. На 0.7.84 через npx код выхода дважды наблюдался
-    нулевым при «Check failed» — где он терялся, не выяснено.
+    (packages/cli/src/utils/checkPipeline.ts:1344), а `warningCount`
+    считает и находки `CHECK_IGNORED_CODES` — вычисляем вердикт заново
+    через `_check_ok`, которая ту же формулу применяет без них. Отчёт
+    нужен в любом случае — из него берутся находки для агента. На 0.7.84
+    через npx код выхода дважды наблюдался нулевым при «Check failed» —
+    где он терялся, не выяснено.
     """
     if not log.exists():
         return "FAIL: их `check` не оставил отчёта"
@@ -661,7 +708,7 @@ def _check_verdict(log: Path) -> str:
         report = json.loads(log.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return "FAIL: отчёт их `check` не разбирается"
-    if report.get("ok"):
+    if _check_ok(report):
         return "PASS"
     found = _check_findings(log)
     return "FAIL: " + "; ".join(found[:6] or ["без находок, но ok=false"])
@@ -1737,10 +1784,22 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             # место плотнее закрывает наша проба — она снимает живой DOM каждые
             # 0,25 с.
             #
-            # Судим по полю `ok` отчёта, а не по коду выхода — почему, сказано
-            # у _check_verdict. Ненулевой код здесь всё же возможен, и тогда
-            # _cli бросает RuntimeError: ветка except читает находки из того же
-            # отчёта, оба пути сходятся.
+            # Судим по полю `ok` отчёта, а не по коду выхода — почему,
+            # сказано у `_check_verdict`. Их процесс тем не менее возвращает
+            # код 1 всегда, когда `report.ok` ложно (`check.ts:144` →
+            # `checkPipeline.ts:1228`) — а под `--strict` это ЛЮБОЕ
+            # предупреждение, включая коды из `CHECK_IGNORED_CODES`, которые
+            # для нас больше не провал (см. докстроку `_check_ok`). Раньше
+            # код здесь принимал «процесс упал» за «FAIL» напрямую — до
+            # B2.5 это было верно (их `ok=false` и наш вердикт совпадали
+            # всегда), а с игнор-листом разошлось: находка из
+            # `CHECK_IGNORED_CODES` даёт их `ok=false` и код выхода 1, но наш
+            # вердикт обязан остаться PASS. Поэтому вердикт всегда берём из
+            # `_check_verdict` по отчёту — `_cli` пишет его на диск ДО того,
+            # как бросить исключение, — а голый текст аварии показываем
+            # только когда отчёта нет вовсе (их процесс не запустился или
+            # рухнул до JSON).
+            log = rdir / "check.json"
             try:
                 # `--caption-zone` и `--frame-check` — их собственные гейты
                 # конвейера, выключенные по умолчанию («Opt-in pipeline gates
@@ -1764,11 +1823,12 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                      # падает «Invalid --caption-zone» (0.7.84, проверено
                      # вручную обоими порядками).
                      "--frame-check",
-                     cwd=rdir, log=rdir / "check.json")
-                result["D0_check"] = _check_verdict(rdir / "check.json")
+                     cwd=rdir, log=log)
             except RuntimeError as error:
-                result["D0_check"] = "FAIL: " + "; ".join(
-                    _check_findings(rdir / "check.json") or [str(error)])
+                result["D0_check"] = (_check_verdict(log) if log.exists()
+                                      else f"FAIL: их `check` не запустился — {error}")
+            else:
+                result["D0_check"] = _check_verdict(log)
 
             failed = [f"{k}: {v}" for k, v in result.items() if v.startswith("FAIL")]
             # Красные гейты больше не роняют ПОСЛЕДНЮЮ попытку (решение 05):
