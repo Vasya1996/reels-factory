@@ -143,6 +143,12 @@
         vertical-align: text-bottom;
         margin-left: 1px;
       }
+      /* Not painted: this is the SOURCE of the typed command, read by the
+         script below and rewritten by the host. `display: none` keeps it out
+         of every layout and contrast audit while its text stays editable. */
+      .tc-command {
+        display: none;
+      }
     </style>
   </head>
   <body>
@@ -163,6 +169,11 @@
           </div>
           <span class="window-title">bash — 80×24</span>
         </div>
+        <!-- The typed command lives in the markup, not only in the script: the
+             host replaces what the terminal types by rewriting this text.
+             Not painted (see `.tc-command` in the style block) — the visible
+             command is the one the timeline types into `.typed-command`. -->
+        <span class="tc-command">ls -la</span>
         <div class="terminal-canvas">
           <div class="output-lines">
             <span class="output-line">Last login: Mon Jun 2 09:14:22 on ttys001</span>
@@ -190,7 +201,10 @@
     <script>
       window.__timelines = window.__timelines || {};
 
-      const command = "ls -la";
+      // The command comes from the markup (.tc-command), so the host replaces
+      // what the terminal types by rewriting that text.
+      const commandEl = document.querySelector(".tc-command");
+      const command = ((commandEl && commandEl.textContent) || "ls -la").trim() || "ls -la";
       const typedEl = document.querySelector(".typed-command");
       const cursorEl = document.querySelector(".cursor-block");
       const outputLines = document.querySelectorAll(".output-line");

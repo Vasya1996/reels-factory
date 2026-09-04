@@ -111,7 +111,28 @@
   "reels": {
     "kind": "scene",
     "decor_texts": [],
-    "text_slots": [],
+    "text_slots": [
+      "span",
+      "title-1",
+      "subtitle-1",
+      "now-1",
+      "credit-1",
+      "title-2",
+      "subtitle-2",
+      "now-2",
+      "credit-2",
+      "title-3",
+      "subtitle-3",
+      "now-3",
+      "credit-3",
+      "title-4",
+      "subtitle-4",
+      "now-4",
+      "credit-4",
+      "div-1",
+      "div-2",
+      "div-3"
+    ],
     "variables": {
       "notifTitle": {
         "type": "string",

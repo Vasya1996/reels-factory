@@ -286,3 +286,59 @@ def test_справочники_фреймворка_лежат_в_репози�
     )
     for name in REFERENCE_FILES:
         assert (CATALOG_DIR / REFERENCE_SUBDIR / name).exists(), name
+
+
+def test_text_slots_карточки_равны_слотам_разметки():
+    """Одно определение слота на весь путь.
+
+    Отчёт B4: карточка `v-code-diff` держала видимые демо-строки
+    («greet.js», «Code Diff», два куска кода), а `hf_slots.find_slots` выводит
+    из разметки имена (`accent`, `filename`) — сборка зипала слова агента по
+    строкам карточки, `fill_ops` их не узнавал и снимал элемент целиком. Слова
+    агента раскладывает теперь сама разметка, а карточка отвечает индексу — и
+    равна ей, иначе агент считает слоты по одному списку, а код по другому.
+
+    Разбор — настоящим мостом их SDK, как у `passport`: свой разборщик HTML у
+    нас не тот, каким блок читает движок.
+    """
+    from reels_factory.hf_sdk import sdk_session
+    from reels_factory.hf_slots import text_slot_names
+
+    root = CATALOG_DIR / REGISTRY_SUBDIR
+    scenes = {name: card for name, card in catalog_cards().items()
+              if card.get("kind") == "scene"}
+    assert scenes, "в каталоге нет ни одной позиции вида `scene`"
+    with sdk_session() as sdk:
+        for name, card in scenes.items():
+            folder = next(root / sub / name for sub in ("blocks", "components")
+                          if (root / sub / name / f"{name}.html").exists())
+            item = json.loads((folder / "registry-item.json")
+                              .read_text(encoding="utf-8"))
+            decor = set((item.get("reels") or {}).get("decor_texts") or [])
+            sdk.open(name, folder / f"{name}.html")
+            names = text_slot_names(sdk.elements(name), decor)
+            sdk.close(name)
+            assert card.get("text_slots") == names, (
+                f"{name}: карточка обещает {card.get('text_slots')}, "
+                f"а разметка даёт {names}")
+
+
+#: Пять образцов B3 и то, чем их разметка обязана дать заполнить кадр: у
+#: терминала и диффа видимый текст жил в скрипте, и слотами он не был вовсе
+#: (отчёт B4). Имена — от классов разметки, порядок — документа.
+СЛОТЫ_ОБРАЗЦОВ = {
+    "v-code-diff": ["file", "title", "before", "after"],
+    "v-code-snippet-apple-terminal-basic": ["window-title", "command"],
+    "v-world-map": ["headline", "subtitle", "source"],
+    "v-bar-chart-race": ["headline", "subtitle", "source"],
+    "v-macos-notification": ["app-name", "notification-title",
+                             "notification-body"],
+}
+
+
+def test_у_вертикальных_образцов_заполняются_заголовок_подпись_и_код():
+    """Заголовок и подпись — у всех пяти; строки кода — у тех двух, где код и
+    есть содержание позиции."""
+    cards = catalog_cards()
+    for name, slots in СЛОТЫ_ОБРАЗЦОВ.items():
+        assert cards[name]["text_slots"] == slots, name

@@ -164,7 +164,12 @@ def find_slots(nodes: list[Node],
     обязательным — без этого он неотличим от незаполненной заглушки и уезжает
     из кадра.
     """
-    decor = decor or frozenset()
+    # Сверяем нормализованное с нормализованным: текст узла ниже сводится к
+    # одному пробелу между словами, а в карточке он записан как в разметке —
+    # у `v-code-snippet-apple-terminal-basic` приглашение лежит там с хвостовым
+    # пробелом («user@Mac ~ % »), и без этой нормализации оно не совпадало
+    # само с собой.
+    decor = {" ".join(str(text).split()) for text in (decor or ())}
     scene = _scene_indices(nodes)
     # Съеденные поддеревья: нутро слота под файл и токены слова. Ни то, ни
     # другое отдельным слотом не считается — файл кладётся целиком, строка
@@ -219,6 +224,25 @@ def find_slots(nodes: list[Node],
         if base and tail == "1" and used.get(base) == 1:
             slot.name = base
     return slots
+
+
+def text_slot_names(nodes: list[Node],
+                    decor: set[str] | frozenset[str] | None = None) -> list[str]:
+    """Имена слотов позиции, которые заполняет агент, в порядке разметки.
+
+    Одно определение слота на всех: карточка каталога печатает этот список
+    индексу (`hf_catalog.catalog_cards`), сборка раскладывает по нему `words`
+    плана (`hf_compose`), а тест сверяет карточку с разметкой. Пока определений
+    было два, карточка `v-code-diff` держала видимые демо-строки вместо имён, и
+    любой план с этой позицией терял её на сборке (отчёт B4).
+
+    Не всякий слот заполняется: плашка-рубрика удаляется всегда (`service`), а
+    нарисованная надпись и цифра-оформление остаются в кадре как есть
+    (`required` — там же сказано, почему). Ни то, ни другое агенту не
+    предлагается и слов не принимает.
+    """
+    return [slot.name for slot in find_slots(nodes, decor)
+            if slot.required and not slot.service]
 
 
 def min_card_seconds(native: float) -> float:
@@ -434,7 +458,15 @@ _QUOTED_SELECTOR = re.compile(r'"([.#][^"]+)"')
 _SCRIPT_BODY = re.compile(r"(<script>)(.*?)(</script>)", re.S)
 
 
-def prune_timeline(html: str) -> str:
+def _markup_tokens(page: str) -> set[str]:
+    """Классы и id разметки блока — всё, что стоит до его скрипта."""
+    head = page.split("<script>", 1)[0]
+    tokens = {token for value in re.findall(r'class="([^"]*)"', head)
+              for token in value.split()}
+    return tokens | set(re.findall(r'id="([^"]+)"', head))
+
+
+def prune_timeline(html: str, original: str) -> str:
     """Убрать из таймлайна блока строки про элементы, которых уже нет.
 
     Незаполненный слот и плашка-рубрика уезжают из разметки, а нацеленная на
@@ -449,21 +481,38 @@ def prune_timeline(html: str) -> str:
     строк таймлайна SDK опознал шесть, ровно те, что вызывают `tl.to` напрямую.
     Значит `removeGsapTween` до остальных не дотягивается, и строку приходится
     убирать текстом.
-    """
-    head = html.split("<script>", 1)[0]
-    present = set(re.findall(r'class="([^"]*)"', head))
-    tokens = {token for value in present for token in value.split()}
-    tokens |= set(re.findall(r'id="([^"]+)"', head))
 
-    def alive(selector: str) -> bool:
-        first = selector.split()[0].split(":")[0]
-        return all(part in tokens for part in first.lstrip(".#").split("."))
+    `original` — разметка блока ДО подстановки, и она здесь обязательна: целью
+    считается только то, что в разметке БЫЛО, а мёртвой — цель, которая после
+    подстановки пропала. Прежнее правило («в разметке нет — значит мёртвая»)
+    резало и то, чего в разметке не бывает вовсе: шестнадцатеричный цвет
+    (`"#0b0f17"` подходит под селектор по id) и класс, который скрипт блока
+    создаёт сам. У `v-code-diff` так пропала строка
+    `return { scene: scene, code: code, gutter: scene.querySelector(".gutter") }`
+    — `.gutter` рисует сам скрипт, — и блок падал в рантайме на `parts.code`
+    (`page_error` у их `check --strict`, отчёт B4).
+    """
+    was = _markup_tokens(original)
+    now = _markup_tokens(html)
+    if was <= now:
+        return html
+
+    def parts_of(selector: str) -> list[str]:
+        return selector.split()[0].split(":")[0].lstrip(".#").split(".")
+
+    def target(selector: str) -> bool:
+        """Строка целилась в этот элемент — он в разметке блока был."""
+        return all(part in was for part in parts_of(selector))
+
+    def gone(selector: str) -> bool:
+        return not all(part in now for part in parts_of(selector))
 
     def prune(match: re.Match) -> str:
         kept = []
         for line in match.group(2).splitlines():
-            found = _QUOTED_SELECTOR.findall(line)
-            if found and not any(alive(selector) for selector in found):
+            targets = [one for one in _QUOTED_SELECTOR.findall(line)
+                       if target(one)]
+            if targets and all(gone(one) for one in targets):
                 continue
             kept.append(line)
         return match.group(1) + "\n".join(kept) + match.group(3)

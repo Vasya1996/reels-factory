@@ -25,9 +25,9 @@
   "reels": {
     "kind": "scene",
     "text_slots": [
-      "Streaming Subscribers by Service",
-      "Ranked by reported subscribers",
-      "Placeholder data"
+      "headline",
+      "subtitle",
+      "source"
     ],
     "decor_texts": ["Period"],
     "variables": {

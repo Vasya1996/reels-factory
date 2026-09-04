@@ -48,8 +48,11 @@
 
         <div id="bcr-head">
           <div id="bcr-head-left">
-            <h1 id="bcr-title">Streaming Subscribers by Service</h1>
-            <p id="bcr-subtitle">Ranked by reported subscribers</p>
+            <!-- The class names, not only the ids, say what each line is: a
+                 host that fills text by slot reads the class and would
+                 otherwise name these `h1` and `p-1`. -->
+            <h1 id="bcr-title" class="bc-headline">Streaming Subscribers by Service</h1>
+            <p id="bcr-subtitle" class="bc-subtitle">Ranked by reported subscribers</p>
           </div>
           <div id="bcr-head-right">
             <span id="bcr-period-caption">Period</span>
@@ -64,7 +67,7 @@
              visible evidence that the scale is rescaling as values climb. -->
         <div id="bcr-axis"></div>
 
-        <p id="bcr-source">Placeholder data</p>
+        <p id="bcr-source" class="bc-source">Placeholder data</p>
       </div>
 
       <style>

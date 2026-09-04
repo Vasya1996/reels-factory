@@ -20,9 +20,9 @@
   "reels": {
     "kind": "scene",
     "text_slots": [
-      "Global GDP per Capita",
-      "Nominal GDP per capita, 2024 IMF estimates",
-      "Source: International Monetary Fund"
+      "headline",
+      "subtitle",
+      "source"
     ],
     "decor_texts": ["Low", "High"]
   }

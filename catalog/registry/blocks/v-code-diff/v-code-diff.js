@@ -343,4 +343,82 @@
         },
       };
       window.__BLOCK = { id: "v-code-diff", effect: "diff", seq: "diff", duration: 6 };
+
+      // ---- code states from the markup ------------------------------------
+      // The code lives in two elements of the block's markup (.cd-before and
+      // .cd-after), so a host replaces what the diff shows by rewriting their
+      // text. The baked Shiki tokens above stay the source of syntax colors
+      // while the markup still holds the code they were baked from; edited
+      // code is colored by the small lexer below, in one pass, from the same
+      // github-dark palette. Lives here, not in the block's inline engine:
+      // the HTML file is already close to `composition_file_too_large`.
+      window.__CODE_STATES = (function () {
+        var PLAIN = "#e1e4e8";
+        var COLORS = {
+          comment: "#6a737d",
+          string: "#9ecbff",
+          number: "#79b8ff",
+          keyword: "#f97583",
+        };
+        var KEYWORD =
+          /^(function|const|let|var|return|new|class|import|from|export|default|if|else|for|while|try|catch|finally|throw|typeof|await|async|def|elif|except|with|as|in|is|not|and|or|lambda|pass|raise|true|false|null|undefined|True|False|None)$/;
+        var PIECE =
+          /(\/\/[^\n]*|#[^\n]*|"[^"]*"|'[^']*'|`[^`]*`|\d+(?:\.\d+)?|[A-Za-z_$][\w$]*|\s+|[\s\S])/g;
+
+        function colorOf(piece) {
+          if (piece.charAt(0) === "#" || piece.slice(0, 2) === "//")
+            return COLORS.comment;
+          if (/^["'`]/.test(piece)) return COLORS.string;
+          if (/^\d/.test(piece)) return COLORS.number;
+          if (KEYWORD.test(piece)) return COLORS.keyword;
+          return PLAIN;
+        }
+
+        function stateFromText(text, seed) {
+          var tokens = [];
+          var lines = text.split("\n");
+          for (var i = 0; i < lines.length; i++) {
+            if (i)
+              tokens.push({ key: seed + "-nl-" + i, content: "\n", color: PLAIN, fontStyle: 0 });
+            var j = 0;
+            var m;
+            PIECE.lastIndex = 0;
+            while ((m = PIECE.exec(lines[i]))) {
+              tokens.push({
+                key: seed + "-" + i + "-" + j++,
+                content: m[0],
+                color: colorOf(m[0]),
+                fontStyle: 0,
+              });
+            }
+          }
+          return { code: text, tokens: tokens };
+        }
+
+        function codeInMarkup(scope, selector) {
+          var el = scope.querySelector(selector);
+          if (!el) return null;
+          // Read the children, not textContent: a host that writes multi-line
+          // text through the DOM turns the newlines into <br>, and textContent
+          // would collapse every line into one.
+          var text = "";
+          for (var i = 0; i < el.childNodes.length; i++) {
+            var kid = el.childNodes[i];
+            text += kid.nodeName === "BR" ? "\n" : kid.textContent || "";
+          }
+          text = text.replace(/\r/g, "").replace(/^\n+/, "").replace(/\s+$/, "");
+          return text || null;
+        }
+
+        return function (seq, root) {
+          var baked = ((window.__TOKENS || {})[seq] || {}).states || [];
+          var scope = root || document;
+          var before = codeInMarkup(scope, ".cd-before");
+          var after = codeInMarkup(scope, ".cd-after");
+          if (before === null || after === null) return baked;
+          if (baked.length === 2 && baked[0].code === before && baked[1].code === after)
+            return baked;
+          return [stateFromText(before, "a"), stateFromText(after, "b")];
+        };
+      })();
     

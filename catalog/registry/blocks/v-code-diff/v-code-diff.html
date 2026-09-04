@@ -234,6 +234,12 @@
         border-radius: 14px;
         opacity: 0;
       }
+      /* Not painted: this is the SOURCE of the code, read by the engine below
+         and rewritten by the host. `display: none` keeps it out of every
+         layout and contrast audit while its text stays editable. */
+      .cd-source {
+        display: none;
+      }
     </style>
   </head>
   <body>
@@ -254,9 +260,23 @@
           <div class="dots">
             <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
           </div>
-          <span class="filename"><span class="accent">greet.js</span> — Code Diff</span>
+          <span class="filename"><span class="cd-file accent">greet.js</span>
+            <span class="cd-title">— Code Diff</span></span>
         </div>
         <div class="code-surface" id="surface"></div>
+      </div>
+      <!-- The two code states live here, in the markup, not only in the baked
+           tokens of the .js: the host replaces the code on screen by rewriting
+           the text of these two elements. While they still carry the code the
+           tokens were baked from, the engine keeps the baked syntax colors. -->
+      <div class="cd-source" data-layout-ignore>
+        <pre class="cd-before">function greet(name) {
+  console.log("hi " + name)
+}</pre>
+        <pre class="cd-after">function greet(name, lang) {
+  const msg = translate("hi", lang)
+  console.log(`${msg} ${name}`)
+}</pre>
       </div>
     </div>
     <script src="v-code-diff.js"></script>
@@ -443,8 +463,14 @@
 
         function buildEffect(tl, surface, spec) {
           var start = 0.45;
-          var seq = T[spec.seq];
-          if (spec.effect === "diff") diff(tl, surface, seq.states, start);
+          // The code comes from the markup (.cd-before / .cd-after) through
+          // __CODE_STATES in this block's .js — that is how a host replaces
+          // what the diff shows. The baked tokens are the fallback while the
+          // markup still holds the code they were baked from.
+          var states = window.__CODE_STATES
+            ? window.__CODE_STATES(spec.seq, document.getElementById("root"))
+            : (T[spec.seq] || {}).states;
+          if (spec.effect === "diff") diff(tl, surface, states, start);
         }
 
         function go() {
