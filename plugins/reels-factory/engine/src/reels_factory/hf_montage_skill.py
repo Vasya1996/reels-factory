@@ -262,7 +262,8 @@ def _final_rule(avatar_ordered: bool) -> str:
             "зрителя в последней сцене, где оно есть.")
 
 
-def _body(*, positions: str, no_effect_zone: str, form_floors: str,
+def _body(*, positions: str, no_effect_zone: str, covers_backdrop: str,
+          form_floors: str,
           icon_names: str, series_min: float, series_max: float,
           face_gap: float,
           max_static: float, min_scene: float, avatar_ordered: bool,
@@ -640,10 +641,13 @@ slow path, and it fails whenever the author's wording differs from yours»
   `effect` стоит на такой сцене, возвращается на пересдачу с этой причиной
   (`D36_elements`) — либо дай сцене уголок `pip-*` или `none`, либо возьми
   позицию другого вида.
-- **`scene`** — во весь кадр и на всю сцену, поверх вставки и поверх ведущей
-  (титр остаётся выше). Ставь её сцене, которой ты дал `presenter: "none"`:
-  ведущей под ней не видно, а спрятанная ведущая — самая дорогая ошибка плана.
-  Вставка такой сцене не нужна: кадр держит сама позиция.
+- **`scene`** — во весь кадр и на всю сцену ПОДЛОЖКОЙ: она ложится поверх
+  вставки, но под окно ведущей, как ложится под него схема. Ведущая уголком
+  (`pip-*`) или половиной (`stack`) остаётся видна поверх неё, и прятать её
+  ради полнокадровой позиции не нужно. Не годятся только {covers_backdrop}:
+  там ведущая занимает кадр целиком и закроет подложку собой — план с такой
+  парой возвращается на пересдачу (`D36_elements`). Вставка такой сцене не
+  нужна: кадр держит сама позиция.
 - **`overlay`** — на стык перед сценой, поверх всего, своей родной
   длительностью. Положение ведущей ей безразлично: она кроет срез, а не сцену.
 - **вида в карточке нет** — плашка полосой над титром. Ведущую она не
@@ -667,15 +671,15 @@ slow path, and it fails whenever the author's wording differs from yours»
 Сцена s-06, реплика «Платный сервис меняется на один скилл прямо в коде».
 Фраза шага 1 — «показать, чем новый код отличается от старого». Строка таблицы
 — код, теги `code` и `diff`; по ним в индексе отвечает `v-code-diff`, вид
-`scene`, слоты `["file", "title", "before", "after"]`. Вид полнокадровый,
-поэтому ведущей на этой сцене нет и вставка ей не нужна — кадр держит позиция.
-Слова идут по слотам в том же порядке, что в карточке, и это те самые строки,
-которые зритель прочтёт на экране.
-`{{"id": "s-06", "beat": "point", "presenter": "none", "avatarNeeded": false,
+`scene`, слоты `["file", "title", "before", "after"]`. Вид полнокадровый, но
+это подложка: ведущая остаётся уголком поверх неё, вставка сцене не нужна —
+кадр держит позиция. Слова идут по слотам в том же порядке, что в карточке, и
+это те самые строки, которые зритель прочтёт на экране.
+`{{"id": "s-06", "beat": "point", "presenter": "pip-br", "avatarNeeded": true,
    "elements": [{{"name": "v-code-diff",
                 "words": ["service.py", "Платный сервис",
                           "import paid_service", "import claude_code"]}}],
-   "frame": {{"holder": "элемент", "catalog_checked": ["v-code-diff"],
+   "frame": {{"holder": "ведущая", "catalog_checked": ["v-code-diff"],
              "catalog_reason": "взял: названы старый и новый код"}}}}`
 </example>
 
@@ -761,7 +765,7 @@ slow path, and it fails whenever the author's wording differs from yours»
 
 
 def write_montage_skill(rdir, *, positions: str, no_effect_zone: str,
-                        form_floors: str,
+                        covers_backdrop: str, form_floors: str,
                         icon_names: str, series_min: float, series_max: float,
                         face_gap: float, max_static: float, min_scene: float,
                         inserts_low: int, expected_scenes: int,
@@ -797,7 +801,7 @@ def write_montage_skill(rdir, *, positions: str, no_effect_zone: str,
     path.write_text(
         f"---\nname: {SKILL_NAME}\ndescription: {DESCRIPTION}\n---\n\n"
         + _body(positions=positions, no_effect_zone=no_effect_zone,
-                form_floors=form_floors,
+                covers_backdrop=covers_backdrop, form_floors=form_floors,
                 icon_names=icon_names, series_min=series_min,
                 series_max=series_max, face_gap=face_gap,
                 max_static=max_static, min_scene=min_scene,

@@ -1707,7 +1707,9 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # зону, подстановку слов, установку. Чем позиция становится в кадре,
     # решает её карточка (`reels.kind`), а не поле плана:
     #
-    # - `scene` — во весь кадр, их же портом под вертикаль (как схема);
+    # - `scene` — во весь кадр, их же портом под вертикаль, ПОДЛОЖКОЙ под окно
+    #   ведущей (`.ovl-back`, z-index 15): окно уголка остаётся видно поверх,
+    #   как остаётся оно видно под схемой;
     # - `effect` — коробкой в свободной зоне кадра (`effect_zone`);
     # - `overlay` — на стык сцен поверх всего, за `STITCH_LEAD` до среза;
     # - вида нет — это сегодняшняя плашка, и геометрия у неё та же
@@ -1831,8 +1833,12 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                       f' data-start="{at:.4f}" data-duration="{span:.4f}"'
                       f' data-track-index="{track}"')
             if kind == "scene":
+                # Подложка (`.ovl-back`), а не накладка: слой ниже окна
+                # ведущей. Позиция полки заливает свою коробку целиком, и
+                # слоем накладки (z-index 28) она кроет собой оплаченный клип —
+                # ровно ту ошибку, которую задание называет самой дорогой.
                 body.append(
-                    f'    <div class="ovl">'
+                    f'    <div class="ovl-back">'
                     f'<div id="{mount}" class="clip"{common}'
                     f' data-width="{OUT_W}" data-height="{OUT_H}"'
                     f' style="position:absolute;left:0;top:0;'
