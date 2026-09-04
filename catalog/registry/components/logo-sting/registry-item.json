@@ -65,6 +65,7 @@
     }
   ],
   "reels": {
+    "use_when": "Имя бренда появляется ударом: марка бьёт и остаётся.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

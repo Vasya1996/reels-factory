@@ -59,6 +59,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/caption-texture.png"
   },
   "reels": {
+    "use_when": "Речь про вещество или материал: крупное слово набрано камнем, металлом, деревом.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

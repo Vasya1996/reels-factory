@@ -69,6 +69,7 @@
     }
   ],
   "reels": {
+    "use_when": "По готовому заголовку проходит один блик: подчеркнуть уже сказанное.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

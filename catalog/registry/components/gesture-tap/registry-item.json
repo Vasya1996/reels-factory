@@ -72,6 +72,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названо нажатие на телефоне: палец жмёт кнопку, и она отвечает.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

@@ -21,6 +21,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/svg-line-draw-loader.png"
   },
   "reels": {
+    "use_when": "Названо ожидание или ход дела: линия рисуется, пока идёт работа.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

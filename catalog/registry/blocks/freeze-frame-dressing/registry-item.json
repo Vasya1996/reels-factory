@@ -30,6 +30,7 @@
     "video": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/freeze-frame-dressing.mp4"
   },
   "reels": {
+    "use_when": "Момент надо остановить и оформить как вырезку: стоп-кадр, вклейка, «вот этот кадр».",
     "backing": "textless"
   }
 }

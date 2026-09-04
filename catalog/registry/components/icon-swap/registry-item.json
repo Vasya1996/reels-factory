@@ -112,6 +112,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/icon-swap.png"
   },
   "reels": {
+    "use_when": "Названа смена действия в интерфейсе: одна кнопка стала другой.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

@@ -133,6 +133,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названо мягкое и откликающееся: коснулись — оно поддалось.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

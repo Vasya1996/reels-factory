@@ -112,6 +112,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названы имена, которые ручаются: полоса марок, «с нами работают».",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

@@ -18,6 +18,7 @@
     }
   ],
   "reels": {
+    "use_when": "Надо высветить кусок кадра: смотри сюда, остальное неважно.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

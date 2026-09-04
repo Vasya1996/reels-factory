@@ -116,6 +116,7 @@
     }
   ],
   "reels": {
+    "use_when": "Слово набирает вес на глазах: рост, усиление, «стало больше».",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

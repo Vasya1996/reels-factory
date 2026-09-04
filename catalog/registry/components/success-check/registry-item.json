@@ -116,6 +116,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/success-check.png"
   },
   "reels": {
+    "use_when": "Названо, что получилось: готово, подтверждено, зачтено.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

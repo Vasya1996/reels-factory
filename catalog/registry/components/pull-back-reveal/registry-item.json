@@ -65,6 +65,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названо число и то, что за ним стоит: сперва цифра, потом откуда она.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

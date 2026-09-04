@@ -23,6 +23,7 @@
     }
   ],
   "reels": {
+    "use_when": "Надо указать на то, что уже в кадре: вот сюда, вот на эту штуку.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

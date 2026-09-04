@@ -78,6 +78,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/blur-in.png"
   },
   "reels": {
+    "use_when": "Одну ключевую фразу надо прочитать: она проступает из размытия.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

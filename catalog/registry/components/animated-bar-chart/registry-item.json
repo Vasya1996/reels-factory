@@ -18,6 +18,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/animated-bar-chart.png"
   },
   "reels": {
+    "use_when": "Названо несколько величин, которые надо сравнить между собой: доли, месяцы, категории.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

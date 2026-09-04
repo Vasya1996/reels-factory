@@ -75,6 +75,7 @@
     }
   ],
   "reels": {
+    "use_when": "В строке одно слово должно потяжелеть: ударение внутри фразы.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

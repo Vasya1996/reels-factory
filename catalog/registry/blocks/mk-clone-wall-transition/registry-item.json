@@ -22,6 +22,7 @@
     }
   ],
   "reels": {
+    "use_when": "Между главами нужен разрыв словом: одно слово заполняет кадр и уходит.",
     "kind": "overlay",
     "backing": "textless",
     "decor_texts": [],

@@ -69,6 +69,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названа перегрузка: сообщений слишком много, они валятся и давят.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

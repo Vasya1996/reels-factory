@@ -26,6 +26,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/spotify-card.png"
   },
   "reels": {
+    "use_when": "Названа музыка, которая сейчас играет: трек, исполнитель, плеер.",
     "backing": "none"
   }
 }

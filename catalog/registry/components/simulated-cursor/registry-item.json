@@ -84,6 +84,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/simulated-cursor.png"
   },
   "reels": {
+    "use_when": "Названо, что кто-то ведёт мышью по интерфейсу: показ продукта по шагам.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

@@ -84,6 +84,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/separator.png"
   },
   "reels": {
+    "use_when": "Кадр надо разделить чертой: здесь кончается одно и начинается другое.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

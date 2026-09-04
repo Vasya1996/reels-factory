@@ -113,6 +113,7 @@
     }
   ],
   "reels": {
+    "use_when": "Одна фраза сменяется другой на слове: не так, а вот так.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

@@ -29,6 +29,7 @@
     "video": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/organic-light-leak-overlay.mp4"
   },
   "reels": {
+    "use_when": "Между кусками нужен тёплый засвет: воспоминание, переход во времени.",
     "backing": "textless"
   }
 }

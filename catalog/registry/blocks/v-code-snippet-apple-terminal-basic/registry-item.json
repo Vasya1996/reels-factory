@@ -18,6 +18,7 @@
     }
   ],
   "reels": {
+    "use_when": "Вся сцена — сеанс в терминале: команду набирают на глазах.",
     "kind": "scene",
     "text_slots": [
       "window-title",

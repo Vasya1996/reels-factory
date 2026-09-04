@@ -105,6 +105,7 @@
     }
   ],
   "reels": {
+    "use_when": "Слово должно быть сделано руками: рукоделие, крафт, «сшито вручную».",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

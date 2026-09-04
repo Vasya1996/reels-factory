@@ -30,6 +30,7 @@
     "video": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/camcorder-hud.mp4"
   },
   "reels": {
+    "use_when": "Речь про съёмку и запись: кадр подписан как видоискатель камеры.",
     "backing": "none",
     "decor_texts": [
       "REC"

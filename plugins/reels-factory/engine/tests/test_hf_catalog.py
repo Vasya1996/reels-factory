@@ -176,6 +176,71 @@ def test_позиции_снятые_в_b15_предложены_и_валидн
             assert "skip" not in reels, name
 
 
+#: Полка примитивов их клона (`catalog/reference/CATALOG.md`) — те её позиции,
+#: что дошли до нашего каталога. У них `use_when`/`avoid_when` уже написаны
+#: авторами блоков, и наши строки — их перевод, а не сочинение заново.
+_ПОЛКА = [
+    "per-word-rise", "scramble-reveal", "kinetic-type-swap", "oversized-cursor",
+    "press-ripple", "browser-device-stage", "count-up", "chart-story",
+    "titlecard-lockup", "svg-stroke-trace", "whiteboard-ink", "cta-close",
+    "logo-brand-close", "before-after-wipe", "cut-the-curve", "scroll-feed",
+    "iris-reveal", "particle-image-reveal", "telemetry-hud",
+    "native-notification-pop", "vox-annotate",
+]
+
+
+def test_каждая_доступная_позиция_говорит_что_ею_показывают():
+    """`use_when` есть у каждой позиции, которую агент может назвать.
+
+    Судим по `catalog_cards` — это и есть «доступные»: позиция с записанным
+    `reels.skip`, с недоехавшими файлами или наша собственная (`g*`) агенту не
+    предлагается вовсе, и писать ей строку не для кого.
+
+    Причина поля измерена шестью живыми ранними шагами (density-report):
+    карточка несла `description` их реестра, а он описывает анимацию —
+    «Animated world choropleth … D3 Natural Earth projection». Чтобы решить,
+    годится ли позиция сцене, агент должен был перевести описание геометрии в
+    монтажное суждение, и в четырёх прогонах из шести не переводил: находил
+    `v-world-map` грепом по тегу `map` под ролик целиком про карту страны — и
+    не ставил ничего.
+    """
+    for name, card in sorted(catalog_cards().items()):
+        text = card.get("use_when") or ""
+        assert text.strip(), f"{name}: не сказано, что этой позицией показывают"
+        assert "\n" not in text, f"{name}: `use_when` длиннее одной строки"
+        assert any("а" <= ch.lower() <= "я" for ch in text), \
+            f"{name}: `use_when` написан не по-русски"
+
+
+def test_у_позиций_полки_переведён_и_avoid_when():
+    """Разбор полки их клона несёт две строки, и вторая — тоже суждение о
+    содержании: «числу нужен контекст — бери chart-story». Перевод берёт обе,
+    иначе половина уже написанной работы осталась бы в файле, куда свод правил
+    поиск не отправляет."""
+    cards = catalog_cards()
+    for name in _ПОЛКА:
+        assert name in cards, f"{name}: позиция полки не предлагается"
+        assert (cards[name].get("avoid_when") or "").strip(), name
+
+
+def test_use_when_попадает_в_строку_карточки_индекса():
+    """Греп по слову из реплики должен находить позицию.
+
+    Карточка занимает одну строку (`test_карточка_индекса_занимает_одну_
+    строку`), поэтому проверять надо не наличие поля в JSON, а то, что оно
+    стоит в той же строке, где имя: свод правил велит искать `grep`-ом, и
+    строка, найденная по слову из `intent`, обязана нести имя позиции.
+    """
+    text = catalog_index(FIXTURE)
+    fenced = text.split("```json")[1].split("```")[0].strip()
+    body = json.loads(fenced)
+    lines = fenced.splitlines()
+    for card, line in zip(body, lines[1:-1]):
+        assert card["use_when"] in line, f"{card['name']}: `use_when` не в строке"
+        assert card["name"] in line
+    assert "`use_when`" in text, "шапка индекса не называет, чем ещё искать"
+
+
 def test_block_names_не_включает_компоненты():
     """`block_names` открывает файл по пути `blocks/<имя>` — отдай он имя
     компонента, следующий читатель (`block_backing`, `skipped_blocks`, …)
