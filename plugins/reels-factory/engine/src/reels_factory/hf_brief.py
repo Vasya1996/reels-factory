@@ -121,6 +121,14 @@ def _candidate_line(card: dict) -> str:
     """
     parts = [f'  - `{card["name"]}` ({card.get("kind") or "плашка"}) — '
              f'{card.get("use_when") or card.get("title") or ""}']
+    # `avoid_when` стоит там, где случай уже разобран: чаще всего это контент,
+    # которого у плана нет вовсе — свой снимок экрана, имя бренда, оценка. Без
+    # этой строки код предлагает такую позицию любой фразе, где прозвучало
+    # слово «бренд», а разбираться агенту пришлось бы в индексе. Очков в поиске
+    # `avoid_when` не даёт (`_card_text`, hf_catalog.py) — он отвечает на
+    # вопрос «брать ли», а не «найти ли».
+    if card.get("avoid_when"):
+        parts.append("зря: " + card["avoid_when"])
     if card.get("text_slots"):
         parts.append("слова: " + ", ".join(card["text_slots"]))
     if card.get("variables"):
