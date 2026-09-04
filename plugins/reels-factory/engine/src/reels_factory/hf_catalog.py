@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
@@ -259,6 +260,73 @@ def overlay_names(catalog_dir=None) -> list[str]:
             if "overlay" in (item.get("tags") or [])]
 
 
+#: Как их компоненты объявляют переменные композиции: JSON-массив в атрибуте
+#: корня, в одинарных кавычках (все 175 размеченных файлов каталога — так, и
+#: так же его читает их же блок `v-bar-chart-race.js:18`). Варианты значения
+#: лежат внутри объявления полем `options` — списком `{"value", "label"}`
+#: (`icon-morph-beat.html:32`), и в карточке реестра их нет: `reels.variables`
+#: держит только тип и умолчание.
+_VARIABLES_ATTR = re.compile(
+    r"data-composition-variables\s*=\s*'(.*?)'", re.DOTALL)
+
+
+@functools.lru_cache(maxsize=1024)
+def _declared_options(path: str, stamp: tuple) -> tuple:
+    """Варианты значений переменных одного файла позиции: `(имя, (значения…))`.
+
+    Читается из самой разметки, а не из карточки: список вариантов — это то,
+    что автор позиции уже написал в `data-composition-variables`, и второе его
+    издание в `registry-item.json` разошлось бы с первым при первой же правке
+    компонента.
+
+    Кэш по пути и отпечатку файла: карточек полторы сотни, а `catalog_cards`
+    зовут и индекс, и оба гейта элементов, и задание.
+    """
+    del stamp  # часть ключа кэша, а не аргумент разбора
+    try:
+        html = Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return ()
+    found = _VARIABLES_ATTR.search(html)
+    if not found:
+        return ()
+    try:
+        declared = json.loads(found.group(1))
+    except ValueError:
+        log.debug("позиция %s: `data-composition-variables` не разбирается",
+                  path)
+        return ()
+    out = []
+    for item in declared if isinstance(declared, list) else []:
+        if not isinstance(item, dict) or not item.get("options"):
+            continue
+        values = tuple(str(option.get("value"))
+                       for option in item["options"]
+                       if isinstance(option, dict) and option.get("value")
+                       is not None)
+        if values:
+            out.append((str(item.get("id")), values))
+    return tuple(out)
+
+
+def _variable_options(folder: Path, item: dict) -> dict[str, list[str]]:
+    """Варианты значений переменных позиции по всем её файлам разметки."""
+    found = {}
+    for entry in item.get("files") or []:
+        name = str(entry.get("path") or "")
+        if not name.endswith(".html"):
+            continue
+        path = folder / name
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        for key, values in _declared_options(str(path),
+                                             (stat.st_mtime, stat.st_size)):
+            found.setdefault(key, list(values))
+    return found
+
+
 def catalog_cards(catalog_dir=None) -> dict[str, dict]:
     """Позиции каталога для агента и для проверок — по имени.
 
@@ -324,7 +392,24 @@ def catalog_cards(catalog_dir=None) -> dict[str, dict]:
         if reels.get("text_slots"):
             card["text_slots"] = [str(slot) for slot in reels["text_slots"]]
         if reels.get("variables"):
-            card["variables"] = dict(reels["variables"])
+            # Варианты значения `enum` в карточке реестра не записаны, а без
+            # них поле в плане не заполнить: на живом раннем шаге агент так и
+            # сказал — «`icon-morph-beat` близко, но допустимые значения `pair`
+            # каталог не называет» — и позицию не взял. Берём их оттуда, где их
+            # написал автор позиции: из `data-composition-variables` разметки.
+            subdir = ("components"
+                      if str(item.get("type", "")).endswith("component")
+                      else "blocks")
+            options = _variable_options(
+                Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR / subdir
+                / name, item)
+            variables = {}
+            for key, rule in reels["variables"].items():
+                rule = dict(rule)
+                if options.get(key) and not rule.get("options"):
+                    rule["options"] = list(options[key])
+                variables[key] = rule
+            card["variables"] = variables
         if reels.get("decor_texts"):
             card["decor_texts"] = [str(text) for text in reels["decor_texts"]]
         found[name] = card
@@ -518,7 +603,9 @@ _INDEX_HEAD = """# Каталог этого прогона
 - `text_slots` — надписи позиции, которые код подменит твоими словами: в поле
   `words` пиши по строке на слот, в том же порядке.
 - `variables` — параметры позиции с типом и значением по умолчанию: в поле
-  `variables` пиши только те, что меняешь.
+  `variables` пиши только те, что меняешь. У переменной-выбора (`enum`) рядом
+  стоит `options` — список допустимых значений, и другое значение план не
+  примет (`D36_elements`).
 
 """
 

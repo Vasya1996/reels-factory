@@ -310,6 +310,34 @@ def test_индекс_отдаёт_карточки_всех_трёх_видов
     assert "dimensions" not in cards["count-up"]
 
 
+def test_варианты_выбора_берутся_из_разметки_позиции():
+    """Живой ранний шаг отказался от позиции этой дырой: «`icon-morph-beat`
+    близко, но допустимые значения `pair` каталог не называет»
+    (presearch-report, донор A). Варианты автор позиции пишет в
+    `data-composition-variables` разметки полем `options`; карточка реестра
+    держит только тип и умолчание, и без разбора разметки заполнить поле в
+    плане было нечем.
+    """
+    accent = catalog_cards(FIXTURE)["count-up"]["variables"]["accent"]
+    assert accent == {"type": "enum", "default": "green",
+                      "options": ["green", "blue", "violet"]}
+    # Тип без выбора вариантов не заводит.
+    assert "options" not in catalog_cards(FIXTURE)["count-up"]["variables"]["end"]
+
+
+def test_у_живого_каталога_выбор_назван_у_каждой_переменной_enum():
+    """Тот самый случай отказа — на боевом каталоге, а не на фикстуре: без
+    вариантов `enum` в плане не заполнить вовсе."""
+    cards = catalog_cards()
+    pair = cards["icon-morph-beat"]["variables"]["pair"]
+    assert pair["options"] == ["mic-check", "play-check", "lock-unlock"]
+    немые = [f'{card["name"]}.{key}'
+             for card in cards.values()
+             for key, rule in (card.get("variables") or {}).items()
+             if rule.get("type") == "enum" and not rule.get("options")]
+    assert not немые, "выбор без вариантов: " + ", ".join(немые[:5])
+
+
 def test_позиция_с_причиной_отказа_в_индекс_не_попадает(caplog):
     """Причина отказа записана в карточке, и агенту такую позицию не
     предлагают: исправить её он не может — это дефект каталога, а не плана."""

@@ -124,8 +124,25 @@ def _candidate_line(card: dict) -> str:
     if card.get("text_slots"):
         parts.append("слова: " + ", ".join(card["text_slots"]))
     if card.get("variables"):
-        parts.append("переменные: " + ", ".join(card["variables"]))
+        parts.append("переменные: " + ", ".join(_variable_names(card)))
     return "; ".join(parts)
+
+
+def _variable_names(card: dict) -> list[str]:
+    """Переменные позиции для строки кандидата: имя, а у выбора — сам выбор.
+
+    Живой ранний шаг отказался от позиции этой самой дырой: «`icon-morph-beat`
+    близко, но допустимые значения `pair` каталог не называет». Варианты берёт
+    из разметки сам каталог (`hf_catalog._variable_options`), здесь только
+    печать — и печатается она у той переменной, где выбор есть, а не списком
+    всего подряд.
+    """
+    out = []
+    for name, rule in (card.get("variables") or {}).items():
+        options = (rule or {}).get("options")
+        out.append(f"{name}: {'|'.join(str(one) for one in options)}"
+                   if options else str(name))
+    return out
 
 
 def _phrase_candidates(phrases: list[dict]) -> dict[int, list[dict]]:

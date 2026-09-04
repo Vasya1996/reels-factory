@@ -137,8 +137,10 @@ def _form_problems(scene_id: str, field: str, plan) -> list[str]:
 
 #: Типы `data-composition-variables` их же полки и что мы принимаем за каждый.
 #: Список из карточки позиции (`reels.variables`), а значение — из плана: два
-#: разных типа под одним именем их рантайм не разводит вовсе, а `enum` без
-#: списка `options` принимает любую строку.
+#: разных типа под одним именем их рантайм не разводит вовсе. У `enum` сверх
+#: типа сверяется сам выбор: варианты каталог читает из разметки позиции
+#: (`hf_catalog._variable_options`), и значение вне списка их движок молча
+#: заменит умолчанием — уже после оплаты.
 _VARIABLE_TYPES = {
     "number": (int, float),
     "string": (str,),
@@ -220,6 +222,13 @@ def _element_problems(scene: dict, element: dict, cards: dict,
             problems.append(
                 f"{where}: переменная {key!r} объявлена типом "
                 f'{rule.get("type")}, а в плане {type(value).__name__}')
+            continue
+        options = rule.get("options")
+        if options and value not in options:
+            problems.append(
+                f"{where}: переменная {key!r} принимает "
+                + ", ".join(f"`{one}`" for one in options)
+                + f", а в плане {value!r}")
     words = element.get("words")
     if words is not None and not isinstance(words, list):
         problems.append(f"{where}: `words` — список строк по числу слотов")

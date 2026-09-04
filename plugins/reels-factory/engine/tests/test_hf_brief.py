@@ -3247,6 +3247,23 @@ def test_под_фразой_задания_стоят_кандидаты_кат
         assert slot in карта[0], f"слот {slot} кандидата не назван"
 
 
+def test_у_кандидата_переменная_выбора_названа_вариантами(tmp_path):
+    """Имени переменной мало: живой ранний шаг отказался от позиции словами
+    «`icon-morph-beat` близко, но допустимые значения `pair` каталог не
+    называет» (presearch-report, донор A). Варианты читает из разметки сам
+    каталог, а строка кандидата их печатает — у той переменной, где выбор
+    есть.
+    """
+    from reels_factory.hf_brief import _candidate_line
+    from reels_factory.hf_catalog import catalog_cards
+
+    строка = _candidate_line(catalog_cards()["icon-morph-beat"])
+    assert "pair: mic-check|play-check|lock-unlock" in строка, строка
+    # У переменной без выбора печатается одно имя — списка вариантов у неё нет.
+    строка = _candidate_line(catalog_cards()["count-up"])
+    assert "end," in строка or строка.endswith("end"), строка
+
+
 def test_образец_показывает_решение_про_кадр(tmp_path):
     """`frame` требует `D36_elements` у каждой сцены, а приёма, которого нет в
     образце, агент не применяет вовсе — это измерено дважды (`_add_backups`,
