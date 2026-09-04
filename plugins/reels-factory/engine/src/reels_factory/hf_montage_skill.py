@@ -262,8 +262,9 @@ def _final_rule(avatar_ordered: bool) -> str:
             "зрителя в последней сцене, где оно есть.")
 
 
-def _body(*, positions: str, form_floors: str, icon_names: str,
-          series_min: float, series_max: float, face_gap: float,
+def _body(*, positions: str, no_effect_zone: str, form_floors: str,
+          icon_names: str, series_min: float, series_max: float,
+          face_gap: float,
           max_static: float, min_scene: float, avatar_ordered: bool,
           min_fullscreen: float, max_face_absence: float,
           inserts_low: int, expected_scenes: int, char_limits: str) -> str:
@@ -611,6 +612,14 @@ slow path, and it fails whenever the author's wording differs from yours»
 положения ведущей в этой сцене и из полосы титра. Секунды тоже его: позиция
 живёт свою сцену, а стык — свою родную длительность на срезе.
 
+Зона эта есть не всегда. Позиция вида `effect` встаёт в свободный кусок кадра
+между окном ведущей и полосой титра, и при положениях {no_effect_zone} такого
+куска не остаётся: ведущая занимает кадр целиком либо оставляет полосу ниже
+любой коробки. План, где `effect` стоит на такой сцене, возвращается на
+пересдачу с этой причиной (`D36_elements`) — либо дай сцене уголок `pip-*` или
+`none`, либо возьми позицию другого вида. Видов `scene` и `overlay` это не
+касается: первая занимает кадр целиком, вторая живёт на срезе между сценами.
+
 <example>
 Сцена s-04, реплика «За год это двенадцать платежей за один и тот же сервис».
 Фраза шага 1 — «показать, что счёт вырос до двенадцати». Строка таблицы —
@@ -703,7 +712,8 @@ slow path, and it fails whenever the author's wording differs from yours»
 """
 
 
-def write_montage_skill(rdir, *, positions: str, form_floors: str,
+def write_montage_skill(rdir, *, positions: str, no_effect_zone: str,
+                        form_floors: str,
                         icon_names: str, series_min: float, series_max: float,
                         face_gap: float, max_static: float, min_scene: float,
                         inserts_low: int, expected_scenes: int,
@@ -738,7 +748,8 @@ def write_montage_skill(rdir, *, positions: str, form_floors: str,
     path = folder / "SKILL.md"
     path.write_text(
         f"---\nname: {SKILL_NAME}\ndescription: {DESCRIPTION}\n---\n\n"
-        + _body(positions=positions, form_floors=form_floors,
+        + _body(positions=positions, no_effect_zone=no_effect_zone,
+                form_floors=form_floors,
                 icon_names=icon_names, series_min=series_min,
                 series_max=series_max, face_gap=face_gap,
                 max_static=max_static, min_scene=min_scene,

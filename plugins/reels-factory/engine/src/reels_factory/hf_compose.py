@@ -223,6 +223,22 @@ def _overlay_wide_top(box_height: float) -> int:
     return max(0, CAPTION_BAND_TOP - CAPTION_BAND_SAFETY - round(box_height))
 
 
+def effect_zone(presenter: str) -> dict | None:
+    """Свободная зона кадра под элемент-эффект при этом положении ведущей.
+
+    `None` — зоны нет, и элемент вида `effect` в такую сцену не встаёт.
+
+    Одна дверь на троих: сборка ставит по ней коробку, ранняя сверка плана
+    (`hf_gates._element_problems`) отвечает по ней же «зоны нет» — до заказа
+    ведущей, а не молча на сборке, — и задание печатает по ней же список
+    положений, при которых зоны не бывает (`hf_brief._no_effect_zone`).
+    Полоса титра — наша, `hf_layout.effect_rect` о ней не знает, и подставить
+    её в трёх местах порознь значит завести три разных правила.
+    """
+    return effect_rect(presenter,
+                       band_top=CAPTION_BAND_TOP - CAPTION_BAND_SAFETY)
+
+
 def _overlay_geometry(block: str, canvas: tuple) -> tuple[float, str]:
     """Масштаб и место плашки в кадре по её канвасу.
 
@@ -1654,11 +1670,10 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # решает её карточка (`reels.kind`), а не поле плана:
     #
     # - `scene` — во весь кадр, их же портом под вертикаль (как схема);
-    # - `effect` — коробкой в свободной зоне кадра (`effect_rect`);
+    # - `effect` — коробкой в свободной зоне кадра (`effect_zone`);
     # - `overlay` — на стык сцен поверх всего, за `STITCH_LEAD` до среза;
     # - вида нет — это сегодняшняя плашка, и геометрия у неё та же
     #   (`_overlay_geometry`).
-    band_top = CAPTION_BAND_TOP - CAPTION_BAND_SAFETY
     staged_elements = 0
     #: Имя -> тип карточки: исходник компонента снят по `components/`, не по
     #: плоской `compositions/` — тип нужен ниже, чтобы объявить ему коробку
@@ -1694,7 +1709,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             rect = None
             if kind == "effect":
                 position = str(scene.get("presenter") or "none")
-                rect = effect_rect(position, band_top=band_top)
+                rect = effect_zone(position)
                 if rect is None:
                     print(f'{scene["id"]}: элемент {name} снят — ведущая '
                           f"{position!r} не оставила в кадре свободной зоны "
