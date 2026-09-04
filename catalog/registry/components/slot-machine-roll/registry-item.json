@@ -114,6 +114,6 @@
         "default": "ink"
       }
     },
-    "skip": "layout:container_overflow:div.hf-catalog-slot-machine-roll > span:nth-of-type(1) > i:nth-of-type(1):Element extends outside a clipping layout container.; layout:container_overflow:div.hf-catalog-slot-machine-roll > span:nth-of-type(2) > i:nth-of-type(1):Element extends outside a clipping layout container.; layout:container_overflow:div.hf-catalog-slot-machine-roll > span:nth-of-type(3) > i:nth-of-type(1):Element extends outside a clipping layout container."
+    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > span:nth-of-type(1) > i: Contrast is 1.11:1; WCAG AA requires 3:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > span:nth-of-type(2) > i: Contrast is 1.11:1; WCAG AA requires 3:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > span:nth-of-type(3) > i: Contrast is 1.11:1; WCAG AA requires 3:1."
   }
 }

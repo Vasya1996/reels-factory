@@ -96,7 +96,6 @@
         "type": "enum",
         "default": "yes"
       }
-    },
-    "skip": "contrast:contrast_aa_failure:div > div > div > div > section > h1:Contrast is 1.07:1; WCAG AA requires 3:1.; contrast:contrast_aa_failure:div > div > div > div > section > div > div:nth-of-type(1) > span:nth-of-type(1) > span:Contrast is 1.07:1; WCAG AA requires 4.5:1.; contrast:contrast_aa_failure:div > div > div > div > section > div > div:nth-of-type(1) > span:nth-of-type(2) > span:nth-of-type(2):Contrast is 1.07:1; WCAG AA requires 4.5:1."
+    }
   }
 }

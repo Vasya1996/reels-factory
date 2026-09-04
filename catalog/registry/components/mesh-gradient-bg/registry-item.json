@@ -22,6 +22,6 @@
     "mount": "paste",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "layout:container_overflow:div.mesh:Element extends outside a clipping layout container.; layout:panel_out_of_canvas:div.mesh:Painted panel extends outside the composition canvas.; contrast:contrast_aa_failure:div > div > div > div > div:nth-of-type(2) > div:nth-of-type(2) > p:Contrast is 2.27:1; WCAG AA requires 4.5:1."
+    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div:nth-of-type(2) > div:nth-of-type(2) > p: Contrast is 2.25:1; WCAG AA requires 4.5:1."
   }
 }

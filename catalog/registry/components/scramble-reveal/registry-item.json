@@ -125,7 +125,6 @@
         "type": "enum",
         "default": "none"
       }
-    },
-    "skip": "layout:clipped_text:span.sr-text:Text content is clipped by its own box.; layout:text_box_overflow:span.sr-text:Text extends outside its nearest visual/container box."
+    }
   }
 }

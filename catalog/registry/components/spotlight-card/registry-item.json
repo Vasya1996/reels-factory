@@ -21,7 +21,6 @@
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],
-    "text_slots": [],
-    "skip": "layout:container_overflow:div.mesh:Element extends outside a clipping layout container."
+    "text_slots": []
   }
 }

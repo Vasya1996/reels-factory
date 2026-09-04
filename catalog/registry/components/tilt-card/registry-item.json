@@ -105,7 +105,6 @@
         "type": "enum",
         "default": "indigo"
       }
-    },
-    "skip": "layout:container_overflow:div.hf-transition-tilt-glow:Element extends outside a clipping layout container."
+    }
   }
 }

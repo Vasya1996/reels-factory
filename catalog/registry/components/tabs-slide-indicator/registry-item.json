@@ -123,6 +123,6 @@
         "default": "Plan,Debug,Ask"
       }
     },
-    "skip": "contrast:contrast_aa_failure:div > div > div > div > button:nth-of-type(1):Contrast is 3.67:1; WCAG AA requires 4.5:1.; contrast:contrast_aa_failure:div > div > div > div > button:nth-of-type(2):Contrast is 1.1:1; WCAG AA requires 4.5:1.; contrast:contrast_aa_failure:div > div > div > div > button:nth-of-type(3):Contrast is 4.4:1; WCAG AA requires 4.5:1."
+    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > button:nth-of-type(1): Contrast is 3.67:1; WCAG AA requires 4.5:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > button:nth-of-type(2): Contrast is 1.1:1; WCAG AA requires 4.5:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > button:nth-of-type(3): Contrast is 4.4:1; WCAG AA requires 4.5:1."
   }
 }

@@ -27,6 +27,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "layout:container_overflow:#highlight:Element extends outside a clipping layout container."
+    "skip": "caption_zone_collision [layout] #hl-w-20 > span:nth-of-type(2): <span> \"DRAG\" is centred in the reserved caption band (~23% up from the bottom).; caption_zone_collision [layout] #hl-w-21 > span:nth-of-type(2): <span> \"AND\" is centred in the reserved caption band (~23% up from the bottom)."
   }
 }

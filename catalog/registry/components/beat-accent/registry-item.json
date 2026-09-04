@@ -93,7 +93,6 @@
         "type": "number",
         "default": 1
       }
-    },
-    "skip": "layout:clipped_text:div.ba-subject:Text content is clipped by its own box.; layout:text_box_overflow:div.ba-subject:Text extends outside its nearest visual/container box."
+    }
   }
 }

@@ -24,6 +24,6 @@
     "mount": "paste",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "lint:missing_or_empty_sub_composition:[data-composition-id]:data-composition-src references \"compositions/components/caption-blend-difference.html\", but the file has no <template> or <body> content to render."
+    "skip": "paste-контракт: то же самое — без анимации из их комментария зона пустая на всех трёх кадрах пробы, контента не видно вовсе."
   }
 }

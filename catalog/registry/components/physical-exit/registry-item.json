@@ -97,7 +97,6 @@
         "type": "enum",
         "default": "green"
       }
-    },
-    "skip": "layout:clipped_text:span.pe-label:Text content is clipped by its own box.; layout:text_box_overflow:span.pe-label:Text extends outside its nearest visual/container box."
+    }
   }
 }

@@ -22,6 +22,6 @@
     "mount": "paste",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "layout:text_occluded:div.card > div:nth-of-type(2) > h3:nth-of-type(1):Text is hidden beneath an opaque element.; layout:text_occluded:div.card > div:nth-of-type(2) > p:nth-of-type(1):Text is hidden beneath an opaque element.; layout:container_overflow:div.mesh:Element extends outside a clipping layout container."
+    "skip": "paste-контракт: карточка с заголовком «Confetti» встаёт и читается, но сама конфетти-анимация (весь смысл позиции) держится на их таймлайне из комментария, который наш путь не подключает — кадр обещает эффект и не показывает его."
   }
 }

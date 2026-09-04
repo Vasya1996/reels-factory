@@ -88,6 +88,6 @@
         "default": "green"
       }
     },
-    "skip": "layout:text_occluded:span.rbb-kicker:Text is hidden beneath an opaque element.; layout:text_occluded:h2.rbb-title:Text is hidden beneath an opaque element.; layout:text_occluded:p.rbb-subtitle:Text is hidden beneath an opaque element."
+    "skip": "content_overlap [layout] h2.rbb-title: Two text blocks overlap and may render unreadable.; content_overlap [layout] p.rbb-subtitle: Two text blocks overlap and may render unreadable.; content_overlap [layout] p.rbb-subtitle: Two text blocks overlap and may render unreadable."
   }
 }

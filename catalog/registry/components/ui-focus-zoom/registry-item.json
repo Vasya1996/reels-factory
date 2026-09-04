@@ -179,6 +179,6 @@
         "default": "none"
       }
     },
-    "skip": "layout:container_overflow:div.ufz-world:Element extends outside a clipping layout container.; layout:panel_out_of_canvas:div.ufz-surface:Painted panel extends outside the composition canvas."
+    "skip": "composition_file_too_large [lint] [data-composition-id]: This HTML composition file has 333 lines. Smaller sub-compositions are easier to read, iterate on, and diff."
   }
 }

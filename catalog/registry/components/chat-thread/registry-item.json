@@ -126,6 +126,6 @@
         "default": "on"
       }
     },
-    "skip": "layout:text_occluded:#cht-avatar:Text is hidden beneath an opaque element.; layout:content_overlap:#cht-avatar:Two text blocks overlap and may render unreadable."
+    "skip": "composition_file_too_large [lint] [data-composition-id]: This HTML composition file has 321 lines. Smaller sub-compositions are easier to read, iterate on, and diff.; content_overlap [layout] #cht-avatar: Two text blocks overlap and may render unreadable.; contrast_aa_failure [contrast] #cht-avatar: Contrast is 1.09:1; WCAG AA requires 4.5:1."
   }
 }

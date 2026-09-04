@@ -117,6 +117,6 @@
         "default": "COMPONENTS, PRIMITIVES, TRANSITIONS, AGENTS"
       }
     },
-    "skip": "layout:container_overflow:div.hf-catalog-perspective-marquee > div:nth-of-type(1):Element extends outside a clipping layout container."
+    "skip": "строка тегов («COMPONENTS PRIMITIVES TRANSITIONS A…») шире зоны и обрезается правым краем кадра — check --strict чисто (overflow:hidden прячет находку), но на глаз последний тег нечитаем."
   }
 }

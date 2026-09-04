@@ -25,6 +25,6 @@
     "mount": "paste",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "runtime:page_error:[data-composition-id]:Cannot use import statement outside a module"
+    "skip": "paste-контракт: модульный скрипт (type=\"module\") наш путь не вставляет (см. docstring paste_effect) — карточка с заголовком встаёт и читается, но сама 3D-сцена (весь смысл позиции) не рисуется вовсе, в зоне только тёмный прямоугольник."
   }
 }

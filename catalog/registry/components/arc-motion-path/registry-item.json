@@ -25,6 +25,6 @@
     "mount": "paste",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "layout:text_occluded:div.chip.chip-a:Text is hidden beneath an opaque element.; layout:content_overlap:div.chip.chip-a:Two text blocks overlap and may render unreadable."
+    "skip": "content_overlap [layout] div.chip.chip-a: Two text blocks overlap and may render unreadable."
   }
 }

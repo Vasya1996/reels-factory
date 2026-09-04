@@ -27,6 +27,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "layout:content_overlap:#sc-real-1:Two text blocks overlap and may render unreadable.; layout:content_overlap:#sc-real-2:Two text blocks overlap and may render unreadable.; layout:container_overflow:#matrix-decode:Element extends outside a clipping layout container."
+    "skip": "caption_zone_collision [layout] #sc-real-20: <span> \"drag\" is centred in the reserved caption band (~22% up from the bottom).; caption_zone_collision [layout] #sc-scr1-21: <span> \"fLim\" is centred in the reserved caption band (~22% up from the bottom)."
   }
 }

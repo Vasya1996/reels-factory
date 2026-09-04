@@ -87,6 +87,6 @@
         "default": "Feature"
       }
     },
-    "skip": "layout:clipped_text:span.sr-label:Text content is clipped by its own box.; layout:text_box_overflow:span.sr-label:Text extends outside its nearest visual/container box.; layout:clipped_text:span.sr-label:Text content is clipped by its own box."
+    "skip": "studio_missing_editable_id [lint] [data-composition-id]: <div class=\"sr-clip\" data-start=\"0\" data-track-index=\"0\"> has no id, so Studio cannot use a stable edit target for its timeline and canvas controls.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > div > div:nth-of-type(1) > article:nth-of-type(2) > span:nth-of-type(1): Contrast is 2.09:1; WCAG AA requires 3:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > div > div:nth-of-type(1) > article:nth-of-type(4) > span:nth-of-type(1): Contrast is 2.09:1; WCAG AA requires 3:1."
   }
 }

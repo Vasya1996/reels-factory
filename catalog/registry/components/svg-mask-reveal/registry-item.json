@@ -78,7 +78,6 @@
         "type": "number",
         "default": 24
       }
-    },
-    "skip": "contrast:contrast_aa_failure:#svg-mask-reveal-outline:Contrast is 1.07:1; WCAG AA requires 3:1."
+    }
   }
 }

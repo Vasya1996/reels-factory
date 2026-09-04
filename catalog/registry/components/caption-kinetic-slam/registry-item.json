@@ -27,6 +27,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "layout:content_overlap:#kt-w-0:Two text blocks overlap and may render unreadable.; layout:content_overlap:#kt-w-1:Two text blocks overlap and may render unreadable.; layout:content_overlap:#kt-w-4:Two text blocks overlap and may render unreadable."
+    "skip": "caption_zone_collision [layout] #kt-w-21: <div> \"AND\" is centred in the reserved caption band (~42% up from the bottom).; caption_zone_collision [layout] #kt-w-22: <div> \"DROP.\" is centred in the reserved caption band (~42% up from the bottom)."
   }
 }

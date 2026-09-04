@@ -28,6 +28,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "layout:content_overlap:#morph-a:Two text blocks overlap and may render unreadable.; layout:container_overflow:#morph-text:Element extends outside a clipping layout container.; layout:content_overlap:#morph-a:Two text blocks overlap and may render unreadable."
+    "skip": "content_overlap [layout] #morph-a: Two text blocks overlap and may render unreadable.; content_overlap [layout] #morph-a: Two text blocks overlap and may render unreadable.; content_overlap [layout] #morph-a: Two text blocks overlap and may render unreadable."
   }
 }

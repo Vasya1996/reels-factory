@@ -92,6 +92,6 @@
         "default": "ink"
       }
     },
-    "skip": "layout:content_overlap:div.hf-catalog-rgb-glitch-text > span:nth-of-type(1):Two text blocks overlap and may render unreadable.; layout:content_overlap:div.hf-catalog-rgb-glitch-text > span:nth-of-type(1):Two text blocks overlap and may render unreadable.; layout:content_overlap:div.hf-catalog-rgb-glitch-text > span:nth-of-type(2):Two text blocks overlap and may render unreadable."
+    "skip": "content_overlap [layout] div.hf-catalog-rgb-glitch-text--rgb-glitch-text--s-01 > span:nth-of-type(1): Two text blocks overlap and may render unreadable.; content_overlap [layout] div.hf-catalog-rgb-glitch-text--rgb-glitch-text--s-01 > span:nth-of-type(1): Two text blocks overlap and may render unreadable.; content_overlap [layout] div.hf-catalog-rgb-glitch-text--rgb-glitch-text--s-01 > span:nth-of-type(2): Two text blocks overlap and may render unreadable."
   }
 }

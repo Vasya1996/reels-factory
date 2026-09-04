@@ -156,6 +156,6 @@
         "default": "TODAY"
       }
     },
-    "skip": "lint:gsap_timeline_set_initial_hide — Initial hidden state for \".ch\" is set via tl.set(...) at position 0 inside the paused timeline; frame 0 shows the un-hidden state. Плюс composition_file_too_large (1164 строки) и реальные layout:content_overlap на div.cl-label/div.cl-value, layout:escaped_container на #note-body."
+    "skip": "gsap_timeline_set_initial_hide [lint] .ch: Initial hidden state for \".ch\" is set via tl.set(...) at position 0 inside the paused timeline. A zero-duration set at 0 does not render while the playhead sits exactly at 0, so frame 0 shows the un-hidden state.; gsap_timeline_set_initial_hide [lint] .ch: Initial hidden state for \".ch\" is set via tl.set(...) at position 0 inside the paused timeline. A zero-duration set at 0 does not render while the playhead sits exactly at 0, so frame 0 shows the un-hidden state."
   }
 }

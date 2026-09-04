@@ -146,7 +146,6 @@
         "type": "enum",
         "default": "none"
       }
-    },
-    "skip": "layout:escaped_container:div.lsp-band:Positioned element renders far outside its offset parent — its coordinates were likely computed in a different frame (canvas/viewport pixels)."
+    }
   }
 }
