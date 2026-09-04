@@ -124,7 +124,7 @@
     },
     {
       "path": "assets/hyperframes-logo-white.svg",
-      "target": "compositions/assets/hyperframes-logo-white.svg",
+      "target": "assets/hyperframes-logo-white.svg",
       "type": "hyperframes:asset"
     }
   ],

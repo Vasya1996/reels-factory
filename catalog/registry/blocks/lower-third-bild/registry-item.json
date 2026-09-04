@@ -23,12 +23,12 @@
     },
     {
       "path": "assets/fonts/BarlowCondensed-Bold.woff2",
-      "target": "compositions/assets/fonts/BarlowCondensed-Bold.woff2",
+      "target": "assets/fonts/BarlowCondensed-Bold.woff2",
       "type": "hyperframes:asset"
     },
     {
       "path": "assets/fonts/BarlowCondensed-ExtraBold.woff2",
-      "target": "compositions/assets/fonts/BarlowCondensed-ExtraBold.woff2",
+      "target": "assets/fonts/BarlowCondensed-ExtraBold.woff2",
       "type": "hyperframes:asset"
     }
   ],

@@ -75,27 +75,27 @@
     },
     {
       "path": "assets/slide-01.jpg",
-      "target": "compositions/assets/slide-01.jpg",
+      "target": "assets/slide-01.jpg",
       "type": "hyperframes:asset"
     },
     {
       "path": "assets/slide-02.jpg",
-      "target": "compositions/assets/slide-02.jpg",
+      "target": "assets/slide-02.jpg",
       "type": "hyperframes:asset"
     },
     {
       "path": "assets/slide-03.jpg",
-      "target": "compositions/assets/slide-03.jpg",
+      "target": "assets/slide-03.jpg",
       "type": "hyperframes:asset"
     },
     {
       "path": "assets/slide-04.jpg",
-      "target": "compositions/assets/slide-04.jpg",
+      "target": "assets/slide-04.jpg",
       "type": "hyperframes:asset"
     },
     {
       "path": "assets/hyperframes-logo-black.svg",
-      "target": "compositions/assets/hyperframes-logo-black.svg",
+      "target": "assets/hyperframes-logo-black.svg",
       "type": "hyperframes:asset"
     }
   ],

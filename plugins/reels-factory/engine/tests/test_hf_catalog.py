@@ -1,5 +1,6 @@
 """Наш каталог блоков, отданный агенту их способом — через поле registry."""
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -252,3 +253,85 @@ def test_справочники_фреймворка_лежат_в_репози�
     )
     for name in REFERENCE_FILES:
         assert (CATALOG_DIR / REFERENCE_SUBDIR / name).exists(), name
+
+
+#: Простой относительный src/href/CSS-url — без ведущего "/" (корень
+#: проекта), без "data:" (инлайн) и без "../" (тот их линтер переписывает
+#: сам, `rewriteAssetPath` в исходнике их CLI на нашем пине 0.7.84,
+#: `dist/cli.js` — не путать с более новым клоном `hyperframes-ref`, где та
+#: же функция уже умеет искать соседа на диске).
+_PLAIN_RELATIVE_ASSET_REF = re.compile(
+    r'(?:src|href)=["\'](?!https?:|/|data:)([^"\']+)["\']'
+    r'|url\((?!["\']?(?:https?:|/|data:))["\']?([^)"\']+)["\']?\)')
+
+
+def test_ассет_лежит_ровно_там_куда_его_шлёт_простая_ссылка():
+    """Наш движок монтирует ЛЮБУЮ позицию каталога как саб-композицию через
+    `data-composition-src` (`hf_compose._stage_overlay`) — своей страницей она
+    не открывается никогда. На пине 0.7.84 их `rewriteAssetPath` простой
+    относительный путь (без `../`) не трогает вовсе — он остаётся тем же
+    словом, а после монтажа резолвится браузером от корня проекта. Значит
+    `<img src="assets/x.svg">` обязан находить файл ровно по `target`
+    `"assets/x.svg"` — не глубже (не `"compositions/assets/x.svg"`), иначе
+    рендер молча теряет картинку, видео, аудио или шрифт
+    (`missing_local_asset`/`audio_src_not_found`, проверено живым
+    `check --strict` на `ai-chat-reveal` до правки — находка была, после
+    правки `target` на `assets/…` находка исчезла).
+
+    Ловит именно то, что случилось при импорте B1: часть позиций получила
+    `target` на уровень глубже, чем ссылается их же html, потому что решение
+    сверялось с рабочей копией клона `hyperframes-ref` — та несёт более
+    новую версию `rewriteAssetPath` с эвристикой «есть сосед на диске», а на
+    закреплённом пине 0.7.84 эвристики ещё нет.
+    """
+    from reels_factory.hf_catalog import CATALOG_DIR, REGISTRY_SUBDIR
+
+    # Семья `composition_self_attribute_selector` — правит параллельная ветка
+    # (см. задание B1.5: «эти позиции НЕ трогай»). У троих из них тот же
+    # дефект таргета, но чинить его здесь означало бы редактировать карточки,
+    # которые сейчас держит другая рука — правка того же класса ждёт их PR.
+    IN_FLIGHT_ELSEWHERE = {"instagram-follow", "tiktok-follow", "yt-lower-third",
+                          "reddit-post", "spotify-card", "x-post",
+                          "macos-notification", "v-macos-notification"}
+
+    root = CATALOG_DIR / REGISTRY_SUBDIR
+    broken = []
+    for subdir in ("blocks", "components"):
+        for item_dir in sorted((root / subdir).iterdir()):
+            card = item_dir / "registry-item.json"
+            if not card.exists():
+                continue
+            item = json.loads(card.read_text(encoding="utf-8"))
+            if item["name"] in IN_FLIGHT_ELSEWHERE:
+                continue
+            files = item.get("files") or []
+            comp_files = [f for f in files if f.get("type") == "hyperframes:composition"]
+            asset_files = [f for f in files if f.get("type") == "hyperframes:asset"]
+            if not comp_files or not asset_files:
+                continue
+            targets_by_name: dict[str, str] = {}
+            for f in asset_files:
+                target = f["target"].replace("\\", "/")
+                targets_by_name.setdefault(Path(target).name, target)
+            htmls = [
+                source.read_text(encoding="utf-8", errors="ignore")
+                for f in comp_files
+                for source in [item_dir / f["path"]] if source.exists()]
+            seen = set()
+            for html in htmls:
+                for a, b in _PLAIN_RELATIVE_ASSET_REF.findall(html):
+                    ref = (a or b).split("?", 1)[0].split("#", 1)[0]
+                    target = targets_by_name.get(Path(ref).name)
+                    # Не одна из наших асетных записей вовсе (внешний URL уже
+                    # отсеян регэкспом выше, но имя может ни с чем не
+                    # совпасть) — тогда сверять не с чем.
+                    if target is None or ref == target or ref in seen:
+                        continue
+                    seen.add(ref)
+                    broken.append(f'{item["name"]}: ссылка "{ref}", '
+                                  f'а target — "{target}"')
+    assert not broken, (
+        "target ассета не совпадает с тем словом, по которому на него "
+        "ссылается простой относительный путь в html (на пине 0.7.84 "
+        "резолвится от корня проекта буквально, не от файла): "
+        + "; ".join(broken))

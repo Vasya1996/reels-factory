@@ -26,17 +26,17 @@
     },
     {
       "path": "assets/fonts/inter-latin-400-normal.woff2",
-      "target": "compositions/assets/fonts/inter-latin-400-normal.woff2",
+      "target": "assets/fonts/inter-latin-400-normal.woff2",
       "type": "hyperframes:asset"
     },
     {
       "path": "assets/fonts/inter-latin-500-normal.woff2",
-      "target": "compositions/assets/fonts/inter-latin-500-normal.woff2",
+      "target": "assets/fonts/inter-latin-500-normal.woff2",
       "type": "hyperframes:asset"
     },
     {
       "path": "assets/fonts/inter-latin-600-normal.woff2",
-      "target": "compositions/assets/fonts/inter-latin-600-normal.woff2",
+      "target": "assets/fonts/inter-latin-600-normal.woff2",
       "type": "hyperframes:asset"
     },
     {
