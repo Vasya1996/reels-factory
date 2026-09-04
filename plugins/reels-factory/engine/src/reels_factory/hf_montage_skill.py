@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from reels_factory.hf_montage import SERIES_MAX, SERIES_MIN
+
 SKILL_NAME = "reels-montage"
 
 #: Имя и описание — по их правилу: третье лицо, «что делает + когда
@@ -220,6 +222,41 @@ def _face_absence_rule(avatar_ordered: bool, max_face_absence: float) -> str:
     return rule + " (`avatarNeeded: true`, `D32_face_absence`)."
 
 
+def inserts_rule(wanted: int) -> str:
+    """Правило D34 одной фразой — теми же словами, какими судит гейт.
+
+    Печатают его двое: задание агенту (ниже по файлу) и причина пересдачи
+    (`hf_montage.inserts_shortfall`, она зовёт эту функцию). Второй редакции
+    этих слов нет: разойдись они, задание требовало бы не того, что считает
+    код. Живёт правило здесь, а не рядом с гейтом, потому что здесь же лежит
+    единственная в проекте запись секунд для агента (`seconds`).
+    """
+    return (f"Моментов, где картинка меняется, в плане не меньше {wanted}. "
+            f"Момент — это сцена со вставкой длиной {number(SERIES_MIN)}–"
+            f"{seconds(SERIES_MAX)} (в другую длину серия из двух планов не "
+            "встаёт) либо сцена без ведущей со вставкой; тем же моментом "
+            "считается сцена, кадр которой держит позиция каталога в "
+            "`elements`")
+
+
+def _inserts_rule(inserts_low: int, expected_scenes: int) -> str:
+    """Правило D34 — словами самого гейта.
+
+    Фразу пишет `hf_montage.inserts_rule`, её же печатает причина пересдачи
+    (`inserts_shortfall`). Прежде задание пересказывало счёт своими словами —
+    «не меньше половины твоих сцен, но не меньше двух и не больше пяти» — и
+    называло момент только вставкой, хотя гейт считает моментом и сцену, кадр
+    которой держит позиция каталога. На трёх живых ранних шагах агент отказывал
+    позиции ровно этой разницей: «по замечанию пересдачи нужно больше сцен со
+    вставкой».
+    """
+    return (inserts_rule(inserts_low)
+            + f". Столько требует гейт `D34_inserts` на {expected_scenes} "
+            "сценах; сцен в твоём плане выйдет больше, и он пересчитает то же "
+            "правило по их фактическому числу (`inserts_wanted`, "
+            "`hf_montage.py`).")
+
+
 def _open_rule(avatar_ordered: bool) -> str:
     """Правило открытия — теми же двумя мерками, какими его судят.
 
@@ -262,7 +299,8 @@ def _final_rule(avatar_ordered: bool) -> str:
             "зрителя в последней сцене, где оно есть.")
 
 
-def _body(*, positions: str, no_effect_zone: str, form_floors: str,
+def _body(*, positions: str, no_effect_zone: str, covers_backdrop: str,
+          form_floors: str,
           icon_names: str, series_min: float, series_max: float,
           face_gap: float,
           max_static: float, min_scene: float, avatar_ordered: bool,
@@ -374,11 +412,7 @@ through documents closeup». Абстракция вроде «order symbol» н
 Стоковые клише — рукопожатие в переговорной, «бизнесмен вообще», абстрактные
 кубики — читаются заглушкой; пиши конкретное действие.
 
-Назови не меньше {inserts_low} моментов под вставку — столько дают
-{expected_scenes} сцен по тому же правилу, каким код меряет отбор после
-сдачи плана: не меньше половины твоих сцен, но не меньше двух и не больше
-пяти (`inserts_wanted`, `hf_montage.py`). Сцен в твоём плане выйдет больше —
-гейт пересчитает то же правило по их фактическому числу и потребует больше.
+{_inserts_rule(inserts_low, expected_scenes)}
 
 Твоя работа здесь — назвать все места, где вставка уместна, а не отобрать
 среди них лучшие: настоящий отбор код делает сам уже после того, как сдашь
@@ -640,10 +674,13 @@ slow path, and it fails whenever the author's wording differs from yours»
   `effect` стоит на такой сцене, возвращается на пересдачу с этой причиной
   (`D36_elements`) — либо дай сцене уголок `pip-*` или `none`, либо возьми
   позицию другого вида.
-- **`scene`** — во весь кадр и на всю сцену, поверх вставки и поверх ведущей
-  (титр остаётся выше). Ставь её сцене, которой ты дал `presenter: "none"`:
-  ведущей под ней не видно, а спрятанная ведущая — самая дорогая ошибка плана.
-  Вставка такой сцене не нужна: кадр держит сама позиция.
+- **`scene`** — во весь кадр и на всю сцену ПОДЛОЖКОЙ: она ложится поверх
+  вставки, но под окно ведущей, как ложится под него схема. Ведущая уголком
+  (`pip-*`) или половиной (`stack`) остаётся видна поверх неё, и прятать её
+  ради полнокадровой позиции не нужно. Не годятся только {covers_backdrop}:
+  там ведущая занимает кадр целиком и закроет подложку собой — план с такой
+  парой возвращается на пересдачу (`D36_elements`). Вставка такой сцене не
+  нужна: кадр держит сама позиция.
 - **`overlay`** — на стык перед сценой, поверх всего, своей родной
   длительностью. Положение ведущей ей безразлично: она кроет срез, а не сцену.
 - **вида в карточке нет** — плашка полосой над титром. Ведущую она не
@@ -667,15 +704,15 @@ slow path, and it fails whenever the author's wording differs from yours»
 Сцена s-06, реплика «Платный сервис меняется на один скилл прямо в коде».
 Фраза шага 1 — «показать, чем новый код отличается от старого». Строка таблицы
 — код, теги `code` и `diff`; по ним в индексе отвечает `v-code-diff`, вид
-`scene`, слоты `["file", "title", "before", "after"]`. Вид полнокадровый,
-поэтому ведущей на этой сцене нет и вставка ей не нужна — кадр держит позиция.
-Слова идут по слотам в том же порядке, что в карточке, и это те самые строки,
-которые зритель прочтёт на экране.
-`{{"id": "s-06", "beat": "point", "presenter": "none", "avatarNeeded": false,
+`scene`, слоты `["file", "title", "before", "after"]`. Вид полнокадровый, но
+это подложка: ведущая остаётся уголком поверх неё, вставка сцене не нужна —
+кадр держит позиция. Слова идут по слотам в том же порядке, что в карточке, и
+это те самые строки, которые зритель прочтёт на экране.
+`{{"id": "s-06", "beat": "point", "presenter": "pip-br", "avatarNeeded": true,
    "elements": [{{"name": "v-code-diff",
                 "words": ["service.py", "Платный сервис",
                           "import paid_service", "import claude_code"]}}],
-   "frame": {{"holder": "элемент", "catalog_checked": ["v-code-diff"],
+   "frame": {{"holder": "ведущая", "catalog_checked": ["v-code-diff"],
              "catalog_reason": "взял: названы старый и новый код"}}}}`
 </example>
 
@@ -761,7 +798,7 @@ slow path, and it fails whenever the author's wording differs from yours»
 
 
 def write_montage_skill(rdir, *, positions: str, no_effect_zone: str,
-                        form_floors: str,
+                        covers_backdrop: str, form_floors: str,
                         icon_names: str, series_min: float, series_max: float,
                         face_gap: float, max_static: float, min_scene: float,
                         inserts_low: int, expected_scenes: int,
@@ -797,7 +834,7 @@ def write_montage_skill(rdir, *, positions: str, no_effect_zone: str,
     path.write_text(
         f"---\nname: {SKILL_NAME}\ndescription: {DESCRIPTION}\n---\n\n"
         + _body(positions=positions, no_effect_zone=no_effect_zone,
-                form_floors=form_floors,
+                covers_backdrop=covers_backdrop, form_floors=form_floors,
                 icon_names=icon_names, series_min=series_min,
                 series_max=series_max, face_gap=face_gap,
                 max_static=max_static, min_scene=min_scene,

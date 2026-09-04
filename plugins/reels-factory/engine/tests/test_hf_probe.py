@@ -343,7 +343,7 @@ def test_вспышка_и_титр_кадр_не_держат():
 
 
 @pytest.mark.parametrize("держит", ["ins-s-07-0", "schema-s-07", "ovl-s-07",
-                                    "icon-s-07", "clip-03"])
+                                    "icon-s-07", "el-s-07-0", "clip-03"])
 def test_кадр_держит_любое_из_закрытого_списка(держит):
     клипы = ({"id": держит, "visible": True},)
     samples = [_sample(0.0),

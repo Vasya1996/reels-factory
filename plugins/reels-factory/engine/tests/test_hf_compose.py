@@ -1456,6 +1456,37 @@ def test_элемент_сцены_встаёт_во_весь_кадр_со_сл
     assert "#demo-scene-root { font-family: 'Manrope'" in copy
 
 
+def test_полнокадровая_позиция_лежит_под_окном_ведущей(каталог):
+    """Позиция вида `scene` — подложка кадра, а не накладка.
+
+    Слоем накладки (`.ovl`, z-index 28) она кроет собой оплаченный клип:
+    позиция полки заливает свою коробку целиком, в отличие от схемы, чей
+    корень прозрачен. Именно это задание называло агенту запретом на
+    полнокадровую позицию рядом с ведущей, и на трёх живых ранних шагах агент
+    отказывался от `v-world-map` этой причиной. Порядок слоёв держит CSS
+    z-index, а не `data-track-index` (timeline.ts:599), поэтому тест сравнивает
+    именно его — и с числом окна ведущей, а не с литералом.
+    """
+    html, _ = _build(каталог, scenes=_с_элементами(
+        {"name": "demo-scene", "words": ["Наш заголовок"]},
+        presenter="pip-br"), resolved={})
+
+    at = html.index('id="el-s-02-0"')
+    обёртка = html.rindex("<div class=", 0, at)
+    assert html[обёртка:at].startswith('<div class="ovl-back"'), html[обёртка:at]
+
+    def z(rule):
+        block = re.search(re.escape(rule) + r"\s*\{([^}]*)\}", html)
+        assert block, rule
+        found = re.search(r"z-index:\s*(\d+)", block.group(1))
+        assert found, rule
+        return int(found.group(1))
+
+    assert z(".ovl-back") < z("#video-wrap"), "подложка кроет окно ведущей"
+    assert z(".ins") < z(".ovl-back"), "подложка ушла под вставку"
+    assert z(".ovl-back") < z("#highlight"), "подложка кроет титр"
+
+
 def test_эффект_встаёт_в_свободную_зону_кадра(каталог):
     """Зону считает код: ниже окна ведущей и выше полосы титра. Агент её не
     называет вовсе."""

@@ -310,6 +310,34 @@ def test_индекс_отдаёт_карточки_всех_трёх_видов
     assert "dimensions" not in cards["count-up"]
 
 
+def test_варианты_выбора_берутся_из_разметки_позиции():
+    """Живой ранний шаг отказался от позиции этой дырой: «`icon-morph-beat`
+    близко, но допустимые значения `pair` каталог не называет»
+    (presearch-report, донор A). Варианты автор позиции пишет в
+    `data-composition-variables` разметки полем `options`; карточка реестра
+    держит только тип и умолчание, и без разбора разметки заполнить поле в
+    плане было нечем.
+    """
+    accent = catalog_cards(FIXTURE)["count-up"]["variables"]["accent"]
+    assert accent == {"type": "enum", "default": "green",
+                      "options": ["green", "blue", "violet"]}
+    # Тип без выбора вариантов не заводит.
+    assert "options" not in catalog_cards(FIXTURE)["count-up"]["variables"]["end"]
+
+
+def test_у_живого_каталога_выбор_назван_у_каждой_переменной_enum():
+    """Тот самый случай отказа — на боевом каталоге, а не на фикстуре: без
+    вариантов `enum` в плане не заполнить вовсе."""
+    cards = catalog_cards()
+    pair = cards["icon-morph-beat"]["variables"]["pair"]
+    assert pair["options"] == ["mic-check", "play-check", "lock-unlock"]
+    немые = [f'{card["name"]}.{key}'
+             for card in cards.values()
+             for key, rule in (card.get("variables") or {}).items()
+             if rule.get("type") == "enum" and not rule.get("options")]
+    assert not немые, "выбор без вариантов: " + ", ".join(немые[:5])
+
+
 def test_позиция_с_причиной_отказа_в_индекс_не_попадает(caplog):
     """Причина отказа записана в карточке, и агенту такую позицию не
     предлагают: исправить её он не может — это дефект каталога, а не плана."""
@@ -502,6 +530,46 @@ def test_поиск_по_каталогу_идёт_и_по_use_when():
     имена = [item["name"] for item in
              search_cards("Подпись под лицом говорящего", cards=cards)]
     assert "demo-plain" in имена, f"по `use_when` позиция не нашлась: {имена}"
+
+
+def test_поиск_не_даёт_очков_за_слова_из_avoid_when():
+    """`avoid_when` отвечает на вопрос «брать ли», а не «найти ли».
+
+    Слова у него ровно те, которых в сцене быть НЕ должно, и очки за них
+    поставили бы позицию первой у той самой фразы, которой она не годится.
+    Поле в текст поиска не входит (`_card_text`), и тест держит это правилом, а
+    не совпадением: у брендовых позиций `avoid_when` называет отсутствующий
+    контент («имени бренда в сценарии нет»), и по слову «умолчание» такая
+    позиция находиться не должна.
+    """
+    from reels_factory.hf_catalog import _card_text, search_cards
+
+    cards = catalog_cards()
+    card = cards["logo-sting"]
+    assert "умолчания" in card["avoid_when"], "мерка теста устарела"
+    assert "умолчан" not in _card_text(card).lower(), (
+        "`avoid_when` попал в текст поиска")
+    имена = [item["name"] for item in
+             search_cards("вымышленное умолчание", cards=cards)]
+    assert "logo-sting" not in имена, имена
+
+
+def test_позиции_с_чужим_контентом_говорят_чего_у_плана_нет():
+    """Живые ранние шаги отказывали этим позициям своими словами: «в сценарии
+    нет имени бренда и нет числовой оценки — эти позиции держат вымышленный
+    логотип или рейтинг» (донор B), «экран-слот `browser-device-stage` требует
+    контента, которого на этапе плана нет» (донор A). Условие это карточное, а
+    не плановое: позиция годна, когда контент есть, — поэтому оно записано
+    строкой `avoid_when`, а не `skip`.
+    """
+    cards = catalog_cards()
+    for name in ("browser-device-stage", "logo-sting", "logo-wall",
+                 "logo-brand-close", "trust-strip", "svg-mask-reveal",
+                 "star-rating-fill"):
+        avoid = cards[name].get("avoid_when") or ""
+        assert "нет" in avoid, f"{name}: не сказано, чего у плана нет: {avoid}"
+        # И позиция остаётся предложенной: контент бывает и настоящий.
+        assert cards[name].get("use_when"), name
 
 
 def test_поиск_по_каталогу_отдаёт_не_больше_горсти():

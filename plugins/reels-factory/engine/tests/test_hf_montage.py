@@ -586,11 +586,52 @@ def test_план_с_четырьмя_вставками_возвращаетс�
                      "pip-tr" if index < 4 else "full",
                      "рука" if index < 4 else None)
               for index in range(10)]
-    with pytest.raises(RuntimeError, match="вставок в плане 4"):
+    with pytest.raises(RuntimeError, match="В плане их 4"):
         check_inserts(scenes)
 
     scenes[4]["insert"] = {"shots": ["стол", "стол крупно"], "kind": "video"}
     check_inserts(scenes)
+
+
+def test_смена_картинки_позицией_каталога_считается_моментом(monkeypatch):
+    """D34 считает тем же, чем меряет кадр `frame_filler`.
+
+    Прежде счёт шёл по одному полю `insert`, и сцена, кадр которой держит
+    позиция каталога, была для D20 и D25 закрытой, а для D34 — потерянным
+    моментом. Агент читал это как запрет и на трёх живых ранних шагах отказывал
+    позиции словами «по замечанию пересдачи нужно больше сцен со вставкой»
+    (presearch-report, донор C).
+    """
+    from reels_factory import hf_montage
+    from reels_factory.hf_montage import check_inserts, inserts_shortfall
+
+    monkeypatch.setattr(hf_montage, "_element_kinds",
+                        lambda: {"полный-кадр": "scene", "стык": "overlay"})
+    scenes = [_scene(index, index * 3.0, index * 3.0 + 3.0,
+                     "pip-tr" if index < 4 else "full",
+                     "рука" if index < 4 else None)
+              for index in range(10)]
+    assert "В плане их 4" in inserts_shortfall(scenes)
+
+    # Пятый момент закрыт позицией каталога — тем же счётом, каким её считают
+    # держателем кадра D20 и D25.
+    scenes[4]["elements"] = [{"name": "полный-кадр"}]
+    check_inserts(scenes)
+
+    # Стык кадра не держит (`FRAME_KINDS`), и моментом он не становится.
+    scenes[4]["elements"] = [{"name": "стык"}]
+    assert "В плане их 4" in inserts_shortfall(scenes)
+
+
+def test_правило_вставок_печатается_словами_гейта():
+    """Одно место на двоих: правило задания и причина пересдачи. Разойдись
+    они — задание требовало бы не того, что считает код."""
+    from reels_factory.hf_montage import inserts_shortfall
+    from reels_factory.hf_montage_skill import inserts_rule
+
+    scenes = [_scene(index, index * 3.0, index * 3.0 + 3.0, "full", None)
+              for index in range(10)]
+    assert inserts_shortfall(scenes).startswith(inserts_rule(5))
 
 
 def test_дозаказный_счёт_вставок_смотрит_длину_сцены():

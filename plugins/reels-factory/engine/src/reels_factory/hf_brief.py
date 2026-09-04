@@ -30,6 +30,7 @@ from reels_factory.hf_catalog import (
 )
 from reels_factory.hf_compose import effect_zone
 from reels_factory.hf_gates import min_scenes
+from reels_factory.hf_layout import FULL_FRAME_PRESENTER
 from reels_factory.hf_montage import (
     FRAME_HOLDERS, SERIES_MAX, SERIES_MIN, face_gap, frame_filler,
     inserts_wanted, survives_series,
@@ -93,6 +94,19 @@ def _no_effect_zone() -> str:
                      if effect_zone(name) is None)
 
 
+def _covers_backdrop() -> str:
+    """Положения ведущей, при которых полнокадровая позиция каталога не видна.
+
+    Позиция вида `scene` ложится подложкой ПОД окно ведущей (`.ovl-back`,
+    z-index 15 против 20 у окна), и полнокадровая ведущая закрывает её собой.
+    Список берётся из того же `FULL_FRAME_PRESENTER`, по которому судит гейт
+    (`_element_problems`, hf_gates.py), — двух перечней тех же положений в
+    задании и в коде быть не должно.
+    """
+    return ", ".join(f"`{name}`" for name, _, _ in POSITIONS
+                     if name in FULL_FRAME_PRESENTER)
+
+
 def _scenario_block(block: dict) -> str:
     return f'- **{block.get("role", "?")}**: {block.get("speech", "")}'
 
@@ -107,11 +121,36 @@ def _candidate_line(card: dict) -> str:
     """
     parts = [f'  - `{card["name"]}` ({card.get("kind") or "плашка"}) — '
              f'{card.get("use_when") or card.get("title") or ""}']
+    # `avoid_when` стоит там, где случай уже разобран: чаще всего это контент,
+    # которого у плана нет вовсе — свой снимок экрана, имя бренда, оценка. Без
+    # этой строки код предлагает такую позицию любой фразе, где прозвучало
+    # слово «бренд», а разбираться агенту пришлось бы в индексе. Очков в поиске
+    # `avoid_when` не даёт (`_card_text`, hf_catalog.py) — он отвечает на
+    # вопрос «брать ли», а не «найти ли».
+    if card.get("avoid_when"):
+        parts.append("зря: " + card["avoid_when"])
     if card.get("text_slots"):
         parts.append("слова: " + ", ".join(card["text_slots"]))
     if card.get("variables"):
-        parts.append("переменные: " + ", ".join(card["variables"]))
+        parts.append("переменные: " + ", ".join(_variable_names(card)))
     return "; ".join(parts)
+
+
+def _variable_names(card: dict) -> list[str]:
+    """Переменные позиции для строки кандидата: имя, а у выбора — сам выбор.
+
+    Живой ранний шаг отказался от позиции этой самой дырой: «`icon-morph-beat`
+    близко, но допустимые значения `pair` каталог не называет». Варианты берёт
+    из разметки сам каталог (`hf_catalog._variable_options`), здесь только
+    печать — и печатается она у той переменной, где выбор есть, а не списком
+    всего подряд.
+    """
+    out = []
+    for name, rule in (card.get("variables") or {}).items():
+        options = (rule or {}).get("options")
+        out.append(f"{name}: {'|'.join(str(one) for one in options)}"
+                   if options else str(name))
+    return out
 
 
 def _phrase_candidates(phrases: list[dict]) -> dict[int, list[dict]]:
@@ -181,11 +220,11 @@ def _positions_block() -> str:
     lines = "\n".join(f"- `{name}` — {what}; {note}" for name, what, note
                       in POSITIONS)
     return (lines + "\n\nУголок и половина держат только свою часть "
-            "кадра: остальное закрывает вставка или схема, названная в той "
-            "же сцене. Поэтому сцене, где нет ни вставки, ни схемы, ставь "
-            "`full` или `punch`: уголок без них оставляет остальной кадр "
-            "чёрным, и такой план возвращается на пересдачу "
-            "(`D20_frame_filled`).")
+            "кадра: остальное закрывает вставка, схема или полнокадровая "
+            "позиция каталога (`kind: scene`), названная в той же сцене. "
+            "Поэтому сцене, где нет ни одного из трёх, ставь `full` или "
+            "`punch`: уголок без них оставляет остальной кадр чёрным, и такой "
+            "план возвращается на пересдачу (`D20_frame_filled`).")
 
 
 #: Поля, которые заказчик может назвать сам. Имена и смысл — их контракта брифа
@@ -1224,6 +1263,7 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     # число сцен ещё не назвал, а меньший план `min_scenes` уже запрещает.
     write_montage_skill(rdir, positions=_positions_block(),
                         no_effect_zone=_no_effect_zone(),
+                        covers_backdrop=_covers_backdrop(),
                         form_floors=form_floors, icon_names=icon_names,
                         series_min=SERIES_MIN, series_max=SERIES_MAX,
                         face_gap=face_gap(duration),
@@ -1313,8 +1353,8 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
 Оплаченная ведущая спрятана под непрозрачной вставкой. Её клип уже куплен, и
 эти секунды либо видит зритель, либо они выброшены. Сцене со вставкой ставь
 ведущую уголком (`pip-*`) или половиной (`stack`) — тогда в кадре видно и её, и
-вставку. Уголок этой же вставкой и держится: сцене, где нет ни вставки, ни
-схемы, остаётся полный кадр (свод правил, «Где ведущая»).""")
+вставку. Чем ещё уголок держится в кадре и когда остаётся полный — в своде
+правил, «Где ведущая».""")
 
     # Порядок работы — нумерованными шагами: «Provide instructions as
     # sequential steps using numbered lists … when the order or completeness of
@@ -1424,8 +1464,9 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
    приехала, оставит сцену голым фоном с титром (`D25_empty_frame`).
 5. {catalog_check}
 6. У каждой сцены, где `presenter` — уголок (`pip-*`) или половина (`stack`),
-   есть чем закрыть остальной кадр: `insert` или `schema`. Нет ни того, ни
-   другого — ставь `full` или `punch` (`D20_frame_filled`).
+   есть чем закрыть остальной кадр: `insert`, `schema` или полнокадровая
+   позиция каталога в `elements`. Нет ни одного из трёх — ставь `full` или
+   `punch` (`D20_frame_filled`).
 7. Оба файла на месте: `storyboard.json` и `frame.md`.
 
 Расхождение нашлось — почини план и только потом записывай файлы."""
@@ -1458,8 +1499,9 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
    не приехала, выйдет в ролик фоном с титром (`D25_empty_frame`).
 9. {catalog_check}
 10. У каждой сцены, где `presenter` — уголок (`pip-*`) или половина (`stack`),
-   есть чем закрыть остальной кадр: `insert` или `schema`. Нет ни того, ни
-   другого — ставь `full` или `punch` (`D35_frame_filled`).
+   есть чем закрыть остальной кадр: `insert`, `schema` или полнокадровая
+   позиция каталога в `elements`. Нет ни одного из трёх — ставь `full` или
+   `punch` (`D35_frame_filled`).
 11. Оба файла на месте: `storyboard.json` и `frame.md`.
 
 Расхождение нашлось — почини план и только потом записывай файлы."""

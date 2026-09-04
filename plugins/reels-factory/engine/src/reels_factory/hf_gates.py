@@ -19,7 +19,8 @@ from pathlib import Path
 
 from reels_factory.hf_compose import BEATS
 from reels_factory.hf_layout import (
-    PRESENTER_POSITIONS, avatar_gaps, fills_frame, in_avatar_gap,
+    FULL_FRAME_PRESENTER, PRESENTER_POSITIONS, avatar_gaps, fills_frame,
+    in_avatar_gap,
 )
 from reels_factory.hf_montage import (
     SERIES_SHOTS, filling_element, frame_filler, insert_of, same_look,
@@ -136,8 +137,10 @@ def _form_problems(scene_id: str, field: str, plan) -> list[str]:
 
 #: Типы `data-composition-variables` их же полки и что мы принимаем за каждый.
 #: Список из карточки позиции (`reels.variables`), а значение — из плана: два
-#: разных типа под одним именем их рантайм не разводит вовсе, а `enum` без
-#: списка `options` принимает любую строку.
+#: разных типа под одним именем их рантайм не разводит вовсе. У `enum` сверх
+#: типа сверяется сам выбор: варианты каталог читает из разметки позиции
+#: (`hf_catalog._variable_options`), и значение вне списка их движок молча
+#: заменит умолчанием — уже после оплаты.
 _VARIABLE_TYPES = {
     "number": (int, float),
     "string": (str,),
@@ -162,7 +165,9 @@ def _element_problems(scene: dict, element: dict, cards: dict,
     полнокадровой ведущей и при `stack` такой зоны нет вовсе
     (`hf_compose.effect_zone`): сборка снимала такой элемент молча, уже после
     оплаты, и агент узнавал о потере по логу (отчёт B4, `count-up` на `punch`).
-    Здесь он узнаёт причину до заказа.
+    Здесь он узнаёт причину до заказа. У вида `scene` тот же вопрос стоит
+    зеркально: позиция ложится подложкой ПОД окно ведущей, и полнокадровая
+    ведущая закрывает её целиком.
 
     Уместность позиции по-прежнему не проверяется — это решение агента, и гейт
     в него не лезет, как не лезет в выбор формы схемы.
@@ -181,6 +186,16 @@ def _element_problems(scene: dict, element: dict, cards: dict,
     card = cards.get(name) or {}
     problems = []
     position = str(scene.get("presenter") or "none")
+    # Полнокадровая позиция — подложка кадра под окном ведущей
+    # (`.ovl-back`, z-index 15 против 20 у окна). Полнокадровая ведущая
+    # закрывает её целиком: установка была бы оплачена и не видна ни одного
+    # кадра. Тот же вопрос, что и у зоны эффекта, и задан он там же — до
+    # заказа.
+    if card.get("kind") == "scene" and position in FULL_FRAME_PRESENTER:
+        problems.append(
+            f"{where}: позиция вида `scene` встаёт подложкой ПОД окно "
+            f"ведущей, а ведущая {position!r} занимает кадр целиком и закроет "
+            "её собой — дай сцене уголок (`pip-*`), `stack` или `none`")
     if card.get("kind") == "effect" and effect_zone(position) is None:
         problems.append(
             f"{where}: позиция вида `effect` встаёт в свободную зону кадра, а "
@@ -207,6 +222,13 @@ def _element_problems(scene: dict, element: dict, cards: dict,
             problems.append(
                 f"{where}: переменная {key!r} объявлена типом "
                 f'{rule.get("type")}, а в плане {type(value).__name__}')
+            continue
+        options = rule.get("options")
+        if options and value not in options:
+            problems.append(
+                f"{where}: переменная {key!r} принимает "
+                + ", ".join(f"`{one}`" for one in options)
+                + f", а в плане {value!r}")
     words = element.get("words")
     if words is not None and not isinstance(words, list):
         problems.append(f"{where}: `words` — список строк по числу слотов")

@@ -7,7 +7,7 @@ from reels_factory.hf_gates import (
     check_frame_filled, check_media, check_placeholders, check_storyboard,
     elements_problems, frame_filled_problems, min_scenes,
 )
-from reels_factory.hf_layout import quantize
+from reels_factory.hf_layout import FULL_FRAME_PRESENTER, quantize
 
 DURATION = 41.5
 # три клипа с ведущей, хвост 34.62–41.5 без неё — как в реальном материале
@@ -595,6 +595,19 @@ def test_чужая_переменная_и_чужой_тип_ловятся_п�
                                            "suffix": " ₽"}})) == []
 
 
+def test_значение_вне_выбора_ловится_до_заказа(каталог):
+    """У `enum` сверяется не только тип, но и сам выбор: варианты каталог
+    читает из разметки позиции, а их движок значение вне списка молча заменит
+    умолчанием — уже после оплаты. Причина отказа называет весь список: агент
+    поправит поле, не открывая каталог заново."""
+    problems = elements_problems(_элементы(
+        {"name": "count-up", "variables": {"accent": "малиновый"}}))
+    assert len(problems) == 1
+    assert "`green`, `blue`, `violet`" in problems[0], problems[0]
+    assert elements_problems(_элементы(
+        {"name": "count-up", "variables": {"accent": "violet"}})) == []
+
+
 def test_лишние_слова_ловятся_по_числу_слотов(каталог):
     problems = elements_problems(_элементы(
         {"name": "demo-scene", "words": ["Первая", "Вторая"]}))
@@ -618,11 +631,28 @@ def test_эффект_без_свободной_зоны_ловится_до_з�
     for position in ("pip-tr", "pip-br", "none"):
         assert elements_problems(_элементы({"name": "count-up"},
                                            presenter=position)) == [], position
-    # Правило про зону — только у вида `effect`: сцена занимает кадр целиком,
-    # стык живёт на срезе, и зона им не нужна.
+    # Правило про зону — только у вида `effect`: подложка лежит под окном
+    # ведущей, стык живёт на срезе, и зона им не нужна.
     for name in ("demo-scene", "demo-stitch"):
         assert elements_problems(_элементы({"name": name},
-                                           presenter="full")) == [], name
+                                           presenter="pip-br")) == [], name
+
+
+def test_подложка_под_полнокадровой_ведущей_ловится_до_заказа(каталог):
+    """Зеркало правила про зону. Позиция вида `scene` ложится ПОД окно
+    ведущей (`.ovl-back`, z-index 15 против 20 у окна), поэтому полнокадровая
+    ведущая закрывает её собой целиком: установка была бы оплачена и не видна
+    ни одного кадра. Список положений — тот же `FULL_FRAME_PRESENTER`, по
+    которому считает раскладка."""
+    for position in FULL_FRAME_PRESENTER:
+        problems = elements_problems(_элементы({"name": "demo-scene"},
+                                               presenter=position))
+        assert len(problems) == 1, position
+        assert "подложк" in problems[0] and position in problems[0]
+    # Уголок, половина и отсутствие ведущей подложку не закрывают.
+    for position in ("pip-tr", "pip-br", "stack", "none"):
+        assert elements_problems(_элементы({"name": "demo-scene"},
+                                           presenter=position)) == [], position
 
 
 def test_сверку_элементов_делает_и_d11(каталог):
