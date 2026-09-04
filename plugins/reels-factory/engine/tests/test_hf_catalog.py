@@ -445,3 +445,89 @@ def test_отсев_позиций_не_печатается_в_stdout(capsys):
     printed = capsys.readouterr()
     assert "не предложена" not in printed.out
     assert "не предложена" not in printed.err
+
+
+def test_поиск_по_каталогу_считает_тем_же_правилом_что_их_каталог():
+    """`search_cards` повторяет их `hyperframes catalog --query` без модели:
+    общий словарь, а не подстрока (`rankByWords`/`searchByWords`,
+    `packages/cli/src/registry/localSearch.ts:45-70` на пине 0.7.84).
+
+    Меряем три их правила разом: стоп-слова и слова короче трёх букв в счёт не
+    идут (запрос из одних служебных слов не находит ничего); совпадение по
+    подстроке ничего не значит без общего слова; лучшая позиция идёт первой.
+    """
+    from reels_factory.hf_catalog import search_cards
+
+    cards = catalog_cards(FIXTURE)
+    assert search_cards("the and of to it is", cards=cards) == [], (
+        "запрос из одних стоп-слов что-то нашёл")
+    assert search_cards("", cards=cards) == [], "пустой запрос что-то нашёл"
+    found = search_cards("counter number", cards=cards)
+    assert found and found[0]["name"] == "count-up", (
+        f"по своим же тегам позиция не первая: {[c['name'] for c in found]}")
+
+
+def test_поиск_по_каталогу_находит_русское_слово_в_любом_падеже():
+    """Их выражение `[a-z]+` русского слова не видит вовсе, а `use_when`
+    написан по-русски и падежами реплики: «карта» в карточке против «карте» в
+    речи. Без основ поиск по реплике не отвечал бы никогда.
+    """
+    from reels_factory.hf_catalog import search_cards, search_tokens
+
+    cards = catalog_cards(FIXTURE)
+    основы = {слово: search_tokens(слово)[0]
+              for слово in ("карта", "карты", "карте", "картой", "картам")}
+    assert len(set(основы.values())) == 1, f"падежи разошлись: {основы}"
+    for реплика in ("Вот карта страны.", "Всё это видно на карте страны.",
+                    "По карте видно каждый город."):
+        имена = [card["name"] for card in search_cards(реплика, cards=cards)]
+        assert "demo-scene" in имена, (
+            f"«{реплика}» не нашла полнокадровую карту: {имена}")
+
+
+def test_поиск_по_каталогу_идёт_и_по_use_when():
+    """Поле наше, и добавлено к их четырём именно потому, что `description`
+    описывает анимацию, а `use_when` — содержание сцены теми же словами,
+    какими её описывает агент. Мерка: слово, которого нет нигде, кроме
+    `use_when`, позицию находит.
+    """
+    from reels_factory.hf_catalog import search_cards
+
+    cards = catalog_cards(FIXTURE)
+    card = cards["demo-plain"]
+    их = " ".join((card["name"], card["title"], card["description"],
+                   " ".join(card["tags"]))).lower()
+    assert "подпись" not in их and "лицом" not in их, (
+        "слово запроса встречается и в их полях — мерка не про `use_when`")
+    имена = [item["name"] for item in
+             search_cards("Подпись под лицом говорящего", cards=cards)]
+    assert "demo-plain" in имена, f"по `use_when` позиция не нашлась: {имена}"
+
+
+def test_поиск_по_каталогу_отдаёт_не_больше_горсти():
+    """Кандидаты печатаются под каждой фразой задания, и длинный список
+    заслонил бы саму фразу. Число — не порог качества, а длина, которую
+    читают.
+    """
+    from reels_factory.hf_catalog import MAX_CANDIDATES, search_cards
+
+    живые = catalog_cards()
+    найдено = search_cards("Названа сцена: число, карта, сравнение, интерфейс",
+                           cards=живые, limit=None)
+    assert len(найдено) > MAX_CANDIDATES, "запрос слишком узкий для мерки"
+    assert len(search_cards("Названа сцена: число, карта, сравнение, "
+                            "интерфейс", cards=живые)) == MAX_CANDIDATES
+
+
+def test_поиск_находит_карту_под_репликой_про_области_страны():
+    """Решающий случай трёх живых прогонов на доноре C: ролик про то, как
+    читают дети по каждой области и школе страны, агент дважды находил
+    `v-world-map` грепом по тегу `map` и не ставил ни разу, а по русскому
+    слову не искал вовсе. Теперь этот поиск делает код, и мерка — та же
+    реплика.
+    """
+    from reels_factory.hf_catalog import search_cards
+
+    имена = [card["name"] for card in search_cards(
+        "По каждой области. По каждому городу. По каждой школе.")]
+    assert "v-world-map" in имена, f"карта под репликой не нашлась: {имена}"

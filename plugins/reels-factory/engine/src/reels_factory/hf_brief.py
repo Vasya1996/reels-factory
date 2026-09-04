@@ -25,7 +25,9 @@ from reels_factory.avatar_islands import (
 )
 from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.editplan import MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S
-from reels_factory.hf_catalog import catalog_cards, write_catalog_files
+from reels_factory.hf_catalog import (
+    catalog_cards, search_cards, write_catalog_files,
+)
 from reels_factory.hf_compose import effect_zone
 from reels_factory.hf_gates import min_scenes
 from reels_factory.hf_montage import (
@@ -94,16 +96,65 @@ def _scenario_block(block: dict) -> str:
     return f'- **{block.get("role", "?")}**: {block.get("speech", "")}'
 
 
-def _phrase_line(phrase: dict, faceless: set[int]) -> str:
-    """Строка фразы для задания.
+def _candidate_line(card: dict) -> str:
+    """Кандидат под фразой: имя, вид, что им показывают, слоты и переменные.
+
+    Ровно то, чем решают «годится или нет», и ничего сверх: `description` и
+    `tags` остаются в индексе — они описывают анимацию, а не содержание сцены
+    (`catalog_cards`, hf_catalog.py). Карточка без `kind` — плашка над полосой
+    титра, тем же словом её называет свод правил.
+    """
+    parts = [f'  - `{card["name"]}` ({card.get("kind") or "плашка"}) — '
+             f'{card.get("use_when") or card.get("title") or ""}']
+    if card.get("text_slots"):
+        parts.append("слова: " + ", ".join(card["text_slots"]))
+    if card.get("variables"):
+        parts.append("переменные: " + ", ".join(card["variables"]))
+    return "; ".join(parts)
+
+
+def _phrase_candidates(phrases: list[dict]) -> dict[int, list[dict]]:
+    """Позиции каталога под каждую фразу — по её словам.
+
+    Сцен на этом шаге ещё нет: их режет агент, и `intent` он пишет уже в
+    плане. Фраза — самая мелкая единица, которая в задании есть, и сцена
+    называет её номера, поэтому кандидаты считаются по фразам и достаются
+    сцене вместе с ними.
+
+    Каталог поднимается один раз на всё задание: карточек полторы сотни, а
+    фраз у минутного ролика два десятка.
+    """
+    try:
+        cards = catalog_cards()
+    except (OSError, ValueError) as error:
+        print(f"кандидаты каталога не собрались: {error}")
+        return {}
+    return {int(phrase["id"]): search_cards(str(phrase.get("text") or ""),
+                                            cards=cards)
+            for phrase in phrases}
+
+
+def _phrase_line(phrase: dict, faceless: set[int],
+                 candidates: list[dict] | None = None) -> str:
+    """Строка фразы для задания и найденные по ней позиции каталога.
 
     Длина нужна, чтобы агент не назначал сцену на фразу короче минимума: код
     такую сцену дотянет за счёт соседней, и картинка съедет с реплики.
+
+    Кандидатов ищет код (`hf_catalog.search_cards`) и печатает их здесь, под
+    самой фразой, а не отсылает за ними в индекс. Причина измерена шестью
+    живыми ранними шагами: агент искал по восьми строкам таблицы тегов свода и
+    ни разу — по русскому слову реплики, хотя `use_when` написан её словами.
+    Поиск — работа механическая, и уходит она коду; решение остаётся за
+    агентом: это кандидаты, а не назначение.
     """
     length = float(phrase["end"]) - float(phrase["start"])
     mark = "  ← **ведущей тут нет**" if phrase["id"] in faceless else ""
-    return (f'- `{phrase["id"]}` **{phrase["role"]}** {seconds(length)} — '
+    line = (f'- `{phrase["id"]}` **{phrase["role"]}** {seconds(length)} — '
             f'{phrase["text"]}{mark}')
+    if not candidates:
+        return line
+    return "\n".join([line] + [_candidate_line(card) for card in candidates])
 
 
 def _positions_block() -> str:
@@ -790,8 +841,24 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     phrases = phrases or []
     faceless = (set(faceless_phrases(phrases, clips or [], duration))
                 if avatar_ordered else set())
-    phrases_block = "\n".join(_phrase_line(p, faceless) for p in phrases) or (
-        "Фразы не размечены.")
+    # Кандидаты каталога под каждую фразу. Каталога может не быть вовсе —
+    # тогда список фраз печатается как прежде, а элементов у плана не будет,
+    # ровно как их не бывает без индекса.
+    candidates = _phrase_candidates(phrases)
+    phrases_block = "\n".join(
+        _phrase_line(p, faceless, candidates.get(int(p["id"])))
+        for p in phrases) or "Фразы не размечены."
+    # Что это за строки под фразой — сказано один раз и здесь, у самих строк.
+    # Как между кандидатами выбирают — не здесь: это правило свода, и второй
+    # его редакции в задании нет.
+    candidates_note = ("""
+Под фразой — позиции каталога, которые нашлись по её словам: тем же поиском,
+каким ищут по индексу, но за тебя и по каждой фразе. Это кандидаты, а не
+решение — годится позиция сцене или нет, видно по `use_when`, и выбираешь ты
+(свод правил, раздел «Чем занять кадр: позиция каталога»). Кандидатов нет или
+они не о том — весь каталог остаётся в `catalog.index.md`: поиск по словам
+находит не всё.
+""" if any(candidates.values()) else "")
     last_phrase = (phrases or [{"id": 0}])[-1]["id"]
 
     # Настройки той нарезки островов, которой будут заказывать: заказ выходит
@@ -1231,11 +1298,13 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     # план не поставил. Проход по запасу в том же прогоне выполнен на всех
     # сценах до единой: шаг со своим выходом агент делает, правило внутри
     # чужого шага — нет. Метод остаётся в своде правил, здесь только порядок.
-    catalog_step = ("Пройди сцены ещё раз, теперь по каталогу: каждой поищи "
-                    "позицию по её\n   `intent` — как ищут, сказано в своде "
-                    "правил, раздел «Чем занять кадр:\n   позиция каталога». "
-                    "Нашлась — назови её в `elements`; не нашлась — сцену "
-                    "закрывает\n   то, что ты уже ей поставил.")
+    catalog_step = ("Пройди сцены ещё раз, теперь по каталогу: посмотри "
+                    "кандидатов, которых код\n   нашёл под фразами этой сцены, "
+                    "а если они не о том — поищи сам по её\n   `intent`; как "
+                    "ищут, сказано в своде правил, раздел «Чем занять кадр:\n"
+                    "   позиция каталога». Нашлась — назови её в `elements`; "
+                    "не нашлась — сцену\n   закрывает то, что ты уже ей "
+                    "поставил.")
     if avatar_ordered:
         steps_block = f"""{skill_step}
 2. {scenes_step}
@@ -1379,7 +1448,7 @@ mode: autonomous
 фразы. Сцена называет номера фраз, на которые приходит; когда она начнётся и
 кончится, считает код по звуку. Длину сцены прикидывай сложением длительностей
 её фраз — это вся арифметика времени, которая тебе нужна.
-
+{candidates_note}
 {phrases_block}
 
 {material_block}
