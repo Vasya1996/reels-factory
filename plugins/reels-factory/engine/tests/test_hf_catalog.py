@@ -270,6 +270,27 @@ def test_индекс_печатается_json_ом_с_нашими_полям�
     assert "`kind`" in text and "`text_slots`" in text and "`variables`" in text
 
 
+def test_карточка_индекса_занимает_одну_строку():
+    """Индекс ищут `grep`-ом, а не читают целиком.
+
+    Живой ранний шаг `artyom-early-b4c` (транскрипт `5204d33a`): единственное
+    чтение `catalog.index.md` вернуло строки 1–2331 из 5008 — половину
+    каталога, молча. Разложенный JSON и искать не давал: строка с найденным
+    тегом выглядела как `"counter",` и имени позиции не несла. Одна строка на
+    карточку чинит оба конца сразу — файл остаётся разбираемым JSON-ом, а
+    найденная строка несёт позицию целиком.
+    """
+    text = catalog_index(FIXTURE)
+    fenced = text.split("```json")[1].split("```")[0].strip()
+    body = json.loads(fenced)
+    lines = fenced.splitlines()
+    assert len(lines) == len(body) + 2, "карточка занимает не одну строку"
+    for card, line in zip(body, lines[1:-1]):
+        assert card["name"] in line, "имени позиции в её строке нет"
+        for tag in card.get("tags") or []:
+            assert f'"{tag}"' in line, "тег позиции ищется не в её строке"
+
+
 def test_рисованный_текст_читается_из_карточки():
     """Белый список гейта заглушек живёт в карточке, а не литералом в коде."""
     assert decor_texts(FIXTURE) == {"demo-stitch": {"Заголовок"}}
