@@ -608,6 +608,7 @@ slow path, and it fails whenever the author's wording differs from yours»
 | место, страна, карта | `map`, `geography`, `world`, `choropleth` |
 | интерфейс, уведомление, переписка, устройство | `mock-ui`, `notification`, `ui-flow`, `chat`, `device`, `social` |
 | бренд, логотип, площадка | `brand`, `logo`, `wordmark`, `logo-strip`, `store-badges` |
+| имя говорящего, его роль, подпись под лицом | `lower-third`, `podcast`, `interview` |
 
 Формат: `{{"name": "имя из индекса", "words": ["строка"],
 "variables": {{"имя": значение}}}}`. `words` — строки для `text_slots` позиции,
