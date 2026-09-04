@@ -442,11 +442,17 @@ def build_value_layers_html(duration: float, title: str, offer: str,
     """Scale-swap от формального продукта к покупаемой ценности."""
     body = (
         f'<div class="eyebrow value-title">{_html.escape(str(title).strip())}</div>'
-        '<section class="layer offer card" data-layout-allow-overlap><div class="layer-label">ФОРМАЛЬНО</div>'
-        f'<div class="layer-value">{_html.escape(str(offer).strip())}</div></section>'
+        # data-layout-allow-overlap стоит на самих перекрывающихся текстовых
+        # блоках (layer-label/layer-value), а не на родительской <section>:
+        # с 0.8.13 их линтер проверяет hasAttribute() на самом элементе,
+        # closest() по предкам больше не срабатывает
+        # (hyperframes-ref packages/cli/src/commands/layout-audit.browser.js:551,
+        # было closest() на v0.7.84 — packages/cli/src/commands/layout-audit.browser.js:548).
+        '<section class="layer offer card"><div class="layer-label" data-layout-allow-overlap>ФОРМАЛЬНО</div>'
+        f'<div class="layer-value" data-layout-allow-overlap>{_html.escape(str(offer).strip())}</div></section>'
         '<div class="swap-arrow">↓</div>'
-        '<section class="layer actual card" data-layout-allow-overlap><div class="layer-label">НА САМОМ ДЕЛЕ</div>'
-        f'<div class="layer-value">{_html.escape(str(actual).strip())}</div></section>'
+        '<section class="layer actual card"><div class="layer-label" data-layout-allow-overlap>НА САМОМ ДЕЛЕ</div>'
+        f'<div class="layer-value" data-layout-allow-overlap>{_html.escape(str(actual).strip())}</div></section>'
     )
     css = """
       .value-title { position:absolute; top:360px; left:100px; width:880px; text-align:center; }

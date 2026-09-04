@@ -153,6 +153,23 @@ def test_visual_director_blocks_экранируют_данные():
     assert "&lt;img" in html
 
 
+def test_build_value_layers_waiver_на_самих_текстовых_блоках():
+    """С 0.8.13 их линтер проверяет data-layout-allow-overlap через
+    hasAttribute() на самом элементе, а не closest() по предкам
+    (hyperframes-ref packages/cli/src/commands/layout-audit.browser.js:551,
+    было closest() на v0.7.84 — packages/cli/src/commands/
+    layout-audit.browser.js:548). Атрибут обязан стоять на layer-label и
+    layer-value, не на родительской <section>, иначе content_overlap
+    выстрелит впервые именно на этом блоке."""
+    html = hb.build_value_layers_html(5.0, "T", "ПРОДУКТ", "РЕЗУЛЬТАТ")
+    assert 'section class="layer offer card" data-layout-allow-overlap' not in html
+    assert 'section class="layer actual card" data-layout-allow-overlap' not in html
+    assert html.count("data-layout-allow-overlap") == 4
+    for label in ('<div class="layer-label" data-layout-allow-overlap>',
+                  '<div class="layer-value" data-layout-allow-overlap>'):
+        assert html.count(label) == 2
+
+
 def test_blocks_реестр_содержит_все_восемь():
     assert set(hb.BLOCKS) == {
         "task_list",
