@@ -25,7 +25,7 @@ from reels_factory.avatar_islands import (
 )
 from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.editplan import MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S
-from reels_factory.hf_catalog import write_catalog_files
+from reels_factory.hf_catalog import catalog_cards, write_catalog_files
 from reels_factory.hf_compose import effect_zone
 from reels_factory.hf_gates import min_scenes
 from reels_factory.hf_montage import (
@@ -287,6 +287,65 @@ def _shown_scenes(groups: list[tuple[list[int], bool]], phrases: list[dict], *,
     return shown, blind
 
 
+#: Позиция каталога, которую показывает образец ответа. Имя и значения — те же,
+#: что в разобранном примере свода правил («Чем занять кадр: позиция
+#: каталога»): одна позиция, названная в обоих местах, учит одному, а не двум.
+SAMPLE_ELEMENT = {"name": "count-up",
+                  "variables": {"end": 12, "suffix": " раз в год"}}
+
+
+def _sample_element() -> dict | None:
+    """Позиция каталога для образца — если она есть в каталоге ЭТОГО прогона.
+
+    Три живых ранних шага подряд (B4, B4b, B4c) вернули план без единого
+    `elements`, и последний — уже с заданием, которое своду не противоречит, и
+    со сводом, прочитанным целиком: транскрипт `5204d33a` не содержит слова
+    «elements» вовсе. Заполнены были ровно поля образца и ни одного сверх —
+    приёма, которого в образце нет, агент не применяет (та же причина названа
+    числами в `_add_backups` про значок). Правило стояло рядом с образцом,
+    который его же и опровергал молчанием.
+
+    Каталог собирается реестром и меняется, поэтому имя проверяется по нему:
+    образец, называющий позицию, которой в индексе нет, учил бы плану, который
+    заворачивает `D36_elements`. Нет каталога или нет позиции — образец
+    обходится без `elements`, как обходится без `avatarNeeded: false`, когда
+    отдать отказ некому.
+    """
+    try:
+        card = catalog_cards().get(SAMPLE_ELEMENT["name"])
+    except (OSError, ValueError):
+        return None
+    if not card or card.get("kind") != "effect":
+        return None
+    known = card.get("variables") or {}
+    if not set(SAMPLE_ELEMENT["variables"]) <= set(known):
+        return None
+    return SAMPLE_ELEMENT
+
+
+def _add_element(scenes: list[dict]) -> None:
+    """Поставить позицию каталога одной сцене образца.
+
+    Сцена берётся из середины и с местом под коробку: свободная зона под
+    `effect` есть только там, где ведущая не занимает кадр целиком, и считает
+    её тот же `effect_zone`, которым сборка ставит позицию. Края ролика ведёт
+    лицо во весь кадр (`D28_avatar_bookends`), и зоны там нет.
+
+    Сцена со схемой пропускается: схема и позиция несут мысль обе, и образец,
+    показавший их вместе, учил бы набивать кадр, а не выбирать.
+    """
+    element = _sample_element()
+    if not element:
+        return
+    for scene in scenes[1:-1]:
+        if scene.get("schema"):
+            continue
+        if effect_zone(str(scene.get("presenter") or "none")) is None:
+            continue
+        scene["elements"] = [element]
+        return
+
+
 def _series_fit(scene: dict, length: float) -> bool:
     """Доживёт ли вставка этой сцены образца до кадра.
 
@@ -439,6 +498,7 @@ def _sample_plan(phrases: list[dict], faceless: set[int], *,
                                      "closeup pen marking a line"],
                            "kind": "video"}
     _add_backups(scenes)
+    _add_element(scenes)
     if len(scenes) > 1:
         scenes[-1]["beat"] = "climax"
     body = json.dumps(

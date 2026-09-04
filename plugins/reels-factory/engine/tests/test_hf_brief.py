@@ -2500,11 +2500,17 @@ def test_правило_позиции_каталога_живёт_в_одном
     Единственное место правила — свод правил, раздел «Чем занять кадр:
     позиция каталога». Задание печатает числа этого ролика и ссылается на
     свод; своей редакции у него нет.
+
+    Образец ответа — не редакция правила, а форма ответа, и `elements` в нём
+    стоит: B4c показал, что правило без образца молчит (агент не заговорил про
+    каталог вовсе). Поэтому меряем текст задания без образца.
     """
     for name, kw in (("early", {"avatar_ordered": False,
                                 "phrases": GAP_PHRASES}),
                      ("ordered", {"clips": CLIPS, "phrases": GAP_PHRASES})):
-        задание = _text(tmp_path / name, **kw)
+        целиком = _text(tmp_path / name, **kw)
+        задание = (целиком.split("<example>")[0]
+                   + целиком.split("</example>")[-1])
         assert "elements" not in задание, (
             f"{name}: у задания снова своя редакция правила про `elements` — "
             "оно живёт в своде правил, а задание на него ссылается")
@@ -2789,6 +2795,42 @@ def test_образец_показывает_значок_там_где_он_в�
                 "значок образца без запроса")
             assert icon_fits(str(scene.get("presenter") or "none")), (
                 f'{scene["id"]}: значок стоит там, где код его снимет')
+
+
+def test_образец_показывает_позицию_каталога(tmp_path):
+    """Приёма, которого нет в образце, агент не применяет.
+
+    Три живых ранних шага подряд вернули план без единого `elements`, и
+    последний (`artyom-early-b4c`) — уже с чистым заданием и прочитанным
+    сводом: транскрипт `5204d33a` не содержит слова «elements» вовсе, а
+    заполнены ровно поля образца. Правило про каталог стояло рядом с образцом,
+    который опровергал его молчанием.
+
+    Позиция берётся из настоящего каталога и ставится туда, где код найдёт ей
+    свободную зону (`effect_zone`); сцену со схемой она не делит — мысль несут
+    обе, и образец учил бы набивать кадр, а не выбирать.
+    """
+    from reels_factory.hf_brief import SAMPLE_ELEMENT
+    from reels_factory.hf_catalog import catalog_cards
+    from reels_factory.hf_compose import effect_zone
+
+    карточка = catalog_cards().get(SAMPLE_ELEMENT["name"])
+    assert карточка, "позиции образца в каталоге нет — образец учит имени в пустоту"
+    assert карточка.get("kind") == "effect"
+    assert set(SAMPLE_ELEMENT["variables"]) <= set(карточка.get("variables") or {})
+    for name, kw in (("early", {"avatar_ordered": False,
+                                "phrases": EVEN_PHRASES}),
+                     ("ordered", {"phrases": GAP_PHRASES})):
+        board = _board(_text(tmp_path / name, **kw))
+        с_позицией = [s for s in board["scenes"] if s.get("elements")]
+        assert с_позицией, f"{name}: образец не показывает `elements` ни разу"
+        for scene in с_позицией:
+            assert scene["elements"] == [SAMPLE_ELEMENT], (
+                f'{name}: {scene["id"]} называет не ту позицию')
+            assert effect_zone(str(scene.get("presenter") or "none")), (
+                f'{name}: {scene["id"]} — позиции там некуда встать')
+            assert not scene.get("schema"), (
+                f'{name}: {scene["id"]} делит кадр между схемой и позицией')
 
 
 def test_сверка_требует_запас_на_каждой_сцене_а_не_счётом(tmp_path):
