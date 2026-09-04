@@ -1341,6 +1341,28 @@ def element_problem(name: str) -> str | None:
     return None
 
 
+#: Поле раскадровки со снятыми позициями каталога: `{scene, name, why}`.
+#: Читает его `D36_elements` после сборки (`hf_gates.elements_delivered`):
+#: раскадровка обязана описывать собранный кадр, поэтому снятая позиция из
+#: `scene["elements"]` вычищается — и без этого следа гейту нечего судить.
+#: Пересборка `artyom-rebuild-4b` потеряла так `count-up`: строка в логе была,
+#: `D36_elements` остался PASS, и в карточку изъян не попал.
+DROPPED_ELEMENTS = "elementsDropped"
+
+
+def drop_element(board: dict, scene: dict, name: str, reason: str) -> None:
+    """Снять позицию каталога из кадра — вслух, а не одной строкой в логе.
+
+    Одна дверь на все причины снятия (каталог отказал, зоны нет, слов не
+    хватило, до конца ролика не осталось секунд): лог видит тот, кто откроет
+    папку прогона, а карточку сборки — заказчик и гейты.
+    """
+    print(f'{scene.get("id", "?")}: элемент {name} снят — {reason}')
+    board.setdefault(DROPPED_ELEMENTS, []).append(
+        {"scene": str(scene.get("id", "?")), "name": str(name),
+         "why": str(reason)})
+
+
 def settle_fillers(board: dict, resolved: dict[str, dict]) -> list[str]:
     """Снять с раскадровки то, чего в кадре не будет: значок без файла и
     накладку с непригодным блоком.
@@ -1390,7 +1412,7 @@ def settle_fillers(board: dict, resolved: dict[str, dict]) -> list[str]:
         for element in elements:
             reason = element_problem(str(element["name"]))
             if reason:
-                print(f'{name}: элемент {element["name"]} снят — {reason}')
+                drop_element(board, scene, str(element["name"]), reason)
                 continue
             kept.append(element)
         if len(kept) != len(elements):
@@ -1701,7 +1723,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             name = str(element["name"]).strip()
             reason = element_problem(name)
             if reason:
-                print(f'{scene["id"]}: элемент {name} снят — {reason}')
+                drop_element(storyboard, scene, name, reason)
                 continue
             card = _catalog_cards().get(name) or {}
             kind = str(card.get("kind") or "")
@@ -1719,17 +1741,18 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                       if kind == "overlay" else end - begin)
             length = round(min(length, duration - begin), 4)
             if length <= 0.2:
-                print(f'{scene["id"]}: элемент {name} снят — до конца ролика '
-                      f"остаётся {duration - begin:.2f} с")
+                drop_element(storyboard, scene, name,
+                             "до конца ролика остаётся "
+                             f"{duration - begin:.2f} с")
                 continue
             rect = None
             if kind == "effect":
                 position = str(scene.get("presenter") or "none")
                 rect = effect_zone(position)
                 if rect is None:
-                    print(f'{scene["id"]}: элемент {name} снят — ведущая '
-                          f"{position!r} не оставила в кадре свободной зоны "
-                          f"выше полосы титра")
+                    drop_element(storyboard, scene, name,
+                                 f"ведущая {position!r} не оставила в кадре "
+                                 "свободной зоны выше полосы титра")
                     continue
             # Слова агента идут в слоты по порядку самой разметки: их читает
             # `_stage_overlay` разбором позиции и раскладывает существующим
@@ -1757,7 +1780,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                         sdk, public, name, unique=unique,
                         variables=element.get("variables") or {})
                 except RuntimeError as error:
-                    print(f'{scene["id"]}: элемент {name} снят — {error}')
+                    drop_element(storyboard, scene, name, str(error))
                     continue
             else:
                 source = _installed_path(public, name, card_type)
@@ -1781,7 +1804,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                         public, name, scene["id"], sdk=sdk if said else None,
                         words=said or None, port=port, card_type=card_type)
                 except RuntimeError as error:
-                    print(f'{scene["id"]}: элемент {name} снят — {error}')
+                    drop_element(storyboard, scene, name, str(error))
                     continue
                 if not dimensions and kind in ("scene", "effect"):
                     box = ((OUT_W, OUT_H) if kind == "scene"

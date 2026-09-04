@@ -249,6 +249,58 @@ def elements_problems(scenes: list[dict]) -> list[str]:
     return problems
 
 
+#: Вердикт гейта, который нашёл изъян, но ролик им не заворачивает. От FAIL
+#: отличается намеренно: ведущая уже куплена, ролик доезжает до заказчика, и
+#: изъян остаётся в карточке словом (решение 05, Вася) — а не пропадает.
+WARNED_VERDICT = "WARN"
+
+
+def elements_delivered(plan: dict, storyboard: dict) -> dict:
+    """`D36_elements` после сборки: что просил агент — и что доехало в кадр.
+
+    До заказа тот же гейт судит имена, переменные и геометрию плана
+    (`elements_problems`, hf_render.py). После сборки повторять ту же сверку
+    бессмысленно: раскадровка обязана описывать собранный кадр, поэтому
+    позицию, которая в кадр не встала, сборка из `scene["elements"]`
+    вычищает — и `elements_problems` по раскадровке видит пустой список, а не
+    пропажу. Пересборка `artyom-rebuild-4b` прошла так с зелёным
+    `D36_elements`, потеряв `count-up`.
+
+    Поэтому сравниваются два файла: `plan.json` — то, что вернул агент,
+    `storyboard.json` — то, что собралось. Причину берём оттуда, где её
+    знают, — из следа сборки (`hf_compose.DROPPED_ELEMENTS`).
+    """
+    from reels_factory.hf_compose import DROPPED_ELEMENTS
+    from reels_factory.hf_montage import scene_elements
+
+    why = {(str(note.get("scene")), str(note.get("name"))): str(note.get("why"))
+           for note in storyboard.get(DROPPED_ELEMENTS) or []
+           if isinstance(note, dict)}
+    built = {str(scene.get("id")): {str(element["name"]).strip()
+                                    for element in scene_elements(scene)}
+             for scene in storyboard.get("scenes") or []}
+    lost = []
+    for scene in plan.get("scenes") or []:
+        scene_id = str(scene.get("id"))
+        for element in scene_elements(scene):
+            name = str(element["name"]).strip()
+            if name in built.get(scene_id, set()):
+                continue
+            # Сцены в раскадровке нет вовсе — её секунды ушли соседке
+            # (`absorb_scene`) или пара склеилась в один кусок
+            # (`dedupe_neighbours`), и элемент уехал вместе со сценой.
+            reason = why.get((scene_id, name)) or (
+                "сцена не дошла до кадра — её секунды сведены с соседней"
+                if scene_id not in built else "причину сборка не назвала")
+            lost.append(f"{scene_id}: {name} — {reason}")
+    if not lost:
+        return {"D36_elements": "PASS"}
+    return {"D36_elements": f"{WARNED_VERDICT}: позиция каталога, названная "
+                            "планом, в кадр не встала — агент выбирал её под "
+                            "содержание сцены, и кадр вышел беднее плана: "
+                            + "; ".join(lost)}
+
+
 def _schema_problems(storyboard: dict) -> list[str]:
     """Расхождения с их схемой v3 (SKILL.md:130-165, 610-616).
 

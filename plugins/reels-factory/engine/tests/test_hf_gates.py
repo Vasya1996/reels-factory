@@ -652,6 +652,62 @@ def test_элемент_кадра_считают_одинаково_d20_и_d25(
     assert _empty_frame_problems([dict(стык, presenter="none")])
 
 
+def test_снятый_сборкой_элемент_доходит_до_карточки_причиной():
+    """Пересборка `artyom-rebuild-4b`: из трёх позиций в кадр встали две, а
+    `D36_elements` остался зелёным. Пост-рендерная сверка читала раскадровку,
+    откуда сборка снятую позицию уже вычистила, — судить было нечего.
+
+    Теперь сравниваются план агента и собранный кадр, а причину даёт сама
+    сборка (`hf_compose.DROPPED_ELEMENTS`). Вердикт WARN, не FAIL: ведущая
+    куплена, ролик доезжает, изъян остаётся в карточке словом.
+    """
+    from reels_factory.hf_compose import DROPPED_ELEMENTS
+    from reels_factory.hf_gates import elements_delivered
+
+    план = _board(_элементы({"name": "count-up"}))
+    кадр = _board(_элементы())
+    кадр[DROPPED_ELEMENTS] = [{"scene": "s-01", "name": "count-up",
+                               "why": "ведущая 'full' не оставила зоны"}]
+    вердикт = elements_delivered(план, кадр)["D36_elements"]
+    assert вердикт.startswith("WARN"), вердикт
+    assert "s-01" in вердикт and "count-up" in вердикт
+    assert "не оставила зоны" in вердикт, "причина потерялась по дороге"
+
+
+def test_дошедший_до_кадра_элемент_гейт_не_тревожит():
+    from reels_factory.hf_gates import elements_delivered
+
+    план = _board(_элементы({"name": "count-up"}))
+    assert elements_delivered(план, _board(_элементы(
+        {"name": "count-up"})))["D36_elements"] == "PASS"
+
+
+def test_уехавшая_вместе_со_сценой_позиция_тоже_изъян():
+    """Сцену могло не остаться вовсе — её секунды сводит с соседкой
+    `absorb_scene` или `dedupe_neighbours`. Позиция уезжает вместе с ней, и
+    причины сборка при этом не пишет: снимала не она."""
+    from reels_factory.hf_gates import elements_delivered
+
+    план = _board(_элементы({"name": "count-up"}))
+    вердикт = elements_delivered(план, _board([]))["D36_elements"]
+    assert вердикт.startswith("WARN") and "сведены с соседней" in вердикт
+
+
+def test_сборка_записывает_причину_снятия_в_раскадровку():
+    """След пишет тот, кто снимает: причина известна только сборке, а гейт и
+    карточка читают раскадровку."""
+    from reels_factory.hf_compose import DROPPED_ELEMENTS, settle_fillers
+
+    board = _board(_элементы({"name": "такой-позиции-нет"}))
+    assert settle_fillers(board, {}) == ["s-01"]
+    assert board["scenes"][0]["elements"] == []
+    записи = board[DROPPED_ELEMENTS]
+    assert len(записи) == 1
+    assert записи[0]["scene"] == "s-01"
+    assert записи[0]["name"] == "такой-позиции-нет"
+    assert "catalog.index.md" in записи[0]["why"]
+
+
 def test_рисованный_текст_гейт_берёт_из_карточки(monkeypatch, tmp_path):
     """Белый список D22 переехал в карточку: каждая новая позиция иначе
     требовала бы правки кода гейта."""

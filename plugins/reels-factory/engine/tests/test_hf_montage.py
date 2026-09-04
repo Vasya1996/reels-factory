@@ -360,6 +360,82 @@ def test_без_запасной_схемы_уголок_уходит_под_п�
     assert not scenes[1].get("needsSchema")
 
 
+@pytest.fixture
+def каталог(monkeypatch):
+    """Виды позиций берём из фикстурного каталога: `count-up` — `effect`."""
+    from pathlib import Path
+
+    from reels_factory import hf_catalog, hf_montage
+
+    корень = Path(__file__).resolve().parent / "fixtures" / "catalog"
+    cards = hf_catalog.catalog_cards
+    monkeypatch.setattr(hf_montage, "_element_kinds",
+                        lambda: {name: card.get("kind")
+                                 for name, card in cards(корень).items()})
+
+
+def test_снятая_серия_не_отнимает_зону_у_элемента(каталог):
+    """Пересборка `artyom-rebuild-4b`: `count-up` стоял на сцене `pip-br`,
+    ранняя сверка признала зону (`effect_zone("pip-br")` — не `None`), а
+    дальше отбор серий по бюджету снял со сцены вставку. Код считал кадр
+    пустым и поднимал ведущую во весь кадр — после чего сборка снимала
+    элемент, для которого зоны уже не осталось, и в ролик он не попал.
+
+    Элемент кадр закрывает (`filling_element`, тот же счёт у D20 и D25),
+    значит досыпать в такую сцену нечего: положение агента остаётся, запасная
+    схема не включается — она встала бы прямо на элемент.
+    """
+    from reels_factory.hf_compose import effect_zone
+    from reels_factory.hf_montage import drop_series
+
+    scenes = [_scene(0, 0.0, 3.0, "full", None),
+              _scene(1, 3.0, 6.0, "pip-br")]
+    scenes[1]["elements"] = [{"name": "count-up",
+                              "variables": {"end": 12, "suffix": " раз в год"}}]
+    scenes[1]["fallback"] = {"form": "steps", "why": "порядок",
+                             "nodes": ["кто", "что"]}
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 6.0}]
+    drop_series(scenes, kept=[], clips=clips, duration=6.0)
+    assert scenes[1]["presenter"] == "pip-br", "положение агента переписано"
+    assert effect_zone(scenes[1]["presenter"]) is not None, (
+        "зоны под элемент в кадре не осталось")
+    assert scenes[1]["elements"], "элемент выброшен из плана"
+    assert not scenes[1].get("needsSchema"), (
+        "запасная схема встала бы поверх элемента: обе занимают кадр выше "
+        "полосы титра")
+
+
+def test_без_элемента_снятая_серия_поднимает_ведущую_как_прежде(каталог):
+    """Та же сцена без элемента: кадр после снятой вставки правда пуст, и
+    закрывать его нечем, кроме ведущей."""
+    from reels_factory.hf_montage import drop_series
+
+    scenes = [_scene(0, 0.0, 3.0, "full", None),
+              _scene(1, 3.0, 6.0, "pip-br")]
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 6.0}]
+    drop_series(scenes, kept=[], clips=clips, duration=6.0)
+    assert scenes[1]["presenter"] == "punch"
+
+
+def test_разводя_соседей_код_оставляет_элементу_зону(каталог):
+    """Второе место, где переписывается положение: `dedupe_neighbours`. Оно
+    спрашивает те же `positions_for`, и уголки там остаются — иначе развод
+    пары стоил бы элемента."""
+    from reels_factory.hf_compose import effect_zone
+    from reels_factory.hf_montage import dedupe_neighbours
+
+    scenes = [_scene(0, 0.0, 3.0, "pip-br", None),
+              _scene(1, 3.0, 6.0, "pip-br", None)]
+    for scene in scenes:
+        scene["elements"] = [{"name": "count-up"}]
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 6.0}]
+    dedupe_neighbours(scenes, clips=clips, duration=6.0)
+    assert len(scenes) == 2, "пару склеили вместо развода положением"
+    assert scenes[0]["presenter"] != scenes[1]["presenter"]
+    for scene in scenes:
+        assert effect_zone(scene["presenter"]) is not None, scene["id"]
+
+
 def test_зазор_взят_у_неё_но_считается_долей():
     """Планка её — «между сериями лицо ≥2,5 с», и снята она с эталонов длиной
     41,5 с. Секундой её держать нельзя: на 30-секундном ролике те же 2,5 с
