@@ -40,7 +40,7 @@ from reels_factory.hf_fonts import inject_fonts
 from reels_factory.hf_frame import read_frame
 from reels_factory.hf_gates import (
     check_media, check_placeholders, check_storyboard, elements_delivered,
-    elements_problems, frame_filled_problems,
+    elements_problems, frame_choice_problems, frame_filled_problems,
 )
 from reels_factory.hf_layout import FULL_FRAME_PRESENTER, quantize
 from reels_factory.hf_media import resolve_all
@@ -1164,11 +1164,28 @@ def _early_plan_gates(scenes: list[dict], duration: float,
     # список сверяет D11 после сборки, и считает его тот же код —
     # `elements_problems`.
     named = elements_problems(scenes)
-    result["D36_elements"] = "PASS" if not named else (
-        "FAIL: позицию каталога код ставит их же `hyperframes add`, и "
-        "неизвестное имя он не ставит вовсе — сборка встанет уже с оплаченной "
-        "ведущей. Имена, слоты и переменные позиций перечислены в "
-        "`catalog.index.md` рядом с заданием: " + "; ".join(named))
+    # Второе, что судит тот же гейт до оплаты, — сказано ли у сцены, чем
+    # держится её кадр и что она сделала с каталогом (`frame`). Это покрытие:
+    # число позиций в ролике гейт не меряет и порога на него не заводит.
+    # Причина в одном месте — `frame_choice_problems`.
+    silent_frame = frame_choice_problems(scenes)
+    trouble = []
+    if silent_frame:
+        trouble.append(
+            "поле `frame` стоит у каждой сцены: чем держится её кадр "
+            "(`holder`), какие позиции каталога ты рассмотрел "
+            "(`catalog_checked`) и почему взял или не взял (`catalog_reason`). "
+            "Без него не отличить сцену, которой каталог не подошёл, от сцены, "
+            "по которой ты каталог не смотрел: " + "; ".join(silent_frame))
+    if named:
+        trouble.append(
+            "позицию каталога код ставит их же `hyperframes add`, и "
+            "неизвестное имя он не ставит вовсе — сборка встанет уже с "
+            "оплаченной ведущей. Имена, слоты и переменные позиций "
+            "перечислены в `catalog.index.md` рядом с заданием: "
+            + "; ".join(named))
+    result["D36_elements"] = "PASS" if not trouble else "FAIL: " + " ".join(
+        trouble)
 
     empty = frame_filled_problems(scenes)
     result["D35_frame_filled"] = "PASS" if not empty else (

@@ -25,11 +25,14 @@ from reels_factory.avatar_islands import (
 )
 from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.editplan import MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S
-from reels_factory.hf_catalog import catalog_cards, write_catalog_files
+from reels_factory.hf_catalog import (
+    catalog_cards, search_cards, write_catalog_files,
+)
 from reels_factory.hf_compose import effect_zone
 from reels_factory.hf_gates import min_scenes
 from reels_factory.hf_montage import (
-    SERIES_MAX, SERIES_MIN, face_gap, inserts_wanted, survives_series,
+    FRAME_HOLDERS, SERIES_MAX, SERIES_MIN, face_gap, frame_filler,
+    inserts_wanted, survives_series,
 )
 from reels_factory.hf_montage_skill import number, seconds, write_montage_skill
 from reels_factory.hf_phrases import MIN_SCENE, faceless_phrases
@@ -94,16 +97,65 @@ def _scenario_block(block: dict) -> str:
     return f'- **{block.get("role", "?")}**: {block.get("speech", "")}'
 
 
-def _phrase_line(phrase: dict, faceless: set[int]) -> str:
-    """Строка фразы для задания.
+def _candidate_line(card: dict) -> str:
+    """Кандидат под фразой: имя, вид, что им показывают, слоты и переменные.
+
+    Ровно то, чем решают «годится или нет», и ничего сверх: `description` и
+    `tags` остаются в индексе — они описывают анимацию, а не содержание сцены
+    (`catalog_cards`, hf_catalog.py). Карточка без `kind` — плашка над полосой
+    титра, тем же словом её называет свод правил.
+    """
+    parts = [f'  - `{card["name"]}` ({card.get("kind") or "плашка"}) — '
+             f'{card.get("use_when") or card.get("title") or ""}']
+    if card.get("text_slots"):
+        parts.append("слова: " + ", ".join(card["text_slots"]))
+    if card.get("variables"):
+        parts.append("переменные: " + ", ".join(card["variables"]))
+    return "; ".join(parts)
+
+
+def _phrase_candidates(phrases: list[dict]) -> dict[int, list[dict]]:
+    """Позиции каталога под каждую фразу — по её словам.
+
+    Сцен на этом шаге ещё нет: их режет агент, и `intent` он пишет уже в
+    плане. Фраза — самая мелкая единица, которая в задании есть, и сцена
+    называет её номера, поэтому кандидаты считаются по фразам и достаются
+    сцене вместе с ними.
+
+    Каталог поднимается один раз на всё задание: карточек полторы сотни, а
+    фраз у минутного ролика два десятка.
+    """
+    try:
+        cards = catalog_cards()
+    except (OSError, ValueError) as error:
+        print(f"кандидаты каталога не собрались: {error}")
+        return {}
+    return {int(phrase["id"]): search_cards(str(phrase.get("text") or ""),
+                                            cards=cards)
+            for phrase in phrases}
+
+
+def _phrase_line(phrase: dict, faceless: set[int],
+                 candidates: list[dict] | None = None) -> str:
+    """Строка фразы для задания и найденные по ней позиции каталога.
 
     Длина нужна, чтобы агент не назначал сцену на фразу короче минимума: код
     такую сцену дотянет за счёт соседней, и картинка съедет с реплики.
+
+    Кандидатов ищет код (`hf_catalog.search_cards`) и печатает их здесь, под
+    самой фразой, а не отсылает за ними в индекс. Причина измерена шестью
+    живыми ранними шагами: агент искал по восьми строкам таблицы тегов свода и
+    ни разу — по русскому слову реплики, хотя `use_when` написан её словами.
+    Поиск — работа механическая, и уходит она коду; решение остаётся за
+    агентом: это кандидаты, а не назначение.
     """
     length = float(phrase["end"]) - float(phrase["start"])
     mark = "  ← **ведущей тут нет**" if phrase["id"] in faceless else ""
-    return (f'- `{phrase["id"]}` **{phrase["role"]}** {seconds(length)} — '
+    line = (f'- `{phrase["id"]}` **{phrase["role"]}** {seconds(length)} — '
             f'{phrase["text"]}{mark}')
+    if not candidates:
+        return line
+    return "\n".join([line] + [_candidate_line(card) for card in candidates])
 
 
 def _positions_block() -> str:
@@ -346,6 +398,55 @@ def _add_element(scenes: list[dict]) -> None:
         return
 
 
+def _add_frames(scenes: list[dict],
+                candidates: dict[int, list[dict]] | None) -> None:
+    """Дописать каждой сцене образца поле `frame` — решение про её кадр.
+
+    Ставится последним, когда у сцены уже есть всё остальное: `holder`
+    считает тот же `frame_filler`, которым отвечает код, а он смотрит на
+    вставку, схему, позицию и значок. Своего счёта у образца тут нет — иначе
+    он учил бы слову, которое гейт не примет.
+
+    Две сцены образца показывают оба исхода прохода по каталогу: одна берёт
+    позицию и говорит почему, другая называет рассмотренных кандидатов и
+    говорит, почему не взяла. Без второй агент не увидел бы, как выглядит
+    отказ, и поле оставалось бы пустым там, где позиция не подошла, — а
+    именно этот случай и был неотличим от «не смотрел» во всех шести живых
+    ранних шагах.
+
+    Имена кандидатов берутся настоящие — те же, что код нашёл под фразами
+    этой сцены. Выдуманное имя в образце учило бы плану, который не собрать.
+    """
+    for scene in scenes:
+        # Сцена образца всегда чем-то закрыта: у неё либо ведущая в кадре,
+        # либо вставка на всю сцену. Пустой ответ сюда не доходит.
+        holder = frame_filler(scene) or FRAME_HOLDERS[1]
+        taken = [str(item["name"]) for item in scene.get("elements") or []]
+        if taken:
+            reason = (f'взял `{taken[0]}`: сцена называет число, и позиция '
+                      "показывает его же")
+            scene["frame"] = {"holder": holder, "catalog_checked": taken,
+                              "catalog_reason": reason}
+            continue
+        first, last = (scene.get("phrases") or [0, 0])[:2]
+        seen, checked = set(), []
+        for pid in range(int(first), int(last) + 1):
+            for card in (candidates or {}).get(pid) or []:
+                if card["name"] not in seen:
+                    seen.add(card["name"])
+                    checked.append(card["name"])
+        checked = checked[:2]
+        if checked:
+            reason = ("рассмотрел " + ", ".join(f"`{name}`" for name in checked)
+                      + " — показывают не то, что названо в этой сцене; кадр "
+                      f"держит {holder}")
+        else:
+            reason = ("по словам фразы каталог ничего не предложил, кадр "
+                      f"держит {holder}")
+        scene["frame"] = {"holder": holder, "catalog_checked": checked,
+                          "catalog_reason": reason}
+
+
 def _series_fit(scene: dict, length: float) -> bool:
     """Доживёт ли вставка этой сцены образца до кадра.
 
@@ -364,7 +465,8 @@ def _series_fit(scene: dict, length: float) -> bool:
 
 def _sample_plan(phrases: list[dict], faceless: set[int], *,
                  duration: float, bar: float = 1.0,
-                 avatar_ordered: bool = True) -> str:
+                 avatar_ordered: bool = True,
+                 candidates: dict[int, list[dict]] | None = None) -> str:
     """Образец ответа, собранный из фраз этого же ролика.
 
     Раньше образец был написан руками и жил своей жизнью: пять сцен вместо
@@ -499,6 +601,7 @@ def _sample_plan(phrases: list[dict], faceless: set[int], *,
                            "kind": "video"}
     _add_backups(scenes)
     _add_element(scenes)
+    _add_frames(scenes, candidates)
     if len(scenes) > 1:
         scenes[-1]["beat"] = "climax"
     body = json.dumps(
@@ -790,8 +893,24 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     phrases = phrases or []
     faceless = (set(faceless_phrases(phrases, clips or [], duration))
                 if avatar_ordered else set())
-    phrases_block = "\n".join(_phrase_line(p, faceless) for p in phrases) or (
-        "Фразы не размечены.")
+    # Кандидаты каталога под каждую фразу. Каталога может не быть вовсе —
+    # тогда список фраз печатается как прежде, а элементов у плана не будет,
+    # ровно как их не бывает без индекса.
+    candidates = _phrase_candidates(phrases)
+    phrases_block = "\n".join(
+        _phrase_line(p, faceless, candidates.get(int(p["id"])))
+        for p in phrases) or "Фразы не размечены."
+    # Что это за строки под фразой — сказано один раз и здесь, у самих строк.
+    # Как между кандидатами выбирают — не здесь: это правило свода, и второй
+    # его редакции в задании нет.
+    candidates_note = ("""
+Под фразой — позиции каталога, которые нашлись по её словам: тем же поиском,
+каким ищут по индексу, но за тебя и по каждой фразе. Это кандидаты, а не
+решение — годится позиция сцене или нет, видно по `use_when`, и выбираешь ты
+(свод правил, раздел «Чем занять кадр: позиция каталога»). Кандидатов нет или
+они не о том — весь каталог остаётся в `catalog.index.md`: поиск по словам
+находит не всё.
+""" if any(candidates.values()) else "")
     last_phrase = (phrases or [{"id": 0}])[-1]["id"]
 
     # Настройки той нарезки островов, которой будут заказывать: заказ выходит
@@ -1068,7 +1187,8 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     # образец учил бы расстановке, которую гейт заворачивает.
     bar = hard_target / duration if duration > 0 else 1.0
     sample_plan = _sample_plan(phrases, faceless, duration=duration, bar=bar,
-                               avatar_ordered=avatar_ordered)
+                               avatar_ordered=avatar_ordered,
+                               candidates=candidates)
     # Образец короче настоящего плана, а требование «сцен не меньше N» стоит
     # рядом. Без оговорки два соседних абзаца противоречат друг другу, и
     # образец — который сильнее правила — выигрывает: прогон отдавал ровно
@@ -1231,11 +1351,13 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     # план не поставил. Проход по запасу в том же прогоне выполнен на всех
     # сценах до единой: шаг со своим выходом агент делает, правило внутри
     # чужого шага — нет. Метод остаётся в своде правил, здесь только порядок.
-    catalog_step = ("Пройди сцены ещё раз, теперь по каталогу: каждой поищи "
-                    "позицию по её\n   `intent` — как ищут, сказано в своде "
-                    "правил, раздел «Чем занять кадр:\n   позиция каталога». "
-                    "Нашлась — назови её в `elements`; не нашлась — сцену "
-                    "закрывает\n   то, что ты уже ей поставил.")
+    catalog_step = ("Пройди сцены ещё раз, теперь по каталогу: посмотри "
+                    "кандидатов, которых код\n   нашёл под фразами этой сцены, "
+                    "а если они не о том — поищи сам по её\n   `intent`; как "
+                    "ищут, сказано в своде правил, раздел «Чем занять кадр:\n"
+                    "   позиция каталога». Взятую позицию назови в "
+                    "`elements`, а что ты решил\n   и почему — в `frame` "
+                    "сцены, у каждой.")
     if avatar_ordered:
         steps_block = f"""{skill_step}
 2. {scenes_step}
@@ -1282,17 +1404,15 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     # итоговая реплика агента перечисляла пункты сверки по порядку и каталог не
     # называла — даже там, где поисков было пять, а элементов ноль.
     #
-    # Мерка пункта — след, а не число: своего поля у отказа в плане нет, и
-    # заводить его незачем — `intent` агент и так пишет каждой сцене, а без
-    # сказанного отказа несделанный проход неотличим от сделанного. Гейт
-    # `D36_elements` этим пунктом не расширяется: он судит имя и вид названной
-    # позиции, а не то, названа ли она вообще.
+    # Мерка пункта — след, а не число: сколько позиций стоит в ролике, не
+    # меряет ни пункт, ни гейт. След у прохода теперь свой — поле `frame`, и
+    # именно его судит `D36_elements` до оплаты: без него сцена, которой
+    # каталог не подошёл, неотличима от сцены, по которой каталог не смотрели.
+    # Пункт называет ту же мерку, что и гейт, — как остальные пункты сверки.
     catalog_check = (
-        "У каждой сцены, чей `intent` попадает в таблицу признаков свода "
-        "правил\n   («Чем занять кадр: позиция каталога»), названа позиция в "
-        "`elements` — либо\n   сам `intent` говорит, почему её нет: искал и не "
-        "нашёл. Кроме `elements`\n   этот проход следа не оставляет, а "
-        "`elements` может и не быть.")
+        "У каждой сцены заполнен `frame`: чем держится кадр, какие позиции "
+        "каталога\n   ты рассмотрел и почему взял или не взял. Взятая позиция "
+        "названа ещё и в\n   `elements` (`D36_elements`).")
     if avatar_ordered:
         self_check = f"""Прежде чем записывать файлы, сверь план по списку.
 
@@ -1345,6 +1465,10 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
 Расхождение нашлось — почини план и только потом записывай файлы."""
     gaps_title = ("## Где ведущей нет" if avatar_ordered
                   else "## Бюджет ведущей")
+    # Список держателей кадра — из кода (`frame_filler`), а не из второго
+    # перечня в тексте: разойдись они, задание звало бы писать слово, которое
+    # гейт не принимает.
+    holders = ", ".join(f"`{word}`" for word in FRAME_HOLDERS)
 
     text = f"""---
 workflow: {WORKFLOW}
@@ -1379,7 +1503,7 @@ mode: autonomous
 фразы. Сцена называет номера фраз, на которые приходит; когда она начнётся и
 кончится, считает код по звуку. Длину сцены прикидывай сложением длительностей
 её фраз — это вся арифметика времени, которая тебе нужна.
-
+{candidates_note}
 {phrases_block}
 
 {material_block}
@@ -1443,6 +1567,14 @@ colors:
 последняя кончается фразой `{last_phrase}`.
 
 `intent` — одна строка о том, чем сцена держит зрителя.
+
+`frame` — что ты решил про кадр этой сцены. Три поля:
+`holder` — чем кадр держится, одним словом из списка: {holders};
+`catalog_checked` — имена позиций каталога, которые ты рассмотрел для этой
+сцены, списком; не подошёл ни один кандидат — список пустой;
+`catalog_reason` — одна фраза о том, почему позиция взята или почему не взята.
+Поле стоит у каждой сцены: по нему видно, что проход по каталогу был, и без
+него план возвращается на пересдачу (`D36_elements`).
 
 `brollContext` заполняется по-английски: `domain` — про что ролик одной фразой
 (это и запасной запрос, когда точный ничего не нашёл), `anti` — чего в кадрах

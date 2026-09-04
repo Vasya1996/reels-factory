@@ -249,6 +249,53 @@ def elements_problems(scenes: list[dict]) -> list[str]:
     return problems
 
 
+def frame_choice_problems(scenes: list[dict]) -> list[str]:
+    """У каждой сцены названо, чем держится её кадр и что она сделала с
+    каталогом. Пусто — план возвращается на пересдачу (`D36_elements`).
+
+    Это покрытие, а не порог: сколько позиций каталога стоит в ролике, гейт не
+    считает и считать не будет. Мерка — сказано или не сказано, ровно как у
+    `D33_avatar_decisions`, где та же форма закрыла ту же дыру: сцена, которая
+    решения не несёт, оставляет вместо него догадку кода.
+
+    Причина, по которой поле понадобилось, измерена шестью живыми ранними
+    шагами: проход по каталогу — единственный проход задания, который не
+    оставляет следа, когда позиция не взята. Отличить «искал и не нашёл» от
+    «не искал» было нечем, и в шести прогонах из шести агент не называл
+    каталог вовсе (usewhen-report, density-report).
+
+    Имена в `catalog_checked` с каталогом не сверяются: это след решения, а не
+    заказ на установку. Ставит позицию поле `elements`, и его имена судит
+    `elements_problems` — там неизвестное имя роняет сборку их же `add`.
+    """
+    from reels_factory.hf_montage import FRAME_HOLDERS
+
+    problems = []
+    for scene in scenes:
+        scene_id = scene.get("id", "?")
+        frame = scene.get("frame")
+        if not isinstance(frame, dict):
+            problems.append(f"{scene_id}: поля `frame` нет")
+            continue
+        holder = str(frame.get("holder") or "").strip()
+        if holder not in FRAME_HOLDERS:
+            problems.append(
+                f"{scene_id}: `holder` — одно слово из списка "
+                + ", ".join(f"`{word}`" for word in FRAME_HOLDERS)
+                + (f", а в плане {holder!r}" if holder else ", а в плане пусто"))
+        checked = frame.get("catalog_checked")
+        if not isinstance(checked, list) or any(
+                not isinstance(name, str) for name in checked):
+            problems.append(
+                f"{scene_id}: `catalog_checked` — список имён позиций, которые "
+                "ты рассмотрел для этой сцены; ни одной — пустой список")
+        if not str(frame.get("catalog_reason") or "").strip():
+            problems.append(
+                f"{scene_id}: `catalog_reason` — одна фраза о том, почему "
+                "позиция взята или почему не взята")
+    return problems
+
+
 #: Вердикт гейта, который нашёл изъян, но ролик им не заворачивает. От FAIL
 #: отличается намеренно: ведущая уже куплена, ролик доезжает до заказчика, и
 #: изъян остаётся в карточке словом (решение 05, Вася) — а не пропадает.
