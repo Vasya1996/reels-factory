@@ -1,5 +1,6 @@
 """Наш каталог блоков, отданный агенту их способом — через поле registry."""
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -51,7 +52,7 @@ def _with_blocks(tmp_path, names):
     return tmp_path
 
 
-def test_накладка_с_недостающим_файлом_агенту_не_предлагается(tmp_path, capsys):
+def test_накладка_с_недостающим_файлом_агенту_не_предлагается(tmp_path, caplog):
     """`hyperframes add` тянет каждый файл из карточки блока и на 404 роняет
     всю попытку сборки. Прогон 28 потерял так попытку на `instagram-follow`:
     в каталог не переехал его `assets/avatar.jpg`. Исправить это агент не
@@ -59,8 +60,9 @@ def test_накладка_с_недостающим_файлом_агенту_н
     _with_blocks(tmp_path, ["ок-блок", "битый-блок"])
     _block(tmp_path, "ок-блок", tags=["overlay"])
     _block(tmp_path, "битый-блок", tags=["overlay"], files=["assets/avatar.jpg"])
-    assert overlay_names(tmp_path) == ["ок-блок"]
-    assert "битый-блок" in capsys.readouterr().out
+    with caplog.at_level(logging.DEBUG, logger="reels_factory.hf_catalog"):
+        assert overlay_names(tmp_path) == ["ок-блок"]
+    assert "битый-блок" in caplog.text
 
 
 def test_накладка_со_смешанным_заголовком_не_предлагается():
@@ -243,12 +245,13 @@ def test_индекс_отдаёт_карточки_всех_трёх_видов
     assert "dimensions" not in cards["count-up"]
 
 
-def test_позиция_с_причиной_отказа_в_индекс_не_попадает(capsys):
+def test_позиция_с_причиной_отказа_в_индекс_не_попадает(caplog):
     """Причина отказа записана в карточке, и агенту такую позицию не
     предлагают: исправить её он не может — это дефект каталога, а не плана."""
-    assert "demo-skip" not in catalog_cards(FIXTURE)
+    with caplog.at_level(logging.DEBUG, logger="reels_factory.hf_catalog"):
+        assert "demo-skip" not in catalog_cards(FIXTURE)
     assert "demo-skip" in skipped_blocks(FIXTURE)
-    assert "demo-skip" in capsys.readouterr().out
+    assert "demo-skip" in caplog.text
 
 
 def test_карточка_без_вида_остаётся_плашкой_по_старому_правилу():
@@ -342,3 +345,17 @@ def test_у_вертикальных_образцов_заполняются_з�
     cards = catalog_cards()
     for name, slots in СЛОТЫ_ОБРАЗЦОВ.items():
         assert cards[name]["text_slots"] == slots, name
+
+
+def test_отсев_позиций_не_печатается_в_stdout(capsys):
+    """Последнюю строку stdout у `make` бот читает как JSON-ответ
+    пользователю (`bot.run_build`), а каталог зовут и индекс, и оба гейта
+    элементов, и задание — сотнями строк «позиция X не предложена» этот канал
+    заваливало на каждом шаге (побочная находка отчёта B4). Диагностика живёт
+    в логе уровня debug.
+    """
+    catalog_cards(FIXTURE)
+    catalog_index(FIXTURE)
+    printed = capsys.readouterr()
+    assert "не предложена" not in printed.out
+    assert "не предложена" not in printed.err
