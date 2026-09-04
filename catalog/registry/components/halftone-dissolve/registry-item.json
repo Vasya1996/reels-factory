@@ -160,6 +160,6 @@
         "default": "none"
       }
     },
-    "skip": "layout:text_occluded:span.htd-tile-glyph:Text is hidden beneath an opaque element.; layout:content_overlap:span.htd-tile-glyph:Two text blocks overlap and may render unreadable.; contrast:contrast_aa_failure:div > div > div > div > div > div:nth-of-type(1) > div > span:Contrast is 1.87:1; WCAG AA requires 3:1."
+    "skip": "composition_file_too_large [lint] [data-composition-id]: This HTML composition file has 338 lines. Smaller sub-compositions are easier to read, iterate on, and diff.; content_overlap [layout] span.htd-tile-glyph: Two text blocks overlap and may render unreadable."
   }
 }

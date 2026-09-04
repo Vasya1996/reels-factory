@@ -158,6 +158,6 @@
         "default": "TODAY"
       }
     },
-    "skip": "layout:container_overflow:#mcc-card:Element extends outside a clipping layout container.; contrast:contrast_aa_failure:div > div > div > div > div:nth-of-type(5) > div:nth-of-type(1):Contrast is 1.73:1; WCAG AA requires 4.5:1.; contrast:contrast_aa_failure:div > div > div > div > div:nth-of-type(5) > div:nth-of-type(2):Contrast is 1.73:1; WCAG AA requires 4.5:1."
+    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > div:nth-of-type(5) > div:nth-of-type(1): Contrast is 1.73:1; WCAG AA requires 4.5:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > div:nth-of-type(5) > div:nth-of-type(2): Contrast is 1.73:1; WCAG AA requires 4.5:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > div:nth-of-type(6) > div:nth-of-type(1): Contrast is 1.74:1; WCAG AA requires 4.5:1."
   }
 }

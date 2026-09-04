@@ -21,6 +21,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "contrast:contrast_aa_failure:#mk-emph-demo:Contrast is 1.01:1; WCAG AA requires 3:1."
+    "skip": "contrast_aa_failure [contrast] #mk-emph-demo: Contrast is 1.01:1; WCAG AA requires 3:1."
   }
 }

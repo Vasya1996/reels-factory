@@ -111,6 +111,6 @@
         "default": true
       }
     },
-    "skip": "layout:content_overlap:div.cs-title > span:nth-of-type(1):Two text blocks overlap and may render unreadable.; layout:container_overflow:#cs-root:Element extends outside a clipping layout container."
+    "skip": "composition_file_too_large [lint] [data-composition-id]: This HTML composition file has 571 lines. Smaller sub-compositions are easier to read, iterate on, and diff.; content_overlap [layout] div.cs-title > span:nth-of-type(1): Two text blocks overlap and may render unreadable."
   }
 }

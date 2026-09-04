@@ -27,6 +27,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "layout:container_overflow:#neon-glow:Element extends outside a clipping layout container.; contrast:contrast_aa_failure:#ne-w-4:Contrast is 1.34:1; WCAG AA requires 3:1.; contrast:contrast_aa_failure:#ne-w-5:Contrast is 1.34:1; WCAG AA requires 3:1."
+    "skip": "caption_zone_collision [layout] #ne-w-20: <span> \"drag\" is centred in the reserved caption band (~22% up from the bottom).; caption_zone_collision [layout] #ne-w-21: <span> \"and\" is centred in the reserved caption band (~22% up from the bottom).; contrast_aa_failure [contrast] #ne-w-9: Contrast is 1.3:1; WCAG AA requires 3:1."
   }
 }

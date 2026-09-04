@@ -90,6 +90,6 @@
         "default": "green"
       }
     },
-    "skip": "layout:text_box_overflow:span.opt-label:Text extends outside its nearest visual/container box."
+    "skip": "gsap_callback_dom_measurement [lint] onUpdate: renderTraveler: Timeline callback reaches DOM measurement (getBoundingClientRect/getTotalLength/getComputedStyle/...). The renderer seeks with suppressEvents=false, so callbacks re-fire on every seek — and a cold render worker runs them against whatever DOM state its own non-linear seek order produced. Measured geometry is seek-order-dependent, and values measured at build time (before the callback ran) are stale or zero."
   }
 }

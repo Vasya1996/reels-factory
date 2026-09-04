@@ -141,6 +141,39 @@ def test_каждый_компонент_несёт_reels_effect_и_контра
         assert reels.get("mount") in ("composition", "paste"), name
 
 
+#: Позиции, у которых работа B1.5 сняла reels.skip — живым check --strict на
+#: реальной сборке (не зондом), см. scratchpad/b15-report.md. Число не
+#: пришпиливаем к общему счёту skip в каталоге — только эти конкретные имена
+#: обязаны быть предложены агенту.
+_B15_UNSKIPPED = [
+    "message-thread-reveal", "mk-clone-wall-transition", "aurora-drift",
+    "beat-accent", "beat-timeline", "caption-texture", "chromatic-aberration-wipe",
+    "decline-chart", "directional-wipe", "drift-hold", "gesture-tap", "gloss-sweep",
+    "grain-field", "kinetic-type-swap", "light-sweep-pass", "line-swap",
+    "multiplayer-cursors", "overwhelm-surround", "physical-exit", "pull-back-reveal",
+    "push-in", "scramble-reveal", "scroll-feed", "spotlight-card", "spring-pop",
+    "stagger-cascade", "star-rating-fill", "store-badge-lockup", "svg-mask-reveal",
+    "tilt-card", "variable-font-flex",
+]
+
+
+def test_позиции_снятые_в_b15_предложены_и_валидны():
+    """Карточка без `reels.skip`, с известным видом и (для компонента) с
+    известным контрактом монтажа — тем же самым, каким уже проверяет карточки
+    B1 (`test_блоки_работы_b1_несут_reels_kind`,
+    `test_каждый_компонент_несёт_reels_effect_и_контракт_монтажа`)."""
+    offered = catalog_cards()
+    comps = set(component_names())
+    for name in _B15_UNSKIPPED:
+        assert name in offered, f"{name}: не предложена — reels.skip не снят?"
+        card = offered[name]
+        assert card.get("kind") in ("scene", "overlay", "effect"), name
+        if name in comps:
+            reels = _card("components", name).get("reels", {})
+            assert reels.get("mount") in ("composition", "paste"), name
+            assert "skip" not in reels, name
+
+
 def test_block_names_не_включает_компоненты():
     """`block_names` открывает файл по пути `blocks/<имя>` — отдай он имя
     компонента, следующий читатель (`block_backing`, `skipped_blocks`, …)
@@ -197,6 +230,7 @@ def test_индекс_отдаёт_карточки_всех_трёх_видов
     cards = catalog_cards(FIXTURE)
     assert {name: card.get("kind") for name, card in cards.items()} == {
         "count-up": "effect", "demo-scene": "scene", "demo-stitch": "overlay",
+        "demo-paste": "effect",
         # Карточка без `reels.kind` — сегодняшняя плашка: вид у неё не объявлен.
         "demo-plain": None}
     поля = set(cards["demo-scene"])
@@ -228,7 +262,7 @@ def test_индекс_печатается_json_ом_с_нашими_полям�
     text = catalog_index(FIXTURE)
     body = json.loads(text.split("```json")[1].split("```")[0])
     assert [item["name"] for item in body] == sorted(
-        ["count-up", "demo-plain", "demo-scene", "demo-stitch"])
+        ["count-up", "demo-paste", "demo-plain", "demo-scene", "demo-stitch"])
     assert "Search by intent" not in text, "правило поиска живёт в своде правил"
     assert "`kind`" in text and "`text_slots`" in text and "`variables`" in text
 

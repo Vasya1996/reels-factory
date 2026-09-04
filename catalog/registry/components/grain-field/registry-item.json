@@ -82,7 +82,6 @@
         "type": "enum",
         "default": "green"
       }
-    },
-    "skip": "layout:container_overflow:div.gf-field:Element extends outside a clipping layout container."
+    }
   }
 }

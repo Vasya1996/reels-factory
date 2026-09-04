@@ -90,6 +90,6 @@
         "default": "Done"
       }
     },
-    "skip": "layout:clipped_text:span.mc-label-b:Text content is clipped by its own box.; layout:text_box_overflow:span.mc-label-b:Text extends outside its nearest visual/container box."
+    "skip": "gsap_timeline_set_initial_hide [lint] .mc-shell: Initial hidden state for \".mc-shell\" is set via tl.set(...) at position 0 inside the paused timeline. A zero-duration set at 0 does not render while the playhead sits exactly at 0, so frame 0 shows the un-hidden state.; gsap_timeline_set_initial_hide [lint] .mc-kicker, .mc-label-b: Initial hidden state for \".mc-kicker, .mc-label-b\" is set via tl.set(...) at position 0 inside the paused timeline. A zero-duration set at 0 does not render while the playhead sits exactly at 0, so frame 0 shows the un-hidden state."
   }
 }

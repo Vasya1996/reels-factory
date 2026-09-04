@@ -75,6 +75,6 @@
         "default": "Looks good."
       }
     },
-    "skip": "contrast:contrast_aa_failure:div > div > div > div > label:Contrast is 2.54:1; WCAG AA requires 4.5:1.; contrast:contrast_aa_failure:div > div > div > div > div > button:Contrast is 4.4:1; WCAG AA requires 4.5:1."
+    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > label: Contrast is 2.52:1; WCAG AA requires 4.5:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > button: Contrast is 4.4:1; WCAG AA requires 4.5:1."
   }
 }

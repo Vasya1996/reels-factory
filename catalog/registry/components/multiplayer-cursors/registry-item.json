@@ -61,7 +61,6 @@
         "type": "string",
         "default": "Ana,Ken,Wen,Mia"
       }
-    },
-    "skip": "layout:escaped_container:span.mc-glow:Positioned element renders far outside its offset parent — its coordinates were likely computed in a different frame (canvas/viewport pixels)."
+    }
   }
 }

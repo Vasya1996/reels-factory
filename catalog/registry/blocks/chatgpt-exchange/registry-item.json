@@ -49,6 +49,6 @@
     "kind": "scene",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "lint:composition_file_too_large — This HTML composition file has 733 lines. Smaller sub-compositions are easier to read, iterate on, and diff."
+    "skip": "frame_out_of_frame [layout] #cge-keyboard > div:nth-of-type(4) > div:nth-of-type(8) > svg:nth-of-type(1): <svg> \"svg\" spills outside the frame (430.58px past the bottom).; frame_out_of_frame [layout] #cge-keyboard > div:nth-of-type(4) > div:nth-of-type(9) > svg:nth-of-type(1): <svg> \"svg\" spills outside the frame (433.87px past the bottom).; frame_out_of_frame [layout] #cge-keyboard > div:nth-of-type(5) > div:nth-of-type(3) > svg:nth-of-type(1): <svg> \"svg\" spills outside the frame (551.4px past the bottom)."
   }
 }

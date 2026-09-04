@@ -62,7 +62,6 @@
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],
-    "text_slots": [],
-    "skip": "layout:content_overlap:#lv-word-0:Two text blocks overlap and may render unreadable.; layout:content_overlap:#lv-word-1:Two text blocks overlap and may render unreadable.; layout:content_overlap:#lv-word-4:Two text blocks overlap and may render unreadable."
+    "text_slots": []
   }
 }

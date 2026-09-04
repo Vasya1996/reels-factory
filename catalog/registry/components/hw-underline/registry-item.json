@@ -26,6 +26,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "layout:escaped_container:#hw-un-scene > div:nth-of-type(1):Positioned element renders far outside its offset parent — its coordinates were likely computed in a different frame (canvas/viewport pixels).; layout:escaped_container:#hw-un-scene > div:nth-of-type(2):Positioned element renders far outside its offset parent — its coordinates were likely computed in a different frame (canvas/viewport pixels).; layout:escaped_container:#hw-un-scene > div:nth-of-type(3):Positioned element renders far outside its offset parent — its coordinates were likely computed in a different frame (canvas/viewport pixels)."
+    "skip": "все три демонстрационные строки шире зоны и обрезаются правым краем кадра («underline the p…», «bracket the asi…») — check --strict чисто (overflow:hidden прячет находку), но на глаз текст нечитаем."
   }
 }

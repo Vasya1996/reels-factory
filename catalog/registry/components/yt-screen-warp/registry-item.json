@@ -21,6 +21,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "layout:escaped_container:#yt-sw-wrap:Positioned element renders far outside its offset parent — its coordinates were likely computed in a different frame (canvas/viewport pixels)."
+    "skip": "подпись на экране ноутбука обрезается правым краем кадра («on scre…») — check --strict чисто (overflow:hidden прячет находку), но на глаз текст нечитаем."
   }
 }

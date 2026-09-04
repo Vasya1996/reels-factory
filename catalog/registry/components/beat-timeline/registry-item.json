@@ -75,7 +75,6 @@
         "type": "string",
         "default": "One,Two,Three,Four"
       }
-    },
-    "skip": "layout:clipped_text:div.bt-title:Text content is clipped by its own box.; layout:text_box_overflow:div.bt-title:Text extends outside its nearest visual/container box.; layout:clipped_text:div.bt-title:Text content is clipped by its own box."
+    }
   }
 }

@@ -85,6 +85,6 @@
         "default": "blue"
       }
     },
-    "skip": "layout:clipped_text:div.fr-label.fr-label-a:Text content is clipped by its own box.; layout:text_box_overflow:div.fr-label.fr-label-a:Text extends outside its nearest visual/container box.; layout:clipped_text:div.fr-label.fr-label-b:Text content is clipped by its own box."
+    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > div > article:nth-of-type(1) > div:nth-of-type(1) > span:nth-of-type(1): Contrast is 1.42:1; WCAG AA requires 4.5:1."
   }
 }

@@ -27,6 +27,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "layout:container_overflow:#clip-wipe:Element extends outside a clipping layout container."
+    "skip": "caption_zone_collision [layout] #wp-w-20: <span> \"DRAG\" is centred in the reserved caption band (~22% up from the bottom).; caption_zone_collision [layout] #wp-w-21: <span> \"AND\" is centred in the reserved caption band (~22% up from the bottom)."
   }
 }

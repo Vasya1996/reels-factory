@@ -58,6 +58,6 @@
     "kind": "scene",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "lint:composition_file_too_large (390 строк) плюс реальные layout:text_box_overflow на span.ntitle и div.ntext."
+    "skip": "http_error [runtime] [data-composition-id]: 404 loading assets/img/slack-mark.svg; http_error [runtime] [data-composition-id]: 404 loading assets/img/heygen-mark.svg"
   }
 }

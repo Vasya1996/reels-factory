@@ -74,7 +74,6 @@
         "type": "number",
         "default": 1
       }
-    },
-    "skip": "layout:text_occluded:div.os-chip:Text is hidden beneath an opaque element."
+    }
   }
 }

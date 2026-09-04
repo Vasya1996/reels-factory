@@ -84,6 +84,6 @@
         "default": "green"
       }
     },
-    "skip": "layout:container_overflow:div.tt-reel:Element extends outside a clipping layout container.; layout:content_overlap:span.tt-item:Two text blocks overlap and may render unreadable.; layout:content_overlap:span.tt-item:Two text blocks overlap and may render unreadable."
+    "skip": "content_overlap [layout] span.tt-item: Two text blocks overlap and may render unreadable."
   }
 }

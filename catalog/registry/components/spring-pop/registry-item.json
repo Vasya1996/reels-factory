@@ -82,7 +82,6 @@
         "type": "string",
         "default": "New"
       }
-    },
-    "skip": "layout:text_box_overflow:span.sp-label:Text extends outside its nearest visual/container box."
+    }
   }
 }

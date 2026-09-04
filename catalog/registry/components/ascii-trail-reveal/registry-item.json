@@ -101,6 +101,6 @@
         "default": "narrow"
       }
     },
-    "skip": "layout:text_occluded:div.atr-label:Text is hidden beneath an opaque element.; layout:content_overlap:div.atr-label:Two text blocks overlap and may render unreadable."
+    "skip": "content_overlap [layout] div.atr-label: Two text blocks overlap and may render unreadable."
   }
 }

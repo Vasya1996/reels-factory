@@ -119,6 +119,6 @@
         "default": "none"
       }
     },
-    "skip": "layout:text_occluded:div.sss-chip:Text is hidden beneath an opaque element.; layout:text_occluded:div.sss-chip:Text is hidden beneath an opaque element."
+    "skip": "composition_file_too_large [lint] [data-composition-id]: This HTML composition file has 484 lines. Smaller sub-compositions are easier to read, iterate on, and diff."
   }
 }

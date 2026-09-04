@@ -26,6 +26,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "runtime:http_error:[data-composition-id]:404 loading caption-overrides.json; runtime:request_failed:[data-composition-id]:Failed to load caption-overrides.json: net::ERR_ABORTED; layout:container_overflow:#pill-karaoke:Element extends outside a clipping layout container."
+    "skip": "caption_transcript_parse_error [lint] [data-composition-id]: Inline TRANSCRIPT array is not valid JSON. The studio caption editor may fail to parse it. Common cause: unquoted property keys with apostrophes in text."
   }
 }

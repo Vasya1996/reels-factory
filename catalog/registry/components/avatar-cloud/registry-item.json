@@ -90,6 +90,6 @@
         "default": "50k builders"
       }
     },
-    "skip": "layout:clipped_text:span.ac-label:Text content is clipped by its own box.; layout:text_box_overflow:span.ac-label:Text extends outside its nearest visual/container box.; contrast:contrast_aa_failure:div > div > div > div > section > div:nth-of-type(1) > div:nth-of-type(2) > div:Contrast is 4.42:1; WCAG AA requires 4.5:1."
+    "skip": "composition_file_too_large [lint] [data-composition-id]: This HTML composition file has 306 lines. Smaller sub-compositions are easier to read, iterate on, and diff.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > section > div:nth-of-type(1) > div:nth-of-type(4) > div: Contrast is 2.63:1; WCAG AA requires 3:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > section > div:nth-of-type(1) > div:nth-of-type(9) > div: Contrast is 2.63:1; WCAG AA requires 4.5:1."
   }
 }

@@ -129,6 +129,6 @@
         "default": "Decline"
       }
     },
-    "skip": "lint:duplicate_media_discovery_risk — Detected 2 matching img entries with the same source/start/duration."
+    "skip": "duplicate_media_discovery_risk [lint] [data-composition-id]: Detected 2 matching img entries with the same source/start/duration.; duplicate_media_discovery_risk [lint] [data-composition-id]: Detected 2 matching img entries with the same source/start/duration.; caption_zone_collision [layout] #ssc-strip-text: <div> \"OPEN-SOURCE VIDEO ENGINE · SHIP FROM HTML\" is centred in the reserved caption band (~35% up from the bottom)."
   }
 }

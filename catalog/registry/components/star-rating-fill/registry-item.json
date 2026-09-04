@@ -92,7 +92,6 @@
         "type": "enum",
         "default": "yes"
       }
-    },
-    "skip": "contrast:contrast_aa_failure:div > div > div > div > div > div:nth-of-type(2):Contrast is 1.07:1; WCAG AA requires 3:1."
+    }
   }
 }

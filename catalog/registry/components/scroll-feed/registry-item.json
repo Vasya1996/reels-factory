@@ -108,7 +108,6 @@
         "type": "enum",
         "default": "none"
       }
-    },
-    "skip": "layout:container_overflow:div.sf-column.sf-main:Element extends outside a clipping layout container.; layout:escaped_container:div.sf-column.sf-main:Positioned element renders far outside its offset parent — its coordinates were likely computed in a different frame (canvas/viewport pixels)."
+    }
   }
 }

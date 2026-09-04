@@ -26,6 +26,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "layout:container_overflow:#gradient-fill:Element extends outside a clipping layout container."
+    "skip": "caption_zone_collision [layout] #gr-w-19: <span> \"No\" is centred in the reserved caption band (~23% up from the bottom).; caption_zone_collision [layout] #gr-w-20: <span> \"drag\" is centred in the reserved caption band (~23% up from the bottom).; caption_zone_collision [layout] #gr-w-21: <span> \"and\" is centred in the reserved caption band (~23% up from the bottom)."
   }
 }

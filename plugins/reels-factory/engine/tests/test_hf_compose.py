@@ -1353,6 +1353,43 @@ def test_путь_установленной_позиции_идёт_по_её_�
             == tmp_path / "compositions" / "components" / "count-up.html")
 
 
+def test_ассет_позиции_получает_префикс_её_настоящей_папки(tmp_path):
+    """На пине 0.7.84 их `rewriteAssetPath` простой относительный путь (без
+    `../`) не трогает — после монтажа `data-composition-src` браузер ищет
+    его от корня проекта буквально. А их же `add` кладёт ассет позиции
+    рядом с ЕЁ ЖЕ файлом (`remapTarget`, `add.ts`: префикс получает только
+    таргет, начинающийся с `compositions/`) — то есть на уровень глубже
+    корня. Совмещает один факт с другим код: префикс — папка, где файл
+    позиции физически лежит.
+
+    Живой пример дефекта — `ai-chat-reveal` (`assets/hyperframes-logo-
+    white.svg`): без этой правки `check --strict` даёт `missing_local_asset`
+    даже когда файл на диске есть, просто на уровень глубже, чем ищет
+    браузер после монтажа."""
+    from reels_factory.hf_compose import _rewrite_sibling_assets
+
+    public = tmp_path / "public"
+    install_dir = public / "compositions"
+    (install_dir / "assets").mkdir(parents=True)
+    (install_dir / "assets" / "logo.svg").write_bytes(b"<svg></svg>")
+
+    html = ('<img src="assets/logo.svg" alt="">'
+           '<style>@font-face{src:url(assets/font.woff2)}</style>'
+           '<img src="/root-already.svg">'
+           '<img src="https://cdn.example.com/x.svg">'
+           '<img src="assets/missing.svg">')
+    rewritten = _rewrite_sibling_assets(
+        html, install_dir=install_dir, project_root=public)
+
+    assert 'src="compositions/assets/logo.svg"' in rewritten
+    # Ссылка на несуществующий рядом файл остаётся как есть — не выдумываем
+    # путь для файла, которого физически нет.
+    assert 'src="assets/missing.svg"' in rewritten
+    # Уже корневая и уже внешняя ссылки не тронуты.
+    assert 'src="/root-already.svg"' in rewritten
+    assert 'src="https://cdn.example.com/x.svg"' in rewritten
+
+
 def _с_элементами(*elements, presenter="pip-tr"):
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["presenter"] = presenter
@@ -1399,6 +1436,34 @@ def test_эффекту_без_свободной_зоны_места_нет(к�
     assert "el-s-02-0" not in html
     assert "свободной зоны" in capsys.readouterr().out
     assert board["scenes"][1]["elements"] == []
+
+
+def test_paste_эффект_вставляется_литералом_а_не_саб_композицией(каталог):
+    """`reels.mount == "paste"` (карточка B1, живой пример `badge-pop`) —
+    позиция без своего `data-composition-id`/`<template>`: `_stage_overlay`
+    на ней даёт пустой корень (проверено живым `check --strict` на
+    `badge-pop`: `missing_or_empty_sub_composition` +
+    `root_missing_composition_id`). Вместо саб-композиции — стиль, корень и
+    скрипт литералом в хост, тем же приёмом, каким уже вставляется
+    `caption-highlight` (`hf_captions.caption_snippet`)."""
+    html, _ = _build(каталог, scenes=_с_элементами(
+        {"name": "demo-paste", "variables": {"label": "42"}}), resolved={})
+    box = html[html.index('<div class="ovl" style="left:0px;top:583px'):]
+    mount = box[:box.index('el-s-02-0')]
+    assert 'data-composition-src' not in mount, (
+        "paste-позиция не должна ехать саб-композицией")
+    # Корень пришёл литералом, класс переименован под конкретный маунт —
+    # иначе вторая копия той же позиции читала бы значения первой.
+    assert 'demo-paste-badge--demo-paste--s-02' in box[:1200], box[:1200]
+    # Переменная агента дошла до компонента тенью getVariables(), а не через
+    # общий с саб-композициями data-variable-values.
+    assert 'window.__hyperframes.getVariables = function () { return' in box[:2000]
+    assert '"label": "42"' in box[:2000]
+    assert 'data-variable-values' not in box[:2000]
+    # Стенсиль на диске не тронут: paste не копируется отдельным файлом.
+    stencil = (каталог / "public" / "compositions" / "components"
+              / "demo-paste.html")
+    assert 'demo-paste-badge--' not in stencil.read_text(encoding="utf-8")
 
 
 def test_стык_встаёт_за_срез_сцены_и_живёт_свою_длительность(каталог):

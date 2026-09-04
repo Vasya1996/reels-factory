@@ -67,7 +67,6 @@
         "type": "enum",
         "default": "standard"
       }
-    },
-    "skip": "layout:clipped_text:div.dh-label:Text content is clipped by its own box.; layout:text_box_overflow:div.dh-label:Text extends outside its nearest visual/container box."
+    }
   }
 }

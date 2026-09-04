@@ -106,6 +106,6 @@
         "default": "round"
       }
     },
-    "skip": "layout:text_occluded:section.hf-transition-page.old > span:nth-of-type(1):Text is hidden beneath an opaque element.; layout:content_overlap:section.hf-transition-page.old > span:nth-of-type(1):Two text blocks overlap and may render unreadable."
+    "skip": "content_overlap [layout] section.hf-transition-page.old > span:nth-of-type(1): Two text blocks overlap and may render unreadable."
   }
 }

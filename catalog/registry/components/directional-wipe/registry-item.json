@@ -77,7 +77,6 @@
         "type": "enum",
         "default": "rounded"
       }
-    },
-    "skip": "layout:container_overflow:div.fx:Element extends outside a clipping layout container.; layout:panel_out_of_canvas:div.fx:Painted panel extends outside the composition canvas."
+    }
   }
 }

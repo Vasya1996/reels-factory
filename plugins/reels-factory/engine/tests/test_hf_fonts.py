@@ -217,3 +217,38 @@ def test_врезка_уезжает_внутрь_шаблона_позиции(
     assert page.index("@font-face") > page.index("<template>"), (
         "начертания остались снаружи шаблона — их линтер их не увидит")
     assert 'id="hf-embedded-fonts"' not in page.split("<template>")[0]
+
+
+def test_комментарий_с_словом_шаблон_не_подменяет_настоящий_тег(tmp_path):
+    """Шапка-комментарий части позиций полки объясняет контракт словами «the
+    runtime clones only <template> contents» — то есть несёт буквальную
+    подстроку `<template>` РАНЬШЕ настоящего тега (`avatar-cloud.html:38-39`).
+    Старый код искал тег как `html.index("<template")` — находил прозу,
+    решал, что врезка (стоящая после неё) уже позже корня, и не переносил её
+    внутрь `<template>`. Живым `check --strict` это било `avatar-cloud`
+    находкой `font_family_without_font_face`, хотя `@font-face` в файле был.
+    """
+    page = _write(
+        tmp_path / "public", "avatar-cloud--s-01.html",
+        "<!--\n"
+        "  #root fills the host with inset:0. The runtime clones only\n"
+        "  <template> contents; styles and markup live inside it.\n"
+        "-->\n"
+        '<style id="hf-embedded-fonts">@font-face{font-family:\'Manrope\';'
+        "font-weight:500;src:url(data:font/woff2;base64,AA==)}</style>\n"
+        "<div>\n"
+        "  <template>\n"
+        '    <div id="root" data-composition-id="avatar-cloud" '
+        'data-width="1080" data-height="1920">'
+        "<style>#root{font-family:'Manrope',sans-serif}</style>"
+        "<b>Привет</b></div>\n"
+        "  </template>\n"
+        "</div>\n")
+
+    hf_fonts._faces_into_template(page)
+
+    result = page.read_text(encoding="utf-8")
+    real_template = result.index("<template>", result.index("<div>"))
+    assert result.index("@font-face") > real_template, (
+        "начертания остались до настоящего тега — их линтер их не увидит")
+    assert 'id="hf-embedded-fonts"' not in result[:real_template]

@@ -23,6 +23,6 @@
     "mount": "paste",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "contrast:contrast_aa_failure:div > div > div > div > div > div > p:Contrast is 3.99:1; WCAG AA requires 4.5:1."
+    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > div > p: Contrast is 4:1; WCAG AA requires 4.5:1."
   }
 }

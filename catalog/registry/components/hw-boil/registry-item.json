@@ -26,6 +26,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "layout:container_overflow:#hw-boil-root:Element extends outside a clipping layout container.; contrast:contrast_aa_failure:div > div > div > div:nth-of-type(2):Contrast is 4.15:1; WCAG AA requires 4.5:1.; contrast:contrast_aa_failure:div > div > div > div:nth-of-type(3):Contrast is 4.15:1; WCAG AA requires 4.5:1."
+    "skip": "frame_out_of_frame [layout] #el-s-01-0 > div:nth-of-type(1) > svg:nth-of-type(1): <svg> \"svg\" spills outside the frame (840px past the right).; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div:nth-of-type(2): Contrast is 4.15:1; WCAG AA requires 4.5:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div:nth-of-type(3): Contrast is 4.15:1; WCAG AA requires 4.5:1."
   }
 }

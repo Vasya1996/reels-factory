@@ -27,6 +27,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "layout:container_overflow:#caption-glitch-rgb:Element extends outside a clipping layout container."
+    "skip": "caption_transcript_parse_error [lint] [data-composition-id]: Inline TRANSCRIPT array is not valid JSON. The studio caption editor may fail to parse it. Common cause: unquoted property keys with apostrophes in text."
   }
 }

@@ -102,6 +102,6 @@
         "default": "blue"
       }
     },
-    "skip": "layout:clipped_text:div.hf-catalog-zoom-through-transition:Text content is clipped by its own box.; layout:text_occluded:div.scene.from:Text is hidden beneath an opaque element.; layout:content_overlap:div.scene.from:Two text blocks overlap and may render unreadable."
+    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div: Contrast is 2.27:1; WCAG AA requires 4.5:1."
   }
 }

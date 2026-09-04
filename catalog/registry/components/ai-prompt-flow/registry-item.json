@@ -24,6 +24,6 @@
     "mount": "paste",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "contrast:contrast_aa_failure:div > div > div > div > div:nth-of-type(2) > span:Contrast is 3.3:1; WCAG AA requires 4.5:1."
+    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div:nth-of-type(2) > span: Contrast is 3.3:1; WCAG AA requires 4.5:1."
   }
 }

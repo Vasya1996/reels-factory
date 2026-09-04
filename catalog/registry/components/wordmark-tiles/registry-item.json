@@ -84,6 +84,6 @@
         "default": 40
       }
     },
-    "skip": "layout:content_overlap:span.wt-fragment:Two text blocks overlap and may render unreadable.; layout:container_overflow:span.wt-fragment:Element extends outside a clipping layout container.; layout:container_overflow:span.wt-fragment:Element extends outside a clipping layout container."
+    "skip": "content_overlap [layout] span.wt-fragment: Two text blocks overlap and may render unreadable."
   }
 }
