@@ -275,11 +275,11 @@ def test_add_реально_ставит_сцену_накладку_и_комп
 
     with serve_catalog() as url:
         write_project_config(tmp_path, url)
-        for name in ("heygen-avatar-promo-card", "hw-scribble-transition", "count-up"):
+        for name in ("notification-cascade", "hw-scribble-transition", "count-up"):
             _cli("add", name, "--no-clipboard", cwd=tmp_path)
 
     assert (tmp_path / "public" / "compositions"
-            / "heygen-avatar-promo-card.html").exists()
+            / "notification-cascade.html").exists()
     assert (tmp_path / "public" / "compositions"
             / "hw-scribble-transition.html").exists()
     assert (tmp_path / "public" / "compositions" / "components"
@@ -587,15 +587,40 @@ def test_поиск_по_каталогу_отдаёт_не_больше_гор�
                             "интерфейс", cards=живые)) == MAX_CANDIDATES
 
 
-def test_поиск_находит_карту_под_репликой_про_области_страны():
-    """Решающий случай трёх живых прогонов на доноре C: ролик про то, как
-    читают дети по каждой области и школе страны, агент дважды находил
-    `v-world-map` грепом по тегу `map` и не ставил ни разу, а по русскому
-    слову не искал вовсе. Теперь этот поиск делает код, и мерка — та же
-    реплика.
+def test_карта_мира_находится_под_репликой_про_весь_мир_и_не_под_областью():
+    """Донор C: ролик про то, как читают дети по каждой области и школе
+    страны, — агент трижды находил `v-world-map` по тегу `map` и не ставил.
+    Он был прав: блок рисует хороплет всего мира и названную область не
+    выделяет (`top5Codes` зашиты в скрипте). Карточка теперь говорит правду:
+    под «по всему миру» карта находится, под «по каждой области» — нет.
     """
     from reels_factory.hf_catalog import search_cards
 
-    имена = [card["name"] for card in search_cards(
+    мир = [card["name"] for card in search_cards(
+        "Клиенты по всему миру: страны мира на одной карте.")]
+    assert "v-world-map" in мир, f"карта под репликой про весь мир не нашлась: {мир}"
+
+    область = [card["name"] for card in search_cards(
         "По каждой области. По каждому городу. По каждой школе.")]
-    assert "v-world-map" in имена, f"карта под репликой не нашлась: {имена}"
+    assert "v-world-map" not in область, (
+        f"карта мира предложена под реплику про область: {область}")
+
+
+def test_у_каждой_предложенной_позиции_все_файлы_карточки_на_диске():
+    """`hyperframes add` тянет каждый файл из `files` карточки и роняет
+    установку на первом недостающем (HTTP 404). `_offered_in` такую позицию
+    молча не предлагает — и дефект каталога живёт незамеченным: так
+    `heygen-avatar-promo-card` без пяти mp4 полгода считался «доступным».
+    Позиция либо целая, либо несёт `reels.skip` с причиной."""
+    from reels_factory.hf_catalog import CATALOG_DIR, REGISTRY_SUBDIR
+
+    root = Path(CATALOG_DIR) / REGISTRY_SUBDIR
+    broken = []
+    for card in root.glob("*/*/registry-item.json"):
+        item = json.loads(card.read_text(encoding="utf-8"))
+        if (item.get("reels") or {}).get("skip"):
+            continue
+        for f in item.get("files") or []:
+            if not (card.parent / str(f.get("path"))).exists():
+                broken.append(f"{item['name']}: {f.get('path')}")
+    assert broken == []

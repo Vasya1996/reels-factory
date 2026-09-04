@@ -95,6 +95,7 @@
     }
   ],
   "reels": {
+    "skip": "демо-ролик аватаров HeyGen: пять mp4 в assets не перенесены, слотов текста нет — подставить нечего",
     "kind": "scene",
     "decor_texts": [],
     "text_slots": []
