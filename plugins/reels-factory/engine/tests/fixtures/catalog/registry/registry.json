@@ -168,6 +168,34 @@
           "Заголовок"
         ]
       }
+    },
+    {
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-paste",
+      "type": "hyperframes:component",
+      "title": "Demo Paste",
+      "description": "Fixture paste-contract effect for tests: a badge whose script reads window.__hyperframes.getVariables()",
+      "tags": [
+        "demo"
+      ],
+      "duration": 2.0,
+      "files": [
+        {
+          "path": "demo-paste.html",
+          "target": "compositions/components/demo-paste.html",
+          "type": "hyperframes:snippet"
+        }
+      ],
+      "reels": {
+        "kind": "effect",
+        "mount": "paste",
+        "variables": {
+          "label": {
+            "type": "string",
+            "default": "3"
+          }
+        }
+      }
     }
   ]
 }

@@ -290,6 +290,13 @@ def catalog_cards(catalog_dir=None) -> dict[str, dict]:
             card["duration"] = float(item["duration"])
         if kind is not None:
             card["kind"] = str(kind)
+        if reels.get("mount"):
+            # `composition` (по умолчанию, сабкомпозицией через
+            # `data-composition-src`) или `paste` (литералом в хост, как уже
+            # вставляется `caption-highlight`) — решает код размещения
+            # (`hf_compose.paste_effect` против `_stage_overlay`), а не
+            # догадка по подпапке реестра.
+            card["mount"] = str(reels["mount"])
         if reels.get("text_slots"):
             card["text_slots"] = [str(slot) for slot in reels["text_slots"]]
         if reels.get("variables"):

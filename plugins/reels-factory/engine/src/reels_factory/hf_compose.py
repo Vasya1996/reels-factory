@@ -717,6 +717,113 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     return unique, native, canvas
 
 
+#: Корневой div paste-контрактного примитива: `class="имя-класса ...другие"`
+#: без своего `data-composition-id` и `<template>` — их полка велит вставлять
+#: разметку литералом («Paste the markup, CSS and script into a
+#: composition», `registry/components/badge-pop/badge-pop.html:2`). Имя
+#: класса — первый токен: оно же имя, которым скрипт компонента ищет себя
+#: (`document.querySelectorAll(".hf-transition-badge-pop")`).
+_PASTE_ROOT_CLASS = re.compile(r'<div\b[^>]*\bclass="([^"\s]+)')
+_PASTE_STYLE = re.compile(r"<style[^>]*>.*?</style>", re.S)
+#: Модульные скрипты (`type="module"`) не читаем: с ними неизвестный
+#: компонент уже стоит в `reels.skip` по своей причине (`page_error:
+#: Cannot use import statement outside a module`) — паста этого не чинит,
+#: вставка исполняемого текста в поток документа не превращает его в модуль.
+_PASTE_SCRIPT = re.compile(
+    r'<script(?![^>]*\btype="module")[^>]*>.*?</script>', re.S)
+
+
+def paste_fragment(sdk, source, *, root_class: str | None = None
+                   ) -> tuple[str, str, str]:
+    """Кусок чужого файла: стиль, корень и скрипт как есть, ещё не пристроенные.
+
+    Общее место для caption-highlight (`hf_captions.caption_snippet`) и
+    paste-контрактных позиций каталога (`reels.mount == "paste"`, работа
+    B1.5) — оба вставляют готовый компонент литералом в композицию, а не
+    саб-композицией через `data-composition-src`: их полка сама говорит
+    «paste the markup, CSS and script», а `data-composition-src` копирует в
+    живой DOM только содержимое `<template>` и выбросил бы стиль вовсе
+    (`hf_captions.py`, шапка модуля). Корень режем их же SDK, а не
+    регэкспом: вложенные `<div>` регэксп с балансировкой тегов не берёт,
+    `sdk.extract` — их настоящий парсер.
+    """
+    source = Path(source)
+    html = source.read_text(encoding="utf-8")
+    if root_class is None:
+        match = _PASTE_ROOT_CLASS.search(html)
+        if not match:
+            raise RuntimeError(
+                f"в {source} нет корневого div с class — разметка "
+                "paste-компонента не по контракту полки (docstring "
+                "`registry/components/*/*.html`)")
+        root_class = match.group(1)
+    found = sdk.extract(source, f".{root_class}")
+    if not found:
+        raise RuntimeError(f"в {source} не нашёлся корень .{root_class}")
+    root = found[0]["outer"]
+    style_match = _PASTE_STYLE.search(html)
+    script_match = _PASTE_SCRIPT.search(html)
+    return (style_match.group(0) if style_match else "",
+           root,
+           script_match.group(0) if script_match else "")
+
+
+def paste_effect(sdk, public, name: str, *, unique: str,
+                 variables: dict) -> str:
+    """Позиция каталога вида `paste` литералом: стиль + корень + скрипт.
+
+    `reels.mount == "paste"` (карточка B1) — полка размечает такую позицию
+    без `data-composition-id` и `<template>`: `_stage_overlay` смонтировать
+    её не может (проверено живым `check --strict` на `badge-pop`: копия
+    оставалась без корня, находки `missing_or_empty_sub_composition` +
+    `root_missing_composition_id` + `root_missing_dimensions`).
+
+    Переменные — тенью перед скриптом компонента: их полка велит читать
+    `window.__hyperframes.getVariables()` синхронно на старте («the script
+    reads each one, falls back to the declared default», их же карточки), а
+    скрипты страницы исполняются в порядке разметки — тень, поставленная
+    прямо перед своим скриптом, успевает подставиться до его же чтения. Их
+    скоуп для этого вызова (`compositionScoping.ts`, таблица
+    `__hfVariablesByComp`) размечен только для настоящих саб-композиций —
+    паста в него не попадает, и подмена глобала здесь не обходит их
+    контракт, а единственный канал, которым контракт вообще снабжён данными
+    вне саб-композиции.
+
+    Класс корня — общий для всех копий одной и той же позиции в кадре: без
+    переименования вторая копия читала бы значения первой (обе слушают один
+    `querySelectorAll` по общему классу). Переименование — тем же приёмом,
+    каким `_stage_overlay` переименовывает `data-composition-id`.
+
+    Анимация из комментария «Timeline integration» в их файле не
+    подключается: это рецепт для хоста, не исполняемый код (их полка ждёт,
+    что автор допишет вызовы в свой таймлайн руками,
+    `hyperframes-registry/SKILL.md:78`). Позиция встаёт статичным финальным
+    кадром на весь свой интервал, без входа и выхода — сознательно оставленная
+    граница объёма, не забытая деталь.
+    """
+    source = _installed_path(public, name, "component")
+    style, root, script = paste_fragment(sdk, source)
+    class_match = _PASTE_ROOT_CLASS.search(root)
+    if not class_match:
+        raise RuntimeError(f"корень {name} потерял class при извлечении")
+    klass = class_match.group(1)
+    scoped = f"{klass}--{unique}"
+    boundary = re.compile(r"(?<![\w-])" + re.escape(klass) + r"(?![\w-])")
+    root = boundary.sub(scoped, root)
+    style = boundary.sub(scoped, style)
+    script = boundary.sub(scoped, script)
+
+    style = _CDN_FONTS.sub("", style)
+    style = _FONT_FAMILY.sub(_OUR_STACK, style)
+    script = _CDN_GSAP.sub('src="gsap-vendor.min.js"', script)
+
+    shim = (" <script>window.__hyperframes = window.__hyperframes || {};"
+           " window.__hyperframes.getVariables = function () { return "
+           + json.dumps(variables or {}, ensure_ascii=False) +
+           "; };</script>")
+    return f"{style}\n{root}\n{shim}\n{script}"
+
+
 #: Корневой элемент позиции: тот, что несёт `data-composition-id`. Его id
 #: нужен правилу палитры и шрифта — целиться в `:root` их контракт тем прямо
 #: запрещает (`themes/CONTRACT.md:3`). Атрибуты идут в обоих порядках:
@@ -1507,37 +1614,57 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             text = dict(zip([str(slot) for slot in card.get("text_slots") or []],
                             [str(word) for word in element.get("words") or []]))
             card_type = str(card.get("type") or "block")
-            source = _installed_path(public, name, card_type)
-            root = (block_root(source.read_text(encoding="utf-8"))
-                    if source.exists() else "")
-            dimensions = card.get("dimensions") or {}
-            landscape = (int(dimensions.get("width") or 0)
-                         > int(dimensions.get("height") or 0))
-            # Канвас переносим только ландшафтной сцене: сплошная замена
-            # литералов меняет 1920 и 1080 местами, и вертикальную позицию она
-            # уложила бы на бок. Палитра и гарнитура — правилом CSS ниже по
-            # файлу: `_FONT_FAMILY` выше стирает типографику позиции целиком.
-            port = {"duration": length,
-                    "elastic": not (kind == "scene" and landscape),
-                    "height": OUT_H if kind == "scene" else None,
-                    "config": {},
-                    "css": palette_css(name, colors, root=root)}
-            try:
-                unique, _, canvas = _stage_overlay(
-                    public, name, scene["id"], sdk=sdk if text else None,
-                    text=text or None, port=port, card_type=card_type)
-            except RuntimeError as error:
-                print(f'{scene["id"]}: элемент {name} снят — {error}')
-                continue
-            if not dimensions and kind in ("scene", "effect"):
-                box = ((OUT_W, OUT_H) if kind == "scene"
-                       else (rect["width"], rect["height"]))
-                declare_box(
-                    Path(public) / "compositions" / f"{unique}.html",
-                    unique, box[0], box[1])
-                canvas = box
-                if name not in stencils:
-                    stencils[name] = card_type
+            # Paste-контрактный эффект (`reels.mount`, карточка B1) не
+            # монтируется саб-композицией вовсе — своего `data-composition-id`
+            # и `<template>` у него нет (`_stage_overlay` на нём даёт
+            # `missing_or_empty_sub_composition`, проверено живым
+            # `check --strict` на `badge-pop`). Вставляем литералом
+            # (`paste_effect`), той же идеей, какой каталог уже вставляет
+            # `caption-highlight`.
+            mount_kind = str(card.get("mount") or "composition")
+            paste_html = None
+            if kind == "effect" and mount_kind == "paste":
+                unique = f"{name}--{scene['id']}"
+                try:
+                    paste_html = paste_effect(
+                        sdk, public, name, unique=unique,
+                        variables=element.get("variables") or {})
+                except RuntimeError as error:
+                    print(f'{scene["id"]}: элемент {name} снят — {error}')
+                    continue
+            else:
+                source = _installed_path(public, name, card_type)
+                root = (block_root(source.read_text(encoding="utf-8"))
+                        if source.exists() else "")
+                dimensions = card.get("dimensions") or {}
+                landscape = (int(dimensions.get("width") or 0)
+                            > int(dimensions.get("height") or 0))
+                # Канвас переносим только ландшафтной сцене: сплошная замена
+                # литералов меняет 1920 и 1080 местами, и вертикальную позицию
+                # она уложила бы на бок. Палитра и гарнитура — правилом CSS
+                # ниже по файлу: `_FONT_FAMILY` выше стирает типографику
+                # позиции целиком.
+                port = {"duration": length,
+                       "elastic": not (kind == "scene" and landscape),
+                       "height": OUT_H if kind == "scene" else None,
+                       "config": {},
+                       "css": palette_css(name, colors, root=root)}
+                try:
+                    unique, _, canvas = _stage_overlay(
+                        public, name, scene["id"], sdk=sdk if text else None,
+                        text=text or None, port=port, card_type=card_type)
+                except RuntimeError as error:
+                    print(f'{scene["id"]}: элемент {name} снят — {error}')
+                    continue
+                if not dimensions and kind in ("scene", "effect"):
+                    box = ((OUT_W, OUT_H) if kind == "scene"
+                           else (rect["width"], rect["height"]))
+                    declare_box(
+                        Path(public) / "compositions" / f"{unique}.html",
+                        unique, box[0], box[1])
+                    canvas = box
+                    if name not in stencils:
+                        stencils[name] = card_type
             # Значения переменных — одним JSON на хосте, их штатным каналом
             # (`add.ts:64-72`): в файл позиции их не вписывают, чтобы два
             # маунта одной позиции могли нести разное.
@@ -1560,6 +1687,22 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                     f' data-width="{OUT_W}" data-height="{OUT_H}"'
                     f' style="position:absolute;left:0;top:0;'
                     f'width:{OUT_W}px;height:{OUT_H}px"{values}></div></div>')
+            elif kind == "effect" and paste_html is not None:
+                # Без `data-composition-src`: содержимое уже здесь, литералом.
+                # Центрируем в коробке — paste-примитивы полки саморазмерны
+                # (кнопка, бейдж, плашка), а не «эластичны» под любой размер,
+                # как саб-композиции с `declare_box`.
+                body.append(
+                    f'    <div class="ovl" style="left:{rect["left"]}px;'
+                    f'top:{rect["top"]}px;width:{rect["width"]}px;'
+                    f'height:{rect["height"]}px">'
+                    f'<div id="{mount}" class="clip"'
+                    f' data-start="{at:.4f}" data-duration="{span:.4f}"'
+                    f' data-track-index="{track}"'
+                    f' style="position:absolute;left:0;top:0;'
+                    f'width:{rect["width"]}px;height:{rect["height"]}px;'
+                    f'display:flex;align-items:center;'
+                    f'justify-content:center">{paste_html}</div></div>')
             elif kind == "effect":
                 body.append(
                     f'    <div class="ovl" style="left:{rect["left"]}px;'

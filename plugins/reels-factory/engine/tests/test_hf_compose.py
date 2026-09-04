@@ -1401,6 +1401,34 @@ def test_эффекту_без_свободной_зоны_места_нет(к�
     assert board["scenes"][1]["elements"] == []
 
 
+def test_paste_эффект_вставляется_литералом_а_не_саб_композицией(каталог):
+    """`reels.mount == "paste"` (карточка B1, живой пример `badge-pop`) —
+    позиция без своего `data-composition-id`/`<template>`: `_stage_overlay`
+    на ней даёт пустой корень (проверено живым `check --strict` на
+    `badge-pop`: `missing_or_empty_sub_composition` +
+    `root_missing_composition_id`). Вместо саб-композиции — стиль, корень и
+    скрипт литералом в хост, тем же приёмом, каким уже вставляется
+    `caption-highlight` (`hf_captions.caption_snippet`)."""
+    html, _ = _build(каталог, scenes=_с_элементами(
+        {"name": "demo-paste", "variables": {"label": "42"}}), resolved={})
+    box = html[html.index('<div class="ovl" style="left:0px;top:583px'):]
+    mount = box[:box.index('el-s-02-0')]
+    assert 'data-composition-src' not in mount, (
+        "paste-позиция не должна ехать саб-композицией")
+    # Корень пришёл литералом, класс переименован под конкретный маунт —
+    # иначе вторая копия той же позиции читала бы значения первой.
+    assert 'demo-paste-badge--demo-paste--s-02' in box[:1200], box[:1200]
+    # Переменная агента дошла до компонента тенью getVariables(), а не через
+    # общий с саб-композициями data-variable-values.
+    assert 'window.__hyperframes.getVariables = function () { return' in box[:2000]
+    assert '"label": "42"' in box[:2000]
+    assert 'data-variable-values' not in box[:2000]
+    # Стенсиль на диске не тронут: paste не копируется отдельным файлом.
+    stencil = (каталог / "public" / "compositions" / "components"
+              / "demo-paste.html")
+    assert 'demo-paste-badge--' not in stencil.read_text(encoding="utf-8")
+
+
 def test_стык_встаёт_за_срез_сцены_и_живёт_свою_длительность(каталог):
     """Их же правило размещения накладки-перехода: «place this block spanning
     the host's cut point (e.g. start 0.9s before the cut)»."""

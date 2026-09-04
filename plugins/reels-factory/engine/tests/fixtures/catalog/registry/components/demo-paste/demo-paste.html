@@ -1,0 +1,46 @@
+<div class="demo-paste-badge" data-composition-variables='[
+  { "id": "label", "type": "string", "role": "style", "label": "Label", "default": "3" }
+]'>
+  <span class="demo-paste-badge-text">3</span>
+</div>
+
+<style>
+  .demo-paste-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 120px;
+    height: 60px;
+    background: #18181b;
+    border-radius: 12px;
+  }
+  .demo-paste-badge-text {
+    color: #ffffff;
+    font-family: Inter, sans-serif;
+    font-size: 24px;
+    font-weight: 700;
+  }
+</style>
+
+<script>
+  (function () {
+    "use strict";
+    var vars =
+      window.__hyperframes && window.__hyperframes.getVariables
+        ? window.__hyperframes.getVariables()
+        : {};
+    var label = typeof vars.label === "string" && vars.label ? vars.label : "3";
+    var roots = document.querySelectorAll(".demo-paste-badge");
+    for (var i = 0; i < roots.length; i += 1) {
+      var text = roots[i].querySelector(".demo-paste-badge-text");
+      if (text) {
+        text.textContent = label;
+      }
+    }
+  })();
+</script>
+
+<!--
+  Timeline integration (not wired by our code — see paste_effect docstring):
+  tl.fromTo('.demo-paste-badge', { scale: 0 }, { scale: 1, duration: 0.3 }, 0);
+-->
