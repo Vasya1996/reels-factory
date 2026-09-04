@@ -67,12 +67,12 @@
     },
     {
       "path": "assets/card-image.jpg",
-      "target": "assets/card-image.jpg",
+      "target": "compositions/assets/card-image.jpg",
       "type": "hyperframes:asset"
     },
     {
       "path": "assets/hyperframes-logo-black.svg",
-      "target": "assets/hyperframes-logo-black.svg",
+      "target": "compositions/assets/hyperframes-logo-black.svg",
       "type": "hyperframes:asset"
     }
   ],

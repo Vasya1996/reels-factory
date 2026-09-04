@@ -99,12 +99,12 @@
     },
     {
       "path": "assets/desk-backdrop.jpg",
-      "target": "assets/desk-backdrop.jpg",
+      "target": "compositions/assets/desk-backdrop.jpg",
       "type": "hyperframes:asset"
     },
     {
       "path": "assets/hyperframes-logo-white.svg",
-      "target": "assets/hyperframes-logo-white.svg",
+      "target": "compositions/assets/hyperframes-logo-white.svg",
       "type": "hyperframes:asset"
     }
   ],

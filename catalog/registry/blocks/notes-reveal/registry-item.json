@@ -100,17 +100,17 @@
     },
     {
       "path": "assets/permanent-marker-400.woff2",
-      "target": "assets/permanent-marker-400.woff2",
+      "target": "compositions/assets/permanent-marker-400.woff2",
       "type": "hyperframes:asset"
     },
     {
       "path": "assets/courier-prime-400.woff2",
-      "target": "assets/courier-prime-400.woff2",
+      "target": "compositions/assets/courier-prime-400.woff2",
       "type": "hyperframes:asset"
     },
     {
       "path": "assets/courier-prime-700.woff2",
-      "target": "assets/courier-prime-700.woff2",
+      "target": "compositions/assets/courier-prime-700.woff2",
       "type": "hyperframes:asset"
     }
   ],
