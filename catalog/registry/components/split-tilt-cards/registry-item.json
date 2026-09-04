@@ -117,6 +117,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названы две равные стороны: два варианта, две половины одного выбора.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

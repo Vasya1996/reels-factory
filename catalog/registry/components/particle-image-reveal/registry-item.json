@@ -119,6 +119,8 @@
     }
   ],
   "reels": {
+    "use_when": "Логотипу или главной картинке нужен момент рождения из ничего.",
+    "avoid_when": "Регистр строго деловой: тихое проявление — это titlecard-lockup.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

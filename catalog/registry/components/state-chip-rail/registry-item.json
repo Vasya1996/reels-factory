@@ -114,6 +114,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названы состояния по порядку: что сделано, что идёт сейчас, что ждёт.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

@@ -80,6 +80,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названо избавление: старое отбрасывают, роняют, выкидывают.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

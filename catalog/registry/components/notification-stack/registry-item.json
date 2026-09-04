@@ -113,6 +113,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названы несколько уведомлений по порядку, и одно из них важнее прочих.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

@@ -70,6 +70,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/menu-morph.png"
   },
   "reels": {
+    "use_when": "Названо открытие меню в интерфейсе: значок превращается в набор действий.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

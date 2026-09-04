@@ -71,6 +71,7 @@
     }
   ],
   "reels": {
+    "use_when": "Надо обвести то, что уже в кадре: вот эта часть и есть ответ.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

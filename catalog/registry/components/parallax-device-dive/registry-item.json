@@ -58,6 +58,7 @@
     }
   ],
   "reels": {
+    "use_when": "Речь входит внутрь приложения: от телефона в руке к самому экрану.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

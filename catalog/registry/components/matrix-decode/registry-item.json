@@ -85,6 +85,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/matrix-decode.png"
   },
   "reels": {
+    "use_when": "Названо разгаданное: слово проступает из шума — про взлом, код, расшифровку.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

@@ -77,6 +77,7 @@
   "profile": "interaction",
   "evidence": "spec ready (gesture-actor-spec.md)",
   "reels": {
+    "use_when": "Названо касание или смахивание на телефоне: палец делает жест.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

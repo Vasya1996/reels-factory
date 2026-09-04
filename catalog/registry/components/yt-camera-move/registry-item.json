@@ -18,6 +18,7 @@
     }
   ],
   "reels": {
+    "use_when": "Кадру нужен наезд или сдвиг: подойти ближе к тому, о чём речь.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

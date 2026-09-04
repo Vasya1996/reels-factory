@@ -20,6 +20,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/checkout-flow.png"
   },
   "reels": {
+    "use_when": "Названа оплата: тариф, корзина, покупка, ввод карты.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

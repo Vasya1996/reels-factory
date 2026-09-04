@@ -84,6 +84,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/text-stagger.png"
   },
   "reels": {
+    "use_when": "Строка выходит по словам: перечисление, которое читают по частям.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

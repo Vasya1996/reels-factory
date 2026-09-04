@@ -70,6 +70,7 @@
     }
   ],
   "reels": {
+    "use_when": "Финал — карточка из магазина приложений: звёзды, строка отзыва и кнопка.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

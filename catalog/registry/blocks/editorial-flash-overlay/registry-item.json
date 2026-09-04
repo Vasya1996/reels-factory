@@ -30,6 +30,7 @@
     "video": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/editorial-flash-overlay.mp4"
   },
   "reels": {
+    "use_when": "Между кусками нужна вспышка: смена главы, резкий поворот речи.",
     "backing": "textless"
   }
 }

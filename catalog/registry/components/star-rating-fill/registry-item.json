@@ -75,6 +75,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названа оценка: рейтинг, звёзды, «четыре и восемь из пяти».",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

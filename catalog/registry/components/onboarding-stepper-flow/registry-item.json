@@ -20,6 +20,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/onboarding-stepper-flow.png"
   },
   "reels": {
+    "use_when": "Названы шаги регистрации или настройки: пройди первый, второй, третий.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

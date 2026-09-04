@@ -61,6 +61,7 @@
     }
   ],
   "reels": {
+    "use_when": "Название открывает картинку сквозь себя: имя бренда как окно.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

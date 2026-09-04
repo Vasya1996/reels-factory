@@ -86,6 +86,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/card-resize.png"
   },
   "reels": {
+    "use_when": "Названо, как короткая карточка разворачивается в подробную: открыли одну строку из списка.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

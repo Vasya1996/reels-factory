@@ -26,6 +26,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/reddit-post.png"
   },
   "reels": {
+    "use_when": "Названо, что пишут на реддите: пост с голосами и комментариями.",
     "backing": "own"
   }
 }

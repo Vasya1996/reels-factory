@@ -18,6 +18,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/terminal-simulator.png"
   },
   "reels": {
+    "use_when": "Названа команда в терминале: что набирают и что выводится в ответ.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

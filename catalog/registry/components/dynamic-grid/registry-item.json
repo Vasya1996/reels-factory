@@ -94,6 +94,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/dynamic-grid.png"
   },
   "reels": {
+    "use_when": "Речь про технику, данные или код, а своего предмета у сцены нет: под текстом нужна сетка.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

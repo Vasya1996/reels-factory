@@ -69,6 +69,7 @@
     }
   ],
   "reels": {
+    "use_when": "Показывать в сцене нечего, а фон должен быть зернистым и живым.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

@@ -110,6 +110,7 @@
     }
   ],
   "reels": {
+    "use_when": "Одно превращается в другое на месте: это стало этим.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

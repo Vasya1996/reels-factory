@@ -79,6 +79,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названа смена состояния значком: было одно, стало другое, дело сделано.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

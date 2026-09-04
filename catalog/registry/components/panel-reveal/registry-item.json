@@ -89,6 +89,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/panel-reveal.png"
   },
   "reels": {
+    "use_when": "Названо раскрытие подробностей: панель разворачивается и показывает содержимое.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

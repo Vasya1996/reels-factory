@@ -58,6 +58,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названо падение: выручка вниз, охваты вниз, «становится хуже».",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

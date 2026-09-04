@@ -95,6 +95,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названо превращение одного в другое: форма меняется, а предмет тот же.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

@@ -20,6 +20,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/settings-toggle-flow.png"
   },
   "reels": {
+    "use_when": "Названы настройки: переключатели, что включить и что выключить.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

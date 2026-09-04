@@ -48,6 +48,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названию нужен сбой на секунду: помеха, глитч, техническая нота.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

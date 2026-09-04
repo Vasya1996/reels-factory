@@ -76,6 +76,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названы равноправные пункты: они выкладываются в сетку по одному.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

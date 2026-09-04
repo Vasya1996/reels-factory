@@ -90,6 +90,7 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/avatar-group-hover.png"
   },
   "reels": {
+    "use_when": "Названы люди — команда, участники, подписчики, — и один из них выходит вперёд.",
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],

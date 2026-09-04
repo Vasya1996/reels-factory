@@ -69,6 +69,7 @@
     }
   ],
   "reels": {
+    "use_when": "Названо главное и то, что вокруг него вертится: центр и спутники.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],

@@ -79,6 +79,7 @@
     }
   ],
   "reels": {
+    "use_when": "Финал зовёт скачать приложение: строка и значки магазинов.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],
