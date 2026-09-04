@@ -1,5 +1,6 @@
 """Наш каталог блоков, отданный агенту их способом — через поле registry."""
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -51,7 +52,7 @@ def _with_blocks(tmp_path, names):
     return tmp_path
 
 
-def test_накладка_с_недостающим_файлом_агенту_не_предлагается(tmp_path, capsys):
+def test_накладка_с_недостающим_файлом_агенту_не_предлагается(tmp_path, caplog):
     """`hyperframes add` тянет каждый файл из карточки блока и на 404 роняет
     всю попытку сборки. Прогон 28 потерял так попытку на `instagram-follow`:
     в каталог не переехал его `assets/avatar.jpg`. Исправить это агент не
@@ -59,8 +60,9 @@ def test_накладка_с_недостающим_файлом_агенту_н
     _with_blocks(tmp_path, ["ок-блок", "битый-блок"])
     _block(tmp_path, "ок-блок", tags=["overlay"])
     _block(tmp_path, "битый-блок", tags=["overlay"], files=["assets/avatar.jpg"])
-    assert overlay_names(tmp_path) == ["ок-блок"]
-    assert "битый-блок" in capsys.readouterr().out
+    with caplog.at_level(logging.DEBUG, logger="reels_factory.hf_catalog"):
+        assert overlay_names(tmp_path) == ["ок-блок"]
+    assert "битый-блок" in caplog.text
 
 
 def test_накладка_со_смешанным_заголовком_не_предлагается():
@@ -243,12 +245,13 @@ def test_индекс_отдаёт_карточки_всех_трёх_видов
     assert "dimensions" not in cards["count-up"]
 
 
-def test_позиция_с_причиной_отказа_в_индекс_не_попадает(capsys):
+def test_позиция_с_причиной_отказа_в_индекс_не_попадает(caplog):
     """Причина отказа записана в карточке, и агенту такую позицию не
     предлагают: исправить её он не может — это дефект каталога, а не плана."""
-    assert "demo-skip" not in catalog_cards(FIXTURE)
+    with caplog.at_level(logging.DEBUG, logger="reels_factory.hf_catalog"):
+        assert "demo-skip" not in catalog_cards(FIXTURE)
     assert "demo-skip" in skipped_blocks(FIXTURE)
-    assert "demo-skip" in capsys.readouterr().out
+    assert "demo-skip" in caplog.text
 
 
 def test_карточка_без_вида_остаётся_плашкой_по_старому_правилу():
@@ -286,3 +289,73 @@ def test_справочники_фреймворка_лежат_в_репози�
     )
     for name in REFERENCE_FILES:
         assert (CATALOG_DIR / REFERENCE_SUBDIR / name).exists(), name
+
+
+def test_text_slots_карточки_равны_слотам_разметки():
+    """Одно определение слота на весь путь.
+
+    Отчёт B4: карточка `v-code-diff` держала видимые демо-строки
+    («greet.js», «Code Diff», два куска кода), а `hf_slots.find_slots` выводит
+    из разметки имена (`accent`, `filename`) — сборка зипала слова агента по
+    строкам карточки, `fill_ops` их не узнавал и снимал элемент целиком. Слова
+    агента раскладывает теперь сама разметка, а карточка отвечает индексу — и
+    равна ей, иначе агент считает слоты по одному списку, а код по другому.
+
+    Разбор — настоящим мостом их SDK, как у `passport`: свой разборщик HTML у
+    нас не тот, каким блок читает движок.
+    """
+    from reels_factory.hf_sdk import sdk_session
+    from reels_factory.hf_slots import text_slot_names
+
+    root = CATALOG_DIR / REGISTRY_SUBDIR
+    scenes = {name: card for name, card in catalog_cards().items()
+              if card.get("kind") == "scene"}
+    assert scenes, "в каталоге нет ни одной позиции вида `scene`"
+    with sdk_session() as sdk:
+        for name, card in scenes.items():
+            folder = next(root / sub / name for sub in ("blocks", "components")
+                          if (root / sub / name / f"{name}.html").exists())
+            item = json.loads((folder / "registry-item.json")
+                              .read_text(encoding="utf-8"))
+            decor = set((item.get("reels") or {}).get("decor_texts") or [])
+            sdk.open(name, folder / f"{name}.html")
+            names = text_slot_names(sdk.elements(name), decor)
+            sdk.close(name)
+            assert card.get("text_slots") == names, (
+                f"{name}: карточка обещает {card.get('text_slots')}, "
+                f"а разметка даёт {names}")
+
+
+#: Пять образцов B3 и то, чем их разметка обязана дать заполнить кадр: у
+#: терминала и диффа видимый текст жил в скрипте, и слотами он не был вовсе
+#: (отчёт B4). Имена — от классов разметки, порядок — документа.
+СЛОТЫ_ОБРАЗЦОВ = {
+    "v-code-diff": ["file", "title", "before", "after"],
+    "v-code-snippet-apple-terminal-basic": ["window-title", "command"],
+    "v-world-map": ["headline", "subtitle", "source"],
+    "v-bar-chart-race": ["headline", "subtitle", "source"],
+    "v-macos-notification": ["app-name", "notification-title",
+                             "notification-body"],
+}
+
+
+def test_у_вертикальных_образцов_заполняются_заголовок_подпись_и_код():
+    """Заголовок и подпись — у всех пяти; строки кода — у тех двух, где код и
+    есть содержание позиции."""
+    cards = catalog_cards()
+    for name, slots in СЛОТЫ_ОБРАЗЦОВ.items():
+        assert cards[name]["text_slots"] == slots, name
+
+
+def test_отсев_позиций_не_печатается_в_stdout(capsys):
+    """Последнюю строку stdout у `make` бот читает как JSON-ответ
+    пользователю (`bot.run_build`), а каталог зовут и индекс, и оба гейта
+    элементов, и задание — сотнями строк «позиция X не предложена» этот канал
+    заваливало на каждом шаге (побочная находка отчёта B4). Диагностика живёт
+    в логе уровня debug.
+    """
+    catalog_cards(FIXTURE)
+    catalog_index(FIXTURE)
+    printed = capsys.readouterr()
+    assert "не предложена" not in printed.out
+    assert "не предложена" not in printed.err

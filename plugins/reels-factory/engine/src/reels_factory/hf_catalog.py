@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import socket
@@ -24,6 +25,14 @@ import urllib.error
 import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
+
+#: Отсев позиций — в лог уровня debug, а не в stdout: последнюю строку stdout
+#: у `make` бот читает как JSON-ответ пользователю (`bot.run_build`), и сотни
+#: строк «позиция X не предложена» на каждый вызов каталога (а зовут его и
+#: индекс, и оба гейта элементов, и задание) заваливали этот канал целыми
+#: экранами. Разбирается такой отсев не по ходу прогона, а когда каталог
+#: правят, — этому и служит debug.
+log = logging.getLogger(__name__)
 
 #: Где лежит наш каталог. Он в репозитории: сборка без него не работает вовсе,
 #: а разметка форм в карточках — наша, и восстановить её неоткуда. Раньше он
@@ -184,7 +193,7 @@ def _offered_in(subdir, names, catalog_dir=None):
         item = json.loads(card.read_text(encoding="utf-8"))
         skip = (item.get("reels") or {}).get("skip")
         if skip:
-            print(f"позиция {name} не предложена: {skip}")
+            log.debug("позиция %s не предложена: %s", name, skip)
             continue
         # Карточка перечисляет свои файлы, и `hyperframes add` тянет каждый:
         # недостающий он считает провалом установки (HTTP 404) и роняет всю
@@ -195,8 +204,8 @@ def _offered_in(subdir, names, catalog_dir=None):
         missing = [str(f.get("path")) for f in (item.get("files") or [])
                    if not (folder / str(f.get("path"))).exists()]
         if missing:
-            print(f"позиция {name} не предложена: в каталоге нет "
-                  + ", ".join(missing))
+            log.debug("позиция %s не предложена: в каталоге нет %s",
+                      name, ", ".join(missing))
             continue
         yield name, item
 
@@ -276,8 +285,8 @@ def catalog_cards(catalog_dir=None) -> dict[str, dict]:
         if kind is None and "overlay" not in (item.get("tags") or []):
             continue
         if kind is not None and kind not in KINDS:
-            print(f"позиция {name} не предложена: вид {kind!r} неизвестен, "
-                  f"есть {', '.join(KINDS)}")
+            log.debug("позиция %s не предложена: вид %r неизвестен, есть %s",
+                      name, kind, ", ".join(KINDS))
             continue
         card = {"name": name,
                 "type": str(item.get("type", "")).replace("hyperframes:", ""),

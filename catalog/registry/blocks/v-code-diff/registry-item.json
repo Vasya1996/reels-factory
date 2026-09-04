@@ -25,10 +25,10 @@
   "reels": {
     "kind": "scene",
     "text_slots": [
-      "greet.js",
-      "Code Diff",
-      "function greet(name) {\n  console.log(\"hi \" + name)\n}",
-      "function greet(name, lang) {\n  const msg = translate(\"hi\", lang)\n  console.log(`${msg} ${name}`)\n}"
+      "file",
+      "title",
+      "before",
+      "after"
     ]
   }
 }

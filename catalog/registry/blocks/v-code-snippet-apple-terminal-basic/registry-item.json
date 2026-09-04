@@ -19,7 +19,10 @@
   ],
   "reels": {
     "kind": "scene",
-    "text_slots": ["bash — 80×24", "ls -la"],
+    "text_slots": [
+      "window-title",
+      "command"
+    ],
     "decor_texts": [
       "user@Mac ~ % ",
       "Last login: Mon Jun 2 09:14:22 on ttys001",

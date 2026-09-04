@@ -147,7 +147,7 @@ _VARIABLE_TYPES = {
 }
 
 
-def _element_problems(scene_id: str, element: dict, cards: dict,
+def _element_problems(scene: dict, element: dict, cards: dict,
                       skipped: dict) -> list[str]:
     """Одна позиция из `elements` — та же проверка, что делает их `add`.
 
@@ -156,10 +156,20 @@ def _element_problems(scene_id: str, element: dict, cards: dict,
     попытку сборки с деньгами на руках. Здесь тот же вопрос задан плану — до
     заказа.
 
-    Проверяется ровно то, что известно из карточки: имя, имена и типы
-    переменных, число слов под слоты. Уместность позиции не проверяется — это
-    решение агента, и гейт в него не лезет, как не лезет в выбор формы схемы.
+    Проверяется то, что известно из карточки, — имя, имена и типы переменных,
+    число слов под слоты, — и одно, что известно из самой сцены: положение
+    ведущей. Позиция вида `effect` живёт в свободной зоне кадра, а при
+    полнокадровой ведущей и при `stack` такой зоны нет вовсе
+    (`hf_compose.effect_zone`): сборка снимала такой элемент молча, уже после
+    оплаты, и агент узнавал о потере по логу (отчёт B4, `count-up` на `punch`).
+    Здесь он узнаёт причину до заказа.
+
+    Уместность позиции по-прежнему не проверяется — это решение агента, и гейт
+    в него не лезет, как не лезет в выбор формы схемы.
     """
+    from reels_factory.hf_compose import effect_zone
+
+    scene_id = scene.get("id", "?")
     name = str(element.get("name") or "").strip()
     where = f"{scene_id}.elements[{name}]"
     if name in skipped:
@@ -170,6 +180,12 @@ def _element_problems(scene_id: str, element: dict, cards: dict,
                 "перечислены в `catalog.index.md` рядом с заданием"]
     card = cards.get(name) or {}
     problems = []
+    position = str(scene.get("presenter") or "none")
+    if card.get("kind") == "effect" and effect_zone(position) is None:
+        problems.append(
+            f"{where}: позиция вида `effect` встаёт в свободную зону кадра, а "
+            f"ведущая {position!r} её не оставляет — дай сцене уголок "
+            "(`pip-*`) или `none`, либо назови позицию другого вида")
     declared = card.get("variables") or {}
     named = element.get("variables")
     if named is not None and not isinstance(named, dict):
@@ -229,7 +245,7 @@ def elements_problems(scenes: list[dict]) -> list[str]:
                             "`{name, words?, variables?}`")
             continue
         for element in scene_elements(scene):
-            problems += _element_problems(scene_id, element, cards, skipped)
+            problems += _element_problems(scene, element, cards, skipped)
     return problems
 
 

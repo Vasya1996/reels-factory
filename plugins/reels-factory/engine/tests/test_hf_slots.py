@@ -59,7 +59,7 @@ def block(tmp_path):
             out = tmp_path / f"{name}.html"
             sdk.save(name, out)
             sdk.close(name)
-            return prune_timeline(out.read_text(encoding="utf-8"))
+            return prune_timeline(out.read_text(encoding="utf-8"), html)
 
         yield nodes, fill
 
@@ -225,3 +225,27 @@ def test_анимация_исчезнувшего_элемента_уходит
     assert 'fu(".g99-tech"' not in out          # плашка-рубрика убрана
     assert 'fi(".g99-foot"' not in out          # слот не заполнен
     assert 'words(".g99-wa"' in out             # строка на месте
+
+
+def test_строку_на_класс_который_рисует_сам_скрипт_не_режут(block):
+    """Отчёт B4, живая пересборка: у `v-code-diff` пропала строка
+    `return { scene: scene, code: code, gutter: scene.querySelector(".gutter") }`
+    — `.gutter` в разметке блока не бывает вовсе, его создаёт сам скрипт, а
+    прежнее правило («в разметке нет — значит мёртвая цель») этого не
+    различало. Блок падал в рантайме на `parts.code`, и `check --strict`
+    возвращал `page_error`.
+
+    Тем же правилом уцелел и шестнадцатеричный цвет: `"#0b0f17"` подходит под
+    селектор по id, но в разметке его никогда не было.
+    """
+    _, fill = block
+    html = BLOCK.replace(
+        "<script>window.__timelines",
+        '<script>\nvar box = { gutter: scene.querySelector(".gutter") };\n'
+        'tl.set(".g99-foot", { background: "#0b0f17" });\n'
+        'fu(".g99-tech",0.0,12);\nwindow.__timelines')
+    out = fill(html, text={"line-1": "А Б"})
+    assert '.gutter' in out, "строку про класс из скрипта вырезали"
+    assert '"#0b0f17"' not in out, (
+        "строка целилась в удалённый .g99-foot — она мёртвая целиком")
+    assert 'fu(".g99-tech"' not in out

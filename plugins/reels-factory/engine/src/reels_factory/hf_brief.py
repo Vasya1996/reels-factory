@@ -26,6 +26,7 @@ from reels_factory.avatar_islands import (
 from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.editplan import MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S
 from reels_factory.hf_catalog import write_catalog_files
+from reels_factory.hf_compose import effect_zone
 from reels_factory.hf_gates import min_scenes
 from reels_factory.hf_montage import (
     SERIES_MAX, SERIES_MIN, face_gap, inserts_wanted, survives_series,
@@ -75,6 +76,18 @@ POSITIONS = [
     ("stack", "в верхней части кадра", "вставка занимает нижнюю"),
     ("none", "её в кадре нет", "кадр занимает вставка либо фирменный фон"),
 ]
+
+
+def _no_effect_zone() -> str:
+    """Положения ведущей, при которых свободной зоны под `effect` нет.
+
+    Считается тем же `hf_compose.effect_zone`, которым сборка ставит коробку и
+    которым ранняя сверка плана отвечает «зоны нет»: список в задании и
+    поведение кода не могут разойтись, потому что это одно число, а не два
+    текста.
+    """
+    return ", ".join(f"`{name}`" for name, _, _ in POSITIONS
+                     if effect_zone(name) is None)
 
 
 def _scenario_block(block: dict) -> str:
@@ -1022,6 +1035,7 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     # после сдачи, посчитанный на ожидаемом числе сцен (`low`): агент своё
     # число сцен ещё не назвал, а меньший план `min_scenes` уже запрещает.
     write_montage_skill(rdir, positions=_positions_block(),
+                        no_effect_zone=_no_effect_zone(),
                         form_floors=form_floors, icon_names=icon_names,
                         series_min=SERIES_MIN, series_max=SERIES_MAX,
                         face_gap=face_gap(duration),

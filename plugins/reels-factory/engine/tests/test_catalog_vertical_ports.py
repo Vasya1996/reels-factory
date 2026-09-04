@@ -91,3 +91,55 @@ def test_v_bar_chart_race_зеркалит_variables_из_html():
             / "v-bar-chart-race.html").read_text(encoding="utf-8")
     for name in card["reels"]["variables"]:
         assert f'"id":"{name}"' in html, f"переменная {name} не найдена в HTML"
+
+
+#: Слова, которыми `v-code-diff` был назван в живой пересборке B4
+#: (`scratchpad/b4-report.md`, сцена s-09). Тогда элемент сняли целиком:
+#: карточка держала демо-строки вместо имён слотов, и `fill_ops` не узнавал
+#: ни одного ключа. Здесь они же — через тот же путь, каким их ставит сборка.
+СЛОВА_B4 = [
+    "service.py",
+    "Платный сервис",
+    "import paid_service\npaid_service.transcribe(file)",
+    'import claude_code\nclaude_code.run("skill")',
+]
+
+
+def test_слова_плана_встают_в_дифф_кода(tmp_path):
+    """Путь `words` → разметка → кадр целиком, настоящим мостом их SDK.
+
+    Проверяется и то, что демо-строки блока в копии не остались: они и есть
+    заглушки, за которые сборку заворачивает `D22_placeholders`.
+    """
+    import shutil
+
+    from reels_factory.hf_compose import _stage_overlay
+    from reels_factory.hf_sdk import sdk_session
+
+    name = "v-code-diff"
+    public = tmp_path / "public"
+    (public / "compositions").mkdir(parents=True)
+    folder = CATALOG_DIR / "registry" / "blocks" / name
+    for entry in _card(name)["files"]:
+        shutil.copyfile(folder / entry["path"],
+                        public / "compositions" / entry["path"])
+
+    with sdk_session() as sdk:
+        unique, _, _ = _stage_overlay(public, name, "s-09", sdk=sdk,
+                                      words=СЛОВА_B4)
+    copy = (public / "compositions" / f"{unique}.html").read_text(
+        encoding="utf-8")
+
+    assert ">service.py<" in copy, "имя файла не встало"
+    assert "Платный сервис" in copy, "заголовок не встал"
+    # Перенос строки уезжает в разметку как <br> — движок блока читает детей,
+    # а не `textContent`, иначе весь код лёг бы одной строкой.
+    assert "import paid_service<br>paid_service.transcribe(file)" in copy, (
+        "старый код не встал")
+    assert 'import claude_code<br>claude_code.run("skill")' in copy, (
+        "новый код не встал")
+    # Демо-строк в разметке не остаётся: в кадр едет она, а испечённые токены
+    # ниже по файлу движок блока при подменённом коде уже не читает.
+    разметка = copy[copy.index("<body>"):copy.index("v-code-diff.js")]
+    assert "greet.js" not in разметка and "Code Diff" not in разметка
+    assert "console.log" not in разметка

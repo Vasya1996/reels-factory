@@ -557,8 +557,10 @@ def каталог(monkeypatch):
     return FIXTURE_CATALOG
 
 
-def _элементы(*elements):
-    scene = _scene(1, 0.0, 4.0, presenter="full")
+def _элементы(*elements, presenter="pip-br"):
+    """Сцена с элементами. Ведущая уголком: при полном кадре свободной зоны
+    под `effect` нет вовсе, и такой план ловится отдельным правилом ниже."""
+    scene = _scene(1, 0.0, 4.0, presenter=presenter)
     scene["elements"] = list(elements)
     return [scene]
 
@@ -599,6 +601,28 @@ def test_лишние_слова_ловятся_по_числу_слотов(к�
     assert len(problems) == 1 and "слотов у позиции 1" in problems[0]
     assert elements_problems(_элементы(
         {"name": "demo-scene", "words": ["Первая"]})) == []
+
+
+def test_эффект_без_свободной_зоны_ловится_до_заказа(каталог):
+    """Отчёт B4: `count-up` был назван на сцене с ведущей `punch`, гейты дали
+    PASS, а сборка сняла элемент молча — уже после оплаченного заказа. Причина
+    у кода была та же (`hf_compose.effect_zone`), и теперь она называется
+    плану до денег.
+    """
+    for position in ("full", "punch", "stack"):
+        problems = elements_problems(_элементы({"name": "count-up"},
+                                               presenter=position))
+        assert len(problems) == 1, position
+        assert "свободную зону" in problems[0] and position in problems[0]
+    # Уголок и отсутствие ведущей зону оставляют — план законен.
+    for position in ("pip-tr", "pip-br", "none"):
+        assert elements_problems(_элементы({"name": "count-up"},
+                                           presenter=position)) == [], position
+    # Правило про зону — только у вида `effect`: сцена занимает кадр целиком,
+    # стык живёт на срезе, и зона им не нужна.
+    for name in ("demo-scene", "demo-stitch"):
+        assert elements_problems(_элементы({"name": name},
+                                           presenter="full")) == [], name
 
 
 def test_сверку_элементов_делает_и_d11(каталог):

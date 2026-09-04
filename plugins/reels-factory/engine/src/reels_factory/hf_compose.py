@@ -223,6 +223,22 @@ def _overlay_wide_top(box_height: float) -> int:
     return max(0, CAPTION_BAND_TOP - CAPTION_BAND_SAFETY - round(box_height))
 
 
+def effect_zone(presenter: str) -> dict | None:
+    """Свободная зона кадра под элемент-эффект при этом положении ведущей.
+
+    `None` — зоны нет, и элемент вида `effect` в такую сцену не встаёт.
+
+    Одна дверь на троих: сборка ставит по ней коробку, ранняя сверка плана
+    (`hf_gates._element_problems`) отвечает по ней же «зоны нет» — до заказа
+    ведущей, а не молча на сборке, — и задание печатает по ней же список
+    положений, при которых зоны не бывает (`hf_brief._no_effect_zone`).
+    Полоса титра — наша, `hf_layout.effect_rect` о ней не знает, и подставить
+    её в трёх местах порознь значит завести три разных правила.
+    """
+    return effect_rect(presenter,
+                       band_top=CAPTION_BAND_TOP - CAPTION_BAND_SAFETY)
+
+
 def _overlay_geometry(block: str, canvas: tuple) -> tuple[float, str]:
     """Масштаб и место плашки в кадре по её канвасу.
 
@@ -683,6 +699,7 @@ def _installed_path(public, name: str, card_type: str = "block") -> Path:
 
 def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
                    text: dict | None = None,
+                   words: list[str] | None = None,
                    port: dict | None = None,
                    card_type: str = "block") -> tuple[str, float, tuple]:
     """Копия накладки под сцену. Возвращает (имя, родная длительность, канвас).
@@ -693,6 +710,15 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     механизма нет, агент у них правит файл руками
     (hyperframes-registry/SKILL.md:78). GSAP переводится на локальный:
     внешние ссылки в композиции запрещены её же контрактом.
+
+    `words` — строки плана по порядку; какие в позиции слоты и в каком они
+    порядке, спрашивается у самой разметки (`hf_slots.text_slot_names`), а не у
+    карточки каталога. Карточка отвечает индексу — что агенту предложить и
+    сколько слов принять, — и разойтись с разметкой она может (у `v-code-diff`
+    в ней лежали видимые демо-строки вместо имён слотов, и элемент терялся на
+    каждой сборке — отчёт B4). Разбор здесь единственный на весь путь, и он же
+    ставит слова, поэтому расходиться нечему. `text` — прежний путь по именам
+    слотов, им ходят плашка и схема.
 
     Декоративный текст блока (`reels.decor_texts` карточки — таймстемп «now»
     или SVG-глиф «HF» у `v-macos-notification`) читаем тем же `hf_catalog.
@@ -729,10 +755,16 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
         source.write_text(fixed_stencil, encoding="utf-8")
     unique = f"{block}--{scene_id}"
     target = Path(public) / "compositions" / f"{unique}.html"
-    if text and sdk is not None:
+    if (text or words) and sdk is not None:
+        from reels_factory.hf_slots import text_slot_names
+
+        decor = decor_texts().get(block)
         sdk.open(unique, source)
-        sdk.dispatch(unique, fill_ops(sdk.elements(unique), text=text,
-                                      decor=decor_texts().get(block)))
+        nodes = sdk.elements(unique)
+        if words:
+            text = dict(zip(text_slot_names(nodes, decor),
+                            [str(word) for word in words]))
+        sdk.dispatch(unique, fill_ops(nodes, text=text, decor=decor))
         sdk.save(unique, target)
         sdk.close(unique)
         html = target.read_text(encoding="utf-8")
@@ -767,11 +799,11 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     html = _rewrite_sibling_assets(html, install_dir=source.parent,
                                    project_root=Path(public))
     if text:
-        html = prune_timeline(html)
+        # Оригинал — разметка блока до подстановки: мёртвой считается только
+        # цель, которая в ней была и пропала (см. `prune_timeline`).
+        html = prune_timeline(html, fixed_stencil)
     # Блок схемы приезжает нарисованным под ландшафт и с их содержимым: канвас,
     # длительность, содержимое и палитру подставляем здесь же, до записи копии.
-    # Порядок важен — `prune_timeline` вырезает строки с шестнадцатеричным
-    # кодом, приняв их за мёртвый селектор, а палитра идёт правилом CSS.
     if port:
         html = port_block(html, duration=port["duration"],
                           elastic=port.get("elastic", False),
@@ -1654,11 +1686,10 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # решает её карточка (`reels.kind`), а не поле плана:
     #
     # - `scene` — во весь кадр, их же портом под вертикаль (как схема);
-    # - `effect` — коробкой в свободной зоне кадра (`effect_rect`);
+    # - `effect` — коробкой в свободной зоне кадра (`effect_zone`);
     # - `overlay` — на стык сцен поверх всего, за `STITCH_LEAD` до среза;
     # - вида нет — это сегодняшняя плашка, и геометрия у неё та же
     #   (`_overlay_geometry`).
-    band_top = CAPTION_BAND_TOP - CAPTION_BAND_SAFETY
     staged_elements = 0
     #: Имя -> тип карточки: исходник компонента снят по `components/`, не по
     #: плоской `compositions/` — тип нужен ниже, чтобы объявить ему коробку
@@ -1694,17 +1725,21 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             rect = None
             if kind == "effect":
                 position = str(scene.get("presenter") or "none")
-                rect = effect_rect(position, band_top=band_top)
+                rect = effect_zone(position)
                 if rect is None:
                     print(f'{scene["id"]}: элемент {name} снят — ведущая '
                           f"{position!r} не оставила в кадре свободной зоны "
                           f"выше полосы титра")
                     continue
-            # Слова агента идут в слоты по порядку: имена слотов знает карточка,
-            # подставляет их существующий слой (`hf_slots.fill_ops`) по
-            # видимому тексту.
-            text = dict(zip([str(slot) for slot in card.get("text_slots") or []],
-                            [str(word) for word in element.get("words") or []]))
+            # Слова агента идут в слоты по порядку самой разметки: их читает
+            # `_stage_overlay` разбором позиции и раскладывает существующим
+            # слоем (`hf_slots.fill_ops`). Карточка тут не спрашивается — она
+            # отвечает индексу, и её `text_slots` держали видимые демо-строки
+            # вместо имён слотов, из-за чего `v-code-diff` терялся на каждой
+            # сборке (отчёт B4).
+            # Имя своё, не `words`: так зовётся параметр сборки со словами
+            # титра, и тень над ним роняла бы весь слой субтитров ниже.
+            said = [str(word) for word in element.get("words") or []]
             card_type = str(card.get("type") or "block")
             # Paste-контрактный эффект (`reels.mount`, карточка B1) не
             # монтируется саб-композицией вовсе — своего `data-composition-id`
@@ -1743,8 +1778,8 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                        "css": palette_css(name, colors, root=root)}
                 try:
                     unique, _, canvas = _stage_overlay(
-                        public, name, scene["id"], sdk=sdk if text else None,
-                        text=text or None, port=port, card_type=card_type)
+                        public, name, scene["id"], sdk=sdk if said else None,
+                        words=said or None, port=port, card_type=card_type)
                 except RuntimeError as error:
                     print(f'{scene["id"]}: элемент {name} снят — {error}')
                     continue
