@@ -184,6 +184,23 @@ def inject_fonts(public_dir, *, work_dir=None) -> list[str]:
 #: (inject-fonts.cjs). Ищем его же, чтобы перенести, а не врезать заново.
 _FACES_STYLE = re.compile(r'<style id="hf-embedded-fonts">.*?</style>\s*', re.S)
 _TEMPLATE_STYLE = re.compile(r"(<template[^>]*>.*?<style[^>]*>)", re.S)
+#: Настоящий тег, а не слово в прозе: у части позиций полки шапка-комментарий
+#: объясняет контракт словами «the runtime clones only <template> contents»
+#: — то есть содержит буквальную подстроку `<template>` до самого тега.
+#: `avatar-cloud.html:39` ровно такой случай.
+_TEMPLATE_OPEN = re.compile(r"<template(?=[\s>])")
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
+
+
+def _mask_comments(text: str) -> str:
+    """Тот же текст той же длины, но нутро HTML-комментариев — пробелы.
+
+    Индексы всего, что вне комментариев, не сдвигаются: результат годится
+    искать в нём позицию реального тега и подставлять найденный офсет прямо
+    в оригинальный текст (или в `moved`, если тот получен только вырезкой
+    другого куска — длина от этого тоже не меняется относительно самого
+    `moved`)."""
+    return _HTML_COMMENT.sub(lambda m: " " * len(m.group(0)), text)
 
 
 def _faces_into_template(page: Path) -> None:
@@ -199,14 +216,26 @@ def _faces_into_template(page: Path) -> None:
 
     Клон шаблона несёт стиль с собой, поэтому в кадре ничего не меняется:
     начертания те же, просто объявлены там, где они и применяются.
+
+    Позицию реального тега ищем в тексте с замаскированными комментариями:
+    буквальный поиск подстроки `<template` в самом файле путает тег с
+    объяснением контракта в шапке-комментарии («…live inside <template>. #root
+    fills…», `avatar-cloud.html:38-39`) — тот стоит раньше настоящего тега, и
+    старая проверка `faces.start() > html.index("<template")` читала прозу как
+    тег, решала, что врезка уже после корня, и молча не переносила её:
+    `check --strict` живьём валил `avatar-cloud` находкой
+    `font_family_without_font_face`, хотя `<style id="hf-embedded-fonts">`
+    стоял в файле и нёс ровно `manrope`.
     """
     html = page.read_text(encoding="utf-8")
     faces = _FACES_STYLE.search(html)
-    if not faces or "<template" not in html or faces.start() > html.index(
-            "<template"):
+    if not faces:
+        return
+    template = _TEMPLATE_OPEN.search(_mask_comments(html))
+    if not template or faces.start() > template.start():
         return
     moved = html[:faces.start()] + html[faces.end():]
-    place = _TEMPLATE_STYLE.search(moved)
+    place = _TEMPLATE_STYLE.search(_mask_comments(moved))
     if not place:
         return
     body = faces.group(0)
