@@ -608,9 +608,25 @@ _NATIVE = re.compile(
     r'data-composition-id="[^"]+"[^>]*data-duration="([\d.]+)"', re.S)
 
 
+def _installed_path(public, name: str, card_type: str = "block") -> Path:
+    """Куда `hyperframes add` кладёт файл позиции.
+
+    Блок ложится в плоскую `compositions/`, компонент — в свою подпапку
+    `compositions/components/` (`hyperframes.json#paths`, задаёт их
+    `write_project_config`, `hf_catalog.py:51`). Одно место на обоих читателей
+    источника — `_stage_overlay` и подстановку `root` для палитры: разойдись
+    они, компонент читался бы по чужому пути и валил сборку рантайм-ошибкой
+    «не установлен», хотя `add` его честно поставил, просто в другую
+    подпапку.
+    """
+    base = Path(public) / "compositions"
+    return (base / "components" / f"{name}.html") if card_type == "component"         else base / f"{name}.html"
+
+
 def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
                    text: dict | None = None,
-                   port: dict | None = None) -> tuple[str, float, tuple]:
+                   port: dict | None = None,
+                   card_type: str = "block") -> tuple[str, float, tuple]:
     """Копия накладки под сцену. Возвращает (имя, родная длительность, канвас).
 
     Копия, а не общий файл: ключ таймлайна сабкомпозиции один на
@@ -619,16 +635,23 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     механизма нет, агент у них правит файл руками
     (hyperframes-registry/SKILL.md:78). GSAP переводится на локальный:
     внешние ссылки в композиции запрещены её же контрактом.
+
+    Исходник ищем по `card_type` (`_installed_path`) — он может лежать в
+    подпапке `components/`, — а копию всегда кладём в плоскую `compositions/`:
+    их загрузчик читает её буквально по
+    `data-composition-src="compositions/{unique}.html"`
+    (`compositionLoader.ts`), и рядом с исходником-компонентом эта ссылка не
+    разрешилась бы.
     """
     from reels_factory.hf_slots import fill_ops, prune_timeline
 
-    source = Path(public) / "compositions" / f"{block}.html"
+    source = _installed_path(public, block, card_type)
     if not source.exists():
         raise RuntimeError(
             f"накладка {block} не установлена: нет {source}. Ставит её код "
             "командой `hyperframes add` перед сборкой")
     unique = f"{block}--{scene_id}"
-    target = source.with_name(f"{unique}.html")
+    target = Path(public) / "compositions" / f"{unique}.html"
     if text and sdk is not None:
         sdk.open(unique, source)
         sdk.dispatch(unique, fill_ops(sdk.elements(unique), text=text))
@@ -648,13 +671,15 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     # убери второй хост — первый оживает.
     html = html.replace(f'= "{block}"', f'= "{unique}"')
     # GSAP блока — плоским именем и ДВУМЯ копиями: их резолверы расходятся
-    # (рендер идёт от файла блока, живая проверка — от корня проекта,
+    # (рендер идёт от файла копии, живая проверка — от корня проекта,
     # invalid_parent_traversal_in_asset_path это прямо говорит), а путь через
-    # ../ запрещён их линтером. Копия рядом с блоком кормит рендер, копия в
+    # ../ запрещён их линтером. Копия рядом с копией кормит рендер, копия в
     # корне — живой runtime-чек (без неё он давал 404 и блок оставался без
-    # анимации — прогон 23).
+    # анимации — прогон 23). Рядом с копией, не с исходником: у компонента
+    # исходник лежит в `components/`, а грузится и рендерится всегда
+    # `target` — плоская `compositions/{unique}.html`.
     original = Path(public) / "vendor" / "gsap.min.js"
-    for target_dir in (source.parent, Path(public)):
+    for target_dir in (target.parent, Path(public)):
         vendored = target_dir / "gsap-vendor.min.js"
         if not vendored.exists() and original.exists():
             shutil.copyfile(original, vendored)
@@ -1427,7 +1452,10 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     #   (`_overlay_geometry`).
     band_top = CAPTION_BAND_TOP - CAPTION_BAND_SAFETY
     staged_elements = 0
-    stencils: list[str] = []
+    #: Имя -> тип карточки: исходник компонента снят по `components/`, не по
+    #: плоской `compositions/` — тип нужен ниже, чтобы объявить ему коробку
+    #: по верному пути (`_installed_path`).
+    stencils: dict[str, str] = {}
     for scene in scenes:
         kept = []
         for element in scene_elements(scene):
@@ -1469,7 +1497,8 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             # видимому тексту.
             text = dict(zip([str(slot) for slot in card.get("text_slots") or []],
                             [str(word) for word in element.get("words") or []]))
-            source = Path(public) / "compositions" / f"{name}.html"
+            card_type = str(card.get("type") or "block")
+            source = _installed_path(public, name, card_type)
             root = (block_root(source.read_text(encoding="utf-8"))
                     if source.exists() else "")
             dimensions = card.get("dimensions") or {}
@@ -1487,7 +1516,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             try:
                 unique, _, canvas = _stage_overlay(
                     public, name, scene["id"], sdk=sdk if text else None,
-                    text=text or None, port=port)
+                    text=text or None, port=port, card_type=card_type)
             except RuntimeError as error:
                 print(f'{scene["id"]}: элемент {name} снят — {error}')
                 continue
@@ -1499,7 +1528,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                     unique, box[0], box[1])
                 canvas = box
                 if name not in stencils:
-                    stencils.append(name)
+                    stencils[name] = card_type
             # Значения переменных — одним JSON на хосте, их штатным каналом
             # (`add.ts:64-72`): в файл позиции их не вписывают, чтобы два
             # маунта одной позиции могли нести разное.
@@ -1565,8 +1594,8 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # ему кадр: числа стенсиля ни на что не влияют, а сборку он больше не
     # роняет. Правится ПОСЛЕ копий: копии снимаются с него, и своя коробка у
     # каждой уже проставлена.
-    for name in stencils:
-        declare_box(Path(public) / "compositions" / f"{name}.html",
+    for name, card_type in stencils.items():
+        declare_box(_installed_path(public, name, card_type),
                     name, OUT_W, OUT_H)
 
     # ── значки фоновых сцен ──────────────────────────────────────────────

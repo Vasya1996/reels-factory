@@ -1311,8 +1311,15 @@ FIXTURE_CATALOG = Path(__file__).resolve().parent / "fixtures" / "catalog"
 def каталог(run, monkeypatch):
     """Фикстурный каталог вместо боевого: три вида позиции и одна без вида.
 
-    Блоки кладём в `public/compositions` руками — в прогоне их туда ставит
-    `hyperframes add` до сборки.
+    Раскладка — та же, что после `hyperframes add`, а не ручное упрощение:
+    блок ложится в плоскую `public/compositions`, компонент — в свою подпапку
+    `public/compositions/components` (`hyperframes.json#paths`,
+    `hf_catalog.py:51`; установку живьём проверяет
+    `test_hf_catalog.py::test_add_реально_ставит_сцену_накладку_и_компонент`).
+    Прогон 30 упал именно на разъезде этих путей: `_stage_overlay` читал
+    компонент по плоскому пути, `add` клал его в подпапку, и элемент
+    `count-up` валил сборку рантайм-ошибкой «не установлен» — фикстура,
+    упрощавшая раскладку до плоской, эту ошибку не ловила.
     """
     from reels_factory.hf_catalog import catalog_cards
 
@@ -1322,14 +1329,28 @@ def каталог(run, monkeypatch):
                         lambda: {"demo-skip": "их же проверка валит блок"})
     monkeypatch.setattr(hf_compose, "_texture_blocks", frozenset)
     registry = FIXTURE_CATALOG / "registry"
+    compositions = run / "public" / "compositions"
+    (compositions / "components").mkdir(parents=True, exist_ok=True)
     for name, card in cards.items():
-        # Каталог держит блоки и компоненты в разных подпапках
-        # (`blocks/<имя>`, `components/<имя>`); сборка же читает их одной
-        # плоской `compositions/<имя>.html` — так их туда кладёт `add`.
-        subdir = "components" if card["type"] == "component" else "blocks"
-        shutil.copyfile(registry / subdir / name / f"{name}.html",
-                        run / "public" / "compositions" / f"{name}.html")
+        is_component = card["type"] == "component"
+        subdir = "components" if is_component else "blocks"
+        target = ((compositions / "components" / f"{name}.html") if is_component
+                  else compositions / f"{name}.html")
+        shutil.copyfile(registry / subdir / name / f"{name}.html", target)
     return run
+
+
+def test_путь_установленной_позиции_идёт_по_её_типу(tmp_path):
+    """Одно место на обоих читателей источника (`_stage_overlay`, подстановка
+    `root` для палитры): блок — их же плоская `paths.blocks`, компонент — их
+    же `paths.components` (`hf_catalog.py:51`, `write_project_config`).
+    Разойдись эти пути — компонент читался бы там, где `add` его не клал."""
+    from reels_factory.hf_compose import _installed_path
+
+    assert (_installed_path(tmp_path, "demo-scene", "block")
+            == tmp_path / "compositions" / "demo-scene.html")
+    assert (_installed_path(tmp_path, "count-up", "component")
+            == tmp_path / "compositions" / "components" / "count-up.html")
 
 
 def _с_элементами(*elements, presenter="pip-tr"):
@@ -1431,10 +1452,16 @@ def test_упругая_позиция_получает_коробку_в_коп
     под `--strict` файл роняет сборку: он судит каждый файл сам по себе.
     Коробку считает код, поэтому её и объявляем — копии зону, стенсилю кадр.
 
+    `count-up` — компонент: исходник (стенсиль) лежит не в плоской
+    `compositions/`, а в её подпапке `components/` (`_installed_path`) — и
+    коробку код обязан объявить именно там, а не рядом с копией.
     """
+    from reels_factory.hf_compose import _installed_path
+
     _build(каталог, scenes=_с_элементами({"name": "count-up"}), resolved={})
     compositions = каталог / "public" / "compositions"
     copy = (compositions / "count-up--s-02.html").read_text(encoding="utf-8")
     assert 'data-width="1080" data-height="397"' in copy
-    stencil = (compositions / "count-up.html").read_text(encoding="utf-8")
+    stencil = _installed_path(каталог / "public", "count-up",
+                              "component").read_text(encoding="utf-8")
     assert 'data-width="1080" data-height="1920"' in stencil
