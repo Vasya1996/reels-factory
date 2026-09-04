@@ -23,10 +23,13 @@ from reels_factory.config import cli_env
 from reels_factory.hf_fonts import fonts_css as _fonts_css
 
 HF_DIR = Path(__file__).resolve().parents[2] / "hyperframes"
-# Версия CLI, под которую снято досье docs/research/hyperframes/findings.md и
-# сверена схема раскадровки. Расходиться с досье нельзя: проверки и формат
-# storyboard.json меняются между версиями.
-_HF_VERSION = "0.7.84"
+# Единственное место, где закреплена версия CLI (читают hf_render.py,
+# hf_captions.py, hf_assets.py, hf_probe.py — все получают её отсюда, не
+# дублируют литералом; test_hf_env.py следит за этим). docs/research/
+# hyperframes/findings.md снято под 0.7.84 и с подъёма на 0.8.27 устарело —
+# новое досье под этот пин не писалось, разбор совместимости остался в
+# протоколе сессии (см. коммиты подъёма пина), не в репозитории.
+_HF_VERSION = "0.8.27"
 
 
 # ---------- task_list ----------
