@@ -31,7 +31,6 @@
     "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/blocks/yt-lower-third.png"
   },
   "reels": {
-    "backing": "own",
-    "skip": "их же проверка валит блок под --strict: CSS адресуется по собственному data-composition-id и течёт на соседние копии"
+    "backing": "own"
   }
 }

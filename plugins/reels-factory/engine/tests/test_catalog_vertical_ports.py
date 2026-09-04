@@ -54,15 +54,17 @@ def test_reels_kind_scene_и_text_slots_не_пусты():
         assert reels.get("text_slots"), f"{block}: text_slots пуст"
 
 
-def test_v_macos_notification_помечен_skip_как_горизонтальный_близнец():
-    """Их же `--strict` валит блок за CSS, адресуемый по собственному
-    `data-composition-id` (`composition_self_attribute_selector`) — тот же
-    дефект, что и у горизонтального `macos-notification` и всей семьи Social
-    Overlays. `#root` вместо этого пришлось бы городить в обход
-    `_stage_overlay`, которая переименовывает именно `data-composition-id`
-    (`hf_compose.py:585-594`) — не работа карточки."""
+def test_v_macos_notification_больше_не_несёт_skip():
+    """B2.5 (`scratchpad/strict-scoping-rootcause.md`): единственная причина
+    `reels.skip` была одна находка их `--strict` —
+    `composition_self_attribute_selector` — их же ложный срабатыватель,
+    убранный апстримом коммитом 83ceaeb90; `_stage_overlay` и без того делает
+    `data-composition-id` уникальным по построению (`hf_compose.py:585-594`).
+    Приёмка `hf_render._check_verdict` больше не считает эту находку
+    причиной провала, живая проба (`check --strict` + кадр 1080×1920 через
+    настоящие `hf_compose`/`hf_render`) прошла чисто, и `skip` снят."""
     reels = _card("v-macos-notification")["reels"]
-    assert reels.get("skip")
+    assert not reels.get("skip")
 
 
 def test_html_не_содержит_google_fonts():
