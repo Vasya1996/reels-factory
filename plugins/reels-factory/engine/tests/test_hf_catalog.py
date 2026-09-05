@@ -147,8 +147,15 @@ def test_каждый_компонент_несёт_reels_effect_и_контра
 #: реальной сборке (не зондом), см. scratchpad/b15-report.md. Число не
 #: пришпиливаем к общему счёту skip в каталоге — только эти конкретные имена
 #: обязаны быть предложены агенту.
+#:
+#: `mk-clone-wall-transition` снова несёт skip (ветка catalog-tails,
+#: 0.8.27): их правило `content_overlap` (packages/cli/src/commands/
+#: layout-audit.browser.js:648-673) не читает `data-layout-allow-occlusion`,
+#: которым автор явно разметил кирпичную стену тайлов
+#: (mk-clone-wall-transition.html:157-158) — дыра в их линте, не брак
+#: позиции, но и не повод молчать: находка настоящая.
 _B15_UNSKIPPED = [
-    "message-thread-reveal", "mk-clone-wall-transition", "aurora-drift",
+    "message-thread-reveal", "aurora-drift",
     "beat-accent", "beat-timeline", "caption-texture", "chromatic-aberration-wipe",
     "decline-chart", "directional-wipe", "drift-hold", "gesture-tap", "gloss-sweep",
     "grain-field", "kinetic-type-swap", "light-sweep-pass", "line-swap",
