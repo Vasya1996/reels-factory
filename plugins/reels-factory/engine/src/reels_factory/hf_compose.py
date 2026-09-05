@@ -1874,6 +1874,17 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             # Имя своё, не `words`: так зовётся параметр сборки со словами
             # титра, и тень над ним роняла бы весь слой субтитров ниже.
             said = [str(word) for word in element.get("words") or []]
+            # Слова плана в текстовые переменные позиции. У позиции без слотов
+            # разметки текст живёт переменной, её пишет собственный скрипт
+            # позиции, и слова агента туда не доезжали вовсе: в кадре стояла
+            # английская демо-строка карточки («Get HyperFrames», «This changed
+            # how we ship.»). Канал их штатный — `data-variable-values` ниже;
+            # какие переменные его принимают и почему не всякая, сказано в
+            # `hf_catalog.word_variables`. Названное планом значение сильнее.
+            from reels_factory.hf_catalog import word_variables
+            named = dict(element.get("variables") or {})
+            for key, phrase in zip(word_variables(card), said):
+                named.setdefault(key, phrase)
             # Слоты позиции под файл: кадр биролла этой же сцены ложится ВНУТРЬ
             # них. Подавать нечего — позиция снимается с причиной вслух: пустой
             # макет (телефон без экрана, панель «Before» без картинки) хуже
@@ -1882,7 +1893,8 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             slots = sorted(card.get("media_slots") or [])
             files = [(resolved.get(media_key(scene["id"], shot)) or {}).get("file")
                      for shot in range(shots_for(scene))] if slots else []
-            files = [one for one in files if one]
+            from reels_factory.hf_slots import is_slot_file
+            files = [one for one in files if one and is_slot_file(one)]
             if card.get("host_slots"):
                 drop_element(
                     storyboard, scene, name,
@@ -1895,12 +1907,12 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             if slots and not files:
                 drop_element(
                     storyboard, scene, name,
-                    "позиция ждёт файл в слоты " + ", ".join(slots)
-                    + ", а сцене вставка не подобралась — в кадре остался бы "
-                    "пустой макет")
+                    "позиция ждёт картинку в слоты " + ", ".join(slots)
+                    + ", а сцене не подобралось ни одного кадра (ролик в такой "
+                    "слот их линтер не пускает — `hf_slots._media_child`) — в "
+                    "кадре остался бы пустой макет")
                 continue
-            supply = {slot: {"file": files[position % len(files)],
-                             "start": 0.0, "duration": length}
+            supply = {slot: {"file": files[position % len(files)]}
                       for position, slot in enumerate(slots)} or None
             card_type = str(card.get("type") or "block")
             # Paste-контрактный эффект (`reels.mount`, карточка B1) не
@@ -1916,8 +1928,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 unique = f"{name}--{scene['id']}"
                 try:
                     paste_html = paste_effect(
-                        sdk, public, name, unique=unique,
-                        variables=element.get("variables") or {})
+                        sdk, public, name, unique=unique, variables=named)
                 except RuntimeError as error:
                     drop_element(storyboard, scene, name, str(error))
                     continue
@@ -1960,9 +1971,9 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             # (`add.ts:64-72`): в файл позиции их не вписывают, чтобы два
             # маунта одной позиции могли нести разное.
             values = (" data-variable-values='"
-                      + json.dumps(element.get("variables") or {},
-                                   ensure_ascii=False).replace("'", "&#39;")
-                      + "'") if element.get("variables") else ""
+                      + json.dumps(named, ensure_ascii=False)
+                      .replace("'", "&#39;")
+                      + "'") if named else ""
             at = markup_time(begin)
             span = markup_time(begin + length) - at
             mount = f'el-{scene["id"]}-{staged_elements}'

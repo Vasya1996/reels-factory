@@ -594,8 +594,7 @@ def _media_tag(node: Node, source: str, *, start: float = 0.0,
     return f"<video {' '.join(attrs)}></video>"
 
 
-def _media_child(node: Node, name: str, source: str, *, start: float = 0.0,
-                 duration: float = 0.0, media_start: float = 0.0) -> str:
+def _media_child(name: str, source: str) -> str:
     """Файл ВНУТРЬ контентного слота их позиции, а не вместо него.
 
     Так написан их контракт: «Replace the children of this element … Direct
@@ -605,18 +604,27 @@ def _media_child(node: Node, name: str, source: str, *, start: float = 0.0,
     с кадра панель вместе с содержимым. Размер файлу задаёт CSS самой позиции
     (`.baw-slot > video {…}`) — тем же правилом, по которому слот и опознан
     (`slot_contract`), поэтому своей геометрии тег не несёт.
+
+    Только картинка. Видео в такой слот их линтер не пускает вовсе, и это
+    проверено живой сборкой (прогон scratchpad/slots-deep 06.09.2026):
+    слот лежит внутри клипа позиции, у которого есть свой `data-start`, и
+    `<video data-start>` под таким предком — ошибка
+    `video_nested_in_timed_element` («Time the wrapper OR the video, never
+    both», `packages/lint/src/rules/media.ts:426-432`), а `<video src>` без
+    `data-start` — ошибка `media_missing_data_start` (там же:517-519). Обе
+    стороны их правила закрыты, и снять её можно только сняв время с клипа
+    самой позиции — то есть сломав её таймлайн. Значит слот принимает кадр, а
+    не ролик; сцене это говорит `D36_elements` до заказа ведущей.
     """
-    del node  # рамку держит сам слот; тегу от неё ничего не нужно
-    if source.lower().split("?")[0].endswith(_IMAGE_SUFFIXES):
-        return f'<img src="{source}" alt="">'
-    # `id` и `class="clip"` — те же две причины, что у `_media_tag`:
-    # `media_missing_id` их линтера и невидимый без `clip` ролик.
-    attrs = [f'id="{name}"', 'class="clip"', f'src="{source}"',
-             f'data-start="{start:.4f}"', f'data-duration="{duration:.4f}"']
-    if media_start:
-        attrs.append(f'data-media-start="{media_start:.4f}"')
-    attrs += ["muted", "playsinline"]
-    return f"<video {' '.join(attrs)}></video>"
+    del name  # рамку и класс держит сам слот; тегу от них ничего не нужно
+    return f'<img src="{source}" alt="">'
+
+
+#: Чем слот под файл заполняется: их линтер пускает в него только картинку
+#: (см. `_media_child`). Проверяется по имени файла, как и у `_media_tag`.
+def is_slot_file(source: str) -> bool:
+    """Годится ли файл в контентный слот позиции."""
+    return source.lower().split("?")[0].endswith(_IMAGE_SUFFIXES)
 
 
 _QUOTED_SELECTOR = re.compile(r'"([.#][^"]+)"')
@@ -731,18 +739,22 @@ def fill_ops(nodes: list[Node], *, text: dict[str, str] | None = None,
                 # Пустая рамка со словом «slot» — тот же плейсхолдер на экране.
                 ops += _drop(nodes, slot.index)
                 continue
-            timing = dict(start=float(filled.get("start", 0.0)),
-                          duration=float(filled.get("duration", 0.0)),
-                          media_start=float(filled.get("media_start", 0.0)))
             if slot.kind == "media":
+                if not is_slot_file(filled["file"]):
+                    # Ролик в такой слот их линтер не пускает (`_media_child`);
+                    # сцена узнаёт об этом до заказа (`hf_gates`), а сюда
+                    # такой файл доходить не должен.
+                    continue
                 ops += [remove_element(nodes[child].hfid)
                         for child in node.children]
                 ops.append(set_text(node.hfid, ""))
                 ops.append(add_element(node.hfid, 0, _media_child(
-                    node, f"slot-{slot.name}-{slot.index}", filled["file"],
-                    **timing)))
+                    f"slot-{slot.name}-{slot.index}", filled["file"])))
                 continue
-            tag = _media_tag(node, filled["file"], **timing)
+            tag = _media_tag(node, filled["file"],
+                             start=float(filled.get("start", 0.0)),
+                             duration=float(filled.get("duration", 0.0)),
+                             media_start=float(filled.get("media_start", 0.0)))
             ops.append(add_element(nodes[node.parent].hfid, node.index, tag))
             ops.append(remove_element(node.hfid))
             continue

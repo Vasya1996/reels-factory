@@ -408,6 +408,66 @@ def _slot_contract(folder: Path, item: dict) -> dict[str, str]:
     return found
 
 
+#: Значение по умолчанию, в которое можно положить фразу плана: одна короткая
+#: строка с буквами и без служебных знаков. Путь SVG (`M 92 328 C 178 …`,
+#: длиннее 80), домен (`app.example.com`), хэндл (`@ken`), число (`100`, `3`)
+#: и пустая строка фразой не считаются: слова плана там сломали бы позицию, а
+#: не заполнили её. Запятая сама по себе фразу не отменяет («Less, but
+#: better»), а три и больше кусков через запятую — уже список
+#: (`_LIST_DEFAULT`).
+_PHRASE_DEFAULT = re.compile(
+    r"^(?=.*[^\W\d_])[^|;<>/\\@#{}]{1,80}$")
+#: Домен, а не фраза: одно слово с точкой внутри.
+_DOMAIN_DEFAULT = re.compile(r"^\S+\.\S+$")
+
+
+def word_variables(card: dict) -> list[str]:
+    """Текстовые переменные позиции, куда код кладёт слова плана, по порядку.
+
+    Правило проекта одно на оба канала: содержание в кадр кладёт код, а не
+    агент правкой файла. У позиции со слотами разметки канал — слоты
+    (`hf_slots.fill_ops`); у позиции без слотов текст живёт переменной, её
+    пишет собственный скрипт позиции, и слова плана туда не доезжали вовсе —
+    в кадре стояла английская демо-строка карточки («HELLO», «Get
+    HyperFrames», «This changed how we ship.»; перепроверка отложенных
+    05.09.2026, пункт 7.1). Канал их штатный: значения едут хосту одним JSON
+    в `data-variable-values` (`hf_compose`), как велит их же `add.ts:64-72`.
+
+    Берётся не всякая переменная:
+
+    - `type: string` и `role: content` — их собственные поля объявления
+      (`docs/concepts/variables.mdx:66-109`): `role` говорит, что переменная
+      влияет на содержание, а не на цвет или тайминг;
+    - без `portrays` — это их прямой запрет: «tells an editing agent which
+      slots carry identity and must not be filled with invented copy»
+      (там же:88-90). Фирменное заполняется данными пользователя или не
+      заполняется вовсе;
+    - умолчание — одна фраза (`_PHRASE_DEFAULT`), а не список, путь, домен
+      или число: у позиции, чья переменная держит `Docs,Tickets,Dashboards`,
+      подстановка одной строки убрала бы четыре чипа из четырёх;
+    - у позиции нет `text_slots`: там, где слоты есть, слова уже разложены по
+      ним, и второй канал положил бы тот же текст дважды.
+    """
+    if card.get("text_slots"):
+        return []
+    found = []
+    for key, rule in (card.get("variables") or {}).items():
+        if rule.get("type") != "string" or rule.get("role") != "content":
+            continue
+        if rule.get("portrays"):
+            continue
+        default = str(rule.get("default") or "")
+        if not _PHRASE_DEFAULT.match(default) or _DOMAIN_DEFAULT.match(default):
+            continue
+        # Список, а не фраза: у позиции, чья переменная держит
+        # `Docs,Tickets,Dashboards,Inbox`, одна подставленная строка убрала бы
+        # четыре чипа из четырёх.
+        if len(default.split(",")) >= 3:
+            continue
+        found.append(key)
+    return found
+
+
 def catalog_cards(catalog_dir=None) -> dict[str, dict]:
     """Позиции каталога для агента и для проверок — по имени.
 

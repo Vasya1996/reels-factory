@@ -172,6 +172,7 @@ def _element_problems(scene: dict, element: dict, cards: dict,
     Уместность позиции по-прежнему не проверяется — это решение агента, и гейт
     в него не лезет, как не лезет в выбор формы схемы.
     """
+    from reels_factory.hf_catalog import word_variables
     from reels_factory.hf_compose import effect_zone
     from reels_factory.hf_montage import insert_of
 
@@ -206,13 +207,22 @@ def _element_problems(scene: dict, element: dict, cards: dict,
     # файла в кадре остаётся пустой макет — телефон без экрана, панель «Before»
     # без картинки. Файл сцене даёт вставка, и спрашивается она здесь, ДО
     # заказа ведущей: после оплаты выбор уже не переиграть.
-    if card.get("media_slots") and not insert_of(scene):
-        problems.append(
-            f"{where}: позиция ждёт файл в слоты "
-            + ", ".join(f"`{one}`" for one in sorted(card["media_slots"]))
-            + " — их закрывает кадр вставки сцены, а `insert` у сцены нет. "
-            "Дай сцене вставку (`insert.shots`) или возьми позицию, которой "
-            "своя картинка не нужна: без файла в кадре останется пустой макет")
+    if card.get("media_slots"):
+        insert = insert_of(scene) or {}
+        # Кадр, а не ролик: `<video>` в такой слот их линтер не пускает ни с
+        # `data-start` (`video_nested_in_timed_element`), ни без него
+        # (`media_missing_data_start`) — разобрано в `hf_slots._media_child`
+        # и проверено живой сборкой. Кадр даёт вставка вида `photo`.
+        if str(insert.get("kind") or "") != "photo":
+            problems.append(
+                f"{where}: позиция ждёт картинку в слоты "
+                + ", ".join(f"`{one}`" for one in sorted(card["media_slots"]))
+                + " — её даёт вставка сцены вида `photo`, а у сцены "
+                + (f'вставка вида {insert.get("kind")!r}' if insert
+                   else "вставки нет вовсе")
+                + ". Поставь сцене `insert` с `kind: \"photo\"` или возьми "
+                "позицию, которой своя картинка не нужна: без файла в кадре "
+                "останется пустой макет")
     # Слот, содержимое которого их контракт ждёт `<template>`-ом в ХОСТОВОЙ
     # странице (`hf_slots.HOST_SLOT`). Наша сборка монтирует позицию
     # сабкомпозицией и такого шаблона не пишет — экран останется серым
@@ -256,10 +266,13 @@ def _element_problems(scene: dict, element: dict, cards: dict,
     if words is not None and not isinstance(words, list):
         problems.append(f"{where}: `words` — список строк по числу слотов")
     elif words:
-        slots = card.get("text_slots") or []
+        # Слова ложатся либо в слоты разметки, либо — у позиции без слотов —
+        # в её текстовые переменные (`hf_catalog.word_variables`): канал один
+        # и тот же, «содержание кладёт код».
+        slots = (card.get("text_slots") or []) or word_variables(card)
         if len(words) > len(slots):
             problems.append(
-                f"{where}: слов {len(words)}, а слотов у позиции "
+                f"{where}: слов {len(words)}, а мест под них у позиции "
                 f"{len(slots)} — лишние в кадр не попадут")
     return problems
 

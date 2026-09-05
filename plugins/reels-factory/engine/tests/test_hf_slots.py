@@ -363,13 +363,26 @@ def test_файл_ложится_внутрь_слота_полки_а_не_вм
     позиции: «Replace the children of this element … Direct img/video children
     of a slot are sized to cover the panel» (`before-after-wipe.html:16-20`)."""
     _, fill = block
-    out = fill(СЛОТ_ПОЛКИ, media={"before": {"file": "media/clip.mp4",
-                                             "duration": 4.0}},
+    out = fill(СЛОТ_ПОЛКИ, media={"before": {"file": "media/shot.jpg"}},
                contract=slot_contract(СЛОТ_ПОЛКИ))
     assert 'class="xx-slot"' in out, "панель слота осталась в кадре"
-    assert 'src="media/clip.mp4"' in out
+    assert 'src="media/shot.jpg"' in out
     assert "xx-wire" not in out, "заглушка-каркас должна уехать вместе с детьми"
-    assert re.search(r'class="xx-slot"[^>]*>\s*<video', out)
+    assert re.search(r'class="xx-slot"[^>]*>\s*<img', out)
+
+
+def test_ролик_в_слот_полки_не_кладут(block):
+    """Их линтер закрыл обе стороны: `<video data-start>` под клипом позиции —
+    `video_nested_in_timed_element`, `<video src>` без `data-start` —
+    `media_missing_data_start` (`packages/lint/src/rules/media.ts:426-432,
+    517-519`). Проверено живой сборкой: обе находки пришли на
+    `before-after-wipe`, `iris-reveal`, `telemetry-hud`. Значит слот принимает
+    кадр, а не ролик, и говорит это сцене `D36_elements` до заказа ведущей."""
+    _, fill = block
+    out = fill(СЛОТ_ПОЛКИ, media={"before": {"file": "clips/clip-00.mp4"}},
+               contract=slot_contract(СЛОТ_ПОЛКИ))
+    assert "clip-00.mp4" not in out
+    assert 'class="xx-slot"' in out
 
 
 def test_слот_полки_без_файла_не_выламывается_из_кадра(block):
