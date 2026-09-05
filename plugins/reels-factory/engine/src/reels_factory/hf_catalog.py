@@ -303,7 +303,9 @@ _VARIABLES_ATTR = re.compile(
 
 @functools.lru_cache(maxsize=1024)
 def _declared_options(path: str, stamp: tuple) -> tuple:
-    """Варианты значений переменных одного файла позиции: `(имя, (значения…))`.
+    """Объявление переменных одного файла позиции: `(имя, {поле: значение})`.
+
+    Поля — `options` (варианты `enum`), `role` и `portrays`.
 
     Читается из самой разметки, а не из карточки: список вариантов — это то,
     что автор позиции уже написал в `data-composition-variables`, и второе его
@@ -329,20 +331,37 @@ def _declared_options(path: str, stamp: tuple) -> tuple:
         return ()
     out = []
     for item in declared if isinstance(declared, list) else []:
-        if not isinstance(item, dict) or not item.get("options"):
+        if not isinstance(item, dict):
             continue
+        rule = {}
         values = tuple(str(option.get("value"))
-                       for option in item["options"]
+                       for option in item.get("options") or []
                        if isinstance(option, dict) and option.get("value")
                        is not None)
         if values:
-            out.append((str(item.get("id")), values))
+            rule["options"] = values
+        # `role` и `portrays` — их же поля объявления переменной
+        # (`docs/concepts/variables.mdx:84-109`): `role` говорит, на что
+        # переменная влияет (`content`, `style`, …), `portrays` — что значение
+        # ЗНАЧИТ для зрителя, и «tells an editing agent which slots carry
+        # identity and must not be filled with invented copy» (там же:88-90).
+        # Наш `reels.variables` — урезанное зеркало, оба поля в нём не
+        # заведены; читаем их оттуда же, откуда варианты, — из объявления
+        # автора позиции, чтобы второе издание не разошлось с первым.
+        if item.get("role"):
+            rule["role"] = str(item["role"])
+        portrays = item.get("portrays")
+        if isinstance(portrays, list) and portrays:
+            rule["portrays"] = tuple(str(one) for one in portrays)
+        elif isinstance(portrays, str) and portrays:
+            rule["portrays"] = (portrays,)
+        if rule:
+            out.append((str(item.get("id")), rule))
     return tuple(out)
 
 
-def _variable_options(folder: Path, item: dict) -> dict[str, list[str]]:
-    """Варианты значений переменных позиции по всем её файлам разметки."""
-    found = {}
+def _html_files(folder: Path, item: dict):
+    """Файлы разметки позиции с отпечатком — ключом кэша разборов."""
     for entry in item.get("files") or []:
         name = str(entry.get("path") or "")
         if not name.endswith(".html"):
@@ -352,9 +371,100 @@ def _variable_options(folder: Path, item: dict) -> dict[str, list[str]]:
             stat = path.stat()
         except OSError:
             continue
-        for key, values in _declared_options(str(path),
-                                             (stat.st_mtime, stat.st_size)):
-            found.setdefault(key, list(values))
+        yield path, (stat.st_mtime, stat.st_size)
+
+
+def _variable_options(folder: Path, item: dict) -> dict[str, dict]:
+    """Объявление переменных позиции по всем её файлам разметки.
+
+    Имя переменной → `options`/`role`/`portrays` так, как их написал автор
+    позиции в `data-composition-variables`.
+    """
+    found = {}
+    for path, stamp in _html_files(folder, item):
+        for key, rule in _declared_options(str(path), stamp):
+            found.setdefault(key, dict(rule))
+    return found
+
+
+@functools.lru_cache(maxsize=1024)
+def _declared_slots(path: str, stamp: tuple) -> tuple:
+    """Слоты одного файла позиции: `(имя, вид)` — разбор `hf_slots`."""
+    del stamp  # часть ключа кэша, а не аргумент разбора
+    from reels_factory.hf_slots import slot_contract
+    try:
+        html = Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return ()
+    return tuple(sorted(slot_contract(html).items()))
+
+
+def _slot_contract(folder: Path, item: dict) -> dict[str, str]:
+    """Слоты позиции по всем её файлам разметки: имя → чем заполняется."""
+    found: dict[str, str] = {}
+    for path, stamp in _html_files(folder, item):
+        for key, kind in _declared_slots(str(path), stamp):
+            found.setdefault(key, kind)
+    return found
+
+
+#: Значение по умолчанию, в которое можно положить фразу плана: одна короткая
+#: строка с буквами и без служебных знаков. Путь SVG (`M 92 328 C 178 …`,
+#: длиннее 80), домен (`app.example.com`), хэндл (`@ken`), число (`100`, `3`)
+#: и пустая строка фразой не считаются: слова плана там сломали бы позицию, а
+#: не заполнили её. Запятая сама по себе фразу не отменяет («Less, but
+#: better»), а три и больше кусков через запятую — уже список
+#: (`_LIST_DEFAULT`).
+_PHRASE_DEFAULT = re.compile(
+    r"^(?=.*[^\W\d_])[^|;<>/\\@#{}]{1,80}$")
+#: Домен, а не фраза: одно слово с точкой внутри.
+_DOMAIN_DEFAULT = re.compile(r"^\S+\.\S+$")
+
+
+def word_variables(card: dict) -> list[str]:
+    """Текстовые переменные позиции, куда код кладёт слова плана, по порядку.
+
+    Правило проекта одно на оба канала: содержание в кадр кладёт код, а не
+    агент правкой файла. У позиции со слотами разметки канал — слоты
+    (`hf_slots.fill_ops`); у позиции без слотов текст живёт переменной, её
+    пишет собственный скрипт позиции, и слова плана туда не доезжали вовсе —
+    в кадре стояла английская демо-строка карточки («HELLO», «Get
+    HyperFrames», «This changed how we ship.»; перепроверка отложенных
+    05.09.2026, пункт 7.1). Канал их штатный: значения едут хосту одним JSON
+    в `data-variable-values` (`hf_compose`), как велит их же `add.ts:64-72`.
+
+    Берётся не всякая переменная:
+
+    - `type: string` и `role: content` — их собственные поля объявления
+      (`docs/concepts/variables.mdx:66-109`): `role` говорит, что переменная
+      влияет на содержание, а не на цвет или тайминг;
+    - без `portrays` — это их прямой запрет: «tells an editing agent which
+      slots carry identity and must not be filled with invented copy»
+      (там же:88-90). Фирменное заполняется данными пользователя или не
+      заполняется вовсе;
+    - умолчание — одна фраза (`_PHRASE_DEFAULT`), а не список, путь, домен
+      или число: у позиции, чья переменная держит `Docs,Tickets,Dashboards`,
+      подстановка одной строки убрала бы четыре чипа из четырёх;
+    - у позиции нет `text_slots`: там, где слоты есть, слова уже разложены по
+      ним, и второй канал положил бы тот же текст дважды.
+    """
+    if card.get("text_slots"):
+        return []
+    found = []
+    for key, rule in (card.get("variables") or {}).items():
+        if rule.get("type") != "string" or rule.get("role") != "content":
+            continue
+        if rule.get("portrays"):
+            continue
+        default = str(rule.get("default") or "")
+        if not _PHRASE_DEFAULT.match(default) or _DOMAIN_DEFAULT.match(default):
+            continue
+        # Список, а не фраза: у позиции, чья переменная держит
+        # `Docs,Tickets,Dashboards,Inbox`, одна подставленная строка убрала бы
+        # четыре чипа из четырёх.
+        if len(default.split(",")) >= 3:
+            continue
+        found.append(key)
     return found
 
 
@@ -407,6 +517,16 @@ def catalog_cards(catalog_dir=None) -> dict[str, dict]:
         if reels.get("avoid_when"):
             card["avoid_when"] = str(reels["avoid_when"])
         card["tags"] = list(item.get("tags") or [])
+        # Семья и работа позиции — их собственные поля реестра, не наша
+        # выдуманная классификация: `family` («ui-props», «transitions») и
+        # `jobs` («compare», «prove», «ask») стоят у 87 из 147 предлагаемых
+        # позиций, и по ним видно, что три-четыре карточки закрывают одну и ту
+        # же задачу. Своего поля вместо них не заводим: пустое у остальных 60
+        # честнее выдуманного.
+        if item.get("family"):
+            card["family"] = str(item["family"])
+        if item.get("jobs"):
+            card["jobs"] = [str(job) for job in item["jobs"]]
         if item.get("dimensions"):
             card["dimensions"] = item["dimensions"]
         if item.get("duration"):
@@ -422,27 +542,50 @@ def catalog_cards(catalog_dir=None) -> dict[str, dict]:
             card["mount"] = str(reels["mount"])
         if reels.get("text_slots"):
             card["text_slots"] = [str(slot) for slot in reels["text_slots"]]
+        subdir = ("components"
+                  if str(item.get("type", "")).endswith("component")
+                  else "blocks")
+        folder = (Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR / subdir
+                  / name)
         if reels.get("variables"):
             # Варианты значения `enum` в карточке реестра не записаны, а без
             # них поле в плане не заполнить: на живом раннем шаге агент так и
             # сказал — «`icon-morph-beat` близко, но допустимые значения `pair`
             # каталог не называет» — и позицию не взял. Берём их оттуда, где их
             # написал автор позиции: из `data-composition-variables` разметки.
-            subdir = ("components"
-                      if str(item.get("type", "")).endswith("component")
-                      else "blocks")
-            options = _variable_options(
-                Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR / subdir
-                / name, item)
+            # Оттуда же — `role` и `portrays`: `portrays` прямо называет
+            # переменные, которые нельзя заполнять выдуманным текстом
+            # («must not be filled with invented copy»,
+            # `docs/concepts/variables.mdx:88-90`), и без него агент не
+            # отличает свободную надпись от чужого бренда.
+            declared = _variable_options(folder, item)
             variables = {}
             for key, rule in reels["variables"].items():
                 rule = dict(rule)
-                if options.get(key) and not rule.get("options"):
-                    rule["options"] = list(options[key])
+                said = declared.get(key) or {}
+                if said.get("options") and not rule.get("options"):
+                    rule["options"] = list(said["options"])
+                if said.get("role") and not rule.get("role"):
+                    rule["role"] = said["role"]
+                if said.get("portrays") and not rule.get("portrays"):
+                    rule["portrays"] = list(said["portrays"])
                 variables[key] = rule
             card["variables"] = variables
         if reels.get("decor_texts"):
             card["decor_texts"] = [str(text) for text in reels["decor_texts"]]
+        # Слоты под файл — по контракту самой позиции, а не по списку имён
+        # (`hf_slots.slot_contract`). `media_slots` заполняет код подобранным
+        # файлом; `host_slots` их контракт ждёт `<template>`-ом в хостовой
+        # странице, и нашей сборкой они недостижимы — оба списка судит
+        # `D36_elements` ДО заказа ведущей.
+        from reels_factory.hf_slots import HOST_SLOT, MEDIA_KINDS
+        contract = _slot_contract(folder, item)
+        media = [key for key, kind in contract.items() if kind in MEDIA_KINDS]
+        host = [key for key, kind in contract.items() if kind == HOST_SLOT]
+        if media:
+            card["media_slots"] = media
+        if host:
+            card["host_slots"] = host
         found[name] = card
     return found
 
@@ -629,7 +772,7 @@ def decor_texts(catalog_dir=None) -> dict[str, set[str]]:
 REFERENCE_SUBDIR = "reference"
 REFERENCE_FILES = ("CATALOG.md", "catalog-map.md")
 
-_INDEX_HEAD = """# Каталог этого прогона
+_INDEX_HEAD = r"""# Каталог этого прогона
 
 Позиции, которые код умеет поставить в кадр. Ищи по смыслу — по `use_when`,
 `description` и `tags`, — а не глазами по именам: имя придумывал автор позиции,
@@ -647,6 +790,16 @@ _INDEX_HEAD = """# Каталог этого прогона
   сцены: `grep -i 'сравнен' catalog.index.md`.
 - `avoid_when` — когда позицию берут зря; стоит там, где случай уже разобран.
 
+- `family` и `jobs` — семья позиции и работа, которую она делает, словами их
+  же реестра (`family`, `jobs` в `registry-item.json`). Позиции одной семьи и
+  одной работы делают одно и то же — бери ОДНУ: `grep '"jobs": \["compare"\]'
+  catalog.index.md` покажет всех соперниц разом. У 60 позиций из 147 этих полей
+  нет вовсе — там ищи по `use_when`, как раньше.
+- `media_slots` — слоты, куда встаёт файл (кадр биролла, снимок): позиция с
+  ними берётся ТОЛЬКО в сцену со вставкой (`insert`), иначе в кадре останется
+  пустой макет и план вернётся с `D36_elements`.
+- `host_slots` — слоты, содержимое которых их контракт ждёт из хостовой
+  страницы; наша сборка их не заполняет, и такую позицию ставить нельзя.
 - `kind` — чем позиция становится в кадре: `scene` (во весь кадр подложкой под
   окном ведущей), `overlay` (на стык сцен поверх всего), `effect` (в свободной
   зоне кадра). Позиция без `kind` — плашка над полосой титра.
@@ -784,7 +937,8 @@ def overlay_passports(catalog_dir=None) -> str:
             pages.append(passport(
                 sdk.elements(name), name=name, title=item.get("title", ""),
                 description=item.get("description", ""),
-                duration=item.get("duration")))
+                duration=item.get("duration"),
+                contract=_slot_contract(folder, item)))
             sdk.close(name)
     return "\n\n".join(pages)
 
@@ -810,6 +964,7 @@ def block_passports(catalog_dir=None) -> str:
             pages.append(passport(
                 sdk.elements(name), name=name, title=item.get("title", ""),
                 description=item.get("description", ""),
-                duration=item.get("duration")))
+                duration=item.get("duration"),
+                contract=_slot_contract(folder, item)))
             sdk.close(name)
     return "\n\n".join(pages)

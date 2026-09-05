@@ -23,6 +23,14 @@
       "label": {
         "type": "string",
         "default": "3"
+      },
+      "headline": {
+        "type": "string",
+        "default": "Ship it today"
+      },
+      "wordmark": {
+        "type": "string",
+        "default": "HYPERFRAMES"
       }
     }
   }

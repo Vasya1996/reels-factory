@@ -611,7 +611,7 @@ def test_значение_вне_выбора_ловится_до_заказа(�
 def test_лишние_слова_ловятся_по_числу_слотов(каталог):
     problems = elements_problems(_элементы(
         {"name": "demo-scene", "words": ["Первая", "Вторая"]}))
-    assert len(problems) == 1 and "слотов у позиции 1" in problems[0]
+    assert len(problems) == 1 and "мест под них у позиции 1" in problems[0]
     assert elements_problems(_элементы(
         {"name": "demo-scene", "words": ["Первая"]})) == []
 
@@ -653,6 +653,71 @@ def test_подложка_под_полнокадровой_ведущей_ло�
     for position in ("pip-tr", "pip-br", "stack", "none"):
         assert elements_problems(_элементы({"name": "demo-scene"},
                                            presenter=position)) == [], position
+
+
+def test_позиция_со_слотом_под_файл_без_вставки_ловится_до_заказа(каталог):
+    """Слот полки — рамка под кадр биролла или снимок: «Replace the children of
+    this element … Direct img/video children of a slot are sized to cover the
+    panel» (`before-after-wipe.html:16-20`). Файл сцене даёт вставка; сцена без
+    неё оставила бы в кадре пустой макет — телефон без экрана, панель «Before»
+    без картинки. Вопрос задан плану ДО заказа ведущей: после оплаты выбор уже
+    не переиграть.
+    """
+    сцена = _элементы({"name": "demo-media"}, presenter="pip-br")
+    problems = elements_problems(сцена)
+    assert len(problems) == 1, problems
+    assert "`panel`" in problems[0] and "insert" in problems[0]
+    сцена[0]["insert"] = _photo("рабочий стол")
+    assert elements_problems(сцена) == []
+
+
+def test_слова_ложатся_в_текстовые_переменные_позиции_без_слотов(каталог):
+    """Правило проекта одно на оба канала: содержание в кадр кладёт код. У
+    позиции без слотов разметки текст живёт переменной, её пишет собственный
+    скрипт позиции, и слова плана туда не доезжали — в кадре стояла английская
+    демо-строка карточки (перепроверка отложенных 05.09.2026, пункт 7.1).
+
+    Мест под слова столько, сколько таких переменных: переменная с `portrays`
+    в счёт не идёт — «must not be filled with invented copy»
+    (`docs/concepts/variables.mdx:88-90`), — и `label` роли `style` тоже.
+    """
+    from reels_factory.hf_catalog import catalog_cards, word_variables
+
+    card = catalog_cards(каталог)["demo-paste"]
+    assert word_variables(card) == ["headline"]
+    assert elements_problems(_элементы(
+        {"name": "demo-paste", "words": ["Первая"]})) == []
+    problems = elements_problems(_элементы(
+        {"name": "demo-paste", "words": ["Первая", "Вторая"]}))
+    assert len(problems) == 1 and "мест под них у позиции 1" in problems[0]
+
+
+def test_фирменная_переменная_словами_плана_не_заполняется():
+    """`portrays` — их прямой запрет на выдуманный текст в слоте личности.
+    На боевом каталоге: `logo-brand-close` несёт `url` доменом, а
+    `matrix-decode` — свободную строку, и разница видна коду, а не глазам."""
+    from reels_factory.hf_catalog import catalog_cards, word_variables
+
+    cards = catalog_cards()
+    # Одна из тринадцати позиций, чей текст — переменная, а не слот.
+    assert word_variables(cards["matrix-decode"]) == ["text"]
+    # Домен и список — не фраза, слова плана туда не кладут.
+    assert "url" not in word_variables(cards["logo-brand-close"])
+    assert word_variables(cards["chart-story"]) == []
+
+
+def test_позиция_ждущая_разметки_из_хоста_планом_не_называется(каталог):
+    """Содержимое такого слота их контракт ждёт `<template>`-ом в ХОСТОВОЙ
+    странице (`browser-device-stage.html:22-25`). Наша сборка ставит позицию
+    сабкомпозицией и такой разметки не пишет: в кадре остался бы серый
+    скелет-заглушка, о чём предупреждает и сама позиция в `avoid_when` — но
+    словом, без зубов. Теперь зубы есть.
+    """
+    сцена = _элементы({"name": "demo-host"}, presenter="pip-br")
+    сцена[0]["insert"] = _photo("рабочий стол")
+    problems = elements_problems(сцена)
+    assert len(problems) == 1, problems
+    assert "demo-host-screen" in problems[0]
 
 
 def test_сверку_элементов_делает_и_d11(каталог):

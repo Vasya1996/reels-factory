@@ -8,7 +8,9 @@ import re
 import pytest
 
 from reels_factory.hf_sdk import sdk_session
-from reels_factory.hf_slots import fill_ops, find_slots, passport, prune_timeline
+from reels_factory.hf_slots import (
+    fill_ops, find_slots, passport, prune_timeline, slot_contract,
+)
 
 BLOCK = """<!doctype html>
 <html><head><title>Заголовок вкладки</title><style>.g99-x{color:red}</style></head>
@@ -291,3 +293,111 @@ def test_строку_на_класс_который_рисует_сам_скр�
     assert '"#0b0f17"' not in out, (
         "строка целилась в удалённый .g99-foot — она мёртвая целиком")
     assert 'fu(".g99-tech"' not in out
+
+
+#: Позиция их полки: содержимое кладёт тот, кто её ставит, и слот назван
+#: своим именем, а не видом файла. Признак «сюда кладут файл» — правило CSS
+#: самого автора позиции про прямого потомка `img`/`video`
+#: (`before-after-wipe.html:16-20`, `.baw-slot > video {…}`). У второго слота
+#: такого правила нет: его содержимое пишет переменная позиции, и файлу там не
+#: место.
+СЛОТ_ПОЛКИ = """<!doctype html>
+<html><head><style>
+  .xx-slot > img, .xx-slot > video { position: absolute; inset: 0; object-fit: cover }
+  .xx-note { color: #000 }
+</style></head>
+<body>
+  <div id="root" data-composition-id="xx-demo" data-start="0"
+       data-width="1080" data-height="1920" data-duration="4">
+    <div id="xx-clip" class="clip" data-start="0" data-duration="4">
+      <div class="xx-slot" data-slot="before"><div class="xx-wire">Before</div></div>
+      <div class="xx-note" data-slot="caption">строку пишет переменная</div>
+    </div>
+  </div>
+  <script>window.__timelines["xx-demo"] = tl;</script>
+</body></html>"""
+
+
+def _позиция(name: str, subdir: str = "components") -> str:
+    from reels_factory.hf_catalog import CATALOG_DIR, REGISTRY_SUBDIR
+    return (CATALOG_DIR / REGISTRY_SUBDIR / subdir / name / f"{name}.html"
+            ).read_text(encoding="utf-8")
+
+
+def test_текст_внутри_шаблона_сабкомпозиции_доезжает_до_слотов(block):
+    """Разметка портированной позиции лежит внутри `<template>`.
+
+    Наш мост читал её текст голым `document.querySelectorAll` линкдома, а он
+    внутрь шаблона не заходит — их же слова, `packages/parsers/src/hfIds.ts:
+    136-138`. Каждый узел получал пустой текст, `find_slots` не находил в
+    позиции ни одной надписи, и латиница карточки ехала в кадр русского ролика
+    нетронутой: `focus-swap.html:189` держит «Shape the idea» литералом.
+    Теперь обход тот же, каким ходит их собственный `comp.getElements()`.
+    """
+    nodes, _ = block
+    found = find_slots(nodes(_позиция("focus-swap")))
+    assert "Shape the idea" in [slot.placeholder for slot in found]
+
+
+def test_слот_под_файл_узнаётся_по_контракту_позиции_а_не_по_имени():
+    """`data-slot="image"`/`"video"` — имена НАШИХ блоков; полка зовёт слот
+    по-своему (`before`, `card-a`, `subject`), и списком имён его не поймать.
+    Признак — правило CSS автора позиции про прямого потомка `img`/`video`."""
+    assert slot_contract(СЛОТ_ПОЛКИ) == {"before": "media"}
+    assert slot_contract(_позиция("before-after-wipe")) == {
+        "before": "media", "after": "media"}
+
+
+def test_слот_ждущий_разметки_из_хоста_помечен_недостижимым():
+    """Их контракт кладёт содержимое такого слота `<template>`-ом в ХОСТОВУЮ
+    страницу (`browser-device-stage.html:22-25`). Сборка ставит позицию
+    сабкомпозицией и такого шаблона не пишет — экран останется серым
+    скелетом."""
+    assert slot_contract(_позиция("browser-device-stage")) == {
+        "browser-device-stage-screen": "host",
+        "browser-device-stage-screen-b": "host"}
+
+
+def test_файл_ложится_внутрь_слота_полки_а_не_вместо_него(block):
+    """Слот несёт рамку, маску и класс, по которому его находит скрипт
+    позиции: «Replace the children of this element … Direct img/video children
+    of a slot are sized to cover the panel» (`before-after-wipe.html:16-20`)."""
+    _, fill = block
+    out = fill(СЛОТ_ПОЛКИ, media={"before": {"file": "media/shot.jpg"}},
+               contract=slot_contract(СЛОТ_ПОЛКИ))
+    assert 'class="xx-slot"' in out, "панель слота осталась в кадре"
+    assert 'src="media/shot.jpg"' in out
+    assert "xx-wire" not in out, "заглушка-каркас должна уехать вместе с детьми"
+    assert re.search(r'class="xx-slot"[^>]*>\s*<img', out)
+
+
+def test_ролик_в_слот_полки_не_кладут(block):
+    """Их линтер закрыл обе стороны: `<video data-start>` под клипом позиции —
+    `video_nested_in_timed_element`, `<video src>` без `data-start` —
+    `media_missing_data_start` (`packages/lint/src/rules/media.ts:426-432,
+    517-519`). Проверено живой сборкой: обе находки пришли на
+    `before-after-wipe`, `iris-reveal`, `telemetry-hud`. Значит слот принимает
+    кадр, а не ролик, и говорит это сцене `D36_elements` до заказа ведущей."""
+    _, fill = block
+    out = fill(СЛОТ_ПОЛКИ, media={"before": {"file": "clips/clip-00.mp4"}},
+               contract=slot_contract(СЛОТ_ПОЛКИ))
+    assert "clip-00.mp4" not in out
+    assert 'class="xx-slot"' in out
+
+
+def test_слот_полки_без_файла_не_выламывается_из_кадра(block):
+    """Убрать панель значило бы показать позицию без половины сцены. Позицию
+    без файла не берут вовсе — это говорит `D36_elements` до заказа ведущей,
+    а не сборка после."""
+    _, fill = block
+    out = fill(СЛОТ_ПОЛКИ, contract=slot_contract(СЛОТ_ПОЛКИ))
+    assert 'class="xx-slot"' in out
+
+
+def test_текст_внутри_слота_под_файл_агенту_не_предлагается(block):
+    """Каркас-заглушка внутри слота — не надпись сцены: её заменит файл."""
+    nodes, _ = block
+    names = [slot.name for slot in find_slots(
+        nodes(СЛОТ_ПОЛКИ), contract=slot_contract(СЛОТ_ПОЛКИ))]
+    assert "before" in names
+    assert "wire" not in names
