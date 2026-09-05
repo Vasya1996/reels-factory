@@ -1960,13 +1960,13 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             mount_kind = str(card.get("mount") or "composition")
             # Переменные позиции, которые решает кадр, а не план: полярность
             # букв под наш тёмный фон (`hf_schema.frame_variables` — там же
-            # измерение и цитата автора позиции). Названное агентом сильнее:
-            # его словарь кладётся поверх.
-            variables = {**frame_variables(card, colors,
-                                           element.get("variables")),
-                         **(element.get("variables") or {})}
-            if variables:
-                element["variables"] = variables
+            # измерение и цитата автора позиции). Порядок силы снизу вверх:
+            # кадр, слова плана (`named` выше), названное агентом.
+            named = {**frame_variables(card, colors,
+                                       element.get("variables")),
+                     **named}
+            if named:
+                element["variables"] = named
             paste_html = None
             if kind == "effect" and mount_kind == "paste":
                 unique = f"{name}--{scene['id']}"
