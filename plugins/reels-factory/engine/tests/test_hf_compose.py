@@ -1353,6 +1353,20 @@ def test_путь_установленной_позиции_идёт_по_её_�
             == tmp_path / "compositions" / "components" / "count-up.html")
 
 
+def test_путь_вложенного_компонента_идёт_по_его_манифесту(tmp_path):
+    """`texture-mask-text` несёт 66 текстур рядом со своим html, и его
+    собственный `registry-item.json` (сверено байт-в-байт с их клоном,
+    `hyperframes-ref/registry/components/texture-mask-text/registry-item.
+    json`) объявляет вложенный `target`, а не плоский. Раньше `_installed_path`
+    считал путь формулой и не находил файл там, где его реально поставил
+    `add` — эта проверка ловит регресс формулы обратно."""
+    from reels_factory.hf_compose import _installed_path
+
+    assert (_installed_path(tmp_path, "texture-mask-text", "component")
+            == tmp_path / "compositions" / "components" / "texture-mask-text"
+            / "texture-mask-text.html")
+
+
 def test_ассет_позиции_получает_префикс_её_настоящей_папки(tmp_path):
     """На пине 0.7.84 их `rewriteAssetPath` простой относительный путь (без
     `../`) не трогает — после монтажа `data-composition-src` браузер ищет

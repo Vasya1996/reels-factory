@@ -147,6 +147,37 @@ def component_names(catalog_dir=None) -> list[str]:
             if item.get("type") == "hyperframes:component"]
 
 
+def component_install_target(name: str, catalog_dir=None) -> str | None:
+    """Путь под `public/`, куда `hyperframes add` кладёт html компонента.
+
+    `hf_compose._installed_path` раньше угадывал этот путь формулой (плоско —
+    `compositions/components/<имя>.html`), а формула верна для почти всех
+    компонентов, но не для `texture-mask-text`: его собственный
+    `registry-item.json` (байт-в-байт совпадает с `hyperframes-ref/registry/
+    components/texture-mask-text/registry-item.json` — сверено) несёт
+    вложенный `target: "compositions/components/texture-mask-text/
+    texture-mask-text.html"`, потому что рядом с html лежат 66 текстур и
+    авторы блока держат его в одноимённой подпапке. `add` кладёт файл ровно
+    туда, куда велит этот `target` (их `remapTarget`, `add.ts:40-59`, меняет
+    только префикс `compositions/components/`, саму вложенность не трогает) —
+    значит и наш код должен спросить манифест, а не считать по формуле.
+
+    `None`, если у карточки нет своего `target` (обычный случай, и тестовые
+    фикстуры `_block()`/`_with_blocks()` его тоже не пишут) — тогда
+    `_installed_path` считает по прежней формуле.
+    """
+    root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
+    card = root / "components" / name / "registry-item.json"
+    if not card.exists():
+        return None
+    item = json.loads(card.read_text(encoding="utf-8"))
+    for f in item.get("files") or []:
+        if str(f.get("path")) == f"{name}.html":
+            target = f.get("target")
+            return str(target) if target else None
+    return None
+
+
 def block_durations(catalog_dir=None) -> dict[str, float]:
     """Родная длительность каждого блока — за неё его сцена собирается.
 

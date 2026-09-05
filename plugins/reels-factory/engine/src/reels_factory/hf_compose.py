@@ -692,9 +692,24 @@ def _installed_path(public, name: str, card_type: str = "block") -> Path:
     они, компонент читался бы по чужому пути и валил сборку рантайм-ошибкой
     «не установлен», хотя `add` его честно поставил, просто в другую
     подпапку.
+
+    Формула плоского пути верна почти всегда, но не для карточки, чей
+    собственный `registry-item.json` объявляет вложенный `target` (у
+    `texture-mask-text` html лежит рядом с 66 текстурами в одноимённой
+    подпапке — `hf_catalog.component_install_target`, сверено байт-в-байт с
+    их клоном). `add` кладёт файл ровно туда, куда велит этот `target`
+    (`remapTarget`, `add.ts:40-59`, меняет только префикс), поэтому путь
+    сперва спрашивается у манифеста и только при его отсутствии считается по
+    формуле.
     """
     base = Path(public) / "compositions"
-    return (base / "components" / f"{name}.html") if card_type == "component"         else base / f"{name}.html"
+    if card_type == "component":
+        from reels_factory.hf_catalog import component_install_target
+        target = component_install_target(name)
+        if target:
+            return Path(public) / target
+        return base / "components" / f"{name}.html"
+    return base / f"{name}.html"
 
 
 def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
