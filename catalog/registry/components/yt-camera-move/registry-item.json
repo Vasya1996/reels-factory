@@ -22,6 +22,8 @@
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],
-    "text_slots": []
+    "text_slots": [
+      "cm-label"
+    ]
   }
 }

@@ -32,6 +32,16 @@
   },
   "reels": {
     "use_when": "Названа подписка в инстаграме: профиль и кнопка «подписаться».",
-    "backing": "own"
+    "backing": "own",
+    "decor_texts": [
+      "Follow",
+      "Following"
+    ],
+    "text_slots": [
+      "display-name",
+      "handle",
+      "follower-count"
+    ],
+    "skip": "Текст позиции теперь заменяется (text_slots: display-name, handle, follower-count; decor_texts: Follow, Following) — но по кадру она всё равно не годится, и то, что мешает, слотом не закрыть: аватар карточки — логотип HeyGen картинкой, а не текстом, и на середине сцены карточка наезжает на окно ведущей (pip-br). Кадр: work/catalog-sweep-review/instagram-follow/contact-sheet.jpg, ревью 05.09.2026."
   }
 }
