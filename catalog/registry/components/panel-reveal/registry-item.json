@@ -111,6 +111,7 @@
         "type": "enum",
         "default": "fade"
       }
-    }
+    },
+    "skip": "Собирается и монтируется (корень на `<section class=\"hf-transition-panel-reveal\">`, не на div — поиск корня починен ревью 05.09.2026). Не предлагается по кадру: панель стоит статично своим демо-текстом «Motion tokens / Duration 420ms / Easing power3.out» — раскрытия не видно (таймлайн не подключаем), а текст английский и подменить его нечем: карточка слотов не объявляет. Кадр: work/catalog-sweep-review/panel-reveal/contact-sheet.jpg."
   }
 }

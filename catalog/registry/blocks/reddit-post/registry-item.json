@@ -27,6 +27,17 @@
   },
   "reels": {
     "use_when": "Названо, что пишут на реддите: пост с голосами и комментариями.",
-    "backing": "own"
+    "backing": "own",
+    "decor_texts": [
+      "r/",
+      "4.2k",
+      "Share"
+    ],
+    "text_slots": [
+      "subreddit-name",
+      "post-author",
+      "post-title",
+      "post-body"
+    ]
   }
 }

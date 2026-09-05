@@ -37,26 +37,41 @@ _WORD_CLASS = re.compile(r"^g\d\d-w$")
 
 _LETTER = re.compile(r"[^\W\d_]", re.UNICODE)
 
-#: След плашки-рубрики: разделитель «·». Все блоки каталога несут такую плашку
-#: — «Рубрика · Глава», «Хук · 0–3 секунды», «Финал · Подписка», «источник ·
-#: плейсхолдер», «art / screen · slow zoom». Именно они в прогоне 03.08 вышли
-#: на экран как «продажи · база» и «вопрос первый · кому продаём?»: агент не
-#: убирал рубрику, он писал в неё свой текст. Такой слот агенту не предлагается
-#: и удаляется всегда — заполнять там нечего.
+#: След плашки-рубрики: разделитель «·». Наши собственные блоки несут такую
+#: плашку — «Рубрика · Глава», «Хук · 0–3 секунды», «Финал · Подписка»,
+#: «источник · плейсхолдер», «art / screen · slow zoom». Именно они в прогоне
+#: 03.08 вышли на экран как «продажи · база» и «вопрос первый · кому продаём?»:
+#: агент не убирал рубрику, он писал в неё свой текст. Такой слот агенту не
+#: предлагается и удаляется всегда — заполнять там нечего.
 #:
 #: Слово «плейсхолдер» само по себе сюда не входит: у содержательных слотов
 #: («первый шаг — плейсхолдер» в g15) оно значит «здесь будет твой текст», а не
 #: «это служебная надпись». Незаполненными они всё равно из кадра уедут.
 SERVICE_MARK = re.compile(r"·")
 
+#: Разметка нашего собственного блока: класс с префиксом `gNN-` (`g01-lbl`,
+#: `g14-artlabel`). Только про них и написано правило `SERVICE_MARK`: в
+#: перенесённых позициях «·» — обычный разделитель содержания, а не след
+#: плашки-рубрики. У нижних плашек (`lt-role`, «Host · Neuroscientist»,
+#: 9 позиций из 10) правило съедало вторую строку самой плашки: блок терял
+#: `#lt-role`, его же скрипт получал на него `null` и на каждом кадре писал в
+#: консоль «GSAP target null not found» (прогон scratchpad/catalog-sweep,
+#: 05.09.2026; кадр — плашка с одним словом вместо имени и роли). То же «·»
+#: стоит содержанием у `ch-mode` («SP · 16:9»), `reddit-post` («u/… · 3h») и
+#: `ssc-strip-text`. Проверено грепом по каталогу: все 22 настоящие
+#: плашки-рубрики лежат на классах `gNN-lbl` / `gNN-attr` / `gNN-artlabel`.
+_OWN_BLOCK_CLASS = re.compile(r"^g\d\d-")
+
 
 class Slot:
     """Одно место в блоке, которое заполняет агент."""
 
-    __slots__ = ("name", "kind", "placeholder", "index", "role", "rect", "decor")
+    __slots__ = ("name", "kind", "placeholder", "index", "role", "rect",
+                 "decor", "own")
 
     def __init__(self, name: str, kind: str, placeholder: str, index: int,
-                 role: str | None = None, rect=None, decor: bool = False):
+                 role: str | None = None, rect=None, decor: bool = False,
+                 own: bool = False):
         self.name = name
         self.kind = kind          # "text" | "words" | "image" | "video"
         self.placeholder = placeholder
@@ -64,14 +79,20 @@ class Slot:
         self.role = role
         self.rect = rect
         self.decor = decor        # текст нарисован картой, а не плейсхолдер
+        self.own = own            # разметка нашего блока (класс `gNN-…`)
 
     def __repr__(self) -> str:  # pragma: no cover — для отладки
         return f"Slot({self.name!r}, {self.kind!r}, {self.placeholder!r})"
 
     @property
     def service(self) -> bool:
-        """Плашка-рубрика или заглушка: агенту не предлагаем, из кадра убираем."""
-        return (self.kind in ("text", "words")
+        """Плашка-рубрика или заглушка: агенту не предлагаем, из кадра убираем.
+
+        Только в нашей собственной разметке (`own`): «·» — след нашей
+        плашки-рубрики, а в перенесённой позиции это обычный разделитель
+        содержания (`_OWN_BLOCK_CLASS`, там же чем это измерено).
+        """
+        return (self.own and self.kind in ("text", "words")
                 and bool(SERVICE_MARK.search(self.placeholder)))
 
     @property
@@ -215,7 +236,9 @@ def find_slots(nodes: list[Node],
         used[base] = used.get(base, 0) + 1
         slots.append(Slot(name=f"{base}-{used[base]}", kind=kind,
                           placeholder=text, index=index,
-                          decor=text in decor))
+                          decor=text in decor,
+                          own=any(_OWN_BLOCK_CLASS.match(cls)
+                                  for cls in node.classes)))
 
     # Имя без номера читается лучше; номер оставляем только там, где слотов с
     # этим классом действительно несколько.

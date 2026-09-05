@@ -83,6 +83,7 @@
         "type": "enum",
         "default": "green"
       }
-    }
+    },
+    "skip": "FAIL (настоящая сборка, check --strict, layout): content_overlap на div.pbr-detail-context — два текстовых блока накладываются, может стать нечитаемым. Найдено прогоном scratchpad/catalog-sweep 05.09.2026."
   }
 }

@@ -592,12 +592,31 @@ def decor_texts(catalog_dir=None) -> dict[str, set[str]]:
     камкордерного HUD «REC» — сама суть блока, и знает об этом тот, кто заводил
     карточку. Гейт заглушек (`D22_placeholders`) судит по совпадению текста
     копии с исходником, и такая надпись выглядит как незаполненный слот.
+
+    Читаем ВСЕ карточки реестра — и блоки, и компоненты, и снятые `skip`, —
+    а не только предлагаемые. Это словарь «у позиции такая-то надпись
+    нарисована», и отбор предложений к нему отношения не имеет: оба
+    читателя (`hf_slots.fill_ops` через `_stage_overlay` и гейт D22) спрашивают
+    по имени того, что уже собирается. Прежний проход шёл через `_offered` и
+    ронял две вещи: decor компонентов не видел вовсе, а `skip` на позиции
+    забирал у гейта знание о её надписи — ревью 05.09.2026: стоило снять
+    `camcorder-hud`, и D22 объявил его «REC» заглушкой.
     """
+    root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
     found = {}
-    for name, item in _offered(catalog_dir):
-        texts = (item.get("reels") or {}).get("decor_texts")
-        if texts:
-            found[name] = {str(text) for text in texts}
+    for subdir, names in (("blocks", block_names(catalog_dir)),
+                          ("components", component_names(catalog_dir))):
+        for name in names:
+            card = root / subdir / name / "registry-item.json"
+            if not card.exists():
+                continue
+            try:
+                item = json.loads(card.read_text(encoding="utf-8"))
+            except ValueError:
+                continue
+            texts = (item.get("reels") or {}).get("decor_texts")
+            if texts:
+                found[name] = {str(text) for text in texts}
     return found
 
 

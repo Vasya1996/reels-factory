@@ -154,12 +154,26 @@ def test_каждый_компонент_несёт_reels_effect_и_контра
 #: которым автор явно разметил кирпичную стену тайлов
 #: (mk-clone-wall-transition.html:157-158) — дыра в их линте, не брак
 #: позиции, но и не повод молчать: находка настоящая.
+#:
+#: `message-thread-reveal`, `gesture-tap`, `pull-back-reveal` тоже снова
+#: несут skip (прогон scratchpad/catalog-sweep, 05.09.2026 — настоящая
+#: сборка с реальными словами фразы вместо пустого элемента, впервые
+#: проверена подстановка). Каждая находка настоящая и своя:
+#: `message-thread-reveal` — `console_error` `TypeError: Cannot set
+#: properties of null (setting 'textContent')`: 123 текстовых слота
+#: (максимум по каталогу) при 102 реальных словах тестовой фразы рвут
+#: рантайм — агент почти никогда не наберёт ровно 123 слова под одну сцену.
+#: `gesture-tap` — `contrast_aa_failure` 4.48:1 (нужно 4.5:1) на подписи
+#: "Product designer sharing practical interaction notes", найдено check
+#: на середине сцены (time=4) — обычный слишком светлый серый, не связано
+#: с угасанием таймлайна. `pull-back-reveal` — `content_overlap` на
+#: `div.pbr-detail-context`: два текстовых блока накладываются.
 _B15_UNSKIPPED = [
-    "message-thread-reveal", "aurora-drift",
+    "aurora-drift",
     "beat-accent", "beat-timeline", "caption-texture", "chromatic-aberration-wipe",
-    "decline-chart", "directional-wipe", "drift-hold", "gesture-tap", "gloss-sweep",
+    "decline-chart", "directional-wipe", "drift-hold", "gloss-sweep",
     "grain-field", "kinetic-type-swap", "light-sweep-pass", "line-swap",
-    "multiplayer-cursors", "overwhelm-surround", "physical-exit", "pull-back-reveal",
+    "multiplayer-cursors", "overwhelm-surround", "physical-exit",
     "push-in", "scramble-reveal", "scroll-feed", "spotlight-card", "spring-pop",
     "stagger-cascade", "star-rating-fill", "store-badge-lockup", "svg-mask-reveal",
     "tilt-card", "variable-font-flex",
@@ -392,8 +406,19 @@ def test_карточка_индекса_занимает_одну_строку(
 
 
 def test_рисованный_текст_читается_из_карточки():
-    """Белый список гейта заглушек живёт в карточке, а не литералом в коде."""
-    assert decor_texts(FIXTURE) == {"demo-stitch": {"Заголовок"}}
+    """Белый список гейта заглушек живёт в карточке, а не литералом в коде.
+
+    Словарь читает ВСЕ карточки реестра: и компоненты, и снятые `skip`.
+    Отбор предложений к нарисованной надписи отношения не имеет — оба
+    читателя (`hf_slots.fill_ops` и гейт D22) спрашивают по имени того, что
+    уже собирается. Прежний проход шёл через `_offered`, и ревью 05.09.2026
+    поймало обе дыры сразу: `camcorder-hud` получил `skip` по кадру — и D22
+    тут же объявил его нарисованное «REC» незаполненной заглушкой; decor
+    компонентов не читался вовсе.
+    """
+    assert decor_texts(FIXTURE) == {"demo-stitch": {"Заголовок"},
+                                    "demo-skip": {"REC"},
+                                    "count-up": {"%"}}
 
 
 def test_индекс_и_справочники_кладутся_рядом_с_заданием(tmp_path):
@@ -412,39 +437,60 @@ def test_справочники_фреймворка_лежат_в_репози�
         assert (CATALOG_DIR / REFERENCE_SUBDIR / name).exists(), name
 
 
-def test_text_slots_карточки_равны_слотам_разметки():
-    """Одно определение слота на весь путь.
+def test_видимый_текст_предлагаемой_позиции_нечем_не_остаётся():
+    """Одно определение слота на весь путь — у КАЖДОЙ предлагаемой позиции.
 
-    Отчёт B4: карточка `v-code-diff` держала видимые демо-строки
-    («greet.js», «Code Diff», два куска кода), а `hf_slots.find_slots` выводит
-    из разметки имена (`accent`, `filename`) — сборка зипала слова агента по
-    строкам карточки, `fill_ops` их не узнавал и снимал элемент целиком. Слова
-    агента раскладывает теперь сама разметка, а карточка отвечает индексу — и
-    равна ей, иначе агент считает слоты по одному списку, а код по другому.
+    Правило проекта: позицию выбирает агент по содержанию, а слова
+    подставляет код. Значит у позиции без `skip` всякая видимая надпись
+    обязана быть либо слотом в `text_slots` (имена — из `hf_slots.find_slots`,
+    тем же разбором, каким подставляет сборка), либо помечена
+    `decor_texts` как оформление, которое никто не заполняет. Иначе позиция
+    приводит в оплаченный ролик чужой демо-текст, а `check --strict` этого не
+    видит: прогон scratchpad/catalog-sweep 05.09.2026 отдал такие позиции как
+    «чисто», а на кадре стояли «Dr. Maya Chen · Host · Neuroscientist»,
+    «u/placeholder_user» и «Prompt to change this title to whatever you want».
+
+    Раньше сверка бралась только за карточки вида `scene`, и семнадцать
+    позиций без `kind` (нижние плашки, соц-карточки, приборные накладки)
+    обещали агенту ноль слотов при живой разметке — гейт D36
+    (`hf_gates._element_problems`) слова к ним не пропускал, сборка копировала
+    блок как есть, и демо-текст доезжал до кадра.
+
+    Отчёт B4 (причина, по которой сверка появилась вообще): карточка
+    `v-code-diff` держала видимые демо-строки вместо имён слотов, сборка
+    зипала слова агента по строкам карточки, `fill_ops` их не узнавал и
+    снимал элемент целиком.
 
     Разбор — настоящим мостом их SDK, как у `passport`: свой разборщик HTML у
     нас не тот, каким блок читает движок.
+
+    Чего эта сверка НЕ видит: позицию, у которой корень лежит внутри
+    `<template>` (`terminal-simulator`, `social-proof-card`) — их разбор не
+    отдаёт узлов вовсе, и `find_slots` возвращает пусто. Такие позиции
+    заполняются своими переменными (`data-composition-variables`), и их
+    содержание сверяется не здесь.
     """
     from reels_factory.hf_sdk import sdk_session
     from reels_factory.hf_slots import text_slot_names
 
     root = CATALOG_DIR / REGISTRY_SUBDIR
-    scenes = {name: card for name, card in catalog_cards().items()
-              if card.get("kind") == "scene"}
-    assert scenes, "в каталоге нет ни одной позиции вида `scene`"
+    cards = catalog_cards()
+    assert cards, "каталог не предлагает ни одной позиции"
     with sdk_session() as sdk:
-        for name, card in scenes.items():
+        for name, card in cards.items():
             folder = next(root / sub / name for sub in ("blocks", "components")
                           if (root / sub / name / f"{name}.html").exists())
             item = json.loads((folder / "registry-item.json")
                               .read_text(encoding="utf-8"))
             decor = set((item.get("reels") or {}).get("decor_texts") or [])
             sdk.open(name, folder / f"{name}.html")
-            names = text_slot_names(sdk.elements(name), decor)
+            nodes = sdk.elements(name)
             sdk.close(name)
-            assert card.get("text_slots") == names, (
+            names = text_slot_names(nodes, decor)
+            assert (card.get("text_slots") or []) == names, (
                 f"{name}: карточка обещает {card.get('text_slots')}, "
-                f"а разметка даёт {names}")
+                f"а разметка даёт {names} — агент считает слоты по одному "
+                "списку, а код по другому")
 
 
 #: Пять образцов B3 и то, чем их разметка обязана дать заполнить кадр: у

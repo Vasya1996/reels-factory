@@ -22,6 +22,9 @@
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],
-    "text_slots": []
+    "text_slots": [
+      "box-1",
+      "box-2"
+    ]
   }
 }

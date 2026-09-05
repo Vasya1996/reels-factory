@@ -32,6 +32,16 @@
   },
   "reels": {
     "use_when": "Названа подписка в тиктоке: профиль и кнопка.",
-    "backing": "own"
+    "backing": "own",
+    "decor_texts": [
+      "Follow",
+      "Following"
+    ],
+    "text_slots": [
+      "display-name",
+      "handle",
+      "follower-count"
+    ],
+    "skip": "То же, что у instagram-follow: текст заменяется, а логотип HeyGen в аватаре — картинка, слотом не закрывается, и карточка наезжает на окно ведущей на середине сцены. Кадр: work/catalog-sweep-review/tiktok-follow/contact-sheet.jpg, ревью 05.09.2026."
   }
 }

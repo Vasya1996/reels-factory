@@ -25,6 +25,7 @@
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],
-    "text_slots": []
+    "text_slots": [],
+    "skip": "Собирается и монтируется (корень на `id=\"grid-pixelate-overlay\"` — поиск корня починен ревью 05.09.2026). Не предлагается по кадру: в кадре её нет вовсе — клетки стоят на `scale: 0`, пока их не разгонит таймлайн хоста («animate .grid-cell scale from 0→1 … using GSAP stagger», её же шапка), а анимацию из их комментария «Timeline integration» наш путь не подключает (сознательная граница объёма, hf_compose.paste_effect). Кадр: work/catalog-sweep-review/grid-pixelate-wipe/contact-sheet.jpg — пусто на всех трёх отсчётах."
   }
 }

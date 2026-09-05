@@ -226,6 +226,7 @@
         "type": "string",
         "default": "Start rendering free"
       }
-    }
+    },
+    "skip": "Позицию нечем заполнить нашим механизмом слов. Её `text_slots` — 123 имени, и это не 123 места под текст: 97 из них (`typed-1`…`typed-97`) — кадры печатной машинки, по спану на нажатие клавиши (message-thread-reveal.html:725-...: «o», «wa», «wai», «wait»…), а ещё несколько (`cardtitle`, `carddomain`, `div-7`…`div-14`) блок пишет себе сам из переменных (message-thread-reveal.html:1000-1023). Плана, который выдаёт ровно 123 строки, не бывает; а любая недодача роняет рантайм: незаполненный слот с буквами код убирает из разметки (hf_slots.fill_ops), и скрипт позиции пишет `textContent` в `null` — `console_error TypeError: Cannot set properties of null (setting 'textContent')` на настоящей сборке (прогон scratchpad/catalog-sweep 05.09.2026, 102 слова реальной фразы). Заполнять эту позицию надо её переменными (`contactName`, `cardTitle`, `cardDomain`, `ecProof`, `ecCta`) и авторскими репликами, а такого пути у нас нет."
   }
 }

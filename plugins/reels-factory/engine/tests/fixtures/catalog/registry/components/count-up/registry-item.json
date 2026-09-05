@@ -48,6 +48,9 @@
         "type": "boolean",
         "default": false
       }
-    }
+    },
+    "decor_texts": [
+      "%"
+    ]
   }
 }

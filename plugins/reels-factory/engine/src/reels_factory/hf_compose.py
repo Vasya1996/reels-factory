@@ -859,13 +859,32 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     return unique, native, canvas
 
 
-#: Корневой div paste-контрактного примитива: `class="имя-класса ...другие"`
-#: без своего `data-composition-id` и `<template>` — их полка велит вставлять
-#: разметку литералом («Paste the markup, CSS and script into a
-#: composition», `registry/components/badge-pop/badge-pop.html:2`). Имя
-#: класса — первый токен: оно же имя, которым скрипт компонента ищет себя
-#: (`document.querySelectorAll(".hf-transition-badge-pop")`).
-_PASTE_ROOT_CLASS = re.compile(r'<div\b[^>]*\bclass="([^"\s]+)')
+#: Корневой элемент paste-контрактного примитива: без своего
+#: `data-composition-id` и `<template>` — их полка велит вставлять разметку
+#: литералом («Paste the markup, CSS and script into a composition»,
+#: `registry/components/badge-pop/badge-pop.html:2`). Имя — первый токен
+#: `class`, а если класса нет, то `id`: этим же именем скрипт компонента ищет
+#: себя (`document.querySelectorAll(".hf-transition-badge-pop")`,
+#: `#hf-vignette` в стиле `vignette`).
+#:
+#: Тег любой, не только `div`: у `icon-swap` корень — `<button
+#: class="hf-transition-icon-swap">`, у `panel-reveal` — `<section
+#: class="hf-transition-panel-reveal">`, а `vignette` и `grid-pixelate-wipe`
+#: держат корень на `id` со `style` вместо класса. Прежнее правило («первый
+#: `<div class="…">` файла») ни одну из этих четырёх позиций не находило, и
+#: все четыре ушли в `reels.skip` с чужой причиной — «разметка не по
+#: контракту полки» (прогон scratchpad/catalog-sweep 05.09.2026).
+_PASTE_ROOT_TAG = re.compile(
+    r'<(?!/|!)(?!style\b)(?!script\b)(?!html\b)(?!head\b)(?!body\b)'
+    r'\w[\w-]*((?:"[^"]*"|\'[^\']*\'|[^>"\'])*)>')
+_PASTE_ROOT_NAME = re.compile(r'\b(class|id)="([^"\s]+)')
+#: Шапка их файла — длинный `<!-- … -->` с примером использования, и в примере
+#: стоит та же разметка, что и в настоящем корне. Ищем корень по тексту без
+#: комментариев: у `texture-mask-text` разметки нет вовсе, а класс
+#: `hf-texture-text` лежит в шапке — прежний поиск брал его оттуда, отдавал
+#: селектор `.hf-texture-text`, и падение приходило уже от их парсера
+#: («не нашёлся корень»), то есть с указанием не на ту причину.
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
 _PASTE_STYLE = re.compile(r"<style[^>]*>.*?</style>", re.S)
 #: Модульные скрипты (`type="module"`) не читаем: с ними неизвестный
 #: компонент уже стоит в `reels.skip` по своей причине (`page_error:
@@ -877,6 +896,29 @@ _PASTE_STYLE = re.compile(r"<style[^>]*>.*?</style>", re.S)
 #: GSAP подключён в `<head>` ДО корня, свой код — обычным `<script>` после.
 _PASTE_SCRIPT = re.compile(
     r'<script(?![^>]*\btype="module")(?![^>]*\bsrc=)[^>]*>.*?</script>', re.S)
+
+
+def paste_root_name(html: str) -> tuple[str, str] | None:
+    """Имя корня paste-примитива: («class»|«id», токен). Нет корня — None.
+
+    Одно место на весь путь: им `paste_fragment` строит селектор для их
+    парсера, им же `paste_effect` разводит копии одной позиции по кадру.
+    Разойтись двум местам нечем — прежде селектор искали по всему файлу
+    (с шапкой-комментарием), а имя для развода — по вырезанному корню, и они
+    расходились ровно там, где корень нашёлся в примере из шапки.
+    """
+    body = _HTML_COMMENT.sub("", html)
+    for tag in _PASTE_ROOT_TAG.finditer(body):
+        found = {kind: name for kind, name
+                 in _PASTE_ROOT_NAME.findall(tag.group(1))}
+        if "class" in found:
+            return "class", found["class"]
+        if "id" in found:
+            return "id", found["id"]
+        # Первый же элемент разметки без class и id корнем не станет: имени,
+        # которым его ищет собственный скрипт позиции, у него нет.
+        return None
+    return None
 
 
 def paste_fragment(sdk, public, source, *, selector: str | None = None
@@ -893,10 +935,9 @@ def paste_fragment(sdk, public, source, *, selector: str | None = None
     регэкспом: вложенные `<div>` регэксп с балансировкой тегов не берёт,
     `sdk.extract` — их настоящий парсер.
 
-    `selector` — готовый CSS-селектор корня для тех, кто не по конвенции
-    paste-позиций реестра (класс первым токеном): у `caption-highlight`
-    корень несёт `id="highlight"`, а не класс, и найти его можно только
-    явным `#highlight`. Не назван — ищем класс сами (`_PASTE_ROOT_CLASS`).
+    `selector` — готовый CSS-селектор корня, когда он известен вызывающему:
+    так его называет `hf_captions`. Не назван — ищем корень сами
+    (`paste_root_name`).
     """
     source = Path(source)
     html = source.read_text(encoding="utf-8")
@@ -909,13 +950,15 @@ def paste_fragment(sdk, public, source, *, selector: str | None = None
         source.write_text(fixed, encoding="utf-8")
         html = fixed
     if selector is None:
-        match = _PASTE_ROOT_CLASS.search(html)
-        if not match:
+        found = paste_root_name(html)
+        if not found:
             raise RuntimeError(
-                f"в {source} нет корневого div с class — разметка "
-                "paste-компонента не по контракту полки (docstring "
-                "`registry/components/*/*.html`)")
-        selector = f".{match.group(1)}"
+                f"в {source} нет своей разметки: позиция — приём поверх "
+                "чужих элементов («add class=… to your text elements», её "
+                "же шапка), а не самостоятельный кусок кадра, и вставлять "
+                "литералом там нечего")
+        kind, name = found
+        selector = ("." if kind == "class" else "#") + name
     found = sdk.extract(source, selector)
     if not found:
         raise RuntimeError(f"в {source} не нашёлся корень {selector}")
@@ -948,10 +991,11 @@ def paste_effect(sdk, public, name: str, *, unique: str,
     контракт, а единственный канал, которым контракт вообще снабжён данными
     вне саб-композиции.
 
-    Класс корня — общий для всех копий одной и той же позиции в кадре: без
-    переименования вторая копия читала бы значения первой (обе слушают один
-    `querySelectorAll` по общему классу). Переименование — тем же приёмом,
-    каким `_stage_overlay` переименовывает `data-composition-id`.
+    Имя корня (класс, а у `vignette` и `grid-pixelate-wipe` — id) общее для
+    всех копий одной и той же позиции в кадре: без переименования вторая
+    копия читала бы значения первой (обе слушают один `querySelectorAll` по
+    общему имени). Переименование — тем же приёмом, каким `_stage_overlay`
+    переименовывает `data-composition-id`.
 
     Анимация из комментария «Timeline integration» в их файле не
     подключается: это рецепт для хоста, не исполняемый код (их полка ждёт,
@@ -962,12 +1006,12 @@ def paste_effect(sdk, public, name: str, *, unique: str,
     """
     source = _installed_path(public, name, "component")
     style, root, script = paste_fragment(sdk, public, source)
-    class_match = _PASTE_ROOT_CLASS.search(root)
-    if not class_match:
-        raise RuntimeError(f"корень {name} потерял class при извлечении")
-    klass = class_match.group(1)
-    scoped = f"{klass}--{unique}"
-    boundary = re.compile(r"(?<![\w-])" + re.escape(klass) + r"(?![\w-])")
+    found = paste_root_name(root)
+    if not found:
+        raise RuntimeError(f"корень {name} потерял имя при извлечении")
+    token = found[1]
+    scoped = f"{token}--{unique}"
+    boundary = re.compile(r"(?<![\w-])" + re.escape(token) + r"(?![\w-])")
     root = boundary.sub(scoped, root)
     style = boundary.sub(scoped, style)
     script = boundary.sub(scoped, script)

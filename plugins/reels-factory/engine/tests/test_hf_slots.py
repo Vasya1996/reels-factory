@@ -99,6 +99,48 @@ def test_рубрика_уезжает_вместе_с_обёрткой(block):
     assert "g99-tech" not in out and "g99-dash" not in out
 
 
+#: Нижняя плашка перенесённой позиции: «·» стоит РАЗДЕЛИТЕЛЕМ содержания, а
+#: не следом нашей плашки-рубрики. Форма — как у девяти `lt-*` каталога
+#: (`catalog/registry/blocks/lt-soft-pill/lt-soft-pill.html:84`).
+ПЕРЕНЕСЁННАЯ_ПЛАШКА = """<!doctype html>
+<html><head><style>.lt-name{color:#000}</style></head>
+<body>
+  <div id="root" data-composition-id="lt-demo" data-start="0"
+       data-width="1920" data-height="1080" data-duration="4.8">
+    <div id="lt-clip" class="clip" data-start="0" data-duration="4.8">
+      <div id="lt" class="lt">
+        <div id="lt-name" class="lt-name">Dr. Maya Chen</div>
+        <div id="lt-role" class="lt-role">Host · Neuroscientist</div>
+      </div>
+    </div>
+  </div>
+  <script>
+    var role = document.getElementById("lt-role");
+    window.__timelines["lt-demo"] = tl;
+  </script>
+</body></html>"""
+
+
+def test_разделитель_в_перенесённой_позиции_не_считается_рубрикой(block):
+    """«Host · Neuroscientist» — вторая строка нижней плашки, а не рубрика.
+
+    Правило `SERVICE_MARK` написано про наши блоки `gNN-*` (там «·» стоит
+    только в плашке-рубрике). На девяти `lt-*` оно съедало `#lt-role`: скрипт
+    позиции получал на него `null` и на каждом кадре писал «GSAP target null
+    not found» — прогон scratchpad/catalog-sweep 05.09.2026, кадр показывал
+    плашку с одним словом вместо имени и роли.
+    """
+    nodes, fill = block
+    slots = find_slots(nodes(ПЕРЕНЕСЁННАЯ_ПЛАШКА))
+    роль = next(slot for slot in slots if slot.name == "role")
+    assert not роль.service, "разделитель содержания принят за плашку-рубрику"
+    assert [slot.name for slot in slots if not slot.service] == ["name", "role"]
+    out = fill(ПЕРЕНЕСЁННАЯ_ПЛАШКА,
+               text={"name": "Артём Крылов", "role": "основатель · продажи"})
+    assert 'id="lt-role"' in out and "основатель · продажи" in out
+    assert "Neuroscientist" not in out
+
+
 def test_незаполненный_текст_исчезает_а_не_остаётся_плейсхолдером(block):
     _, fill = block
     out = fill(text={"line-1": "А Б"})

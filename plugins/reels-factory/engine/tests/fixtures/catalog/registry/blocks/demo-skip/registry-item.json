@@ -22,6 +22,9 @@
   ],
   "reels": {
     "kind": "effect",
-    "skip": "их же проверка валит блок под --strict"
+    "skip": "их же проверка валит блок под --strict",
+    "decor_texts": [
+      "REC"
+    ]
   }
 }
