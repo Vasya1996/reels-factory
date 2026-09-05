@@ -180,6 +180,33 @@ _B15_UNSKIPPED = [
 ]
 
 
+#: Позиции, у которых `skip` сняла перепроверка 06.09.2026: их причина
+#: (`composition_file_too_large`) была НАШЕЙ — копия позиции теряла маркер
+#: реестра по дороге, — и на 0.8.27 настоящая сборка даёт по каждой PASS, а
+#: кадр (work/skips-recheck/<имя>/ours) показывает каркас интерфейса нашей
+#: палитрой без единой чужой надписи.
+_ВЕРНУТЫ_ПЕРЕПРОВЕРКОЙ = [
+    "scroll-camera-story", "spring-stack-shuffle", "ui-focus-zoom",
+    "whip-pan-cut",
+]
+
+
+def test_позиции_вернутые_перепроверкой_предложены_и_валидны():
+    """Тот же вид проверки, что у `_B15_UNSKIPPED`: карточка без `reels.skip`,
+    с известным видом и контрактом монтажа, и со строкой о том, чем позицию
+    показывают."""
+    offered = catalog_cards()
+    for name in _ВЕРНУТЫ_ПЕРЕПРОВЕРКОЙ:
+        assert name in offered, f"{name}: не предложена — reels.skip не снят?"
+        card = offered[name]
+        assert card.get("kind") == "effect", name
+        reels = _card("components", name).get("reels", {})
+        assert reels.get("mount") in ("composition", "paste"), name
+        assert "skip" not in reels, name
+        assert (card.get("use_when") or "").strip(), name
+        assert (card.get("avoid_when") or "").strip(), name
+
+
 def test_позиции_снятые_в_b15_предложены_и_валидны():
     """Карточка без `reels.skip`, с известным видом и (для компонента) с
     известным контрактом монтажа — тем же самым, каким уже проверяет карточки

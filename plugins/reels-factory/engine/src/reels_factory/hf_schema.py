@@ -296,6 +296,65 @@ def palette_css(block: str, colors: dict, root: str | None = None) -> str:
     )
 
 
+#: Пара значений, которой позиции каталога объявляют полярность своих букв.
+#: Смысл написан их же автором в самой позиции: «ink is near-black for light
+#: frames, paper near-white for dark ones» (`typewriter.html:20-22`, и слово в
+#: слово так же у остальных двенадцати позиций этой семьи). Пару берём целиком
+#: — переменная, где есть только одно из двух слов, полярностью не считается и
+#: не трогается.
+_TONE_DARK_TEXT = "ink"
+_TONE_LIGHT_TEXT = "paper"
+
+
+def _is_dark(color: str) -> bool:
+    """Тёмный ли цвет `#rrggbb` — по яркости WCAG, тем же порогом, что их
+    проверка контраста делит светлый фон и тёмный."""
+    raw = str(color or "").strip().lstrip("#")
+    if len(raw) != 6:
+        return True
+    try:
+        channels = [int(raw[index:index + 2], 16) / 255 for index in (0, 2, 4)]
+    except ValueError:
+        return True
+    linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+              for c in channels]
+    luminance = (0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2])
+    return luminance < 0.18
+
+
+def frame_variables(card: dict, colors: dict, chosen: dict | None = None) -> dict:
+    """Значения переменных позиции, которые решает кадр, а не план.
+
+    Позиция каталога приезжает нарисованной под СВОЙ кадр, и часть их прямо
+    даёт выбрать, под какой: переменная `tone` со значениями `ink`/`paper`.
+    Умолчание у всех тринадцати таких позиций — `ink`, «near-black for light
+    frames», а наш кадр тёмный (`hf_frame.FRAME_DEFAULTS`, `bg #0b0b0c`), и
+    буквы ложились чёрным по чёрному: живой `check --strict` 06.09.2026 дал
+    `contrast_aa_failure` 1.02:1 с `fg rgb(24,24,27)` тринадцати позициям
+    разом (`typewriter`, `top-down-letters`, `staggered-fade-up`,
+    `shared-axis-y/z`, `text-state-swap`, `strikethrough-replace`,
+    `slot-machine-roll`, `rgb-glitch-text`, `per-word-crossfade`,
+    `number-pop-in`, `line-by-line-slide`, `focus-blur-resolve`,
+    `blur-out-up`).
+
+    Решает это код, а не агент: цвет кадра — наша арифметика (палитра
+    `hf_frame`), в плане его нет, и просить агента подобрать значение под
+    цвет, которого он не видит, значит просить догадку. Названное в плане
+    значение сильнее: `chosen` не перекрываем никогда.
+    """
+    values = dict(chosen or {})
+    out: dict = {}
+    want = (_TONE_LIGHT_TEXT if _is_dark(colors.get("bg", "#0b0b0c"))
+            else _TONE_DARK_TEXT)
+    for key, rule in (card.get("variables") or {}).items():
+        if key in values:
+            continue
+        options = {str(option) for option in (rule.get("options") or ())}
+        if {_TONE_DARK_TEXT, _TONE_LIGHT_TEXT} <= options:
+            out[key] = want
+    return out
+
+
 def _fit_label(text: str, limit: int) -> str:
     """Строка, которая влезет в свою рамку.
 

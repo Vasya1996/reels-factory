@@ -27,6 +27,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "caption_transcript_parse_error [lint] [data-composition-id]: Inline TRANSCRIPT array is not valid JSON. The studio caption editor may fail to parse it. Common cause: unquoted property keys with apostrophes in text."
+    "skip": "`check --strict` на 0.8.27 чист (прежний `caption_transcript_parse_error` не воспроизводится). Но слов плана позиция не принимает: в кадре стоит её английская демо-строка «PROFESSIONA», обрезанная правым краем кадра. Перепроверено настоящей сборкой на 0.8.27 06.09.2026 (work/skips-recheck/caption-glitch-rgb)."
   }
 }

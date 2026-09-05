@@ -145,6 +145,8 @@
     }
   ],
   "reels": {
+    "use_when": "Речь про место в интерфейсе: кадр показывает окно приложения и наезжает на нужный его угол.",
+    "avoid_when": "Речь не про экран и не про приложение: каркас интерфейса тогда просто узор.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],
@@ -178,7 +180,6 @@
         "type": "enum",
         "default": "none"
       }
-    },
-    "skip": "composition_file_too_large [lint] [data-composition-id]: This HTML composition file has 333 lines. Smaller sub-compositions are easier to read, iterate on, and diff."
+    }
   }
 }

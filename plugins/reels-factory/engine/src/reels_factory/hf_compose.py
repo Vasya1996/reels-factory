@@ -79,7 +79,7 @@ from reels_factory.hf_montage import (
 from reels_factory.hf_schema import (
     FORMS, SAFE_BOTTOM as SCHEMA_SAFE_BOTTOM, build as schema_build,
     is_elastic as schema_is_elastic, min_seconds as schema_min_seconds,
-    palette_css, port_block,
+    frame_variables, palette_css, port_block,
 )
 
 #: Дорожки времени. На одной дорожке клипы не пересекаются — это единственное,
@@ -622,6 +622,29 @@ _CDN_FONTS = re.compile(
 _FONT_FAMILY = re.compile(r"font-family:\s*[^;}]+")
 _OUR_STACK = "font-family: 'Manrope', sans-serif"
 
+#: Скрипт позиции целиком. Гарнитуру в нём НЕ подменяем: там `font-family`
+#: живёт внутри строки JavaScript, а наша замена несёт одинарные кавычки и
+#: рвёт её (`caption-camera-follow.html:236` — линейка ширины собирается
+#: строкой `'font-family:"Helvetica Neue",…;font-weight:700;'`, после замены
+#: строка закрывается на `'Manrope'`, и их же линтер даёт
+#: `invalid_inline_script_syntax`: «Unexpected identifier 'Manrope'»,
+#: воспроизведено настоящей сборкой 06.09.2026). Кириллице этот скрипт не
+#: мешает: он меряет ширину, а рисует буквы всё равно CSS позиции, где замена
+#: и нужна.
+_SCRIPT_BLOCK = re.compile(r"<script\b[^>]*>.*?</script>", re.I | re.S)
+
+
+def _restyle_fonts(html: str) -> str:
+    """Наша гарнитура вместо гарнитуры позиции — везде, кроме её скриптов."""
+    out: list[str] = []
+    last = 0
+    for match in _SCRIPT_BLOCK.finditer(html):
+        out.append(_FONT_FAMILY.sub(_OUR_STACK, html[last:match.start()]))
+        out.append(match.group(0))
+        last = match.end()
+    out.append(_FONT_FAMILY.sub(_OUR_STACK, html[last:]))
+    return "".join(out)
+
 #: Простой относительный src/href/xlink:href (SVG `<use>` ссылается им же) —
 #: без ведущего "/" (корень проекта), без "data:" (инлайн) и без "../" (тот
 #: их линтер/рантайм переписывает сам, `rewriteAssetPath`,
@@ -807,7 +830,7 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     # рабочего и отдавал `sub_timeline_readiness_timeout`. Проверено кадром:
     # убери второй хост — первый оживает.
     html = html.replace(f'= "{block}"', f'= "{unique}"')
-    if card_type == "component" and not _REGISTRY_MARKER.match(html):
+    if not _REGISTRY_MARKER.match(html):
         # Их линтер снимает `composition_file_too_large` (и три похожих
         # правила) на файле, что несёт первой строкой комментарий
         # `<!-- hyperframes-registry-item: NAME -->` — `isRegistryInstalledFile`
@@ -825,6 +848,18 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
         # не трогает CSS/JS позиции, только `data-composition-id`/
         # `data-duration`/переменные хоста. Дописываем маркер сами, тем же
         # текстом, каким наградил бы блок настоящий `add`.
+        #
+        # Блоку маркер их `add` уже написал — но до нашей копии он не
+        # доезжает: копия идёт через мост SDK (`sdk.open`/`sdk.save` выше), а
+        # тот отдаёт разобранный документ, и комментарий ПЕРЕД `<!doctype
+        # html>` теряется. Проверено настоящей сборкой 06.09.2026: первая
+        # строка `compositions/message-thread-reveal--s-01.html` —
+        # `<!DOCTYPE html>`, и их же `check --strict` даёт
+        # `composition_file_too_large` пяти блокам каталога (ai-chat-reveal,
+        # chatgpt-exchange, claude-exchange, message-thread-reveal,
+        # notes-reveal), хотя на исходнике того же файла правило снято.
+        # Поэтому условие не про вид карточки: восстанавливаем метку любому
+        # файлу, который её потерял по дороге.
         html = f"<!-- hyperframes-registry-item: {block} -->\n{html}"
     # GSAP блока — плоским именем и ДВУМЯ копиями: их резолверы расходятся
     # (рендер идёт от файла копии, живая проверка — от корня проекта,
@@ -841,7 +876,7 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
             shutil.copyfile(original, vendored)
     html = _CDN_GSAP.sub('src="gsap-vendor.min.js"', html)
     html = _CDN_FONTS.sub("", html)
-    html = _FONT_FAMILY.sub(_OUR_STACK, html)
+    html = _restyle_fonts(html)
     html = _rewrite_sibling_assets(html, install_dir=source.parent,
                                    project_root=Path(public))
     if text:
@@ -1923,6 +1958,15 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             # (`paste_effect`), той же идеей, какой каталог уже вставляет
             # `caption-highlight`.
             mount_kind = str(card.get("mount") or "composition")
+            # Переменные позиции, которые решает кадр, а не план: полярность
+            # букв под наш тёмный фон (`hf_schema.frame_variables` — там же
+            # измерение и цитата автора позиции). Названное агентом сильнее:
+            # его словарь кладётся поверх.
+            variables = {**frame_variables(card, colors,
+                                           element.get("variables")),
+                         **(element.get("variables") or {})}
+            if variables:
+                element["variables"] = variables
             paste_html = None
             if kind == "effect" and mount_kind == "paste":
                 unique = f"{name}--{scene['id']}"
@@ -2470,6 +2514,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         html = html.replace(name, value)
     target = public / "index.html"
     target.write_text(html, encoding="utf-8")
+    _write_caption_overrides(public)
 
     # Раскадровку переписываем округлённой: гейт сетки кадров должен судить те
     # времена, что реально встали в композицию, а не те, что назвал агент.
@@ -2480,6 +2525,30 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     (rdir / "storyboard.json").write_text(
         json.dumps(storyboard, ensure_ascii=False, indent=1), encoding="utf-8")
     return target
+
+
+def _write_caption_overrides(public: Path) -> None:
+    """Пустая заглушка `caption-overrides.json` рядом с `index.html`.
+
+    Их рантайм титров сам просит этот файл, как только в композиции есть хоть
+    один узел `.caption-group` (`applyCaptionOverrides`,
+    `packages/core/src/runtime/captionOverrides.ts:104-107` в клоне), и без
+    файла `check --strict` даёт `http_error` «404 loading
+    caption-overrides.json» плюс `request_failed` — на `index.html`, то есть
+    роняет всю сборку, а не одну позицию. Живой прогон 06.09.2026: четыре
+    позиции каталога приносят свою разметку титров (`caption-emoji-pop`,
+    `caption-neon-accent`, `caption-pill-karaoke`, `caption-weight-shift`) и
+    все четыре падали этой парой находок.
+
+    Пишем ровно то и туда, что пишут их собственные скиллы под ту же
+    находку — `[]` рядом с проектом (`skills/faceless-explainer/scripts/
+    captions.mjs:199-206`, тем же комментарием «silences the captions
+    runtime's 404»). Не перезаписываем уже лежащий файл: правки титров,
+    сделанные их студией, наши.
+    """
+    overrides = Path(public) / "caption-overrides.json"
+    if not overrides.exists():
+        overrides.write_text("[]\n", encoding="utf-8")
 
 
 def clear_generated(public: Path) -> None:

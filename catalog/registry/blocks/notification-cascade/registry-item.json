@@ -172,6 +172,6 @@
         "default": "hyperframes.heygen.com"
       }
     },
-    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > section:nth-of-type(2) > div > div:nth-of-type(2) > div:nth-of-type(4): Contrast is 4.08:1; WCAG AA requires 4.5:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > section:nth-of-type(2) > div > div:nth-of-type(2) > div:nth-of-type(5): Contrast is 2.41:1; WCAG AA requires 3:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > section:nth-of-type(2) > div > div:nth-of-type(3) > div:nth-of-type(3): Contrast is 1.82:1; WCAG AA requires 3:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > section:nth-of-type(2) > div > div:nth-of-type(3) > div:nth-of-type(4): Contrast is 1.41:1; WCAG AA requires 4.5:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > section:nth-of-type(2) > div > div:nth-of-type(3) > div:nth-of-type(5): Contrast is 2.82:1; WCAG AA requires 3:1."
+    "skip": "`content_overlap [layout] div.nc-title: Two text blocks overlap and may render unreadable.` (и то же на `div.nc-subtitle`, `div.nc-credit`, `#nc-pill`). На кадре позиция кроет верх кадра своей фотографией стола и кладёт английские карточки уведомлений «New render / All checks passed» прямо на полосу титра. Прежняя причина (`contrast_aa_failure`) на 0.8.27 не воспроизводится. Перепроверено настоящей сборкой на 0.8.27 06.09.2026 (work/skips-recheck/notification-cascade)."
   }
 }
