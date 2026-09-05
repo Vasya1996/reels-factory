@@ -226,6 +226,7 @@
         "type": "string",
         "default": "Start rendering free"
       }
-    }
+    },
+    "skip": "FAIL (настоящая сборка, check --strict): console_error TypeError: Cannot set properties of null (setting 'textContent') — позиция несёт 123 текстовых слота (максимум по каталогу), при 102 реальных словах из тестовой фразы падает рантайм. Риск реальной сборки: агент почти никогда не подберёт ровно 123 слова под одну сцену. Найдено прогоном scratchpad/catalog-sweep 05.09.2026."
   }
 }

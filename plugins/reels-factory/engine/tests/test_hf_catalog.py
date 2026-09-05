@@ -154,12 +154,26 @@ def test_каждый_компонент_несёт_reels_effect_и_контра
 #: которым автор явно разметил кирпичную стену тайлов
 #: (mk-clone-wall-transition.html:157-158) — дыра в их линте, не брак
 #: позиции, но и не повод молчать: находка настоящая.
+#:
+#: `message-thread-reveal`, `gesture-tap`, `pull-back-reveal` тоже снова
+#: несут skip (прогон scratchpad/catalog-sweep, 05.09.2026 — настоящая
+#: сборка с реальными словами фразы вместо пустого элемента, впервые
+#: проверена подстановка). Каждая находка настоящая и своя:
+#: `message-thread-reveal` — `console_error` `TypeError: Cannot set
+#: properties of null (setting 'textContent')`: 123 текстовых слота
+#: (максимум по каталогу) при 102 реальных словах тестовой фразы рвут
+#: рантайм — агент почти никогда не наберёт ровно 123 слова под одну сцену.
+#: `gesture-tap` — `contrast_aa_failure` 4.48:1 (нужно 4.5:1) на подписи
+#: "Product designer sharing practical interaction notes", найдено check
+#: на середине сцены (time=4) — обычный слишком светлый серый, не связано
+#: с угасанием таймлайна. `pull-back-reveal` — `content_overlap` на
+#: `div.pbr-detail-context`: два текстовых блока накладываются.
 _B15_UNSKIPPED = [
-    "message-thread-reveal", "aurora-drift",
+    "aurora-drift",
     "beat-accent", "beat-timeline", "caption-texture", "chromatic-aberration-wipe",
-    "decline-chart", "directional-wipe", "drift-hold", "gesture-tap", "gloss-sweep",
+    "decline-chart", "directional-wipe", "drift-hold", "gloss-sweep",
     "grain-field", "kinetic-type-swap", "light-sweep-pass", "line-swap",
-    "multiplayer-cursors", "overwhelm-surround", "physical-exit", "pull-back-reveal",
+    "multiplayer-cursors", "overwhelm-surround", "physical-exit",
     "push-in", "scramble-reveal", "scroll-feed", "spotlight-card", "spring-pop",
     "stagger-cascade", "star-rating-fill", "store-badge-lockup", "svg-mask-reveal",
     "tilt-card", "variable-font-flex",

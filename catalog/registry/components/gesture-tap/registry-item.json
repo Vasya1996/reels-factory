@@ -90,6 +90,7 @@
         "type": "enum",
         "default": "green"
       }
-    }
+    },
+    "skip": "FAIL (настоящая сборка, check --strict, contrast): contrast_aa_failure на подписи \"Product designer sharing practical interaction notes\" — 4.48:1, требуется 4.5:1 (fg rgb(100,116,139) на белом). Найдено прогоном scratchpad/catalog-sweep 05.09.2026, не связано с угасанием таймлайна (finding time=4, середина сцены)."
   }
 }

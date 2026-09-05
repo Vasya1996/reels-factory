@@ -111,6 +111,7 @@
         "type": "enum",
         "default": "left"
       }
-    }
+    },
+    "skip": "DROPPED (настоящая сборка, hf_compose.py, paste_fragment): нет корневого div с class — разметка paste-компонента не по контракту полки (docstring registry/components/*/*.html). Найдено повторно прогоном scratchpad/catalog-sweep 05.09.2026 — то же семейство, что и в pin-0827-report.md, но раньше не было проставлено skip."
   }
 }

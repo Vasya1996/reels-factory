@@ -454,6 +454,7 @@
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],
-    "text_slots": []
+    "text_slots": [],
+    "skip": "DROPPED (настоящая сборка, paste_fragment): не нашёлся корень .hf-texture-text — путь установки уже чинили (component_install_target, PR #77), но paste_fragment всё равно не находит корневой селектор внутри файла. Другая причина, чем раньше; не переисследовано глубже. Найдено прогоном scratchpad/catalog-sweep 05.09.2026."
   }
 }
