@@ -56,6 +56,89 @@
     },
     {
       "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-host",
+      "type": "hyperframes:block",
+      "title": "Demo Host",
+      "description": "Fixture position whose screen slot the framework expects from the host page",
+      "tags": [
+        "demo"
+      ],
+      "dimensions": {
+        "width": 1080,
+        "height": 1920
+      },
+      "duration": 4.0,
+      "files": [
+        {
+          "path": "demo-host.html",
+          "target": "compositions/demo-host.html",
+          "type": "hyperframes:composition"
+        }
+      ],
+      "reels": {
+        "kind": "scene",
+        "use_when": "Экран устройства, разметку которого даёт хостовая страница."
+      }
+    },
+    {
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-media",
+      "type": "hyperframes:block",
+      "title": "Demo Media",
+      "description": "Fixture position with one content slot the caller fills with a file",
+      "tags": [
+        "demo"
+      ],
+      "dimensions": {
+        "width": 1080,
+        "height": 1920
+      },
+      "duration": 4.0,
+      "files": [
+        {
+          "path": "demo-media.html",
+          "target": "compositions/demo-media.html",
+          "type": "hyperframes:composition"
+        }
+      ],
+      "reels": {
+        "kind": "scene",
+        "text_slots": [
+          "chip"
+        ],
+        "use_when": "Сцене нужен кадр вставки в рамке — панель под файл."
+      }
+    },
+    {
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-paste",
+      "type": "hyperframes:component",
+      "title": "Demo Paste",
+      "description": "Fixture paste-contract effect for tests: a badge whose script reads window.__hyperframes.getVariables()",
+      "tags": [
+        "demo"
+      ],
+      "duration": 2.0,
+      "files": [
+        {
+          "path": "demo-paste.html",
+          "target": "compositions/components/demo-paste.html",
+          "type": "hyperframes:snippet"
+        }
+      ],
+      "reels": {
+        "kind": "effect",
+        "mount": "paste",
+        "variables": {
+          "label": {
+            "type": "string",
+            "default": "3"
+          }
+        }
+      }
+    },
+    {
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
       "name": "demo-plain",
       "type": "hyperframes:block",
       "title": "Demo Plain",
@@ -167,34 +250,6 @@
         "decor_texts": [
           "Заголовок"
         ]
-      }
-    },
-    {
-      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-      "name": "demo-paste",
-      "type": "hyperframes:component",
-      "title": "Demo Paste",
-      "description": "Fixture paste-contract effect for tests: a badge whose script reads window.__hyperframes.getVariables()",
-      "tags": [
-        "demo"
-      ],
-      "duration": 2.0,
-      "files": [
-        {
-          "path": "demo-paste.html",
-          "target": "compositions/components/demo-paste.html",
-          "type": "hyperframes:snippet"
-        }
-      ],
-      "reels": {
-        "kind": "effect",
-        "mount": "paste",
-        "variables": {
-          "label": {
-            "type": "string",
-            "default": "3"
-          }
-        }
       }
     }
   ]

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "demo-host",
+  "type": "hyperframes:block",
+  "title": "Demo Host",
+  "description": "Fixture position whose screen slot the framework expects from the host page",
+  "tags": [
+    "demo"
+  ],
+  "dimensions": {
+    "width": 1080,
+    "height": 1920
+  },
+  "duration": 4.0,
+  "files": [
+    {
+      "path": "demo-host.html",
+      "target": "compositions/demo-host.html",
+      "type": "hyperframes:composition"
+    }
+  ],
+  "reels": {
+    "kind": "scene",
+    "use_when": "Экран устройства, разметку которого даёт хостовая страница."
+  }
+}

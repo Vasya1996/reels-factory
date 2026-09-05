@@ -318,7 +318,7 @@ def test_индекс_отдаёт_карточки_всех_трёх_видов
     cards = catalog_cards(FIXTURE)
     assert {name: card.get("kind") for name, card in cards.items()} == {
         "count-up": "effect", "demo-scene": "scene", "demo-stitch": "overlay",
-        "demo-paste": "effect",
+        "demo-paste": "effect", "demo-media": "scene", "demo-host": "scene",
         # Карточка без `reels.kind` — сегодняшняя плашка: вид у неё не объявлен.
         "demo-plain": None}
     поля = set(cards["demo-scene"])
@@ -379,7 +379,8 @@ def test_индекс_печатается_json_ом_с_нашими_полям�
     text = catalog_index(FIXTURE)
     body = json.loads(text.split("```json")[1].split("```")[0])
     assert [item["name"] for item in body] == sorted(
-        ["count-up", "demo-paste", "demo-plain", "demo-scene", "demo-stitch"])
+        ["count-up", "demo-host", "demo-media", "demo-paste", "demo-plain",
+         "demo-scene", "demo-stitch"])
     assert "Search by intent" not in text, "правило поиска живёт в своде правил"
     assert "`kind`" in text and "`text_slots`" in text and "`variables`" in text
 
@@ -464,14 +465,22 @@ def test_видимый_текст_предлагаемой_позиции_не�
     Разбор — настоящим мостом их SDK, как у `passport`: свой разборщик HTML у
     нас не тот, каким блок читает движок.
 
-    Чего эта сверка НЕ видит: позицию, у которой корень лежит внутри
-    `<template>` (`terminal-simulator`, `social-proof-card`) — их разбор не
-    отдаёт узлов вовсе, и `find_slots` возвращает пусто. Такие позиции
-    заполняются своими переменными (`data-composition-variables`), и их
-    содержание сверяется не здесь.
+    До 06.09.2026 сверка была тавтологичной у каждой позиции, чья разметка
+    лежит внутри `<template>` (73 из 147 предлагаемых): наш мост читал текст
+    голым `querySelectorAll` линкдома, а он внутрь шаблона не заходит, и обе
+    стороны сравнения выходили пустым списком. Прежний докстринг называл
+    причиной «их разбор» — по факту их `comp.getElements()` внутрь шаблона
+    смотрит, терял узлы НАШ мост (`scripts/hf_sdk.mjs`, чинится обходом
+    `walkCompositionDescendants`).
+
+    Чего эта сверка НЕ видит и после починки: позицию, чья разметка пуста, а
+    текст пишет её собственный `<script>` из умолчаний
+    `data-composition-variables` (`cta-lockup` — «Get HyperFrames»,
+    `testimonial-card` — выдуманный отзыв). Это отдельный канал, и судить его
+    надо по `variables`/`portrays` карточки, а не по узлам разбора.
     """
     from reels_factory.hf_sdk import sdk_session
-    from reels_factory.hf_slots import text_slot_names
+    from reels_factory.hf_slots import slot_contract, text_slot_names
 
     root = CATALOG_DIR / REGISTRY_SUBDIR
     cards = catalog_cards()
@@ -483,10 +492,13 @@ def test_видимый_текст_предлагаемой_позиции_не�
             item = json.loads((folder / "registry-item.json")
                               .read_text(encoding="utf-8"))
             decor = set((item.get("reels") or {}).get("decor_texts") or [])
+            html = (folder / f"{name}.html").read_text(encoding="utf-8")
             sdk.open(name, folder / f"{name}.html")
             nodes = sdk.elements(name)
             sdk.close(name)
-            names = text_slot_names(nodes, decor)
+            # Тем же контрактом, каким считает сборка (`_stage_overlay`):
+            # содержимое слота под файл — не надпись сцены.
+            names = text_slot_names(nodes, decor, slot_contract(html))
             assert (card.get("text_slots") or []) == names, (
                 f"{name}: карточка обещает {card.get('text_slots')}, "
                 f"а разметка даёт {names} — агент считает слоты по одному "
@@ -677,3 +689,21 @@ def test_у_каждой_предложенной_позиции_все_файл
             if not (card.parent / str(f.get("path"))).exists():
                 broken.append(f"{item['name']}: {f.get('path')}")
     assert broken == []
+
+
+
+def test_слоты_под_файл_названы_в_карточке_каталога():
+    """Позиция с рамкой под кадр биролла обязана сказать об этом индексу: без
+    файла в кадре остаётся пустой макет, и решает это `D36_elements` до
+    заказа ведущей, а не сборка после."""
+    cards = catalog_cards()
+    assert sorted(cards["before-after-wipe"]["media_slots"]) == ["after",
+                                                                "before"]
+    assert cards["browser-device-stage"]["host_slots"] == [
+        "browser-device-stage-screen", "browser-device-stage-screen-b"]
+    # Слот, который заполняет не файл, а переменная или скрипт позиции, в
+    # список не попадает: `light-sweep-pass` кладёт в `scene` свою разметку,
+    # `whiteboard-ink` рисует `strokes` скриптом.
+    for name in ("light-sweep-pass", "whiteboard-ink", "press-ripple"):
+        assert not cards[name].get("media_slots"), name
+        assert not cards[name].get("host_slots"), name

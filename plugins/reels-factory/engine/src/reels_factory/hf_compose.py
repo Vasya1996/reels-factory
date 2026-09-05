@@ -720,6 +720,7 @@ def _installed_path(public, name: str, card_type: str = "block") -> Path:
 def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
                    text: dict | None = None,
                    words: list[str] | None = None,
+                   media: dict | None = None,
                    port: dict | None = None,
                    card_type: str = "block") -> tuple[str, float, tuple]:
     """Копия накладки под сцену. Возвращает (имя, родная длительность, канвас).
@@ -755,7 +756,7 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     разрешилась бы.
     """
     from reels_factory.hf_catalog import decor_texts
-    from reels_factory.hf_slots import fill_ops, prune_timeline
+    from reels_factory.hf_slots import fill_ops, prune_timeline, slot_contract
 
     source = _installed_path(public, block, card_type)
     if not source.exists():
@@ -775,16 +776,22 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
         source.write_text(fixed_stencil, encoding="utf-8")
     unique = f"{block}--{scene_id}"
     target = Path(public) / "compositions" / f"{unique}.html"
-    if (text or words) and sdk is not None:
+    if (text or words or media) and sdk is not None:
         from reels_factory.hf_slots import text_slot_names
 
         decor = decor_texts().get(block)
+        # Какие у позиции слоты под файл — спрашиваем её собственную разметку
+        # (`slot_contract`), а не список имён: позиция полки зовёт слот своим
+        # именем (`before`, `card-a`, `subject`), и без разбора контракта файл
+        # до неё не доезжал — в кадре оставался пустой макет.
+        contract = slot_contract(fixed_stencil)
         sdk.open(unique, source)
         nodes = sdk.elements(unique)
         if words:
-            text = dict(zip(text_slot_names(nodes, decor),
+            text = dict(zip(text_slot_names(nodes, decor, contract),
                             [str(word) for word in words]))
-        sdk.dispatch(unique, fill_ops(nodes, text=text, decor=decor))
+        sdk.dispatch(unique, fill_ops(nodes, text=text, media=media,
+                                      decor=decor, contract=contract))
         sdk.save(unique, target)
         sdk.close(unique)
         html = target.read_text(encoding="utf-8")
@@ -1619,9 +1626,23 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # — жёсткая склейка, движение живёт только на шве между планами. Правило
     # Юли, её же эталон (docs/HANDOFF-BROLL-ZOOM-V6.md, пункт 2): одиночная
     # вставка читается как случайная картинка, а пара планов — как монтаж.
-    series: dict[str, list[str]] = {}
+    # Позиция каталога со слотами под файл забирает кадр сцены себе: файл
+    # ложится ВНУТРЬ её слота (`hf_slots.fill_ops`), а рамку, маску и ход
+    # рисует сама позиция. Отдельным слоем ту же вставку тогда не ставим —
+    # один и тот же клип в кадре дважды читается сбоем сборки, а не монтажом.
+    slotted: dict[str, list[str]] = {}
     for scene in scenes:
         if not insert_of(scene):
+            continue
+        for element in scene_elements(scene):
+            slots = (_catalog_cards().get(str(element.get("name") or "").strip())
+                     or {}).get("media_slots")
+            if slots:
+                slotted[str(scene["id"])] = sorted(slots)
+                break
+    series: dict[str, list[str]] = {}
+    for scene in scenes:
+        if not insert_of(scene) or str(scene["id"]) in slotted:
             continue
         files = [(resolved.get(media_key(scene["id"], shot)) or {}).get("file")
                  for shot in range(shots_for(scene))]
@@ -1853,6 +1874,34 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             # Имя своё, не `words`: так зовётся параметр сборки со словами
             # титра, и тень над ним роняла бы весь слой субтитров ниже.
             said = [str(word) for word in element.get("words") or []]
+            # Слоты позиции под файл: кадр биролла этой же сцены ложится ВНУТРЬ
+            # них. Подавать нечего — позиция снимается с причиной вслух: пустой
+            # макет (телефон без экрана, панель «Before» без картинки) хуже
+            # отсутствия позиции. До заказа ведущей тот же вопрос уже задан
+            # плану гейтом `D36_elements` (`hf_gates._element_problems`).
+            slots = sorted(card.get("media_slots") or [])
+            files = [(resolved.get(media_key(scene["id"], shot)) or {}).get("file")
+                     for shot in range(shots_for(scene))] if slots else []
+            files = [one for one in files if one]
+            if card.get("host_slots"):
+                drop_element(
+                    storyboard, scene, name,
+                    "содержимое слотов "
+                    + ", ".join(sorted(card["host_slots"]))
+                    + " позиция ждёт разметкой из хостовой страницы, а сборка "
+                    "ставит её сабкомпозицией — в кадре остался бы серый "
+                    "скелет-заглушка")
+                continue
+            if slots and not files:
+                drop_element(
+                    storyboard, scene, name,
+                    "позиция ждёт файл в слоты " + ", ".join(slots)
+                    + ", а сцене вставка не подобралась — в кадре остался бы "
+                    "пустой макет")
+                continue
+            supply = {slot: {"file": files[position % len(files)],
+                             "start": 0.0, "duration": length}
+                      for position, slot in enumerate(slots)} or None
             card_type = str(card.get("type") or "block")
             # Paste-контрактный эффект (`reels.mount`, карточка B1) не
             # монтируется саб-композицией вовсе — своего `data-composition-id`
@@ -1891,8 +1940,10 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                        "css": palette_css(name, colors, root=root)}
                 try:
                     unique, _, canvas = _stage_overlay(
-                        public, name, scene["id"], sdk=sdk if said else None,
-                        words=said or None, port=port, card_type=card_type)
+                        public, name, scene["id"],
+                        sdk=sdk if (said or supply) else None,
+                        words=said or None, media=supply, port=port,
+                        card_type=card_type)
                 except RuntimeError as error:
                     drop_element(storyboard, scene, name, str(error))
                     continue

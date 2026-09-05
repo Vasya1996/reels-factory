@@ -173,6 +173,7 @@ def _element_problems(scene: dict, element: dict, cards: dict,
     в него не лезет, как не лезет в выбор формы схемы.
     """
     from reels_factory.hf_compose import effect_zone
+    from reels_factory.hf_montage import insert_of
 
     scene_id = scene.get("id", "?")
     name = str(element.get("name") or "").strip()
@@ -201,6 +202,28 @@ def _element_problems(scene: dict, element: dict, cards: dict,
             f"{where}: позиция вида `effect` встаёт в свободную зону кадра, а "
             f"ведущая {position!r} её не оставляет — дай сцене уголок "
             "(`pip-*`) или `none`, либо назови позицию другого вида")
+    # Слот под файл: позиция несёт рамку под кадр биролла или снимок, и без
+    # файла в кадре остаётся пустой макет — телефон без экрана, панель «Before»
+    # без картинки. Файл сцене даёт вставка, и спрашивается она здесь, ДО
+    # заказа ведущей: после оплаты выбор уже не переиграть.
+    if card.get("media_slots") and not insert_of(scene):
+        problems.append(
+            f"{where}: позиция ждёт файл в слоты "
+            + ", ".join(f"`{one}`" for one in sorted(card["media_slots"]))
+            + " — их закрывает кадр вставки сцены, а `insert` у сцены нет. "
+            "Дай сцене вставку (`insert.shots`) или возьми позицию, которой "
+            "своя картинка не нужна: без файла в кадре останется пустой макет")
+    # Слот, содержимое которого их контракт ждёт `<template>`-ом в ХОСТОВОЙ
+    # странице (`hf_slots.HOST_SLOT`). Наша сборка монтирует позицию
+    # сабкомпозицией и такого шаблона не пишет — экран останется серым
+    # скелетом-заглушкой, о чём предупреждает и сама позиция в `avoid_when`.
+    if card.get("host_slots"):
+        problems.append(
+            f"{where}: содержимое слотов "
+            + ", ".join(f"`{one}`" for one in sorted(card["host_slots"]))
+            + " эта позиция ждёт разметкой из хостовой страницы, а наша сборка "
+            "ставит её сабкомпозицией и такой разметки не пишет — в кадре "
+            "останется серый скелет-заглушка. Возьми другую позицию")
     declared = card.get("variables") or {}
     named = element.get("variables")
     if named is not None and not isinstance(named, dict):

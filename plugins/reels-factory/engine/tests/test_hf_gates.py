@@ -655,6 +655,36 @@ def test_подложка_под_полнокадровой_ведущей_ло�
                                            presenter=position)) == [], position
 
 
+def test_позиция_со_слотом_под_файл_без_вставки_ловится_до_заказа(каталог):
+    """Слот полки — рамка под кадр биролла или снимок: «Replace the children of
+    this element … Direct img/video children of a slot are sized to cover the
+    panel» (`before-after-wipe.html:16-20`). Файл сцене даёт вставка; сцена без
+    неё оставила бы в кадре пустой макет — телефон без экрана, панель «Before»
+    без картинки. Вопрос задан плану ДО заказа ведущей: после оплаты выбор уже
+    не переиграть.
+    """
+    сцена = _элементы({"name": "demo-media"}, presenter="pip-br")
+    problems = elements_problems(сцена)
+    assert len(problems) == 1, problems
+    assert "`panel`" in problems[0] and "insert" in problems[0]
+    сцена[0]["insert"] = _photo("рабочий стол")
+    assert elements_problems(сцена) == []
+
+
+def test_позиция_ждущая_разметки_из_хоста_планом_не_называется(каталог):
+    """Содержимое такого слота их контракт ждёт `<template>`-ом в ХОСТОВОЙ
+    странице (`browser-device-stage.html:22-25`). Наша сборка ставит позицию
+    сабкомпозицией и такой разметки не пишет: в кадре остался бы серый
+    скелет-заглушка, о чём предупреждает и сама позиция в `avoid_when` — но
+    словом, без зубов. Теперь зубы есть.
+    """
+    сцена = _элементы({"name": "demo-host"}, presenter="pip-br")
+    сцена[0]["insert"] = _photo("рабочий стол")
+    problems = elements_problems(сцена)
+    assert len(problems) == 1, problems
+    assert "demo-host-screen" in problems[0]
+
+
 def test_сверку_элементов_делает_и_d11(каталог):
     """Один код на два места: до заказа его зовёт `D36_elements`, после сборки —
     D11. Разойтись им нечем."""

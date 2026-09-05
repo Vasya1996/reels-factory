@@ -303,7 +303,9 @@ _VARIABLES_ATTR = re.compile(
 
 @functools.lru_cache(maxsize=1024)
 def _declared_options(path: str, stamp: tuple) -> tuple:
-    """Варианты значений переменных одного файла позиции: `(имя, (значения…))`.
+    """Объявление переменных одного файла позиции: `(имя, {поле: значение})`.
+
+    Поля — пока только `options` (варианты `enum`).
 
     Читается из самой разметки, а не из карточки: список вариантов — это то,
     что автор позиции уже написал в `data-composition-variables`, и второе его
@@ -329,20 +331,30 @@ def _declared_options(path: str, stamp: tuple) -> tuple:
         return ()
     out = []
     for item in declared if isinstance(declared, list) else []:
-        if not isinstance(item, dict) or not item.get("options"):
+        if not isinstance(item, dict):
             continue
+        rule = {}
         values = tuple(str(option.get("value"))
-                       for option in item["options"]
+                       for option in item.get("options") or []
                        if isinstance(option, dict) and option.get("value")
                        is not None)
         if values:
-            out.append((str(item.get("id")), values))
+            rule["options"] = values
+        # `role` и `portrays` — их же поля объявления переменной
+        # (`docs/concepts/variables.mdx:84-109`): `role` говорит, на что
+        # переменная влияет (`content`, `style`, …), `portrays` — что значение
+        # ЗНАЧИТ для зрителя, и «tells an editing agent which slots carry
+        # identity and must not be filled with invented copy» (там же:88-90).
+        # Наш `reels.variables` — урезанное зеркало, оба поля в нём не
+        # заведены; читаем их оттуда же, откуда варианты, — из объявления
+        # автора позиции, чтобы второе издание не разошлось с первым.
+        if rule:
+            out.append((str(item.get("id")), rule))
     return tuple(out)
 
 
-def _variable_options(folder: Path, item: dict) -> dict[str, list[str]]:
-    """Варианты значений переменных позиции по всем её файлам разметки."""
-    found = {}
+def _html_files(folder: Path, item: dict):
+    """Файлы разметки позиции с отпечатком — ключом кэша разборов."""
     for entry in item.get("files") or []:
         name = str(entry.get("path") or "")
         if not name.endswith(".html"):
@@ -352,9 +364,36 @@ def _variable_options(folder: Path, item: dict) -> dict[str, list[str]]:
             stat = path.stat()
         except OSError:
             continue
-        for key, values in _declared_options(str(path),
-                                             (stat.st_mtime, stat.st_size)):
-            found.setdefault(key, list(values))
+        yield path, (stat.st_mtime, stat.st_size)
+
+
+def _variable_options(folder: Path, item: dict) -> dict[str, dict]:
+    """Объявление переменных позиции по всем её файлам разметки."""
+    found = {}
+    for path, stamp in _html_files(folder, item):
+        for key, rule in _declared_options(str(path), stamp):
+            found.setdefault(key, dict(rule))
+    return found
+
+
+@functools.lru_cache(maxsize=1024)
+def _declared_slots(path: str, stamp: tuple) -> tuple:
+    """Слоты одного файла позиции: `(имя, вид)` — разбор `hf_slots`."""
+    del stamp  # часть ключа кэша, а не аргумент разбора
+    from reels_factory.hf_slots import slot_contract
+    try:
+        html = Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return ()
+    return tuple(sorted(slot_contract(html).items()))
+
+
+def _slot_contract(folder: Path, item: dict) -> dict[str, str]:
+    """Слоты позиции по всем её файлам разметки: имя → чем заполняется."""
+    found: dict[str, str] = {}
+    for path, stamp in _html_files(folder, item):
+        for key, kind in _declared_slots(str(path), stamp):
+            found.setdefault(key, kind)
     return found
 
 
@@ -422,27 +461,41 @@ def catalog_cards(catalog_dir=None) -> dict[str, dict]:
             card["mount"] = str(reels["mount"])
         if reels.get("text_slots"):
             card["text_slots"] = [str(slot) for slot in reels["text_slots"]]
+        subdir = ("components"
+                  if str(item.get("type", "")).endswith("component")
+                  else "blocks")
+        folder = (Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR / subdir
+                  / name)
         if reels.get("variables"):
             # Варианты значения `enum` в карточке реестра не записаны, а без
             # них поле в плане не заполнить: на живом раннем шаге агент так и
             # сказал — «`icon-morph-beat` близко, но допустимые значения `pair`
             # каталог не называет» — и позицию не взял. Берём их оттуда, где их
             # написал автор позиции: из `data-composition-variables` разметки.
-            subdir = ("components"
-                      if str(item.get("type", "")).endswith("component")
-                      else "blocks")
-            options = _variable_options(
-                Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR / subdir
-                / name, item)
+            declared = _variable_options(folder, item)
             variables = {}
             for key, rule in reels["variables"].items():
                 rule = dict(rule)
-                if options.get(key) and not rule.get("options"):
-                    rule["options"] = list(options[key])
+                said = declared.get(key) or {}
+                if said.get("options") and not rule.get("options"):
+                    rule["options"] = list(said["options"])
                 variables[key] = rule
             card["variables"] = variables
         if reels.get("decor_texts"):
             card["decor_texts"] = [str(text) for text in reels["decor_texts"]]
+        # Слоты под файл — по контракту самой позиции, а не по списку имён
+        # (`hf_slots.slot_contract`). `media_slots` заполняет код подобранным
+        # файлом; `host_slots` их контракт ждёт `<template>`-ом в хостовой
+        # странице, и нашей сборкой они недостижимы — оба списка судит
+        # `D36_elements` ДО заказа ведущей.
+        from reels_factory.hf_slots import HOST_SLOT, MEDIA_KINDS
+        contract = _slot_contract(folder, item)
+        media = [key for key, kind in contract.items() if kind in MEDIA_KINDS]
+        host = [key for key, kind in contract.items() if kind == HOST_SLOT]
+        if media:
+            card["media_slots"] = media
+        if host:
+            card["host_slots"] = host
         found[name] = card
     return found
 
@@ -629,7 +682,7 @@ def decor_texts(catalog_dir=None) -> dict[str, set[str]]:
 REFERENCE_SUBDIR = "reference"
 REFERENCE_FILES = ("CATALOG.md", "catalog-map.md")
 
-_INDEX_HEAD = """# Каталог этого прогона
+_INDEX_HEAD = r"""# Каталог этого прогона
 
 Позиции, которые код умеет поставить в кадр. Ищи по смыслу — по `use_when`,
 `description` и `tags`, — а не глазами по именам: имя придумывал автор позиции,
@@ -647,6 +700,11 @@ _INDEX_HEAD = """# Каталог этого прогона
   сцены: `grep -i 'сравнен' catalog.index.md`.
 - `avoid_when` — когда позицию берут зря; стоит там, где случай уже разобран.
 
+- `media_slots` — слоты, куда встаёт файл (кадр биролла, снимок): позиция с
+  ними берётся ТОЛЬКО в сцену со вставкой (`insert`), иначе в кадре останется
+  пустой макет и план вернётся с `D36_elements`.
+- `host_slots` — слоты, содержимое которых их контракт ждёт из хостовой
+  страницы; наша сборка их не заполняет, и такую позицию ставить нельзя.
 - `kind` — чем позиция становится в кадре: `scene` (во весь кадр подложкой под
   окном ведущей), `overlay` (на стык сцен поверх всего), `effect` (в свободной
   зоне кадра). Позиция без `kind` — плашка над полосой титра.
@@ -784,7 +842,8 @@ def overlay_passports(catalog_dir=None) -> str:
             pages.append(passport(
                 sdk.elements(name), name=name, title=item.get("title", ""),
                 description=item.get("description", ""),
-                duration=item.get("duration")))
+                duration=item.get("duration"),
+                contract=_slot_contract(folder, item)))
             sdk.close(name)
     return "\n\n".join(pages)
 
@@ -810,6 +869,7 @@ def block_passports(catalog_dir=None) -> str:
             pages.append(passport(
                 sdk.elements(name), name=name, title=item.get("title", ""),
                 description=item.get("description", ""),
-                duration=item.get("duration")))
+                duration=item.get("duration"),
+                contract=_slot_contract(folder, item)))
             sdk.close(name)
     return "\n\n".join(pages)
