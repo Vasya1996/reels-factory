@@ -291,3 +291,24 @@ def test_строку_на_класс_который_рисует_сам_скр�
     assert '"#0b0f17"' not in out, (
         "строка целилась в удалённый .g99-foot — она мёртвая целиком")
     assert 'fu(".g99-tech"' not in out
+
+
+def _позиция(name: str, subdir: str = "components") -> str:
+    from reels_factory.hf_catalog import CATALOG_DIR, REGISTRY_SUBDIR
+    return (CATALOG_DIR / REGISTRY_SUBDIR / subdir / name / f"{name}.html"
+            ).read_text(encoding="utf-8")
+
+
+def test_текст_внутри_шаблона_сабкомпозиции_доезжает_до_слотов(block):
+    """Разметка портированной позиции лежит внутри `<template>`.
+
+    Наш мост читал её текст голым `document.querySelectorAll` линкдома, а он
+    внутрь шаблона не заходит — их же слова, `packages/parsers/src/hfIds.ts:
+    136-138`. Каждый узел получал пустой текст, `find_slots` не находил в
+    позиции ни одной надписи, и латиница карточки ехала в кадр русского ролика
+    нетронутой: `focus-swap.html:189` держит «Shape the idea» литералом.
+    Теперь обход тот же, каким ходит их собственный `comp.getElements()`.
+    """
+    nodes, _ = block
+    found = find_slots(nodes(_позиция("focus-swap")))
+    assert "Shape the idea" in [slot.placeholder for slot in found]
