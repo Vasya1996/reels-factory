@@ -109,6 +109,6 @@
         "default": "none"
       }
     },
-    "skip": "composition_file_too_large [lint] [data-composition-id]: This HTML composition file has 368 lines. Smaller sub-compositions are easier to read, iterate on, and diff."
+    "skip": "`check --strict` на 0.8.27 чист (прежний `composition_file_too_large` снят маркером реестра). Но в кадре — её собственная монограмма: чернильное пятно собирается в обведённую латинскую «H», слотом она не закрывается и словами плана не заменяется. Перепроверено настоящей сборкой на 0.8.27 06.09.2026 (work/skips-recheck/ink-bleed-reveal)."
   }
 }

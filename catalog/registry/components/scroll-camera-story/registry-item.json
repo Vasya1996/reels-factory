@@ -111,6 +111,8 @@
     }
   ],
   "reels": {
+    "use_when": "Речь ведёт по шагам сверху вниз: карточки-разделы проезжают мимо камеры, как пролистанная страница.",
+    "avoid_when": "Шаг один или порядок не важен: пролистывание обещает список, которого в реплике нет.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],
@@ -136,7 +138,6 @@
         "type": "enum",
         "default": "none"
       }
-    },
-    "skip": "composition_file_too_large [lint] [data-composition-id]: This HTML composition file has 432 lines. Smaller sub-compositions are easier to read, iterate on, and diff."
+    }
   }
 }

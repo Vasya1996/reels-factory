@@ -27,6 +27,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "caption_zone_collision [layout] #hl-w-20 > span:nth-of-type(2): <span> \"DRAG\" is centred in the reserved caption band (~23% up from the bottom).; caption_zone_collision [layout] #hl-w-21 > span:nth-of-type(2): <span> \"AND\" is centred in the reserved caption band (~23% up from the bottom)."
+    "skip": "`check --strict` на 0.8.27 чист (прежний `caption_zone_collision` не воспроизводится), но в кадре позиция не появляется вовсе: её движок титра ждёт своей раскадровки слов, а элементом сцены она её не получает. Отдельно: этой же позицией собран наш собственный слой субтитров (`hf_captions`), и вторым экземпляром в кадре ей делать нечего. Перепроверено настоящей сборкой на 0.8.27 06.09.2026 (work/skips-recheck/caption-highlight)."
   }
 }
