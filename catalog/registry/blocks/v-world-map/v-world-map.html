@@ -106,13 +106,16 @@
         stroke-opacity: 0.4;
       }
 
-      /* below the map, not pinned to the canvas bottom: with the extra
-         portrait height there is no reason to crowd the bottom 22%
-         platform-UI band, so this sits right under the map instead. */
+      /* overlaid on the map's own top-right corner, not below it: our
+         caption band starts at y=1000 (52%) and the map already reaches
+         y=1064 (top:548 + height:516), so "under the map" collided with
+         the caption scrim (content_overlap, scratchpad/catalog-sweep
+         05.09.2026) — this position sits inside the map box instead,
+         over the sparsely-drawn high-latitude Pacific corner. */
       #v-world-map .legend-group {
         position: absolute;
-        top: 1128px;
-        right: 32px;
+        top: 580px;
+        right: 64px;
         display: flex;
         flex-direction: column;
         align-items: flex-end;
@@ -135,9 +138,13 @@
         color: #cbd5e1;
       }
 
+      /* moved up from below the map (top:1208px collided with the caption
+         band the same way .legend-group did, above) into the gap between
+         subtitle and map: subtitle ends well before map-container's own
+         top:548px. */
       #v-world-map .source {
         position: absolute;
-        top: 1208px;
+        top: 500px;
         left: 32px;
         font-size: 16px;
         font-weight: 400;
