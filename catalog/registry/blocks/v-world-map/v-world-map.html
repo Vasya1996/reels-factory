@@ -72,20 +72,31 @@
         opacity: 0;
       }
 
-      /* map box width fit to canvas width 1080 with 32px side padding
-         (24-36px band); height kept at the source's own 1380:700 map
-         aspect ratio, not scaled, so the geography is not stretched. */
+      /* the whole scene lives between the top safe-zone boundary (y=262)
+         and the caption band (CAPTION_BAND_TOP = 1000, hf_compose.py):
+         in portrait the scarce axis is vertical, so the ported landscape
+         box is scaled DOWN to fit the column instead of keeping its
+         landscape width. The earlier port kept width 1016 and so ran to
+         y=1064 — 64px inside the caption band — which left no room under
+         the map for its own legend and source line, and pushed both into
+         the band (content_overlap, scratchpad/catalog-sweep 05.09.2026).
+         Width is derived from the height the column can spare, not the
+         other way round: 520 (below a two-line subtitle) + 426 = 946,
+         then legend and source sit under the map and still end above
+         998. Aspect ratio is the source's own 1380:700, unchanged
+         (840 x 426), so the geography is not stretched; the box is
+         centred because it no longer spans the full canvas width. */
       #v-world-map .map-container {
         position: absolute;
-        top: 548px;
-        left: 32px;
-        width: 1016px;
-        height: 516px;
+        top: 520px;
+        left: 120px;
+        width: 840px;
+        height: 426px;
       }
 
       #v-world-map .map-container svg {
-        width: 1016px;
-        height: 516px;
+        width: 840px;
+        height: 426px;
       }
 
       #v-world-map .country-path {
@@ -106,45 +117,43 @@
         stroke-opacity: 0.4;
       }
 
-      /* overlaid on the map's own top-right corner, not below it: our
-         caption band starts at y=1000 (52%) and the map already reaches
-         y=1064 (top:548 + height:516), so "under the map" collided with
-         the caption scrim (content_overlap, scratchpad/catalog-sweep
-         05.09.2026) — this position sits inside the map box instead,
-         over the sparsely-drawn high-latitude Pacific corner. */
+      /* back under the map, where the source scene puts it: the map now
+         ends at y=946, so the legend fits above the caption band without
+         lying on the countries it explains. Bar and labels are a size
+         down from the landscape original (364x20 / 16px) — the column
+         pays for the map's height in the tightest place. */
       #v-world-map .legend-group {
         position: absolute;
-        top: 580px;
-        right: 64px;
+        top: 958px;
+        right: 32px;
         display: flex;
         flex-direction: column;
         align-items: flex-end;
-        gap: 12px;
+        gap: 6px;
         opacity: 0;
       }
 
       #v-world-map .legend-bar {
-        width: 364px;
-        height: 20px;
-        border-radius: 8px;
+        width: 300px;
+        height: 14px;
+        border-radius: 7px;
       }
 
       #v-world-map .legend-labels {
         display: flex;
         justify-content: space-between;
-        width: 364px;
-        font-size: 16px;
+        width: 300px;
+        font-size: 14px;
         font-weight: 500;
         color: #cbd5e1;
       }
 
-      /* moved up from below the map (top:1208px collided with the caption
-         band the same way .legend-group did, above) into the gap between
-         subtitle and map: subtitle ends well before map-container's own
-         top:548px. */
+      /* footer row with the legend: same baseline, opposite side of the
+         canvas, both under the map and above the caption band. Was
+         top:1208px in the port, i.e. inside the band. */
       #v-world-map .source {
         position: absolute;
-        top: 500px;
+        top: 962px;
         left: 32px;
         font-size: 16px;
         font-weight: 400;
