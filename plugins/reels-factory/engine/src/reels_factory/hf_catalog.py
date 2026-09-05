@@ -305,7 +305,7 @@ _VARIABLES_ATTR = re.compile(
 def _declared_options(path: str, stamp: tuple) -> tuple:
     """Объявление переменных одного файла позиции: `(имя, {поле: значение})`.
 
-    Поля — пока только `options` (варианты `enum`).
+    Поля — `options` (варианты `enum`), `role` и `portrays`.
 
     Читается из самой разметки, а не из карточки: список вариантов — это то,
     что автор позиции уже написал в `data-composition-variables`, и второе его
@@ -348,6 +348,13 @@ def _declared_options(path: str, stamp: tuple) -> tuple:
         # Наш `reels.variables` — урезанное зеркало, оба поля в нём не
         # заведены; читаем их оттуда же, откуда варианты, — из объявления
         # автора позиции, чтобы второе издание не разошлось с первым.
+        if item.get("role"):
+            rule["role"] = str(item["role"])
+        portrays = item.get("portrays")
+        if isinstance(portrays, list) and portrays:
+            rule["portrays"] = tuple(str(one) for one in portrays)
+        elif isinstance(portrays, str) and portrays:
+            rule["portrays"] = (portrays,)
         if rule:
             out.append((str(item.get("id")), rule))
     return tuple(out)
@@ -368,7 +375,11 @@ def _html_files(folder: Path, item: dict):
 
 
 def _variable_options(folder: Path, item: dict) -> dict[str, dict]:
-    """Объявление переменных позиции по всем её файлам разметки."""
+    """Объявление переменных позиции по всем её файлам разметки.
+
+    Имя переменной → `options`/`role`/`portrays` так, как их написал автор
+    позиции в `data-composition-variables`.
+    """
     found = {}
     for path, stamp in _html_files(folder, item):
         for key, rule in _declared_options(str(path), stamp):
@@ -446,6 +457,16 @@ def catalog_cards(catalog_dir=None) -> dict[str, dict]:
         if reels.get("avoid_when"):
             card["avoid_when"] = str(reels["avoid_when"])
         card["tags"] = list(item.get("tags") or [])
+        # Семья и работа позиции — их собственные поля реестра, не наша
+        # выдуманная классификация: `family` («ui-props», «transitions») и
+        # `jobs` («compare», «prove», «ask») стоят у 87 из 147 предлагаемых
+        # позиций, и по ним видно, что три-четыре карточки закрывают одну и ту
+        # же задачу. Своего поля вместо них не заводим: пустое у остальных 60
+        # честнее выдуманного.
+        if item.get("family"):
+            card["family"] = str(item["family"])
+        if item.get("jobs"):
+            card["jobs"] = [str(job) for job in item["jobs"]]
         if item.get("dimensions"):
             card["dimensions"] = item["dimensions"]
         if item.get("duration"):
@@ -472,6 +493,11 @@ def catalog_cards(catalog_dir=None) -> dict[str, dict]:
             # сказал — «`icon-morph-beat` близко, но допустимые значения `pair`
             # каталог не называет» — и позицию не взял. Берём их оттуда, где их
             # написал автор позиции: из `data-composition-variables` разметки.
+            # Оттуда же — `role` и `portrays`: `portrays` прямо называет
+            # переменные, которые нельзя заполнять выдуманным текстом
+            # («must not be filled with invented copy»,
+            # `docs/concepts/variables.mdx:88-90`), и без него агент не
+            # отличает свободную надпись от чужого бренда.
             declared = _variable_options(folder, item)
             variables = {}
             for key, rule in reels["variables"].items():
@@ -479,6 +505,10 @@ def catalog_cards(catalog_dir=None) -> dict[str, dict]:
                 said = declared.get(key) or {}
                 if said.get("options") and not rule.get("options"):
                     rule["options"] = list(said["options"])
+                if said.get("role") and not rule.get("role"):
+                    rule["role"] = said["role"]
+                if said.get("portrays") and not rule.get("portrays"):
+                    rule["portrays"] = list(said["portrays"])
                 variables[key] = rule
             card["variables"] = variables
         if reels.get("decor_texts"):
@@ -700,6 +730,11 @@ _INDEX_HEAD = r"""# Каталог этого прогона
   сцены: `grep -i 'сравнен' catalog.index.md`.
 - `avoid_when` — когда позицию берут зря; стоит там, где случай уже разобран.
 
+- `family` и `jobs` — семья позиции и работа, которую она делает, словами их
+  же реестра (`family`, `jobs` в `registry-item.json`). Позиции одной семьи и
+  одной работы делают одно и то же — бери ОДНУ: `grep '"jobs": \["compare"\]'
+  catalog.index.md` покажет всех соперниц разом. У 60 позиций из 147 этих полей
+  нет вовсе — там ищи по `use_when`, как раньше.
 - `media_slots` — слоты, куда встаёт файл (кадр биролла, снимок): позиция с
   ними берётся ТОЛЬКО в сцену со вставкой (`insert`), иначе в кадре останется
   пустой макет и план вернётся с `D36_elements`.

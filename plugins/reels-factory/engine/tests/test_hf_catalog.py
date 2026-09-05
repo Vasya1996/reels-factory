@@ -325,8 +325,8 @@ def test_индекс_отдаёт_карточки_всех_трёх_видов
     assert {"name", "type", "title", "description", "tags", "dimensions",
             "duration"} <= поля, "формат разошёлся с `catalog --json`"
     assert cards["demo-scene"]["text_slots"] == ["line"]
-    assert cards["count-up"]["variables"]["end"] == {"type": "number",
-                                                     "default": 100}
+    assert cards["count-up"]["variables"]["end"] == {
+        "type": "number", "default": 100, "role": "content"}
     # У упругой позиции размеров нет вовсе — она меряет себя коробкой хоста.
     assert "dimensions" not in cards["count-up"]
 
@@ -340,7 +340,7 @@ def test_варианты_выбора_берутся_из_разметки_по
     плане было нечем.
     """
     accent = catalog_cards(FIXTURE)["count-up"]["variables"]["accent"]
-    assert accent == {"type": "enum", "default": "green",
+    assert accent == {"type": "enum", "default": "green", "role": "style",
                       "options": ["green", "blue", "violet"]}
     # Тип без выбора вариантов не заводит.
     assert "options" not in catalog_cards(FIXTURE)["count-up"]["variables"]["end"]
@@ -690,6 +690,60 @@ def test_у_каждой_предложенной_позиции_все_файл
                 broken.append(f"{item['name']}: {f.get('path')}")
     assert broken == []
 
+
+#: Позиция, объявляющая переменную их полем `portrays`: оно младше нашего
+#: порта каталога (введено у них 2026-09-01, есть на пине 0.8.27) и прямо
+#: перечисляет, что нельзя заполнять выдуманным текстом.
+_С_ЛИЧНОСТЬЮ = """<!doctype html>
+<html data-composition-id="брендовая" data-width="1080" data-height="1920"
+  data-composition-variables='[
+    {"id": "wordmark", "type": "string", "role": "content",
+     "portrays": ["subject_name"], "label": "Wordmark", "default": "HYPERFRAMES"},
+    {"id": "accent", "type": "string", "role": "style", "default": "green"}]'>
+<body><div class="clip" data-start="0" data-duration="4">HYPERFRAMES</div></body>
+</html>"""
+
+
+def test_импорт_сохраняет_role_и_portrays_переменной(tmp_path):
+    """`portrays` — их готовый признак «эта строка несёт чужую личность»:
+    «tells an editing agent which slots carry identity and must not be filled
+    with invented copy» (`docs/concepts/variables.mdx:88-90`). Наш
+    `reels.variables` — урезанное зеркало на тип и умолчание, и оба поля в
+    него не заведены; берём их из объявления автора позиции, оттуда же, откуда
+    варианты `enum`, — иначе агент не отличает свободную надпись от бренда,
+    и дефолт «HYPERFRAMES» доезжает до кадра русского ролика.
+    """
+    _with_blocks(tmp_path, ["брендовая"])
+    folder = _block(tmp_path, "брендовая", tags=["overlay"])
+    (folder / "брендовая.html").write_text(_С_ЛИЧНОСТЬЮ, encoding="utf-8")
+    card = json.loads((folder / "registry-item.json").read_text(encoding="utf-8"))
+    card["reels"] = {"kind": "scene",
+                     "variables": {"wordmark": {"type": "string",
+                                                "default": "HYPERFRAMES"},
+                                   "accent": {"type": "string",
+                                              "default": "green"}}}
+    (folder / "registry-item.json").write_text(
+        json.dumps(card, ensure_ascii=False), encoding="utf-8")
+    variables = catalog_cards(tmp_path)["брендовая"]["variables"]
+    assert variables["wordmark"] == {"type": "string", "default": "HYPERFRAMES",
+                                     "role": "content",
+                                     "portrays": ["subject_name"]}
+    assert variables["accent"] == {"type": "string", "default": "green",
+                                   "role": "style"}
+
+
+def test_семья_и_работа_позиции_едут_в_индекс_их_же_словами():
+    """Группировки по назначению у их реестра нет отдельным полем, но `family`
+    и `jobs` в карточке — их собственные слова о том же: позиции одной работы
+    закрывают одну задачу. Своей классификации не заводим — у 60 позиций из
+    147 этих полей нет вовсе, и пустое честнее выдуманного."""
+    cards = catalog_cards()
+    сравнение = {name for name, card in cards.items()
+                 if "compare" in (card.get("jobs") or [])}
+    assert {"before-after-wipe", "comparison-split"} <= сравнение, сравнение
+    index = catalog_index()
+    assert "`family` и `jobs`" in index
+    assert '"jobs": ["compare"]' in index
 
 
 def test_слоты_под_файл_названы_в_карточке_каталога():
