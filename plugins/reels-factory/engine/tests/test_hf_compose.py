@@ -1412,6 +1412,57 @@ def test_копия_компонента_несёт_их_маркер_реест
     assert copy.startswith("<!-- hyperframes-registry-item: count-up -->\n")
 
 
+def test_копия_блока_тоже_несёт_их_маркер_реестра(каталог):
+    """Их `add` пишет блоку `<!-- hyperframes-registry-item: NAME -->` сам
+    (`addRegistryItemMarker`, `installer.ts:136-141`), а наша копия идёт через
+    мост SDK — и комментарий ПЕРЕД `<!doctype html>` в разобранном документе
+    теряется. Живая сборка на 0.8.27 (06.09.2026) дала из-за этого
+    `composition_file_too_large` пяти блокам каталога сразу
+    (`ai-chat-reveal`, `chatgpt-exchange`, `claude-exchange`,
+    `message-thread-reveal`, `notes-reveal`) — на исходнике тех же файлов
+    правило снято. Проверка держит восстановление метки для блока, не только
+    для компонента."""
+    _build(каталог, scenes=_с_элементами({"name": "demo-scene",
+                                          "words": ["Наш заголовок"]}),
+           resolved={})
+    copy = (каталог / "public" / "compositions"
+            / "demo-scene--s-02.html").read_text(encoding="utf-8")
+    assert (copy.splitlines()[0]
+            == "<!-- hyperframes-registry-item: demo-scene -->")
+
+
+def test_подмена_гарнитуры_не_лезет_внутрь_скрипта_позиции():
+    """`font-family` встречается и в CSS позиции, и в строке её JavaScript.
+    Наша замена несёт одинарные кавычки: внутри строки JS она её закрывает, и
+    их же линтер даёт `invalid_inline_script_syntax` «Unexpected identifier
+    'Manrope'» — воспроизведено настоящей сборкой на `caption-camera-follow`
+    (её `caption-camera-follow.html:236` собирает линейку ширины строкой
+    `'font-family:"Helvetica Neue",…;font-weight:700;'`)."""
+    from reels_factory.hf_compose import _restyle_fonts
+
+    html = ("<style>.a { font-family: Inter, sans-serif; }</style>"
+            "<script>var s = 'font-family:\"Helvetica Neue\",Helvetica;'"
+            " + 'x';</script>")
+    out = _restyle_fonts(html)
+    assert "font-family: 'Manrope', sans-serif; }" in out
+    assert "'font-family:\"Helvetica Neue\",Helvetica;'" in out
+
+
+def test_рядом_с_index_ложится_пустая_заглушка_правок_титра(run):
+    """Их рантайм титров сам просит `caption-overrides.json`, как только в
+    композиции есть хоть один `.caption-group` (`applyCaptionOverrides`,
+    `packages/core/src/runtime/captionOverrides.ts:104-107`), и без файла
+    `check --strict` даёт `http_error` «404 loading caption-overrides.json» на
+    `index.html` — то есть роняет всю сборку. Их собственные скиллы пишут ту
+    же заглушку `[]` (`skills/faceless-explainer/scripts/captions.mjs:199-206`).
+    Живьём 06.09.2026 на этом падали четыре позиции каталога со своей
+    разметкой титров."""
+    _build(run)
+    overrides = run / "public" / "caption-overrides.json"
+    assert overrides.exists()
+    assert json.loads(overrides.read_text(encoding="utf-8")) == []
+
+
 def test_ассет_позиции_получает_префикс_её_настоящей_папки(tmp_path):
     """На пине 0.7.84 их `rewriteAssetPath` простой относительный путь (без
     `../`) не трогает — после монтажа `data-composition-src` браузер ищет

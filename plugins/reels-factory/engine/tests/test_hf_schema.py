@@ -310,3 +310,34 @@ def test_корни_блоков_схемы_прозрачны():
         html = (CATALOG_DIR / "registry" / "blocks" / block
                 / f"{block}.html").read_text(encoding="utf-8")
         assert "var(--bg," not in html, block
+
+
+def test_полярность_букв_позиции_выбирает_кадр_а_не_её_умолчание():
+    """Тринадцать позиций каталога дают выбрать полярность своих букв
+    переменной `tone` со значениями `ink`/`paper`, и умолчание у всех —
+    `ink`, «near-black for light frames» (их же слова, `typewriter.html:20-22`).
+    Кадр у нас тёмный (`hf_frame.FRAME_DEFAULTS`, `bg #0b0b0c`), и на живом
+    `check --strict` 0.8.27 это давало `contrast_aa_failure` 1.02:1 с
+    `fg rgb(24,24,27)` — чёрным по чёрному. Цвет кадра — наша арифметика, в
+    плане его нет, поэтому значение выбирает код."""
+    from reels_factory.hf_schema import frame_variables
+
+    card = {"variables": {"tone": {"type": "enum", "default": "ink",
+                                   "options": ["ink", "paper", "accent"]},
+                          "caret": {"type": "enum", "default": "line",
+                                    "options": ["line", "block", "none"]}}}
+    тёмный = {"bg": "#0b0b0c", "ink": "#ffffff", "accent": "#ff1745"}
+    assert frame_variables(card, тёмный) == {"tone": "paper"}
+    светлый = {"bg": "#fafafa", "ink": "#111111", "accent": "#ff1745"}
+    assert frame_variables(card, светлый) == {"tone": "ink"}
+
+
+def test_названное_планом_значение_полярности_сильнее_кадра():
+    """Агент назвал `tone` сам — код его не перекрывает: выбор плана всегда
+    сильнее умолчания, которое подставляем мы."""
+    from reels_factory.hf_schema import frame_variables
+
+    card = {"variables": {"tone": {"type": "enum", "default": "ink",
+                                   "options": ["ink", "paper", "accent"]}}}
+    тёмный = {"bg": "#0b0b0c", "ink": "#ffffff", "accent": "#ff1745"}
+    assert frame_variables(card, тёмный, {"tone": "accent"}) == {}
