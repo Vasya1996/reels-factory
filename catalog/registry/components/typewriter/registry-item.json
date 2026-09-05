@@ -92,6 +92,6 @@
         "default": "line"
       }
     },
-    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > span: Contrast is 1.11:1; WCAG AA requires 3:1."
+    "skip": "Прежняя причина — `contrast_aa_failure` 1.02:1 — была НАШЕЙ: код слал позиции её же умолчание `tone: ink` («near-black for light frames»), а наш кадр тёмный; починено в `hf_schema.frame_variables`, на 0.8.27 `check --strict` даёт PASS. Осталась причина позиции: её собственный скрипт пишет в единственный `<span>` значение переменной `text` (`typewriter.html:110`) поверх всего, что туда положил наш подстановщик слотов, — в кадре стоит «hyperframes add typewriter». Перепроверено настоящей сборкой на 0.8.27 06.09.2026 (work/skips-recheck/typewriter)."
   }
 }

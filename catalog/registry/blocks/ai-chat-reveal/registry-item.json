@@ -182,6 +182,6 @@
         "default": "HYPERFRAMES.HEYGEN.COM"
       }
     },
-    "skip": "frame_out_of_frame [layout] #acr-keys > div:nth-of-type(27) > svg:nth-of-type(1): <svg> \"svg\" spills outside the frame (371.23px past the bottom).; frame_out_of_frame [layout] #acr-keys > div:nth-of-type(28) > svg:nth-of-type(1): <svg> \"svg\" spills outside the frame (368.87px past the bottom).; frame_out_of_frame [layout] #acr-keys > div:nth-of-type(30) > svg:nth-of-type(1): <svg> \"svg\" spills outside the frame (477.04px past the bottom)."
+    "skip": "`content_overlap [layout] #acr-ctext: Two text blocks overlap and may render unreadable.` — пять находок подряд. На кадре позиция кроет кадр целиком белым макетом переписки: экранная клавиатура ложится на полосу титра и наша строка субтитра читается белым по белому, в пузыре — английская демо-реплика «How do I turn my HTML into real…». Прежняя причина (`frame_out_of_frame` на клавише) на 0.8.27 не воспроизводится. Перепроверено настоящей сборкой на 0.8.27 06.09.2026 (work/skips-recheck/ai-chat-reveal)."
   }
 }

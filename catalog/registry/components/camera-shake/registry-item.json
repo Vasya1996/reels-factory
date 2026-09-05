@@ -111,6 +111,6 @@
         "default": true
       }
     },
-    "skip": "composition_file_too_large [lint] [data-composition-id]: This HTML composition file has 571 lines. Smaller sub-compositions are easier to read, iterate on, and diff.; content_overlap [layout] div.cs-title > span:nth-of-type(1): Two text blocks overlap and may render unreadable."
+    "skip": "`check --strict` на 0.8.27 чист (прежние `composition_file_too_large` и `content_overlap` не воспроизводятся: первый снят маркером реестра). Но в кадре — её собственная инженерная карточка: синяя сетка с домами и служебная строка режима «handheld-normal-mild | 50mm | x1 amp x1 freq | rot on | overscan 1.238», и она же обрезана правым краем вертикального кадра. Это проба тряски, а не картинка ролика. Перепроверено настоящей сборкой на 0.8.27 06.09.2026 (work/skips-recheck/camera-shake)."
   }
 }

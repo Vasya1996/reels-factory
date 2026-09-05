@@ -97,6 +97,8 @@
     }
   ],
   "reels": {
+    "use_when": "Речь про перебор вариантов: колода карточек перетасовывается, и вперёд выходит выбранная.",
+    "avoid_when": "Вариант один и сравнивать не с чем: тасовать нечего.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],
@@ -118,7 +120,6 @@
         "type": "enum",
         "default": "none"
       }
-    },
-    "skip": "composition_file_too_large [lint] [data-composition-id]: This HTML composition file has 484 lines. Smaller sub-compositions are easier to read, iterate on, and diff."
+    }
   }
 }

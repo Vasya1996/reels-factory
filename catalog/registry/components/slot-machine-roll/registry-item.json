@@ -114,6 +114,6 @@
         "default": "ink"
       }
     },
-    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > span:nth-of-type(1) > i: Contrast is 1.11:1; WCAG AA requires 3:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > span:nth-of-type(2) > i: Contrast is 1.11:1; WCAG AA requires 3:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > span:nth-of-type(3) > i: Contrast is 1.11:1; WCAG AA requires 3:1."
+    "skip": "Прежняя причина — `contrast_aa_failure` 1.1:1 — была НАШЕЙ: код слал позиции её же умолчание `tone: ink` («ink is near-black for light frames»), а наш кадр тёмный. Починено в `hf_schema.frame_variables`, на 0.8.27 `check --strict` даёт PASS и буквы читаются белым. Осталась причина позиции: она монтируется литералом (`reels.mount: paste`), слотов у неё нет, и в кадре стоит её английская демо-строка «000» — подставить туда слова плана нечем. Перепроверено настоящей сборкой на 0.8.27 06.09.2026 (work/skips-recheck/slot-machine-roll)."
   }
 }
