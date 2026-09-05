@@ -234,10 +234,20 @@
           white-space: nowrap;
         }
 
+        /* Moved up from top:1460px (below row 6, inside the reserved
+           caption band starting at y=1000 of 1920 — CAPTION_BAND_TOP in
+           hf_compose.py): our own template darkens that band with
+           #caption-scrim (templates/reel.html) for caption legibility over
+           unpredictable video, and it darkened this light-on-light label
+           past AA (measured 1.02:1). This is our own ported vertical
+           scene, not their upstream block — the safe fix is to keep the
+           attribution out of the band, not recolor it for a darkening
+           layer a scene position should not need to share with raw
+           video in the first place. */
         #bcr-source {
           position: absolute;
           left: 32px;
-          top: 1460px;
+          top: 490px;
           font-size: 20px;
           color: #6b6560;
         }
