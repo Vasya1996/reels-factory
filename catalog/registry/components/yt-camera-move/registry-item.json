@@ -22,6 +22,7 @@
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],
-    "text_slots": []
+    "text_slots": [],
+    "skip": "тот же демо-хелпер-паттерн, что у hw-boil/mk-usage-arc/mk-emphasis-type: «self-preview stand-in \"footage\" (not part of the snippet)» (`yt-camera-move.html:46`) и «Self-preview timeline (not part of the snippet you copy)» (`yt-camera-move.html:163`), с той же жёсткой строкой `tl.set(\"#yt-cm-root\", { visibility: \"hidden\" }, 3.98)` (`yt-camera-move.html:170`) — код у всех четырёх позиций один и тот же по грепу `not part of the snippet you copy`. Честная оговорка: живой кадр (`hyperframes snapshot` на 1/3/5/7.5 с реальной сборкой) для ЭТОЙ позиции содержимое («FOOTAGE» плейсхолдер) не погасил ни на одном сэмпле — в отличие от остальных трёх, видимого исчезновения не воспроизвёл. Снято по совпадению кода (тот же автор, тот же паттерн, та же строка), а не по подтверждённому кадром симптому у этой конкретной позиции — открытый вопрос."
   }
 }
