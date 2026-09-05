@@ -1652,6 +1652,51 @@ def test_paste_копии_одной_позиции_не_делят_класс_�
     assert '"label": "7"' in second and '"label": "42"' not in second
 
 
+#: Четыре формы корня, которыми полка размечает paste-позиции, и пятая — файл
+#: без своей разметки. Взяты дословно из клона v0.8.27:
+#: `registry/components/{badge-pop,icon-swap,panel-reveal,vignette,
+#: texture-mask-text}/*.html`.
+ФОРМЫ_КОРНЯ = {
+    "div с классом": (
+        '<!-- Badge Pop -->\n<div class="hf-transition-badge-pop x">B</div>',
+        ("class", "hf-transition-badge-pop")),
+    "button с классом": (
+        '<!-- Icon Swap -->\n<button class="hf-transition-icon-swap"\n'
+        '  type="button"\n  data-composition-variables=\'[{"id": "tone"}]\'>'
+        '<span class="from">+</span></button>',
+        ("class", "hf-transition-icon-swap")),
+    "section с классом": (
+        '<!-- Panel Reveal -->\n<section class="hf-transition-panel-reveal"\n'
+        '  data-composition-variables=\'[{"id": "title"}]\'><header/></section>',
+        ("class", "hf-transition-panel-reveal")),
+    "div с id вместо класса": (
+        '<!-- Vignette -->\n<div\n  id="hf-vignette"\n  style="\n'
+        '    position: absolute;\n  "\n></div>',
+        ("id", "hf-vignette")),
+    "приём без своей разметки": (
+        '<!--\n  Texture Mask Text.\n  Usage: add class="hf-texture-text" to '
+        'any text element.\n-->\n<style>.hf-texture-text{}</style>',
+        None),
+}
+
+
+@pytest.mark.parametrize("форма", sorted(ФОРМЫ_КОРНЯ))
+def test_корень_paste_позиции_ищется_любым_тегом_и_вне_шапки(форма):
+    """Корень paste-позиции — не обязательно `<div class="…">`.
+
+    Прогон scratchpad/catalog-sweep 05.09.2026 снял `reels.skip` с четырёх
+    позиций, которых прежний поиск («первый `<div class="…">` файла») просто
+    не видел: `icon-swap` держит корень на `<button>`, `panel-reveal` — на
+    `<section>`, `vignette` и `grid-pixelate-wipe` — на `id` со `style`
+    вместо класса. У `texture-mask-text` разметки нет вовсе, а имя
+    `hf-texture-text` лежит в шапке-комментарии как пример использования —
+    прежний поиск брал его оттуда и падал уже в их парсере, называя не ту
+    причину.
+    """
+    html, ожидание = ФОРМЫ_КОРНЯ[форма]
+    assert hf_compose.paste_root_name(html) == ожидание
+
+
 def test_стык_встаёт_за_срез_сцены_и_живёт_свою_длительность(каталог):
     """Их же правило размещения накладки-перехода: «place this block spanning
     the host's cut point (e.g. start 0.9s before the cut)»."""

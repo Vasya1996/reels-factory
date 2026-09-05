@@ -26,6 +26,6 @@
     "mount": "paste",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "DROPPED (настоящая сборка, hf_compose.py, paste_fragment): нет корневого div с class — разметка paste-компонента не по контракту полки (docstring registry/components/*/*.html). Найдено повторно прогоном scratchpad/catalog-sweep 05.09.2026 — то же семейство, что и в pin-0827-report.md, но раньше не было проставлено skip."
+    "skip": "Собирается и монтируется (корень на `id=\"hf-vignette\"`, а не на классе — поиск корня починен ревью 05.09.2026, hf_compose.paste_root_name). Не предлагается по кадру: позиция гасит края СВОЕЙ коробки («covers the full viewport», её же шапка), а `kind: effect` ставит её в свободную зону кадра — на кадре видно прямоугольную границу затемнения посреди ролика вместо виньетки по краям ролика. Нужен маунт во весь кадр, а такого вида у нас нет. Кадр: work/catalog-sweep-review/vignette/contact-sheet.jpg."
   }
 }

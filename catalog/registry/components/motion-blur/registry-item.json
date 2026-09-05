@@ -27,6 +27,6 @@
     "mount": "paste",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "DROPPED (настоящая сборка, hf_compose.py, paste_fragment): нет корневого div с class — разметка paste-компонента не по контракту полки (docstring registry/components/*/*.html). Найдено повторно прогоном scratchpad/catalog-sweep 05.09.2026 — то же семейство, что и в pin-0827-report.md, но раньше не было проставлено skip."
+    "skip": "DROPPED (настоящая сборка, hf_compose.paste_fragment): у позиции нет своей разметки — это приём поверх ЧУЖИХ элементов кадра, а не самостоятельный кусок кадра, и вставлять литералом нечего. Их собственная формулировка того же: «This fragment has no markup of its own» (registry/components/bottom-up-letters, тот же класс позиций). Вида `effect`, который встаёт в свободную зону кадра сам по себе, из такой позиции не выходит. Ревью 05.09.2026: прежняя причина («нет корневого div с class — разметка не по контракту полки») была неверна дважды — разметка по контракту, а поиск корня у нас смотрел только `<div class=…>` и заодно шапку-комментарий (починено, hf_compose.paste_root_name). Её собственная строка контракта: «paste this snippet into your composition, then call attachMotionBlur() with any element animated by your GSAP timeline» (motion-blur.html:4-5)."
   }
 }
