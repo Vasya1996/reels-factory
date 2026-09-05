@@ -11,6 +11,8 @@ import os
 import subprocess
 from pathlib import Path
 
+from reels_factory.hyperframes_blocks import _HF_VERSION
+
 STEP_TYPES = {"goto", "type", "click", "scroll", "wait"}
 ENGINE_DIR = Path(__file__).resolve().parents[2]
 
@@ -21,7 +23,8 @@ def chrome_path() -> str:
     candidates = sorted(root.glob("**/chrome-headless-shell*"))
     if not candidates:
         raise RuntimeError(
-            "браузер движка не найден; выполни npx hyperframes@0.7.70 browser install")
+            "браузер движка не найден; выполни "
+            f"npx hyperframes@{_HF_VERSION} browser install")
     return str(candidates[-1])
 
 

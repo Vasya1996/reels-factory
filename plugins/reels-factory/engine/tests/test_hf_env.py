@@ -8,11 +8,12 @@ SRC = Path(__file__).resolve().parents[1] / "src" / "reels_factory"
 
 
 def test_версия_движка_закреплена():
-    """Версия одна на весь движок и совпадает с той, под которую снято досье
-    docs/research/hyperframes/findings.md."""
+    """Версия одна на весь движок (`_HF_VERSION` в hyperframes_blocks.py);
+    поднята на 0.8.27 — docs/research/hyperframes/findings.md снято под
+    старый пин 0.7.84 и с этим подъёмом не сверялось заново."""
     text = (SRC / "hyperframes_blocks.py").read_text(encoding="utf-8")
     version = re.search(r'_HF_VERSION\s*=\s*"([\d.]+)"', text)
-    assert version and version.group(1) == "0.7.84"
+    assert version and version.group(1) == "0.8.27"
     assert "hyperframes@latest" not in text
     # Прежде версия дублировалась в подсказке hf_assets и разъезжалась молча.
     others = re.findall(r"hyperframes@(\d[\d.]*)",
