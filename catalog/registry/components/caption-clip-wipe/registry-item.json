@@ -27,6 +27,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "caption_zone_collision [layout] #wp-w-20: <span> \"DRAG\" is centred in the reserved caption band (~22% up from the bottom).; caption_zone_collision [layout] #wp-w-21: <span> \"AND\" is centred in the reserved caption band (~22% up from the bottom)."
+    "skip": "text_slots пуст: слова агента в позицию не попадают, в кадре навсегда её собственный английский демо-текст. На снятом кадре (`hyperframes snapshot`, тем же путём, что и сборка) демо-строка обрезается правым краем кадра 1080×1920: «AND RENDER PRO» не дочитывается. check --strict это не ловит — он судит зону титра, не обрезку правым краем."
   }
 }

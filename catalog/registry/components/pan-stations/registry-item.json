@@ -79,6 +79,6 @@
         "default": 0.6
       }
     },
-    "skip": "content_overlap [layout] span.ps-glyph: Two text blocks overlap and may render unreadable.; content_overlap [layout] span.ps-glyph: Two text blocks overlap and may render unreadable.; content_overlap [layout] span.ps-glyph: Two text blocks overlap and may render unreadable."
+    "skip": "то же семейство, что у focus-rack: карточки станций видны первые секунды (читаются чисто, без наложения), дальше кадр пустой до конца отведённой длительности — снято `hyperframes snapshot`, тем же кадром, каким его видит сборка. Заявленный check --strict `content_overlap` в проверенных кадрах не воспроизведён, но пустой хвост — самостоятельная причина не снимать skip."
   }
 }

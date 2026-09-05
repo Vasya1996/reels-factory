@@ -97,6 +97,6 @@
         "default": 5
       }
     },
-    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > article > footer > div:nth-of-type(1): Contrast is 1.74:1; WCAG AA requires 4.5:1."
+    "skip": "то же семейство, что у focus-rack: карточка отзыва читается чисто первые секунды (хорошая контрастность, без обрезки), дальше кадр пустой до конца отведённой длительности — снято `hyperframes snapshot`, тем же кадром, каким его видит сборка."
   }
 }

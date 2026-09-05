@@ -21,6 +21,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div:nth-of-type(1) > div > span:nth-of-type(1): Contrast is 1.18:1; WCAG AA requires 3:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div:nth-of-type(1) > div > span:nth-of-type(2): Contrast is 1.19:1; WCAG AA requires 4.5:1."
+    "skip": "то же семейство, что у focus-rack: заметная часть кадра (дуга прогресса, число) видна первые секунды, дальше кадр пустой до конца отведённой длительности — снято `hyperframes snapshot`, тем же кадром, каким его видит сборка. Отдельно число «76%»/подпись «Usage» и в момент, когда видны, читаются с трудом — тускло-серым по тёмному, подтверждая исходную находку check --strict (contrast ~1.18:1)."
   }
 }

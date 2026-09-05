@@ -85,6 +85,6 @@
         "default": "blue"
       }
     },
-    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > div > article:nth-of-type(1) > div:nth-of-type(1) > span:nth-of-type(1): Contrast is 1.42:1; WCAG AA requires 4.5:1."
+    "skip": "содержимое (`hyperframes snapshot`, тем же кадром, каким его видит сборка) держится первые ~3 c из отведённой позиции длительности (8 с в пробе), дальше — пустой кадр до конца сцены. check --strict это пропускает: к его моменту съёмки сцена уже пуста, судить не на чем. Причина не установлена — жёсткого предела не нашлось ни в нашем коде (`hf_compose.py`/`hf_render.py`, грep по числам пуст), ни в CSS/JS самой позиции (её скрипт считает HOLD/OUT_START от переданного `data-duration`, как положено, и по этому счёту кадр должен держаться до ~7.5 с)."
   }
 }

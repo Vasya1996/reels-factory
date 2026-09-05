@@ -21,6 +21,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "contrast_aa_failure [contrast] #mk-emph-demo: Contrast is 1.01:1; WCAG AA requires 3:1."
+    "skip": "на кадре (`hyperframes snapshot`) содержимое практически не видно ни в один из проверенных моментов (1/2/3/4 с) — различим только смутный контур буквы на фоне. Подтверждает находку check --strict дословно (contrast ~1.01:1 — текст неотличим от фона), не только формально: глазом тоже нечитаемо."
   }
 }
