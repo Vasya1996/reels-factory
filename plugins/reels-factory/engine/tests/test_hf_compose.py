@@ -211,6 +211,29 @@ def test_плашка_не_заезжает_на_следующую(run):
     assert 'id="ovl-s-02"' in html
 
 
+def test_хостовый_id_плашки_не_совпадает_с_id_внутри_копии(run):
+    """Тот же баг коллизии, что у сценных элементов (`test_хостовый_id_
+    накладки_не_совпадает_с_id_внутри_копии`), и здесь риск ВЫШЕ: плашка
+    держится на кадре секундами (родная длительность, не доля секунды, как у
+    вспышки) — ровно то окно, где их скоуп-скрипт путает хост с копией и
+    гасит контент. Один и тот же билдер лучше бы делил код, но `_stage_
+    overlay`/`common` для сценных элементов и накладка-цикл для плашек —
+    разные функции; чиним оба места одним и тем же суффиксом."""
+    (run / "public" / "compositions" / "lt-kicker-name.html").write_text(
+        '<div data-composition-id="lt-kicker-name" data-duration="2.5"'
+        ' data-width="1920" data-height="1080"></div>', encoding="utf-8")
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[0]["overlay"] = {"block": "lt-kicker-name", "text": {}}
+    html, _ = _build(run, scenes=scenes)
+    first = html[html.index('id="ovl-s-01"'):]
+    assert 'data-composition-id="lt-kicker-name--s-01-host"' in first[:400]
+    assert 'data-composition-id="lt-kicker-name--s-01"' not in first[:400]
+    copy = (run / "public" / "compositions"
+            / "lt-kicker-name--s-01.html").read_text(encoding="utf-8")
+    assert 'data-composition-id="lt-kicker-name--s-01"' in copy
+    assert "lt-kicker-name--s-01-host" not in copy
+
+
 def test_ранняя_кульминация_обходится_без_вспышки(run):
     """Пику вспышки нужно 2,32 с разбега — раньше него вспышку не поставить."""
     scenes = json.loads(json.dumps(SCENES))

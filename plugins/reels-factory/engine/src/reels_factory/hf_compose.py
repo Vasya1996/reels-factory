@@ -1725,13 +1725,18 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 f' data-track-index='
                 f'"{TRACK_SCRIM + staged_scrims % scrim_tracks}"></div>')
             staged_scrims += 1
+        # Хостовый id разведён с id внутри копии — та же причина, что у
+        # `common` в цикле элементов сцены (см. её комментарий там же):
+        # их `inlineSubCompositions.ts` вклеивает копию в тот же
+        # документ, и совпадающий `data-composition-id` путал их
+        # скоуп-скрипт при повторном seek.
         body.append(
             f'    <div class="ovl" style="{box}">'
             f'<div data-layout-allow-overflow="true" style="position:absolute;'
             f'left:0;top:0;transform:scale({scale:.4f});transform-origin:0 0">'
             f'<div id="ovl-{scene["id"]}" class="clip"'
             f' data-layout-allow-overflow="true"'
-            f' data-composition-id="{unique}"'
+            f' data-composition-id="{unique}-host"'
             f' data-composition-src="compositions/{unique}.html"'
             f' data-start="{at:.4f}" data-duration="{span:.4f}"'
             f' data-track-index="{TRACK_OVERLAY + staged_overlays % 2}"'
@@ -2161,10 +2166,15 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             f'y: Math.sin(f + path[0] + Math.PI / 2) * path[2] + "cqh" }})); '
             f'}} }}, {at_start});',
             f'tl.set({_js("#" + aurora)}, {{ display: "none" }}, {at_end});']
+        # Хостовый id разведён с id внутри копии — та же причина, что у
+        # `common` в цикле элементов сцены (см. её комментарий там же):
+        # их `inlineSubCompositions.ts` вклеивает копию в тот же
+        # документ, и совпадающий `data-composition-id` путал их
+        # скоуп-скрипт при повторном seek.
         body.append(
             f'    <div class="ovl">'
             f'<div id="schema-{scene["id"]}" class="clip"'
-            f' data-composition-id="{unique}"'
+            f' data-composition-id="{unique}-host"'
             f' data-composition-src="compositions/{unique}.html"'
             f' data-start="{markup_time(start):.4f}"'
             f' data-duration="{markup_time(end) - markup_time(start):.4f}"'
@@ -2281,6 +2291,11 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         left = -round((1920 * scale - OUT_W) / 2)
         # Растянутый канвас блока шире кадра: обёртка режет его по краю, а
         # допуск переполнения снимает находку canvas_overflow их аудита.
+        # Хостовый id разведён с id внутри копии — та же причина, что у
+        # `common` в цикле элементов сцены (см. её комментарий там же):
+        # их `inlineSubCompositions.ts` вклеивает копию в тот же
+        # документ, и совпадающий `data-composition-id` путал их
+        # скоуп-скрипт при повторном seek.
         body.append(
             f'    <div class="fx"><div data-layout-allow-overflow="true"'
             f' style="position:absolute;'
@@ -2288,7 +2303,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             f'transform-origin:0 0">'
             f'<div id="fx-{order}" class="clip"'
             f' data-layout-allow-overflow="true"'
-            f' data-composition-id="{unique}"'
+            f' data-composition-id="{unique}-host"'
             f' data-composition-src="compositions/{unique}.html"'
             f' data-start="{flash_start:.4f}"'
             f' data-duration="{flash_length:.4f}"'
