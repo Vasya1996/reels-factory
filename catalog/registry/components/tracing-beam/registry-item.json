@@ -72,6 +72,6 @@
         "default": "cyan"
       }
     },
-    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > div > div > div:nth-of-type(1) > div > div:nth-of-type(2) > div:nth-of-type(1): Contrast is 4.33:1; WCAG AA requires 4.5:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > div > div > div:nth-of-type(2) > div > div:nth-of-type(2) > div:nth-of-type(1): Contrast is 4.27:1; WCAG AA requires 4.5:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > div > div > div:nth-of-type(3) > div > div:nth-of-type(2) > div:nth-of-type(1): Contrast is 3.28:1; WCAG AA requires 4.5:1."
+    "skip": "демонстрационные подписи карточек обрезаны многоточием («Se…», «Pre…», «Exp…» вместо Setup/Prepare/Execute) — коробка держит фиксированную ширину, рассчитанную под цифру, а не под слово. Текст нечитаем. check --strict этого не ловит: обрезка через CSS `text-overflow: ellipsis`, не переполнение."
   }
 }

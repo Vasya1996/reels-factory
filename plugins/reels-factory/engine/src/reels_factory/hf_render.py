@@ -632,7 +632,20 @@ CHECK_SECTIONS = ("lint", "runtime", "layout", "motion", "contrast")
 #: (`inlineSubCompositions.ts`/`compositionScoping.ts`). Разбор целиком —
 #: scratchpad/strict-scoping-rootcause.md. Любой другой код правила
 #: по-прежнему валит `--strict` в полную силу.
-CHECK_IGNORED_CODES = frozenset({"composition_self_attribute_selector"})
+#:
+#: `studio_missing_editable_id` (packages/lint/src/rules/core.ts:420-441)
+#: судит об отсутствии `id` у элемента таймлайна одной причиной — их же
+#: текстом находки: "so Studio cannot use a stable edit target for its
+#: timeline and canvas controls", а `fixHint` прямо называет адресата —
+#: "so agents or Studio can edit" (core.ts:433-434). Оба адресата у нас не
+#: существуют: их Studio мы не открываем никогда, а наш агент HTML не
+#: правит вовсе — пишет только `storyboard.json`/`frame.md`
+#: (`.claude/rules/hyperframes-composition.md`: «Агент пишет ноль HTML»).
+#: Правило целиком про удобство ручного/интерактивного редактирования,
+#: которого в этом пайплайне нет ни в одном виде — не находка о кадре, не
+#: про рендер, не про наш путь вовсе.
+CHECK_IGNORED_CODES = frozenset({"composition_self_attribute_selector",
+                                 "studio_missing_editable_id"})
 
 
 def _check_ok(report: dict) -> bool:

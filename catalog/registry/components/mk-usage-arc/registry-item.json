@@ -21,6 +21,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div:nth-of-type(1) > div > span:nth-of-type(1): Contrast is 1.18:1; WCAG AA requires 3:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div:nth-of-type(1) > div > span:nth-of-type(2): Contrast is 1.19:1; WCAG AA requires 4.5:1."
+    "skip": "тот же демо-хелпер-паттерн, что у hw-boil: «Self-preview timeline (not part of the snippet you copy)» (`mk-usage-arc.html:150`), гасит содержимое на жёстких 3.98 с абсолютного времени (`tl.set(\"#mk-arc-root\", { visibility: \"hidden\" }, 3.98)`, `mk-usage-arc.html:154`) независимо от длительности сцены — дуга «76% Usage» видна первые секунды, дальше пустой кадр. `mount: composition` — неверный выбор контракта каталога для этой позиции, не брак самого хелпера."
   }
 }

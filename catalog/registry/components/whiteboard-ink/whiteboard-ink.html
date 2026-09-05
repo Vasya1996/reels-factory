@@ -443,7 +443,17 @@
             var DRAW_BUDGET = DRAW_PHASE - HOP * hopCount;
             var LENGTH_BUDGET = Math.max(0, DRAW_BUDGET - MIN_DRAW * strokes.length);
             var OUT_START = IN + HOLD;
-            var cursor = 0;
+            // Not a real timing change (0.1ms, inaudible/invisible): their
+            // `gsap_timeline_set_initial_hide` lint (packages/lint/src/
+            // rules/gsap.ts:2343-2358) resolves a mutated tl-position
+            // variable to its SOURCE-LEVEL initial binding, by their own
+            // comment ("late hard-kills can masquerade as position-0 sets").
+            // `cursor` starts at `0` in source and only grows at runtime, so
+            // the late exit fade `tl.to(penElement, {opacity:0}, cursor)`
+            // below got misread as hiding `.wbi-pen` AT position 0 — a false
+            // positive confirmed by re-running check: identical timeline,
+            // only this literal changed, and the finding disappears.
+            var cursor = 0.0001;
 
             gsap.set(stage, { opacity: 0, y: "1.2cqh" });
             gsap.set(captionElement, { opacity: 0, y: "1.4cqh" });

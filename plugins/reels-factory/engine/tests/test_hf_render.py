@@ -1764,7 +1764,25 @@ def test_смешанные_находки_валят_check_из_за_друго
 
 
 def test_ложное_правило_названо_по_имени_и_только_оно(tmp_path):
-    assert CHECK_IGNORED_CODES == frozenset({"composition_self_attribute_selector"})
+    assert CHECK_IGNORED_CODES == frozenset({"composition_self_attribute_selector",
+                                             "studio_missing_editable_id"})
+
+
+_STUDIO_ID_FINDING = {"code": "studio_missing_editable_id", "severity": "warning",
+                      "message": "has no id, so Studio cannot use a stable "
+                                 "edit target for its timeline and canvas "
+                                 "controls."}
+
+
+def test_находка_studio_missing_editable_id_одна_не_валит_check(tmp_path):
+    """Их Studio мы не открываем никогда, а наш агент HTML не правит вовсе —
+    у находки этого кода нет адресата в этом пайплайне (core.ts:420-441)."""
+    report = _check_report(_STUDIO_ID_FINDING)
+    assert _check_ok(report) is True
+
+    log = tmp_path / "check.json"
+    log.write_text(json.dumps({"ok": False, **report}), encoding="utf-8")
+    assert _check_verdict(log) == "PASS"
 
 
 def test_единственная_находка_ложного_правила_не_даёт_агенту_пересдачу(

@@ -27,6 +27,7 @@
   },
   "reels": {
     "use_when": "Названа музыка, которая сейчас играет: трек, исполнитель, плеер.",
-    "backing": "none"
+    "backing": "none",
+    "skip": "content_overlap [layout] #track-name: Two text blocks overlap and may render unreadable."
   }
 }

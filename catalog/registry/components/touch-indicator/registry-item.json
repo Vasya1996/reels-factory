@@ -99,6 +99,7 @@
         "type": "number",
         "default": 55
       }
-    }
+    },
+    "skip": "console_error [runtime] [data-composition-id]: [HyperFrames] composition script error: touch-indicator--s-01 SyntaxError: Failed to execute 'querySelectorAll' on 'Document': '[data-composition-id=\"touch-indicator--s-01\" data-width=\"1080\" data-height=\"980\"]' is not a valid selector. Позиция сама не объявляет data-width/data-height (`touch-indicator.html:94`, «No data-width/data-height … whatever size a host slot gives it») — наш `declare_box` (hf_compose.py) дописывает их в тот же тег рядом с data-composition-id, и в этом сочетании их рантайм роняет композицию с синтаксической ошибкой в селекторе. Не разобрано до конца, какая именно их строка строит этот селектор (открытый вопрос в отчёте) — снято по факту падения, не по догадке о причине."
   }
 }

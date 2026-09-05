@@ -603,6 +603,11 @@ def _exit(target: str, next_beat: str, at: float) -> list[str]:
 
 _CDN_GSAP = re.compile(r'src="https://cdn\.jsdelivr\.net/npm/gsap[^"]*"')
 
+#: Их же маркер «этот файл поставлен реестром» (`isRegistryInstalledFile`,
+#: `packages/lint/src/rules/composition.ts:94-95`) — простая проверка первых
+#: 512 байт на комментарий этой формы, `re.match` здесь эквивалентен их `^`.
+_REGISTRY_MARKER = re.compile(r"\s*<!--\s*hyperframes-registry-item:", re.I)
+
 #: Внешние шрифты блока. Их линтер зовёт это `google_fonts_import`, под
 #: `--strict` предупреждение роняет сборку, и он прав: композиция обязана быть
 #: самодостаточной. Кириллицу всё равно врезаем мы — `hf_fonts.inject_fonts`.
@@ -692,9 +697,24 @@ def _installed_path(public, name: str, card_type: str = "block") -> Path:
     они, компонент читался бы по чужому пути и валил сборку рантайм-ошибкой
     «не установлен», хотя `add` его честно поставил, просто в другую
     подпапку.
+
+    Формула плоского пути верна почти всегда, но не для карточки, чей
+    собственный `registry-item.json` объявляет вложенный `target` (у
+    `texture-mask-text` html лежит рядом с 66 текстурами в одноимённой
+    подпапке — `hf_catalog.component_install_target`, сверено байт-в-байт с
+    их клоном). `add` кладёт файл ровно туда, куда велит этот `target`
+    (`remapTarget`, `add.ts:40-59`, меняет только префикс), поэтому путь
+    сперва спрашивается у манифеста и только при его отсутствии считается по
+    формуле.
     """
     base = Path(public) / "compositions"
-    return (base / "components" / f"{name}.html") if card_type == "component"         else base / f"{name}.html"
+    if card_type == "component":
+        from reels_factory.hf_catalog import component_install_target
+        target = component_install_target(name)
+        if target:
+            return Path(public) / target
+        return base / "components" / f"{name}.html"
+    return base / f"{name}.html"
 
 
 def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
@@ -780,6 +800,25 @@ def _stage_overlay(public, block: str, scene_id: str, *, sdk=None,
     # рабочего и отдавал `sub_timeline_readiness_timeout`. Проверено кадром:
     # убери второй хост — первый оживает.
     html = html.replace(f'= "{block}"', f'= "{unique}"')
+    if card_type == "component" and not _REGISTRY_MARKER.match(html):
+        # Их линтер снимает `composition_file_too_large` (и три похожих
+        # правила) на файле, что несёт первой строкой комментарий
+        # `<!-- hyperframes-registry-item: NAME -->` — `isRegistryInstalledFile`
+        # (`packages/lint/src/rules/composition.ts:94`), проверка чисто
+        # текстовая, тип карточки не смотрит. Их же `hyperframes add` пишет
+        # этот комментарий блокам (`addRegistryItemMarker`, `installer.ts:
+        # 136-141`), но только когда `isInstalledRegistryBlockComposition`
+        # (`installer.ts:124-127`) видит `item.type === "hyperframes:block"` —
+        # компоненту, даже настоящий `add`, маркер не ставит никогда
+        # (проверено живым `hyperframes add` на `chart-story`: первая строка
+        # файла — `<!doctype html>`, без маркера). Мы монтируем компонент с
+        # `reels.mount: composition` в точности как блок (та же сабкомпозиция
+        # через `data-composition-src`, тот же путь `_stage_overlay`) — и,
+        # как блок, никогда не даём человеку её отредактировать: копия ниже
+        # не трогает CSS/JS позиции, только `data-composition-id`/
+        # `data-duration`/переменные хоста. Дописываем маркер сами, тем же
+        # текстом, каким наградил бы блок настоящий `add`.
+        html = f"<!-- hyperframes-registry-item: {block} -->\n{html}"
     # GSAP блока — плоским именем и ДВУМЯ копиями: их резолверы расходятся
     # (рендер идёт от файла копии, живая проверка — от корня проекта,
     # invalid_parent_traversal_in_asset_path это прямо говорит), а путь через
@@ -1686,13 +1725,18 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 f' data-track-index='
                 f'"{TRACK_SCRIM + staged_scrims % scrim_tracks}"></div>')
             staged_scrims += 1
+        # Хостовый id разведён с id внутри копии — та же причина, что у
+        # `common` в цикле элементов сцены (см. её комментарий там же):
+        # их `inlineSubCompositions.ts` вклеивает копию в тот же
+        # документ, и совпадающий `data-composition-id` путал их
+        # скоуп-скрипт при повторном seek.
         body.append(
             f'    <div class="ovl" style="{box}">'
             f'<div data-layout-allow-overflow="true" style="position:absolute;'
             f'left:0;top:0;transform:scale({scale:.4f});transform-origin:0 0">'
             f'<div id="ovl-{scene["id"]}" class="clip"'
             f' data-layout-allow-overflow="true"'
-            f' data-composition-id="{unique}"'
+            f' data-composition-id="{unique}-host"'
             f' data-composition-src="compositions/{unique}.html"'
             f' data-start="{at:.4f}" data-duration="{span:.4f}"'
             f' data-track-index="{TRACK_OVERLAY + staged_overlays % 2}"'
@@ -1828,7 +1872,21 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             span = markup_time(begin + length) - at
             mount = f'el-{scene["id"]}-{staged_elements}'
             track = TRACK_ELEMENT + staged_elements % ELEMENT_TRACKS
-            common = (f' data-composition-id="{unique}"'
+            # Хостовый `data-composition-id` — НЕ тот же текст, что несёт
+            # корень скопированного файла: копия уже переименована в
+            # `unique` (`_stage_overlay`, строка с `.replace(f'data-
+            # composition-id="{block}"', ...)`), и их `inlineSubCompositions.
+            # ts` вклеивает содержимое файла в тот же документ, а не в
+            # настоящий `<iframe>` — `document.querySelectorAll` внутри их
+            # скоуп-скрипта (`compositionScoping.ts`) тогда находит ДВА узла
+            # с одним `data-composition-id`: хост и корень копии. Живой
+            # прогон (`hyperframes snapshot --at` на секундах 1/3/5/7.5)
+            # показал: с совпадающим id содержимое элементов вроде focus-rack
+            # держится первые ~3 с и гаснет — с разведёнными id (суффикс
+            # `-host` только на хосте, корень копии не трогаем) держится до
+            # конца отведённой длительности. Разбор — scratchpad/catalog-
+            # tails/id-collision-rootcause.md.
+            common = (f' data-composition-id="{unique}-host"'
                       f' data-composition-src="compositions/{unique}.html"'
                       f' data-start="{at:.4f}" data-duration="{span:.4f}"'
                       f' data-track-index="{track}"')
@@ -2108,10 +2166,15 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             f'y: Math.sin(f + path[0] + Math.PI / 2) * path[2] + "cqh" }})); '
             f'}} }}, {at_start});',
             f'tl.set({_js("#" + aurora)}, {{ display: "none" }}, {at_end});']
+        # Хостовый id разведён с id внутри копии — та же причина, что у
+        # `common` в цикле элементов сцены (см. её комментарий там же):
+        # их `inlineSubCompositions.ts` вклеивает копию в тот же
+        # документ, и совпадающий `data-composition-id` путал их
+        # скоуп-скрипт при повторном seek.
         body.append(
             f'    <div class="ovl">'
             f'<div id="schema-{scene["id"]}" class="clip"'
-            f' data-composition-id="{unique}"'
+            f' data-composition-id="{unique}-host"'
             f' data-composition-src="compositions/{unique}.html"'
             f' data-start="{markup_time(start):.4f}"'
             f' data-duration="{markup_time(end) - markup_time(start):.4f}"'
@@ -2228,6 +2291,11 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         left = -round((1920 * scale - OUT_W) / 2)
         # Растянутый канвас блока шире кадра: обёртка режет его по краю, а
         # допуск переполнения снимает находку canvas_overflow их аудита.
+        # Хостовый id разведён с id внутри копии — та же причина, что у
+        # `common` в цикле элементов сцены (см. её комментарий там же):
+        # их `inlineSubCompositions.ts` вклеивает копию в тот же
+        # документ, и совпадающий `data-composition-id` путал их
+        # скоуп-скрипт при повторном seek.
         body.append(
             f'    <div class="fx"><div data-layout-allow-overflow="true"'
             f' style="position:absolute;'
@@ -2235,7 +2303,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             f'transform-origin:0 0">'
             f'<div id="fx-{order}" class="clip"'
             f' data-layout-allow-overflow="true"'
-            f' data-composition-id="{unique}"'
+            f' data-composition-id="{unique}-host"'
             f' data-composition-src="compositions/{unique}.html"'
             f' data-start="{flash_start:.4f}"'
             f' data-duration="{flash_length:.4f}"'

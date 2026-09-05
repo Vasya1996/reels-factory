@@ -21,6 +21,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "contrast_aa_failure [contrast] #mk-emph-demo: Contrast is 1.01:1; WCAG AA requires 3:1."
+    "skip": "тот же демо-хелпер-паттерн: «Self-preview timeline (not part of the snippet you copy)» (`mk-emphasis-type.html:88`), гасит содержимое на жёстких 3.98 с абсолютного времени (`tl.set(\"#mk-emph-root\", { visibility: \"hidden\" }, 3.98)`, `mk-emphasis-type.html:92`) независимо от длительности сцены. Отдельно подтверждено и без этого: контраст ~1.01:1 — во все проверенные моменты (1/2/3/4 с) буква неотличима от фона даже пока таймлайн не погас."
   }
 }

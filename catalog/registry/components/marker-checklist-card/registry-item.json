@@ -112,6 +112,8 @@
     }
   ],
   "reels": {
+    "use_when": "Названы шаги как уже выполненные пункты списка: сделал раз, два, три — с галочкой на каждом.",
+    "avoid_when": "Шаги ещё предстоят, не сделаны — готовая галочка соврёт: это onboarding-stepper-flow.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],
@@ -157,7 +159,6 @@
         "type": "string",
         "default": "TODAY"
       }
-    },
-    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > div:nth-of-type(5) > div:nth-of-type(1): Contrast is 1.73:1; WCAG AA requires 4.5:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > div:nth-of-type(5) > div:nth-of-type(2): Contrast is 1.73:1; WCAG AA requires 4.5:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > div:nth-of-type(6) > div:nth-of-type(1): Contrast is 1.74:1; WCAG AA requires 4.5:1."
+    }
   }
 }

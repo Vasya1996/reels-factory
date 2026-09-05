@@ -75,6 +75,8 @@
     }
   ],
   "reels": {
+    "use_when": "Названа короткая похвала с оценкой звёздами — как отзыв в соцсети или в сторе.",
+    "avoid_when": "Цитата несёт должность и компанию, солиднее социального отзыва — это testimonial-proof-card.",
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],
@@ -96,7 +98,6 @@
         "type": "number",
         "default": 5
       }
-    },
-    "skip": "contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div > article > footer > div:nth-of-type(1): Contrast is 1.74:1; WCAG AA requires 4.5:1."
+    }
   }
 }

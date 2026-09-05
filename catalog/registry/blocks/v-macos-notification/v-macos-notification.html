@@ -34,7 +34,14 @@
         top: 260px;
         left: 32px;
         width: 1016px;
-        background: rgba(30, 30, 30, 0.82);
+        /* Их аудит контраста меряет реально составленный кадр (canvas
+           getImageData на скриншоте, не голое CSS-значение) — полупрозрачная
+           карточка (0.82) смешивается с тем, что реально стоит позади неё,
+           и результат непредсказуем: в этой пробе дал 3.22:1 у надписи
+           «now» вместо нужных 4.5:1. Наша порт-версия, не их блок — плашка
+           непрозрачна, эффект замочного стекла отдаём только size (радиус,
+           тень), не риску случайного фона. */
+        background: rgba(30, 30, 30, 1);
         backdrop-filter: blur(40px);
         -webkit-backdrop-filter: blur(40px);
         border-radius: 20px;
@@ -84,7 +91,12 @@
       [data-composition-id="v-macos-notification"] .time-label {
         font-size: 16px;
         font-weight: 400;
-        color: rgba(255, 255, 255, 0.35);
+        /* 0.35 measured 3.22:1 against the now-opaque card (30,30,30) —
+           their contrast audit composites this element's OWN alpha onto the
+           real rendered backdrop (canvas getImageData, contrast-audit.
+           browser.js:422-426), so the card opacity fix alone could not
+           reach 4.5:1: this text's alpha was the remaining factor. */
+        color: rgba(255, 255, 255, 0.68);
       }
 
       [data-composition-id="v-macos-notification"] .notification-title {

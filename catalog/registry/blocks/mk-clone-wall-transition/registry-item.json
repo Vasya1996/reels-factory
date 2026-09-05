@@ -26,6 +26,7 @@
     "kind": "overlay",
     "backing": "textless",
     "decor_texts": [],
-    "text_slots": []
+    "text_slots": [],
+    "skip": "content_overlap [layout] span.mk-cw-tile: Two text blocks overlap and may render unreadable. Автор явно разметил тайлы как допускающие наложение — каждая строка получает data-layout-allow-occlusion (mk-clone-wall-transition.html:157-158), кирпичная стена из повторов слова специально уходит внахлёст. Но их правило content_overlap (packages/cli/src/commands/layout-audit.browser.js:648-673, overlapIssue) эту метку не читает вовсе — data-layout-allow-occlusion проверяет только hasAllowOcclusionFlag (:873-874), а её единственный вызов — occludedTextIssue (:1008), другой код (text_occluded). Дыра в их линте, не брак блока и не наш дефект — оставлено honest skip, не в CHECK_IGNORED_CODES: глобальный игнор кода спрятал бы настоящее наложение у любой другой позиции."
   }
 }

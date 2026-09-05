@@ -26,6 +26,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "frame_out_of_frame [layout] #el-s-01-0 > div:nth-of-type(1) > svg:nth-of-type(1): <svg> \"svg\" spills outside the frame (840px past the right).; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div:nth-of-type(2): Contrast is 4.15:1; WCAG AA requires 4.5:1.; contrast_aa_failure [contrast] div > div:nth-of-type(2) > div > div > div:nth-of-type(3): Contrast is 4.15:1; WCAG AA requires 4.5:1."
+    "skip": "демо-хелпер каталога, не позиция контракта саб-композиции: файл сам называет себя так — «Self-preview (not part of the snippet you copy)» (`hw-boil.html:201`) — предназначен копироваться КОДОМ в скрипт хоста, не монтироваться целиком. Таймлайн гасит содержимое жёстко на 3.98 с абсолютного времени (`tl.set(\"#hw-boil-root\", { visibility: \"hidden\" }, 3.98)`, `hw-boil.html:221`) независимо от длительности сцены — на кадре `hyperframes snapshot` в реальной сборке круг-выноска виден первые ~3 с, дальше пустой кадр до конца 8-секундной сцены. Их же линтер (изолированный прогон) называет разметку `blank_root_with_standalone_composition` — не подходит под `mount: composition` вовсе, дело не в длительности."
   }
 }

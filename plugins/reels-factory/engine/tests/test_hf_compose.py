@@ -211,6 +211,29 @@ def test_плашка_не_заезжает_на_следующую(run):
     assert 'id="ovl-s-02"' in html
 
 
+def test_хостовый_id_плашки_не_совпадает_с_id_внутри_копии(run):
+    """Тот же баг коллизии, что у сценных элементов (`test_хостовый_id_
+    накладки_не_совпадает_с_id_внутри_копии`), и здесь риск ВЫШЕ: плашка
+    держится на кадре секундами (родная длительность, не доля секунды, как у
+    вспышки) — ровно то окно, где их скоуп-скрипт путает хост с копией и
+    гасит контент. Один и тот же билдер лучше бы делил код, но `_stage_
+    overlay`/`common` для сценных элементов и накладка-цикл для плашек —
+    разные функции; чиним оба места одним и тем же суффиксом."""
+    (run / "public" / "compositions" / "lt-kicker-name.html").write_text(
+        '<div data-composition-id="lt-kicker-name" data-duration="2.5"'
+        ' data-width="1920" data-height="1080"></div>', encoding="utf-8")
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[0]["overlay"] = {"block": "lt-kicker-name", "text": {}}
+    html, _ = _build(run, scenes=scenes)
+    first = html[html.index('id="ovl-s-01"'):]
+    assert 'data-composition-id="lt-kicker-name--s-01-host"' in first[:400]
+    assert 'data-composition-id="lt-kicker-name--s-01"' not in first[:400]
+    copy = (run / "public" / "compositions"
+            / "lt-kicker-name--s-01.html").read_text(encoding="utf-8")
+    assert 'data-composition-id="lt-kicker-name--s-01"' in copy
+    assert "lt-kicker-name--s-01-host" not in copy
+
+
 def test_ранняя_кульминация_обходится_без_вспышки(run):
     """Пику вспышки нужно 2,32 с разбега — раньше него вспышку не поставить."""
     scenes = json.loads(json.dumps(SCENES))
@@ -1353,6 +1376,42 @@ def test_путь_установленной_позиции_идёт_по_её_�
             == tmp_path / "compositions" / "components" / "count-up.html")
 
 
+def test_путь_вложенного_компонента_идёт_по_его_манифесту(tmp_path):
+    """`texture-mask-text` несёт 66 текстур рядом со своим html, и его
+    собственный `registry-item.json` (сверено байт-в-байт с их клоном,
+    `hyperframes-ref/registry/components/texture-mask-text/registry-item.
+    json`) объявляет вложенный `target`, а не плоский. Раньше `_installed_path`
+    считал путь формулой и не находил файл там, где его реально поставил
+    `add` — эта проверка ловит регресс формулы обратно."""
+    from reels_factory.hf_compose import _installed_path
+
+    assert (_installed_path(tmp_path, "texture-mask-text", "component")
+            == tmp_path / "compositions" / "components" / "texture-mask-text"
+            / "texture-mask-text.html")
+
+
+def test_копия_компонента_несёт_их_маркер_реестра(каталог):
+    """Их линтер снимает `composition_file_too_large` (и три похожих правила)
+    у файла, что несёт первой строкой `<!-- hyperframes-registry-item: NAME
+    -->` — `isRegistryInstalledFile` (packages/lint/src/rules/
+    composition.ts:94-95), проверка чисто текстовая. Их же `hyperframes add`
+    пишет этот комментарий блокам (`addRegistryItemMarker`, `installer.ts:
+    136-141`), но только когда `isInstalledRegistryBlockComposition`
+    (`installer.ts:124-127`) видит `item.type === "hyperframes:block"` —
+    компоненту, даже настоящему `add`, маркер не достаётся никогда (проверено
+    живым `hyperframes add` на `chart-story`: первая строка — `<!doctype
+    html>`). Мы монтируем компонент с `reels.mount: composition` в точности
+    как блок — и, как блок, его копия остаётся нетронутой человеком.
+    24 находки `composition_file_too_large` из независимой проверки на
+    0.8.27 были все — компоненты; после этой правки живой check по каждой
+    дал PASS (scratchpad/catalog-tails-report.md, раздел «Правки после
+    ревью»)."""
+    _build(каталог, scenes=_с_элементами({"name": "count-up"}), resolved={})
+    copy = (каталог / "public" / "compositions"
+            / "count-up--s-02.html").read_text(encoding="utf-8")
+    assert copy.startswith("<!-- hyperframes-registry-item: count-up -->\n")
+
+
 def test_ассет_позиции_получает_префикс_её_настоящей_папки(tmp_path):
     """На пине 0.7.84 их `rewriteAssetPath` простой относительный путь (без
     `../`) не трогает — после монтажа `data-composition-src` браузер ищет
@@ -1454,6 +1513,32 @@ def test_элемент_сцены_встаёт_во_весь_кадр_со_сл
     # Канвас переехал в вертикаль, а гарнитуру блок получил правилом ниже.
     assert 'data-width="1080" data-height="1920"' in copy
     assert "#demo-scene-root { font-family: 'Manrope'" in copy
+
+
+def test_хостовый_id_накладки_не_совпадает_с_id_внутри_копии(каталог):
+    """Их `inlineSubCompositions.ts` вклеивает копию в тот же документ, не в
+    настоящий `<iframe>` — `document.querySelectorAll` внутри их скоуп-
+    скрипта (`compositionScoping.ts`) тогда находит ДВА узла с одним
+    `data-composition-id`, если хост несёт то же имя, что и переименованный
+    корень копии (`_stage_overlay`: `.replace(f'data-composition-id="
+    {block}"', f'data-composition-id="{unique}"')`).
+
+    Живой прогон (`hyperframes snapshot --at` на 1/3/5/7.5 с реальной
+    сборкой `focus-rack`) показал следствие: с совпадающим id содержимое
+    держится первые ~3 с и гаснет, с разведёнными — держится до конца
+    отведённой длительности. Разбор — scratchpad/catalog-tails/
+    id-collision-rootcause.md. Хост получает суффикс `-host`, корень копии
+    (`_stage_overlay`) остаётся `unique` без изменений — единственное
+    место, которое видит оба имени, и то, что их сравнивает."""
+    html, _ = _build(каталог, scenes=_с_элементами(
+        {"name": "demo-scene"}), resolved={})
+    mount = html[html.index('id="el-s-02-0"'):]
+    assert 'data-composition-id="demo-scene--s-02-host"' in mount
+    assert 'data-composition-id="demo-scene--s-02"' not in mount
+    copy = (каталог / "public" / "compositions"
+            / "demo-scene--s-02.html").read_text(encoding="utf-8")
+    assert 'data-composition-id="demo-scene--s-02"' in copy
+    assert "demo-scene--s-02-host" not in copy
 
 
 def test_полнокадровая_позиция_лежит_под_окном_ведущей(каталог):
