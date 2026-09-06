@@ -397,8 +397,8 @@ SAMPLE_ELEMENT = {"name": "count-up",
 #: бы для гейта неотличимо от слова, которого в титре нет, и учило бы плану,
 #: который `D36_elements` заворачивает (та же причина, по которой имя и
 #: мишень здесь сверяются по каталогу, а не пишутся с потолка).
-SAMPLE_DECORATOR = {"name": "inline-highlight", "target": "caption",
-                    "variables": {"tint": "yellow"}}
+SAMPLE_DECORATOR = {"name": "tracking-in", "target": "caption",
+                    "variables": {"tracking": "wide"}}
 
 
 def _sample_element() -> dict | None:
