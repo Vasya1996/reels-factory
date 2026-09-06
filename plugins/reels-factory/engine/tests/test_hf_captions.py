@@ -2,7 +2,9 @@
 import json
 
 from reels_factory.hf_sdk import sdk_session
-from reels_factory.hf_captions import COMPONENT_REL, caption_snippet, write_caption_data
+from reels_factory.hf_captions import (
+    COMPONENT_REL, caption_snippet, caption_word_range, write_caption_data,
+)
 
 COMPONENT = """<!doctype html>
 <html><head>
@@ -99,6 +101,35 @@ def test_слово_из_одной_пунктуации_выброшено_а_�
     assert segments[0]["text"] == "Раз два"
     assert [(w["text"], w["start"], w["end"]) for w in segments[0]["words"]] == [
         ("Раз", 0.0, 1.0), ("два", 2.1, 2.6)]
+
+
+def test_счёт_слова_по_имени_берёт_ровно_одно(tmp_path):
+    """`word` сужает интервал до ОДНОГО слова — не диапазона, которым отвечал
+    бы код без имени: пример paste-мишени `caption` (`hf_compose`), где два
+    слова сцены иначе легли бы под один класс разом."""
+    words = [{"start": 3.0, "end": 3.4, "text": "точка"},
+             {"start": 3.5, "end": 3.9, "text": "роста"}]
+    assert caption_word_range(words, 0.0, 10.0) == (0, 2)
+    assert caption_word_range(words, 0.0, 10.0, word="роста") == (1, 2)
+    assert caption_word_range(words, 0.0, 10.0, word="точка") == (0, 1)
+
+
+def test_счёт_слова_по_имени_без_учёта_регистра_и_краевой_пунктуации(tmp_path):
+    """Слово плана и слово титра совпадают буквами, не оформлением: агент
+    пишет как в реплике, титр — как решит регистр TTS/ASR, и точка на конце
+    фразы не должна разводить одно и то же слово на два разных."""
+    words = [{"start": 3.0, "end": 3.4, "text": "Бесплатно."}]
+    assert caption_word_range(words, 0.0, 10.0, word="бесплатно") == (0, 1)
+    assert caption_word_range(words, 0.0, 10.0, word="Бесплатно") == (0, 1)
+
+
+def test_счёт_слова_по_имени_которого_нет_пуст(tmp_path):
+    """Слова нет среди звучащих в интервал — тот же отказ, что и при полном
+    отсутствии титра: пустой интервал `(0, 0)`, а не первое попавшееся."""
+    words = [{"start": 3.0, "end": 3.4, "text": "точка"}]
+    assert caption_word_range(words, 0.0, 10.0, word="деньги") == (0, 0)
+    # Слово есть в расшифровке, но не в этом интервале секунд — тот же отказ.
+    assert caption_word_range(words, 5.0, 10.0, word="точка") == (0, 0)
 
 
 def _snippet(public):

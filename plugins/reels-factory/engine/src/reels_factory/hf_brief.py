@@ -25,6 +25,7 @@ from reels_factory.avatar_islands import (
 )
 from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.editplan import MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S
+from reels_factory.hf_captions import _TRIM_CHARS
 from reels_factory.hf_catalog import (
     catalog_cards, search_cards, write_catalog_files,
 )
@@ -390,6 +391,12 @@ SAMPLE_ELEMENT = {"name": "count-up",
 #: образец обходился без них (докстринг `_sample_element`, три живых ранних
 #: шага). Мишень названа явно, хотя `targets` у этой карточки одна и код взял
 #: бы её сам: образец показывает поле, а не его отсутствие.
+#:
+#: `word` в словаре нет — его сюда подставляет `_add_element` настоящим
+#: словом реплики той сцены, которой достанется образец: слово выдумкой было
+#: бы для гейта неотличимо от слова, которого в титре нет, и учило бы плану,
+#: который `D36_elements` заворачивает (та же причина, по которой имя и
+#: мишень здесь сверяются по каталогу, а не пишутся с потолка).
 SAMPLE_DECORATOR = {"name": "inline-highlight", "target": "caption",
                     "variables": {"tint": "yellow"}}
 
@@ -442,7 +449,32 @@ def _sample_decorator() -> dict | None:
     return SAMPLE_DECORATOR
 
 
-def _add_element(scenes: list[dict]) -> None:
+def _sample_caption_word(scene: dict, phrases: list[dict]) -> str:
+    """Настоящее слово из реплики этой сцены — не выдумка.
+
+    Мишень `caption` называет слово, которое проверит `D36_elements` по
+    настоящей расшифровке (`hf_captions.caption_word_range`); образец с
+    выдуманным словом учил бы плану, который тот же гейт заворачивает —
+    та же причина, по которой имя позиции и мишень выше сверяются по
+    каталогу, а не пишутся с потолка. Слова фразы — те же токены, из которых
+    сложен `phrase["text"]` (`hf_phrases.phrase_timeline`), а титр рисует
+    ровно их же расшифровкой; берём самое длинное — короткие в русской речи
+    почти всегда служебные («и», «в», «на»), а короткое, но красноречивое
+    слово — редкость.
+    """
+    first, last = (scene.get("phrases") or [0, 0])[:2]
+    by_id = {int(one["id"]): one for one in phrases}
+    words = []
+    for pid in range(int(first), int(last) + 1):
+        phrase = by_id.get(pid)
+        if phrase:
+            words += str(phrase.get("text") or "").split()
+    cleaned = [one.strip(_TRIM_CHARS) for one in words]
+    cleaned = [one for one in cleaned if one]
+    return max(cleaned, key=len) if cleaned else ""
+
+
+def _add_element(scenes: list[dict], phrases: list[dict]) -> None:
     """Поставить позицию каталога одной сцене образца.
 
     Сцена берётся из середины и с местом под коробку: свободная зона под
@@ -469,15 +501,18 @@ def _add_element(scenes: list[dict]) -> None:
         return
     # Приём с мишенью — другой сцене, а не той же: рядом они читались бы как
     # «набей кадр обоими». Зона кадра приёму не нужна вовсе (он ложится на
-    # слова титра), поэтому условие тут одно — не занимать сцену образца
-    # дважды.
+    # слово титра), поэтому условие тут одно — не занимать сцену образца
+    # дважды, и второе — чтобы в её реплике нашлось хоть одно слово.
     decorator = _sample_decorator()
     if not decorator:
         return
     for scene in scenes[1:-1]:
         if scene is put or scene.get("schema") or scene.get("elements"):
             continue
-        scene["elements"] = [decorator]
+        word = _sample_caption_word(scene, phrases)
+        if not word:
+            continue
+        scene["elements"] = [dict(decorator, word=word)]
         return
 
 
@@ -509,8 +544,9 @@ def _add_frames(scenes: list[dict],
             reason = (f'взял `{taken[0]}`: сцена называет число, и позиция '
                       "показывает его же")
             if taken[0] == SAMPLE_DECORATOR["name"]:
-                reason = (f'взял `{taken[0]}`: в реплике одно слово главное, '
-                          "и приём выделяет его прямо в титре")
+                word = str((scene["elements"][0] or {}).get("word") or "")
+                reason = (f'взял `{taken[0]}`: слово «{word}» в реплике '
+                          "главное, и приём выделяет его прямо в титре")
             scene["frame"] = {"holder": holder, "catalog_checked": taken,
                               "catalog_reason": reason}
             continue
@@ -686,7 +722,7 @@ def _sample_plan(phrases: list[dict], faceless: set[int], *,
                                      "closeup pen marking a line"],
                            "kind": "video"}
     _add_backups(scenes)
-    _add_element(scenes)
+    _add_element(scenes, phrases)
     _add_frames(scenes, candidates)
     if len(scenes) > 1:
         scenes[-1]["beat"] = "climax"
@@ -1447,8 +1483,10 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
                     "сцены, у каждой. У позиции, чья карточка несёт\n"
                     "   `targets`, назови ещё и мишень — поле `target`: такая "
                     "позиция ничего\n   в кадр не приносит, она ложится на "
-                    "окно ведущей, вставку, слова титра\n   или схему, и "
-                    "мишень должна в этой сцене быть.")
+                    "окно ведущей, вставку, слово титра\n   или схему, и "
+                    "мишень должна в этой сцене быть. Мишень `caption` — "
+                    "одно слово, а не строка:\n   назови его ещё и полем "
+                    "`word`, буквально как оно звучит в реплике.")
     if avatar_ordered:
         steps_block = f"""{skill_step}
 2. {scenes_step}
@@ -1505,7 +1543,8 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
         "каталога\n   ты рассмотрел и почему взял или не взял. Взятая позиция "
         "названа ещё и в\n   `elements`, а если её карточка несёт `targets` — "
         "у неё стоит `target`,\n   и названная мишень в этой сцене есть "
-        "(`D36_elements`).")
+        "(`D36_elements`); у мишени `caption`\n   вдобавок стоит `word` — "
+        "и это слово в этой сцене звучит.")
     if avatar_ordered:
         self_check = f"""Прежде чем записывать файлы, сверь план по списку.
 

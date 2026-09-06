@@ -70,11 +70,11 @@ SCENES = [
 FOUND = _found("s-02", ".media/images/a.jpg", ".media/images/b.jpg")
 
 
-def _build(tmp_path, scenes=None, resolved=None, face=None):
+def _build(tmp_path, scenes=None, resolved=None, face=None, words=None):
     board = _board(json.loads(json.dumps(scenes or SCENES)))
     with sdk_session() as sdk:
         build_composition(tmp_path, sdk, storyboard=board, clips=CLIPS,
-                          duration=6.0, words=WORDS,
+                          duration=6.0, words=WORDS if words is None else words,
                           resolved=FOUND if resolved is None else resolved,
                           face=face)
     return (tmp_path / "public" / "index.html").read_text(encoding="utf-8"), board
@@ -1804,16 +1804,72 @@ def test_приём_вешается_на_окно_ведущей_и_ведёт_
     assert board["scenes"][1]["elements"][0]["name"] == "demo-decor"
 
 
-def test_приём_на_слова_титра_берёт_только_слова_своей_сцены(каталог):
-    """Мишень `caption` — слова, которые звучат в секунды этой сцены, а не
-    весь титр ролика: их счёт делает код (`hf_captions.caption_word_range`),
-    и он же ставит границы среза в навеске классов."""
+#: Сцена s-02 (3,033–6,0 с) со ДВУМЯ словами титра внутри — «точка» и
+#: «роста»: одним словом (глобальный `WORDS`) отличить «взяли ровно
+#: названное» от «взяли всё, что звучит в сцене» нельзя, тут нужны два.
+WORDS_TWO_IN_SCENE = [{"start": 0.2, "end": 0.6, "text": "Все"},
+                     {"start": 0.6, "end": 1.1, "text": "продажи"},
+                     {"start": 4.0, "end": 4.4, "text": "точка"},
+                     {"start": 4.5, "end": 4.9, "text": "роста"}]
+
+
+def test_приём_на_слово_титра_берёт_ровно_одно_слово_а_не_всю_строку(каталог):
+    """Мишень `caption` — ОДНО слово, названное планом (`word`), а не все
+    слова, что звучат в сцене: их контракт оборачивает текст, а не строку
+    («Wrap target text with class="hf-inline-highlight"»,
+    `inline-highlight.html:4`). В сцене s-02 звучат два слова титра —
+    навеска ложится ровно на второе, названное планом, а не на оба разом."""
     _build(каталог, scenes=_с_элементами(
-        {"name": "demo-decor", "target": "caption"}), resolved={})
+        {"name": "demo-decor", "target": "caption", "word": "роста"}),
+        resolved={}, words=WORDS_TWO_IN_SCENE)
     code = (каталог / "public" / hf_compose.DECOR_SCRIPT).read_text(
         encoding="utf-8")
-    # WORDS: два слова до 1,1 с и одно на 4,0 с; сцена s-02 идёт с 3,033.
-    assert 'document.querySelectorAll(".hl-word-text"), 2, 3)' in code
+    # «роста» — четвёртое слово по счёту (индекс 3), слайс [3, 4) — ровно
+    # одно слово; блайндовый диапазон обеих слов сцены дал бы [2, 4).
+    assert 'document.querySelectorAll(".hl-word-text"), 3, 4)' in code
+    assert 'document.querySelectorAll(".hl-word-text"), 2, 4)' not in code
+
+
+def test_приёму_без_слова_на_мишени_титра_отказывают_до_сборки_и_в_сборке(
+        каталог, capsys, monkeypatch):
+    """Мишень `caption` держит ОДНО слово, а не строку: без поля `word`
+    вешать приём не на что конкретное, и план возвращается на пересдачу тем
+    же гейтом `D36_elements`, что и без мишени вовсе."""
+    from reels_factory import hf_catalog
+    from reels_factory.hf_gates import elements_problems
+
+    cards = hf_catalog.catalog_cards(FIXTURE_CATALOG)
+    monkeypatch.setattr(hf_catalog, "catalog_cards", lambda *a, **kw: cards)
+    monkeypatch.setattr(hf_catalog, "skipped_blocks", lambda *a, **kw: {})
+    scenes = _с_элементами({"name": "demo-decor", "target": "caption"})
+    problems = elements_problems(json.loads(json.dumps(scenes)), WORDS)
+    assert any("поле `word` элемента не называет" in one for one in problems), \
+        problems
+    html, board = _build(каталог, scenes=scenes, resolved={})
+    assert "demo-decor" not in html
+    assert "поле `word` элемента не называет" in capsys.readouterr().out
+    assert board["scenes"][1]["elements"] == []
+
+
+def test_приёму_со_словом_которого_нет_в_титре_сцены_отказывают_до_сборки_и_в_сборке(
+        каталог, capsys, monkeypatch):
+    """Слово, которое в эти секунды не звучит, — тот же отказ, что и
+    отсутствие мишени вовсе: приёму не на чем лежать."""
+    from reels_factory import hf_catalog
+    from reels_factory.hf_gates import elements_problems
+
+    cards = hf_catalog.catalog_cards(FIXTURE_CATALOG)
+    monkeypatch.setattr(hf_catalog, "catalog_cards", lambda *a, **kw: cards)
+    monkeypatch.setattr(hf_catalog, "skipped_blocks", lambda *a, **kw: {})
+    scenes = _с_элементами(
+        {"name": "demo-decor", "target": "caption", "word": "деньги"})
+    problems = elements_problems(json.loads(json.dumps(scenes)), WORDS)
+    assert any("'деньги' в титре этой сцены нет" in one for one in problems), \
+        problems
+    html, board = _build(каталог, scenes=scenes, resolved={})
+    assert "demo-decor" not in html
+    assert "'деньги' в титре этой сцены нет" in capsys.readouterr().out
+    assert board["scenes"][1]["elements"] == []
 
 
 def test_приёму_без_мишени_в_сцене_отказывают_до_сборки_и_в_сборке(
