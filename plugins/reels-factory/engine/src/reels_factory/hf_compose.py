@@ -79,7 +79,7 @@ from reels_factory.hf_montage import (
 from reels_factory.hf_schema import (
     FORMS, SAFE_BOTTOM as SCHEMA_SAFE_BOTTOM, build as schema_build,
     is_elastic as schema_is_elastic, min_seconds as schema_min_seconds,
-    frame_variables, palette_css, port_block,
+    frame_variables, overlay_css, palette_css, port_block,
 )
 
 #: Дорожки времени. На одной дорожке клипы не пересекаются — это единственное,
@@ -1245,6 +1245,15 @@ def paste_effect(sdk, public, name: str, *, unique: str,
 #: Строка-заголовок рецепта. За ней в том же комментарии идёт сам код.
 _RECIPE_HEAD = re.compile(r"^[ \t]*Timeline integration\b[^\n]*\n",
                           re.M | re.I)
+#: С чего начинается первая инструкция рецепта. Между заголовком и кодом у
+#: части позиций стоит абзац прозы («GAPS is the measured token rhythm …» у
+#: `streaming-text`, «footage. Offsets are seconds …» у `sheet-spring-up`), и
+#: проза — не инструкция: она несёт и скобки, и точки с запятой, а разбор
+#: приклеивал её к первой настоящей инструкции и уносил ту в отказ. Список
+#: закрытый и снят с каталога: все 70 рецептов начинаются одним из этих слов.
+_RECIPE_CODE_START = re.compile(
+    r"^[ \t]*(?://|tl\.|gsap\.|window\.|document\.|(?:const|let|var|function)\s"
+    r"|(?:if|for|while)\s*\()", re.M)
 #: Класс, который их шапка велит повесить на СВОЙ элемент: «Wrap target text
 #: with class="hf-inline-highlight"», «Add class="hf-soft-blur-in" to the
 #: element you want to reveal». Другого места, где этот класс назван, у файла
@@ -1276,6 +1285,13 @@ _IDENT = re.compile(r"(?<![\w.$])([A-Za-z_$][\w$]*)")
 _ARROW_PARAMS = re.compile(
     r"\(([^()]*)\)\s*=>|\bfunction\s*\w*\s*\(([^()]*)\)")
 _NUMBER = re.compile(r"^-?\d+(?:\.\d+)?$")
+#: Цвет, а не селектор. Идентификатор в CSS не может начинаться с цифры
+#: (`css-syntax-3`, ident-token), поэтому `'#767676'` селектором не бывает
+#: никогда. Без этой оговорки твин рецепта
+#: `tl.fromTo(w, { color: '#767676' }, …)` читался чужим селектором и
+#: отказывался целиком — а он и есть то единственное, что проявляет слова
+#: `streaming-text`.
+_COLOR_LITERAL = re.compile(r"^#[0-9a-fA-F]{3,8}$")
 
 
 def paste_head(html: str) -> str:
@@ -1343,6 +1359,21 @@ def _statements(code: str) -> list:
         if char in "([{":
             depth += 1
         elif char in ")]}":
+            if depth == 0:
+                # Закрывающая скобка, которую никто не открывал, приходит
+                # только из прозы их же комментария: сам код рецепта
+                # сбалансирован. У `streaming-text` заголовок рецепта уносит
+                # «(seconds between», а строкой ниже остаётся «arrive
+                # together)» — и счётчик уходил в минус, после чего НИ ОДНА
+                # инструкция уже не отрезалась по `;` на нулевой глубине.
+                # Весь рецепт пропадал молча, а он — единственное, что
+                # проявляет слова позиции (`.w { opacity: 0 }`): в кадре
+                # оставался пустой прямоугольник (прогон
+                # `exp-beat-direction-2`, вариант Б, 11,4 и 14,3 с).
+                # Пересинхронизируемся: собранное до сих пор было прозой.
+                buf = []
+                index += 1
+                continue
             depth -= 1
             # Блок (`if (…) { … }`) кончается закрывающей скобкой, а не `;`.
             # Объектный литерал в конце присваивания — нет: `window.x = {};`
@@ -1367,14 +1398,19 @@ def _statements(code: str) -> list:
 
 
 def paste_recipe(html: str) -> list:
-    """Инструкции из комментария «Timeline integration». Нет его — пусто."""
+    """Инструкции из комментария «Timeline integration». Нет его — пусто.
+
+    Проза между заголовком и кодом отрезается по `_RECIPE_CODE_START`: она
+    не инструкция, а объяснение автора, и её скобки разбор считал за код.
+    """
     for comment in _HTML_COMMENT.findall(html):
         head = _RECIPE_HEAD.search(comment)
         if not head:
             continue
         body = comment[head.end():]
         body = body[:body.rfind("-->")] if "-->" in body else body
-        return _statements(body)
+        code = _RECIPE_CODE_START.search(body)
+        return _statements(body[code.start():] if code else body)
     return []
 
 
@@ -1498,7 +1534,7 @@ def wire_recipe(html: str, *, unique: str, target=None):
             continue
         bad = False
         for start, end, quote, value in reversed(_string_literals(text)):
-            if not value.startswith((".", "#")):
+            if not value.startswith((".", "#")) or _COLOR_LITERAL.match(value):
                 continue
             found = _resolve_selector(
                 value, root=root, scoped_root=scoped_root, attach=attach,
@@ -2855,11 +2891,17 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 # она уложила бы на бок. Палитра и гарнитура — правилом CSS
                 # ниже по файлу: `_FONT_FAMILY` выше стирает типографику
                 # позиции целиком.
+                #
+                # Заливка корня снимается только у `effect`: он ложится
+                # коробкой поверх живого кадра, и своя подложка у него — их же
+                # нарушенный контракт компонента (`overlay_css`). `scene`
+                # держит кадр собой, и красить ему есть что.
                 port = {"duration": length,
                        "elastic": not (kind == "scene" and landscape),
                        "height": OUT_H if kind == "scene" else None,
                        "config": {},
-                       "css": palette_css(name, colors, root=root)}
+                       "css": palette_css(name, colors, root=root)
+                       + (overlay_css(root) if kind == "effect" else "")}
                 try:
                     unique, _, canvas = _stage_overlay(
                         public, name, scene["id"],

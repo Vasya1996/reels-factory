@@ -296,6 +296,32 @@ def palette_css(block: str, colors: dict, root: str | None = None) -> str:
     )
 
 
+def overlay_css(root: str | None) -> str:
+    """Правило, которым позиция вида `effect` перестаёт красить свою коробку.
+
+    Позиция вида `effect` встаёт коробкой в свободную зону ЖИВОГО кадра —
+    поверх вставки-биролла и подложки сцены (`hf_compose`, ветка
+    `kind == "effect"`). Красить эту коробку ей нечем: их собственный контракт
+    компонента говорит прямым текстом «Background should be `transparent` so it
+    overlays cleanly»
+    (`skills/hyperframes-registry/references/templates.md:416`).
+
+    Половина их `effect`-позиций написана страницей-показом себя самой и
+    контракт этот нарушает: у 41 позиции нашего каталога корень красится
+    непрозрачно — `#000` у `chat-message` и `chat-thread`, `#fefefe` у
+    `notes-typing`, `var(--bg, #0b0c0e)` у двух десятков остальных (а `--bg` мы
+    не объявляем нарочно, см. `palette_css` выше, — работает их запасной цвет).
+    В кадре это чёрная полоса поперёк биролла: прогон `exp-beat-direction-2`,
+    вариант Б, 6,4 с — `chat-message` перерезал вставку полосой в треть кадра.
+
+    Позиции вида `scene` правило не касается: та встаёт подложкой во весь кадр
+    (`.ovl-back`) и держит его собой — прозрачной ей быть незачем.
+    """
+    if not root:
+        return ""
+    return f"\n      #{root} {{ background: transparent; }}"
+
+
 #: Пара значений, которой позиции каталога объявляют полярность своих букв.
 #: Смысл написан их же автором в самой позиции: «ink is near-black for light
 #: frames, paper near-white for dark ones» (`typewriter.html:20-22`, и слово в

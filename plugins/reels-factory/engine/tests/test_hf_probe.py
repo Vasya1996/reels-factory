@@ -345,7 +345,10 @@ def test_вспышка_и_титр_кадр_не_держат():
 @pytest.mark.parametrize("держит", ["ins-s-07-0", "schema-s-07", "ovl-s-07",
                                     "icon-s-07", "el-s-07-0", "clip-03"])
 def test_кадр_держит_любое_из_закрытого_списка(держит):
-    клипы = ({"id": держит, "visible": True},)
+    # Клипу ведущей прямоугольник нужен: она держит кадр окном, а не фактом
+    # присутствия, и уголок его не держит (`PRESENTER_HOLDS_FRAME`).
+    клипы = ({"id": держит, "visible": True,
+              "rect": _rect(0, 0, 1080, 1920)},)
     samples = [_sample(0.0),
                *[_пусто(t, clips=клипы) for t in (1.0, 1.25, 1.5, 1.75)],
                _sample(2.0)]
@@ -359,3 +362,71 @@ def test_стык_клипов_за_пустой_кадр_не_считаетс�
     samples = [_sample(0.0), _пусто(1.0), _пусто(1.25), _sample(1.5)]
     assert gates_from_report(_report(samples), FACE)[
         "D26_frame_content"].startswith("PASS")
+
+
+#: Уголок ведущей — `pip-bl` из hf_layout.VIDEO_RECTS: 8 % площади кадра.
+CORNER = {"left": 30, "top": 1337, "width": 312, "height": 555, "visible": True}
+
+
+def test_уголок_ведущей_кадра_не_держит():
+    """Уголок код даёт сцене ТОЛЬКО там, где кадр держит вставка, схема или
+    позиция каталога (`hf_montage.positions_for`). Значит уголок сам по себе
+    значит обратное: держать кадр больше нечем. Прогон
+    `exp-beat-direction-2`, вариант Б, 11,4 и 14,3 с — тёмный градиент, титр и
+    уголок, и D26 сказал PASS."""
+    пусто = [_sample(t, video=dict(CORNER), clips=()) for t in
+             (1.0, 1.25, 1.5, 1.75)]
+    samples = [_sample(0.0), *пусто, _sample(2.0)]
+    assert gates_from_report(_report(samples), FACE)[
+        "D26_frame_content"].startswith("FAIL")
+
+
+def test_ведущая_в_половине_кадра_его_держит():
+    """`stack` — 1080x844, 44 % кадра: это не уголок, и кадр он занимает."""
+    половина = {"left": 0, "top": 0, "width": 1080, "height": 844,
+                "visible": True}
+    samples = [_sample(0.0),
+               *[_sample(t, video=dict(половина), clips=())
+                 for t in (1.0, 1.25, 1.5, 1.75)],
+               _sample(2.0)]
+    assert gates_from_report(_report(samples), FACE)[
+        "D26_frame_content"].startswith("PASS")
+
+
+def test_позиция_каталога_ничего_не_нарисовавшая_кадра_не_держит():
+    """`visible` считается по коробке хоста и остаётся true, когда внутри не
+    видно ни знака: у `streaming-text` слова лежат в `.w { opacity: 0 }`.
+    Что нарисовано, меряет проба в браузере (`drawn`)."""
+    пустая = ({"id": "el-s-03-0", "visible": True, "drawn": False},)
+    samples = [_sample(0.0),
+               *[_пусто(t, clips=пустая) for t in (1.0, 1.25, 1.5, 1.75)],
+               _sample(2.0)]
+    assert gates_from_report(_report(samples), FACE)[
+        "D26_frame_content"].startswith("FAIL")
+
+
+def test_позиция_каталога_с_нарисованным_содержимым_кадр_держит():
+    полная = ({"id": "el-s-03-0", "visible": True, "drawn": True},)
+    samples = [_sample(0.0),
+               *[_пусто(t, clips=полная) for t in (1.0, 1.25, 1.5, 1.75)],
+               _sample(2.0)]
+    assert gates_from_report(_report(samples), FACE)[
+        "D26_frame_content"].startswith("PASS")
+
+
+def test_уголок_ведущей_не_возвращается_в_счёт_своим_клипом():
+    """`videoRect` пробы — обёртка `#video-wrap`, `clip-NN` — само `<video>`
+    внутри: прямоугольник один, каналов два. Без общей мерки уголок,
+    отсечённый по `videoRect`, возвращался бы вторым каналом — ровно так
+    вариант Б прогона `exp-beat-direction-2` снова читался занятым на 11,4 с.
+    """
+    уголок = ({"id": "clip-00", "visible": True, "drawn": True,
+               "rect": _rect(30, 1337, 312, 555)},
+              {"id": "el-s-03-1", "visible": True, "drawn": False,
+               "rect": _rect(0, 0, 1080, 980)})
+    samples = [_sample(0.0),
+               *[_sample(t, video=dict(CORNER), clips=уголок)
+                 for t in (1.0, 1.25, 1.5, 1.75)],
+               _sample(2.0)]
+    assert gates_from_report(_report(samples), FACE)[
+        "D26_frame_content"].startswith("FAIL")

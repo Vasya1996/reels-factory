@@ -2108,3 +2108,93 @@ def test_упругая_позиция_получает_коробку_в_коп
     stencil = _installed_path(каталог / "public", "count-up",
                               "component").read_text(encoding="utf-8")
     assert 'data-width="1080" data-height="1920"' in stencil
+
+
+def test_позиция_эффекта_не_красит_свою_коробку(каталог):
+    """Коробка `effect` лежит поверх ЖИВОГО кадра — вставки-биролла и подложки
+    сцены, — и заливать её позиции нечем: «Background should be `transparent`
+    so it overlays cleanly»
+    (`skills/hyperframes-registry/references/templates.md:416`).
+
+    Прогон `exp-beat-direction-2`, вариант Б, 6,4 с: `chat-message` со своим
+    `#root { background: #000 }` перерезал биролл чёрной полосой в треть
+    кадра.
+    """
+    _build(каталог, scenes=_с_элементами({"name": "count-up"}), resolved={})
+    copy = (каталог / "public" / "compositions"
+            / "count-up--s-02.html").read_text(encoding="utf-8")
+    assert "#root { background: transparent; }" in copy
+
+
+def test_позиция_во_весь_кадр_заливку_сохраняет(каталог):
+    """Вид `scene` встаёт подложкой во весь кадр (`.ovl-back`) и держит его
+    собой — прозрачной ей быть незачем, и правило её не касается."""
+    _build(каталог, scenes=_с_элементами({"name": "demo-scene"}), resolved={})
+    copy = (каталог / "public" / "compositions"
+            / "demo-scene--s-02.html").read_text(encoding="utf-8")
+    assert "background: transparent" not in copy
+
+
+def test_прозрачность_ложится_ПОСЛЕ_собственной_заливки_позиции():
+    """Правило одной силы решает порядок: наше обязано идти последним, иначе
+    непрозрачный корень позиции его перебьёт. Судим на настоящей карточке
+    каталога — `chat-message` красит корень в `#000`.
+    """
+    from reels_factory.hf_catalog import CATALOG_DIR
+    from reels_factory.hf_schema import overlay_css, palette_css, port_block
+
+    source = (CATALOG_DIR / "registry" / "components" / "chat-message"
+              / "chat-message.html")
+    if not source.exists():
+        pytest.skip("каталога нет рядом")
+    html = source.read_text(encoding="utf-8")
+    root = hf_compose.block_root(html)
+    ported = port_block(
+        html, duration=4.0, config={}, elastic=True,
+        css=palette_css("chat-message", {"ink": "#ffffff", "accent": "#ffb14e",
+                                         "bg": "#0d0b10"}, root=root)
+        + overlay_css(root))
+    assert ported.index("background: #000") < ported.index(
+        "background: transparent")
+
+
+def test_проза_их_комментария_не_съедает_рецепт():
+    """Между заголовком «Timeline integration» и кодом у части позиций стоит
+    абзац прозы, и в нём бывает скобка, которую никто не открывал («…zeros are
+    words that arrive together)» у `streaming-text`). Разбор считал её за код,
+    уводил счётчик глубины в минус — и дальше НИ ОДНА инструкция не отрезалась
+    по `;`: рецепт пропадал целиком и молча.
+
+    Цена — пустой прямоугольник в кадре: слова `streaming-text` лежат в
+    `.w { opacity: 0 }`, проявляет их только рецепт. Прогон
+    `exp-beat-direction-2`, вариант Б, 11,4 и 14,3 с.
+    """
+    from reels_factory.hf_catalog import CATALOG_DIR
+
+    source = (CATALOG_DIR / "registry" / "components" / "streaming-text"
+              / "streaming-text.html")
+    if not source.exists():
+        pytest.skip("каталога нет рядом")
+    lines, refused, _ = hf_compose.wire_recipe(
+        source.read_text(encoding="utf-8"), unique="s-03", target=None)
+    assert lines, "рецепт позиции не доехал до таймлайна"
+    # Проза в отказы тоже не едет: она отрезана до разбора, а не после.
+    assert not refused, refused
+    # Слова проявляет последняя инструкция, и селектор её разведён под маунт.
+    assert any(".hf-ui-streaming-text--s-03 .w" in one for one in lines), lines
+
+
+def test_цвет_в_рецепте_не_читается_селектором():
+    """`'#767676'` — цвет, а не селектор: идентификатор в CSS не может
+    начинаться с цифры. Прежде такая строка объявлялась чужим селектором их
+    примера, и инструкция целиком уходила в отказ — а у `streaming-text` это
+    ровно тот твин, который и проявляет слова."""
+    recipe = ("<!--\n  Timeline integration\n\n"
+              "  tl.fromTo('.demo-root .w', { color: '#767676' },"
+              " { color: '#ffffff', duration: 0.2 }, startTime);\n-->\n"
+              '<div class="demo-root"><span class="w">раз</span></div>')
+    lines, refused, _ = hf_compose.wire_recipe(recipe, unique="s-02",
+                                               target=None)
+    assert not refused, refused
+    assert lines and "'#767676'" in lines[0]
+    assert ".demo-root--s-02 .w" in lines[0]

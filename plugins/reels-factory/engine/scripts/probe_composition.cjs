@@ -577,6 +577,61 @@ async function collectSample(page) {
         sourceFile: candidate.sourceFile,
       }));
 
+    // Нарисовал ли клип хоть что-нибудь ВНУТРИ своей коробки.
+    //
+    // `visible` ниже считается по самому хосту, и у пустой позиции каталога он
+    // остаётся true: коробка есть, стили не спрятаны, а внутри не видно ни
+    // знака. У `streaming-text` слова лежат в `.w { opacity: 0 }` и проявляются
+    // только рецептом таймлайна — прогон exp-beat-direction-2, вариант Б,
+    // 11,4 и 14,3 с: кадр показывал титр и уголок ведущей, а D26 засчитал его
+    // занятым по коробке хоста.
+    //
+    // Видимость узла — их правило (`isVisibleElement`,
+    // layout-audit.browser.js:177-201): display, visibility и произведение
+    // opacity по цепочке родителей с порогом 0.05. Что считается краской —
+    // картинка, холст, буквы или собственная непрозрачная заливка: тот же
+    // список вещей, по которому их же `occludesText` (там же:859-868) решает,
+    // что элемент перекрывает текст.
+    const PAINTED_TAGS = new Set(["IMG", "VIDEO", "CANVAS", "SVG", "PICTURE"]);
+    const nodeShown = (node) => {
+      const own = getComputedStyle(node);
+      if (own.display === "none" || own.visibility === "hidden" || own.visibility === "collapse") {
+        return false;
+      }
+      let alpha = 1;
+      for (let up = node; up; up = up.parentElement) {
+        const parsed = Number.parseFloat(getComputedStyle(up).opacity || "1");
+        if (Number.isFinite(parsed)) alpha *= parsed;
+      }
+      return alpha >= 0.05;
+    };
+    const nodePaints = (node) => {
+      const box = node.getBoundingClientRect();
+      if (box.width < 0.5 || box.height < 0.5) return false;
+      if (PAINTED_TAGS.has(node.tagName.toUpperCase())) return true;
+      const own = getComputedStyle(node);
+      if (own.backgroundImage && own.backgroundImage !== "none") return true;
+      const parts = /rgba?\(([^)]*)\)/.exec(own.backgroundColor || "");
+      if (parts) {
+        const channels = parts[1].split(",").map((one) => Number.parseFloat(one));
+        if (channels.length < 4 || channels[3] >= 0.05) return true;
+      }
+      for (const child of node.childNodes) {
+        if (child.nodeType === 3 && child.textContent.trim()) return true;
+      }
+      return false;
+    };
+    const drawnInside = (host) => {
+      const stack = [host];
+      while (stack.length) {
+        const node = stack.pop();
+        if (!nodeShown(node)) continue;
+        if (nodePaints(node)) return true;
+        for (const child of node.children) stack.push(child);
+      }
+      return false;
+    };
+
     // Клипы: что движок обязан показать/спрятать по data-start/data-duration.
     // Плюс значок (`.icon-spot`): он не клип и data-атрибутов не несёт —
     // видимостью правит наш GSAP-таймлайн через autoAlpha, — но кадр он
@@ -591,19 +646,23 @@ async function collectSample(page) {
         const parsed = Number.parseFloat(getComputedStyle(node).opacity || "1");
         if (Number.isFinite(parsed)) opacity *= parsed;
       }
+      const visible =
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        style.visibility !== "collapse" &&
+        opacity >= 0.2 &&
+        box.width > 0.5 &&
+        box.height > 0.5;
       return {
         id: element.id || null,
         tag: element.tagName.toLowerCase(),
         cardId: element.getAttribute("data-card-id"),
         start: Number.parseFloat(element.getAttribute("data-start") || "0"),
         duration: Number.parseFloat(element.getAttribute("data-duration") || "0"),
-        visible:
-          style.display !== "none" &&
-          style.visibility !== "hidden" &&
-          style.visibility !== "collapse" &&
-          opacity >= 0.2 &&
-          box.width > 0.5 &&
-          box.height > 0.5,
+        visible,
+        // Спрятанный клип не обходим: смотреть внутрь того, чего на экране
+        // нет, незачем, а обход стоит getComputedStyle на каждый узел.
+        drawn: visible ? drawnInside(element) : false,
         rect: rect(element),
       };
     });

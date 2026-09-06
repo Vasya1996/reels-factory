@@ -276,6 +276,23 @@ def caption_word_range(words: list[dict], start: float, end: float,
     return (matched[0], matched[0] + 1) if matched else (0, 0)
 
 
+def caption_scene_words(words: list[dict], start: float,
+                        end: float) -> list[str]:
+    """Слова титра, которые горят в кадре между `start` и `end`, — по порядку
+    и приведённые к сравнению (нижний регистр, без краевой пунктуации).
+
+    Счёт тот же, что у `caption_word_range` выше, и живёт он здесь по той же
+    причине: какие слова титра принадлежат сцене, решает одно место. Отдаётся
+    текст, а не индексы, — спрашивающему (`hf_gates._element_problems`) нужно
+    сравнить слова позиции каталога с тем, что зритель в эту же секунду
+    читает в титре.
+    """
+    flat = [word_ for segment in caption_segments(words) for word_ in segment]
+    first, last = caption_word_range(words, start, end)
+    return [flat[index]["text"].strip(_TRIM_CHARS).lower()
+            for index in range(first, last)]
+
+
 def write_caption_data(public, *, words: list[dict], duration: float,
                        brand: dict | None = None) -> Path:
     """Данные титра в их контракте (`version: 1`, сегменты со словами).
