@@ -93,7 +93,7 @@
   "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/tracking-in.png"
  },
  "reels": {
-  "use_when": "Слова сцены должны собраться из разрежённых букв: так входит заголовок или название.",
+  "use_when": "В реплике есть одно слово, которое должно собраться из разрежённых букв: так входит заголовок или название — назови его `target: \"caption\"` и полем `word`.",
   "kind": "effect",
   "mount": "paste",
   "decor_texts": [],

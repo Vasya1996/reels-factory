@@ -1581,7 +1581,9 @@ def wire_recipe(html: str, *, unique: str, target=None):
 #:   `icon-swap`): рецепт целится в её собственный корень;
 #: - `presenter` — окно ведущей (`#video-wrap`);
 #: - `insert` — вставки сцены, все планы серии разом;
-#: - `caption` — слова титра, которые звучат в этой сцене;
+#: - `caption` — ОДНО слово титра, звучащее в этой сцене; какое — называет
+#:   элемент полем `word` (их же контракт оборачивает текст, а не строку:
+#:   «Wrap target text», `inline-highlight.html:4`);
 #: - `schema` — коробка схемы сцены. Ни одна карточка её сегодня не называет:
 #:   живой прогон показать её не смог — сцена со схемой в пробе выходит пустой
 #:   и БЕЗ приёма тоже (контрольная сборка, `work/paste-target-control`), то
@@ -1759,13 +1761,25 @@ def paste_target(card: dict, element: dict) -> tuple:
     return named, ""
 
 
-def target_absent(scene: dict, target: str) -> str:
+def target_absent(scene: dict, target: str, *, words: list | None = None,
+                  word: str | None = None) -> str:
     """Чего сцене не хватает под эту мишень. Пустая строка — всё на месте.
 
     Спрашивается дважды и одним кодом: гейтом `D36_elements` до заказа
     ведущей и сборкой перед вставкой. Разойтись двум местам нечем, а цена
     расхождения — оплаченный кадр с приёмом, которому не на чем лежать.
+
+    `caption` — единственная мишень уровня слова, а не элемента: их же
+    контракт оборачивает ОДНО слово («Wrap target text with class=…»,
+    `inline-highlight.html:4`), а не строку целиком. Поэтому здесь спрошено
+    не «есть ли титр», а «есть ли в титре этой сцены ИМЕННО это слово» —
+    имя называет агент (`word` элемента), счёт делает код
+    (`hf_captions.caption_word_range`). `words` — расшифровка ролика; её
+    здесь может не быть (гейт D11 после сборки зовёт эту же функцию по
+    раскадровке, где расшифровка уже не под рукой) — тогда судить нечем, и
+    молчим, как молчали до этой работы.
     """
+    from reels_factory.hf_captions import caption_word_range
     from reels_factory.hf_montage import insert_of
 
     if target == "presenter" and str(scene.get("presenter") or "none") == "none":
@@ -1775,17 +1789,38 @@ def target_absent(scene: dict, target: str) -> str:
         return "вставки у сцены нет, а приём вешают на неё"
     if target == "schema" and not schema_plan(scene):
         return "схемы у сцены нет, а приём вешают на неё"
+    if target == "caption":
+        named = str(word or "").strip()
+        if not named:
+            return ("мишень `caption` ложится на ОДНО слово титра, а какое "
+                    "— поле `word` элемента не называет: назови слово, "
+                    "которое приём выделит (не строку и не фразу)")
+        if words is None:
+            return ""
+        first, last = caption_word_range(
+            words, float(scene["startSec"]), float(scene["endSec"]),
+            word=named)
+        if first == last:
+            return (f"слова {named!r} в титре этой сцены нет: приём "
+                    "вешают на слово, которое в неё звучит, а не на любое "
+                    "слово ролика")
     return ""
 
 
 def paste_target_selector(scene: dict, target: str, *, insert_targets: dict,
-                          words: list) -> dict:
+                          words: list, word: str | None = None) -> dict:
     """Мишень — селектором и, у титра, счётом слов этой сцены.
 
     Слова титра рисует их движок в момент разбора страницы, все разом на весь
     ролик; сцене принадлежат не все, а те, что в её секунды и звучат. Их
     счёт — арифметика, и делает её код (`hf_captions.caption_word_range`), а
     не агент: границы сцены он и так назвал.
+
+    `caption` сужен до ОДНОГО слова — того, что назвал агент полем `word`
+    элемента (`target_absent` тем же кодом уже проверил, что оно в сцене
+    звучит). Их контракт оборачивает текст, а не строку («Wrap target text
+    with class=…», `inline-highlight.html:4`), и слайс `[i, i+1)` даёт
+    ровно один узел `.hl-word-text` вместо всех слов сцены разом.
     """
     from reels_factory.hf_captions import caption_word_range
 
@@ -1798,7 +1833,8 @@ def paste_target_selector(scene: dict, target: str, *, insert_targets: dict,
         return {"selector": f'#schema-box-{scene["id"]}'}
     if target == "caption":
         first, last = caption_word_range(
-            words, float(scene["startSec"]), float(scene["endSec"]))
+            words, float(scene["startSec"]), float(scene["endSec"]),
+            word=word)
         if first == last:
             return {}
         return {"selector": ".hl-word-text", "first": first, "last": last}
@@ -2764,12 +2800,14 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             # титра или схему — пятый шаг их контракта («add those calls to
             # your timeline», hyperframes-registry/SKILL.md:81).
             if where and where != "self":
-                lack = target_absent(scene, where)
+                lack = target_absent(scene, where, words=words,
+                                     word=element.get("word"))
                 if lack:
                     drop_element(storyboard, scene, name, lack)
                     continue
                 spot = paste_target_selector(
-                    scene, where, insert_targets=insert_targets, words=words)
+                    scene, where, insert_targets=insert_targets, words=words,
+                    word=element.get("word"))
                 if not spot:
                     drop_element(
                         storyboard, scene, name,

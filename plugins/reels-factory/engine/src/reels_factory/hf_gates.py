@@ -150,8 +150,8 @@ _VARIABLE_TYPES = {
 }
 
 
-def _element_problems(scene: dict, element: dict, cards: dict,
-                      skipped: dict) -> list[str]:
+def _element_problems(scene: dict, element: dict, cards: dict, skipped: dict,
+                      caption_words: list | None = None) -> list[str]:
     """Одна позиция из `elements` — та же проверка, что делает их `add`.
 
     Их `hyperframes add` неизвестное имя не ставит вовсе, а установка идёт уже
@@ -171,6 +171,12 @@ def _element_problems(scene: dict, element: dict, cards: dict,
 
     Уместность позиции по-прежнему не проверяется — это решение агента, и гейт
     в него не лезет, как не лезет в выбор формы схемы.
+
+    `caption_words` — расшифровка ролика, а не содержимое `element["words"]`
+    (те — слова плана под слоты позиции, читаются ниже своей переменной).
+    Имя не совпадает нарочно: `hf_compose.build_composition` уже платит за
+    ту же путаницу своей переменной `said`, и здесь тень над параметром
+    молча отдала бы `target_absent` не то, что нужно.
     """
     from reels_factory.hf_catalog import number_variables, word_variables
     from reels_factory.hf_compose import (effect_zone, paste_target,
@@ -209,7 +215,8 @@ def _element_problems(scene: dict, element: dict, cards: dict,
     if refusal:
         problems.append(f"{where_id}: {refusal}")
     elif where and where != "self":
-        lack = target_absent(scene, where)
+        lack = target_absent(scene, where, words=caption_words,
+                             word=element.get("word"))
         if lack:
             problems.append(f"{where_id}: {lack}")
     if card.get("kind") == "effect" and not card.get("targets")             and effect_zone(position) is None:
@@ -320,12 +327,20 @@ def _element_problems(scene: dict, element: dict, cards: dict,
     return problems
 
 
-def elements_problems(scenes: list[dict]) -> list[str]:
+def elements_problems(scenes: list[dict],
+                      caption_words: list | None = None) -> list[str]:
     """Позиции каталога, названные планом, каталогу не противоречат.
 
     Список отдаётся наружу, а не сразу вердикт: по нему судят двое — D11 здесь,
     после сборки, и `D36_elements` до заказа ведущей (hf_render.py). Судят они
     одно и то же одним кодом — разойтись двум местам нечем.
+
+    `caption_words` — расшифровка ролика, нужна лишь мишени `caption`
+    (`target_absent`). До заказа она уже посчитана и передаётся; после
+    сборки (D11, `_schema_problems`) её под рукой нет — тогда судить, есть
+    ли в сцене названное словом, нечем, и та часть проверки молчит: элемент,
+    которому в сцене не нашлось слова, сборка уже сняла бы сама
+    (`hf_compose.drop_element`), и в раскадровке его не будет вовсе.
     """
     from reels_factory.hf_catalog import catalog_cards, skipped_blocks
     from reels_factory.hf_montage import scene_elements
@@ -346,7 +361,8 @@ def elements_problems(scenes: list[dict]) -> list[str]:
                             "`{name, words?, variables?}`")
             continue
         for element in scene_elements(scene):
-            problems += _element_problems(scene, element, cards, skipped)
+            problems += _element_problems(scene, element, cards, skipped,
+                                          caption_words)
     return problems
 
 
