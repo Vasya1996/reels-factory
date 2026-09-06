@@ -82,7 +82,13 @@
     "use_when": "Финал зовёт скачать приложение: строка и значки магазинов.",
     "kind": "effect",
     "mount": "composition",
-    "decor_texts": [],
+    "decor_texts": [
+      "A",
+      "Download on the",
+      "App Store",
+      "GET IT ON",
+      "Google Play"
+    ],
     "text_slots": [],
     "variables": {
       "headline": {

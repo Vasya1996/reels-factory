@@ -227,12 +227,15 @@ def test_позиции_снятые_в_b15_предложены_и_валидн
 #: Полка примитивов их клона (`catalog/reference/CATALOG.md`) — те её позиции,
 #: что дошли до нашего каталога. У них `use_when`/`avoid_when` уже написаны
 #: авторами блоков, и наши строки — их перевод, а не сочинение заново.
+#: `particle-image-reveal` снята: хостовый слот содержимого сборка не
+#: достаёт, и `reels.skip` держит её вне `catalog_cards()`
+#: (`registry-item.json` компонента).
 _ПОЛКА = [
     "per-word-rise", "scramble-reveal", "kinetic-type-swap", "oversized-cursor",
     "press-ripple", "browser-device-stage", "count-up", "chart-story",
     "titlecard-lockup", "svg-stroke-trace", "whiteboard-ink", "cta-close",
     "logo-brand-close", "before-after-wipe", "cut-the-curve", "scroll-feed",
-    "iris-reveal", "particle-image-reveal", "telemetry-hud",
+    "iris-reveal", "telemetry-hud",
     "native-notification-pop", "vox-annotate",
 ]
 

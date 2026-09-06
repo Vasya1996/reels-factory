@@ -71,9 +71,14 @@
   ],
   "reels": {
     "use_when": "Финал — карточка из магазина приложений: звёзды, строка отзыва и кнопка.",
+    "avoid_when": "В сценарии нет своей цифры аудитории — «12 000 создателей» подставлять неоткуда, а выдумывать чужое соц-доказательство нельзя.",
     "kind": "effect",
     "mount": "composition",
-    "decor_texts": [],
+    "decor_texts": [
+      "HyperFrames",
+      "12,000+ creators",
+      "Start rendering free"
+    ],
     "text_slots": [],
     "variables": {
       "brand": {

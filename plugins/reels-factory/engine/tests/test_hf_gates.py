@@ -695,12 +695,15 @@ def test_слова_ложатся_в_текстовые_переменные_п
 def test_фирменная_переменная_словами_плана_не_заполняется():
     """`portrays` — их прямой запрет на выдуманный текст в слоте личности.
     На боевом каталоге: `logo-brand-close` несёт `url` доменом, а
-    `matrix-decode` — свободную строку, и разница видна коду, а не глазам."""
+    `variable-axis-type` — свободную строку, и разница видна коду, а не
+    глазам. (Была `matrix-decode` — 06.09.2026 снята `reels.skip`: её
+    экранный текст всегда остаётся рядом нулей независимо от слова плана,
+    см. `registry-item.json` позиции.)"""
     from reels_factory.hf_catalog import catalog_cards, word_variables
 
     cards = catalog_cards()
     # Одна из тринадцати позиций, чей текст — переменная, а не слот.
-    assert word_variables(cards["matrix-decode"]) == ["text"]
+    assert word_variables(cards["variable-axis-type"]) == ["text"]
     # Домен и список — не фраза, слова плана туда не кладут.
     assert "url" not in word_variables(cards["logo-brand-close"])
     assert word_variables(cards["chart-story"]) == []

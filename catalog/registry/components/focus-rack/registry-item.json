@@ -71,7 +71,11 @@
     "avoid_when": "Оба состояния нужно видеть одновременно рядом, не по очереди: это comparison-split.",
     "kind": "effect",
     "mount": "composition",
-    "decor_texts": [],
+    "decor_texts": [
+      "Workspace",
+      "A",
+      "B"
+    ],
     "text_slots": [],
     "variables": {
       "label_a": {
