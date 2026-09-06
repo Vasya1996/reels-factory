@@ -347,7 +347,8 @@ def test_индекс_отдаёт_карточки_всех_трёх_видов
     тегам, а вид позиции говорит коду, чем она станет в кадре."""
     cards = catalog_cards(FIXTURE)
     assert {name: card.get("kind") for name, card in cards.items()} == {
-        "count-up": "effect", "demo-scene": "scene", "demo-stitch": "overlay",
+        "count-up": "effect", "conic-progress-ring": "effect",
+        "demo-scene": "scene", "demo-stitch": "overlay",
         "demo-paste": "effect", "demo-media": "scene", "demo-host": "scene",
         # Приём поверх нашего элемента: вид у него их же, `effect`, а мишени
         # он называет полем `targets` — в кадр сам по себе не встаёт.
@@ -414,8 +415,9 @@ def test_индекс_печатается_json_ом_с_нашими_полям�
     text = catalog_index(FIXTURE)
     body = json.loads(text.split("```json")[1].split("```")[0])
     assert [item["name"] for item in body] == sorted(
-        ["count-up", "demo-decor", "demo-host", "demo-media", "demo-paste",
-         "demo-plain", "demo-plain-vertical", "demo-scene", "demo-stitch"])
+        ["count-up", "conic-progress-ring", "demo-decor", "demo-host",
+         "demo-media", "demo-paste", "demo-plain", "demo-plain-vertical",
+         "demo-scene", "demo-stitch"])
     assert "Search by intent" not in text, "правило поиска живёт в своде правил"
     assert "`kind`" in text and "`text_slots`" in text and "`variables`" in text
     assert "`targets`" in text, "мишень приёма агенту не названа"
@@ -575,6 +577,73 @@ def test_нет_позиции_с_текстовыми_слотами_и_раб�
         f"{broken}: несут и `text_slots`, и рабочую переменную разом — "
         "переменная гасится `word_variables()`, а слот всё равно может не "
         "удержать статичную правку под перезаписью скрипта позиции")
+
+
+def test_числовая_переменная_позиции_отдаёт_ключ_под_величину_из_речи():
+    """`number_variables` — второй канал содержания рядом со словами.
+
+    Список закрытый (`_NUMBER_CONTENT_CARDS`), а не структурный фильтр по
+    `type`/`role`: у клона 0.8.27 таких переменных 20, а печатает спетое
+    число зрителю на экран едва ли треть — разбор в комментарии над
+    константой. Тест держит ровно те три позиции, что прошли разбор, и
+    ровно тот ключ, что несёт величину.
+    """
+    from reels_factory.hf_catalog import number_variables
+
+    cards = catalog_cards()
+    assert number_variables(cards["count-up"]) == ["end"]
+    assert number_variables(cards["conic-progress-ring"]) == ["progress"]
+    assert number_variables(cards["star-rating-fill"]) == ["rating"]
+    # `chart-story` несёт `type: "number"` + `role: "content"` (`emphasize`),
+    # но это индекс акцентируемого столбца, не величина, — свой же
+    # `avoid_when` карточки отправляет одиночное число в `count-up`.
+    assert number_variables(cards["chart-story"]) == []
+    # Ни у нас, ни в клоне 0.8.27 переменных вовсе нет — разметка литеральна.
+    assert number_variables(cards["animated-bar-chart"]) == []
+    assert number_variables(cards["x-follow-card"]) == []
+
+
+def test_числовая_переменная_несёт_допустимую_границу():
+    """`min`/`max` доезжают до карточки той же дорогой, что `options`
+    у `enum`: не вторым изданием в `registry-item.json`, а чтением
+    `data-composition-variables` (`_declared_options`). Без них D36 не
+    может отличить число в допустимом диапазоне от того, что их же скрипт
+    молча подрежет уже в оплаченном кадре (`conic-progress-ring.html:
+    170-180`)."""
+    cards = catalog_cards()
+    progress = cards["conic-progress-ring"]["variables"]["progress"]
+    assert (progress["min"], progress["max"]) == (0, 100)
+    rating = cards["star-rating-fill"]["variables"]["rating"]
+    assert (rating["min"], rating["max"]) == (0, 5)
+    # `count-up` не объявляет границу вовсе — ни у нас, ни в клоне 0.8.27
+    # (`count-up.html`: только `default`/`step`), и поле молчит, а не лжёт
+    # нулём.
+    end = cards["count-up"]["variables"]["end"]
+    assert "min" not in end and "max" not in end
+
+
+def test_число_зеркала_названо_только_у_кольца_прогресса():
+    """`number_mirror_variable` — только `conic-progress-ring`: у `count-up`
+    и `star-rating-fill` видимый счётчик читает свою же числовую переменную
+    напрямую, второго слова для них не нужно (разбор — в комментарии над
+    `_NUMBER_MIRROR`)."""
+    from reels_factory.hf_catalog import number_mirror_variable
+
+    cards = catalog_cards()
+    assert number_mirror_variable(cards["conic-progress-ring"]) == "label"
+    assert number_mirror_variable(cards["count-up"]) is None
+    assert number_mirror_variable(cards["star-rating-fill"]) is None
+
+
+def test_индекс_называет_числовой_канал_обязательным():
+    """Позиция без `text_slots`, чья `variables` несёт величину из речи, —
+    та же плашка индекса, что уже называет обязательным слот под файл
+    (`media_slots`). Без строки агент оставляет умолчание карточки (живой
+    пример — `count-up`: демо-строка «100», а не число из реплики)."""
+    text = catalog_index()
+    assert "`end`" in text and "`count-up`" in text
+    assert "обязательное" in text
+    assert "min" in text and "max" in text
 
 
 #: Пять образцов B3 и то, чем их разметка обязана дать заполнить кадр: у

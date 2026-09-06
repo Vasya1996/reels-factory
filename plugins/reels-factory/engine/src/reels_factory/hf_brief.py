@@ -1448,7 +1448,10 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
                     "   `targets`, назови ещё и мишень — поле `target`: такая "
                     "позиция ничего\n   в кадр не приносит, она ложится на "
                     "окно ведущей, вставку, слова титра\n   или схему, и "
-                    "мишень должна в этой сцене быть.")
+                    "мишень должна в этой сцене быть. У позиции с числовой\n"
+                    "   переменной без `text_slots` назови само число из "
+                    "речи в `variables` —\n   без него код не заполнит "
+                    "карточку содержанием.")
     if avatar_ordered:
         steps_block = f"""{skill_step}
 2. {scenes_step}
@@ -1505,7 +1508,9 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
         "каталога\n   ты рассмотрел и почему взял или не взял. Взятая позиция "
         "названа ещё и в\n   `elements`, а если её карточка несёт `targets` — "
         "у неё стоит `target`,\n   и названная мишень в этой сцене есть "
-        "(`D36_elements`).")
+        "(`D36_elements`). У позиции\n   с числовой переменной без "
+        "`text_slots` — само число из речи стоит в\n   `variables`, внутри "
+        "её `min`/`max` (`D36_elements`).")
     if avatar_ordered:
         self_check = f"""Прежде чем записывать файлы, сверь план по списку.
 

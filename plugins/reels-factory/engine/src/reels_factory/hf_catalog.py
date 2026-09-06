@@ -305,7 +305,12 @@ _VARIABLES_ATTR = re.compile(
 def _declared_options(path: str, stamp: tuple) -> tuple:
     """Объявление переменных одного файла позиции: `(имя, {поле: значение})`.
 
-    Поля — `options` (варианты `enum`), `role` и `portrays`.
+    Поля — `options` (варианты `enum`), `role`, `portrays`, а у `number` ещё
+    `min`/`max` — допустимая граница величины (`docs/concepts/variables.mdx`
+    не называет их вовсе, а сам тип живёт в `packages/parsers/src/types.ts:
+    241-248` клона 0.8.27: `min?`, `max?`, `step?`, `unit?`). Нужны только
+    `min`/`max` — по ним считает диапазон число, названное в реплике
+    (`hf_catalog.number_variables`, гейт `D36_elements`).
 
     Читается из самой разметки, а не из карточки: список вариантов — это то,
     что автор позиции уже написал в `data-composition-variables`, и второе его
@@ -355,6 +360,12 @@ def _declared_options(path: str, stamp: tuple) -> tuple:
             rule["portrays"] = tuple(str(one) for one in portrays)
         elif isinstance(portrays, str) and portrays:
             rule["portrays"] = (portrays,)
+        if item.get("type") == "number":
+            for bound in ("min", "max"):
+                value = item.get(bound)
+                if isinstance(value, (int, float)) and not isinstance(
+                        value, bool):
+                    rule[bound] = value
         if rule:
             out.append((str(item.get("id")), rule))
     return tuple(out)
@@ -477,6 +488,107 @@ def word_variables(card: dict) -> list[str]:
             continue
         found.append(key)
     return found
+
+
+#: Позиция → её переменная, куда ложится величина, названная вслух.
+#:
+#: Не структурный признак (`type: "number"` + `role: "content"`), а
+#: перечень, сверенный со скриптом каждой позиции: их доля у клона 0.8.27 —
+#: 20 из 147 предложенных, а печатает спетое число зрителю на экран едва
+#: ли треть. Остальные — `beatCount` (строки таблицы), `swap_at` (секунды до
+#: подмены экрана), `cursorCount`/`count`/`screens`/`card_count`/`cards`
+#: (сколько повторов нарисовать), `expand`/`badge_state`/`accent_word_index`
+#: (индекс элемента), `revealProgress`/`anchor_x`/`anchor_y`/`zoom`/`travel`/
+#: `sections` (геометрия и прогресс анимации своей же анимации) — цифра
+#: плана легла бы туда числом, а не тем, что видит зритель, или разъехала бы
+#: раскладку. Разбор по каждой карточке — в ревью числовых переменных
+#: (06.09.2026).
+#:
+#: `chart-story` тоже несёт `type: "number"` + `role: "content"`
+#: (`emphasize`), но это индекс акцентируемого столбца, а не величина: сами
+#: числа графика лежат в `data` — строке через запятую, которую
+#: `word_variables` уже отсеивает списком (`_PHRASE_DEFAULT`, ниже), и
+#: собственный `avoid_when` карточки прямо отправляет одиночное число в
+#: `count-up`. Числового канала он поэтому не получает — не пропуск, а то же
+#: решение, что уже стоит в карточке.
+#:
+#: `animated-bar-chart` и `x-follow-card` из того же списка в задании не
+#: несут переменных вовсе — ни у нас, ни в клоне 0.8.27 (`registry-item.json`
+#: обеих пуст полем `variables`, разметка литеральна). Число из речи там
+#: положить некуда, пока карточка не заведёт `data-composition-variables` и
+#: не прочитает её своим скриптом — работа над самим блоком, не канал.
+_NUMBER_CONTENT_CARDS = {
+    "count-up": "end",
+    "conic-progress-ring": "progress",
+    "star-rating-fill": "rating",
+}
+
+
+def number_variables(card: dict) -> list[str]:
+    """Числовая переменная позиции, куда код кладёт величину из реплики.
+
+    Второй канал содержания рядом со словами (`word_variables`, выше) —
+    правило проекта то же: содержание в кадр кладёт код, а не агент правкой
+    файла. У позиции без слотов разметки число — как и слово — живёт
+    переменной, но канал у него свой: их рантайм не форматирует `number`
+    вовсе (`applyVariableBindings.ts` кладёт `String(value)` и только,
+    проверено по клону 0.8.27), формат — дело собственного скрипта позиции
+    (`count-up.html` копит тысячи через `toLocaleString`, `star-rating-
+    fill.html` округляет `toFixed(1)`), а плану нужно просто число, не фраза.
+
+    Заполняется по счёту с `word_variables`: агент называет его сам, полем
+    `variables` элемента (`{"name": "count-up", "variables": {"end": 12}}` —
+    тот же путь, что элемент уже умеет для любой другой переменной,
+    `hf_gates._element_problems`), а не отдельным списком слов — числа не
+    склеиваются, и второй способ подать то же значение был бы новым каналом
+    там, где хватает старого.
+
+    Только позиции из `_NUMBER_CONTENT_CARDS` — почему список закрытый, а не
+    структурный фильтр по `type`/`role`, сказано в комментарии над ним.
+    """
+    if card.get("text_slots"):
+        return []
+    key = _NUMBER_CONTENT_CARDS.get(card.get("name"))
+    if not key:
+        return []
+    rule = (card.get("variables") or {}).get(key) or {}
+    if rule.get("type") != "number" or rule.get("role") != "content":
+        return []
+    if rule.get("portrays"):
+        return []
+    return [key]
+
+
+#: `conic-progress-ring` → строковая переменная, куда код зеркалит то же
+#: число текстом. Их собственный скрипт держит видимый счётчик в центре
+#: отдельной строковой переменной `label` (`type: "string"`, живёт своим
+#: путём — `word_variables`, не этим), которая анимируется в такт с
+#: числовой `progress`, но не читает её значение сама: без слова агента
+#: `label` остаётся на умолчании карточки («100»), и кольцо доезжает до
+#: спетого числа, а центр досчитывает до чужого
+#: (`conic-progress-ring.html:181-191`: `labelText = vars.label == null ?
+#: "100" : …` — умолчание разметки, не `progress`). Проверено кадром:
+#: `progress: 64` без `label` — кольцо на 64%, центр «100»
+#: (`scratchpad/number-vars-check`, 06.09.2026). Только эта одна позиция:
+#: у `count-up` и `star-rating-fill` видимый счётчик читает свою же
+#: числовую переменную напрямую (`count-up.html:181-183` — `formatValue
+#: (end)`; `star-rating-fill.html:262` — `rating.toFixed(1)`), второго
+#: слова для них не нужно.
+_NUMBER_MIRROR = {
+    "conic-progress-ring": "label",
+}
+
+
+def number_mirror_variable(card: dict) -> str | None:
+    """Строковая переменная-зеркало числа этой позиции, если она есть.
+
+    Код зеркалит число сам — то же правило, что и у остальных двух каналов
+    содержания: содержание в кадр кладёт код, а не агент второй правкой
+    того же значения. Явно названное планом слово в этой переменной
+    сильнее — зеркало ставится, только если план его не занял
+    (`hf_compose.build_composition`).
+    """
+    return _NUMBER_MIRROR.get(card.get("name"))
 
 
 def image_variables(card: dict) -> list[str]:
@@ -616,6 +728,14 @@ def catalog_cards(catalog_dir=None) -> dict[str, dict]:
                     rule["role"] = said["role"]
                 if said.get("portrays") and not rule.get("portrays"):
                     rule["portrays"] = list(said["portrays"])
+                # `min`/`max` — та же граница, которой их код клэмпит число
+                # уже в кадре (`conic-progress-ring.html:170-180`: «Both
+                # numeric controls clamp to their declared ranges before they
+                # reach layout or animation»); называем её плану ДО заказа,
+                # чтобы отказ пришёл гейтом, а не тихим клэмпом после оплаты.
+                for bound in ("min", "max"):
+                    if said.get(bound) is not None and rule.get(bound) is None:
+                        rule[bound] = said[bound]
                 variables[key] = rule
             card["variables"] = variables
         if reels.get("decor_texts"):
@@ -878,6 +998,11 @@ _INDEX_HEAD = r"""# Каталог этого прогона
   `variables` пиши только те, что меняешь. У переменной-выбора (`enum`) рядом
   стоит `options` — список допустимых значений, и другое значение план не
   примет (`D36_elements`).
+- У позиции без `text_slots`, чья `variables` несёт величину из реплики
+  (`end` у `count-up`, `progress` у `conic-progress-ring`, `rating` у
+  `star-rating-fill`), это поле — обязательное: без него в кадре останется
+  умолчание карточки, а не число из речи. Диапазон — `min`/`max` той же
+  переменной; вне него план вернётся с `D36_elements`.
 
 """
 
