@@ -292,13 +292,14 @@ def _texture_blocks() -> frozenset:
 
 
 @functools.lru_cache(maxsize=1)
-def _skipped_blocks() -> dict:
-    """Блоки, которые ставить нельзя, и причина. План мог назвать такой блок
-    раньше, чем он попал в этот список, — тогда снимаем его на сборке, а не
-    роняем прогон: агент этого не исправит."""
-    from reels_factory.hf_catalog import skipped_blocks
+def _skipped_positions() -> dict:
+    """Позиции каталога (блоки и компоненты), которые ставить нельзя, и
+    причина. План мог назвать такую позицию раньше, чем она попала в этот
+    список, — тогда снимаем её на сборке, а не роняем прогон: агент этого не
+    исправит."""
+    from reels_factory.hf_catalog import skipped_positions
     try:
-        return dict(skipped_blocks())
+        return dict(skipped_positions())
     except (OSError, ValueError):
         return {}
 
@@ -1951,11 +1952,11 @@ def needed_blocks(storyboard: dict) -> list[str]:
     for scene in storyboard.get("scenes") or []:
         block = (scene.get("overlay") or {}).get("block") \
             if isinstance(scene.get("overlay"), dict) else None
-        if block and block not in found and str(block) not in _skipped_blocks():
+        if block and block not in found and str(block) not in _skipped_positions():
             found.append(str(block))
         for element in scene_elements(scene):
             name = str(element["name"]).strip()
-            if name not in found and name not in _skipped_blocks():
+            if name not in found and name not in _skipped_positions():
                 found.append(name)
         # Блоки схем ставим по любой названной форме — и выбранной агентом, и
         # запасной: какая из них понадобится, выяснится уже после подбора, а
@@ -2256,7 +2257,7 @@ def overlay_problem(block: str) -> str | None:
     вёрсткой слоя. Разойдись они — проход посчитал бы кадр закрытым, сборка
     сняла бы плашку, и сцена осталась бы с пустым кадром.
     """
-    reason = _skipped_blocks().get(str(block))
+    reason = _skipped_positions().get(str(block))
     if reason:
         return reason
     known = _known_overlays()
@@ -2274,7 +2275,7 @@ def element_problem(name: str) -> str | None:
     пустых сцен и сама вёрстка слоя. Разойдись они — план прошёл бы сверку,
     проход посчитал бы кадр закрытым, а сборка сняла бы элемент.
     """
-    reason = _skipped_blocks().get(str(name))
+    reason = _skipped_positions().get(str(name))
     if reason:
         return reason
     cards = _catalog_cards()

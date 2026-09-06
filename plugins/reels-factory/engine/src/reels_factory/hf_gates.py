@@ -280,16 +280,22 @@ def _element_problems(scene: dict, element: dict, cards: dict, skipped: dict,
             f"ведущая {position!r} её не оставляет — дай сцене уголок "
             "(`pip-*`) или `none`, либо назови позицию другого вида")
     # Держатель кадра без канала содержимого — голый каркас позиции, а не
-    # содержание сцены: у `keyframe-scrub-stack` и `scroll-feed` (оба
-    # `kind: scene`/`effect`, ни слота, ни переменной) в кадре на живом
-    # прогоне `exp-beat-direction` стояла пустая стопка карточек и пустая
-    # лента постов, а этот гейт молчал — про канал не спрашивал вовсе.
-    # `filling_element` больше не считает такую позицию держателем
-    # (`hf_montage.py`), и `frame_filler(scene)` здесь пуст ровно тогда, когда
-    # в сцене не осталось ничего другого, чем закрыть кадр: ни ведущей, ни
-    # вставки, ни схемы, ни другого элемента с каналом. Позиция вида `effect`
-    # без канала не запрещена вовсе — она держится ПОВЕРХ другого держателя
-    # (декор, как `aurora-drift`), и там `frame_filler` уже не пуст.
+    # содержание сцены: правило общее, для любой будущей позиции вида
+    # `scene`/`effect` без text_slots, рабочей переменной или media_slots —
+    # такая встала бы в кадр голым макетом (пустой стопкой карточек, пустой
+    # лентой постов), а этот гейт молчал бы про канал вовсе. Ровно это вскрыл
+    # живой прогон `exp-beat-direction` на `keyframe-scrub-stack` и
+    # `scroll-feed` — но с тех пор карточка обеих несёт `reels.skip` («каркас
+    # без канала содержимого»), и сюда они больше не доходят: их снимает более
+    # ранняя ветка `name in skipped` этой же функции, которая теперь видит обе
+    # подпапки реестра (`hf_catalog.skipped_positions`, ревью PR #90,
+    # 07.09.2026). `filling_element` больше не считает такую позицию
+    # держателем (`hf_montage.py`), и `frame_filler(scene)` здесь пуст ровно
+    # тогда, когда в сцене не осталось ничего другого, чем закрыть кадр: ни
+    # ведущей, ни вставки, ни схемы, ни другого элемента с каналом. Позиция
+    # вида `effect` без канала не запрещена вовсе — она держится ПОВЕРХ
+    # другого держателя (декор, как `aurora-drift`), и там `frame_filler` уже
+    # не пуст.
     if (card.get("kind") in FRAME_KINDS and not content_channels(card)
             and frame_filler(scene) == ""):
         problems.append(
@@ -470,12 +476,12 @@ def elements_problems(scenes: list[dict],
     которому в сцене не нашлось слова, сборка уже сняла бы сама
     (`hf_compose.drop_element`), и в раскадровке его не будет вовсе.
     """
-    from reels_factory.hf_catalog import catalog_cards, skipped_blocks
+    from reels_factory.hf_catalog import catalog_cards, skipped_positions
     from reels_factory.hf_montage import scene_elements
 
     try:
         cards = dict(catalog_cards())
-        skipped = dict(skipped_blocks())
+        skipped = dict(skipped_positions())
     except (OSError, ValueError):
         # Каталога нет — обвинять план в том, что не поднялся наш же реестр,
         # незачем; сборка снимет такой элемент сама (`element_problem`).

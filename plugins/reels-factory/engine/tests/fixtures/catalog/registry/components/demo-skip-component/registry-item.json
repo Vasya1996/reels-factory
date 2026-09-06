@@ -1,0 +1,22 @@
+{
+  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+  "name": "demo-skip-component",
+  "type": "hyperframes:component",
+  "title": "Demo Skip Component",
+  "description": "Broken demo component",
+  "tags": [
+    "demo"
+  ],
+  "duration": 2.0,
+  "files": [
+    {
+      "path": "demo-skip-component.html",
+      "target": "compositions/components/demo-skip-component.html",
+      "type": "hyperframes:snippet"
+    }
+  ],
+  "reels": {
+    "kind": "effect",
+    "skip": "их же проверка валит компонент под --strict"
+  }
+}

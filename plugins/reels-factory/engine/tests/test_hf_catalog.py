@@ -7,8 +7,9 @@ import pytest
 
 from reels_factory.hf_catalog import (
     CATALOG_DIR, REGISTRY_SUBDIR, block_names, catalog_cards, catalog_index,
-    component_names, decor_texts, overlay_names, serve_catalog, skipped_blocks,
-    texture_overlays, write_catalog_files, write_project_config,
+    component_names, decor_texts, overlay_names, serve_catalog,
+    skipped_positions, texture_overlays, write_catalog_files,
+    write_project_config,
 )
 
 #: 12 блоков работы B1 (10 вертикальных сцен + 2 накладки-перехода) — те, что
@@ -72,7 +73,7 @@ def test_накладка_со_смешанным_заголовком_не_пр
     уезжает в акцент и снимается вместе с ним как незаполненный слот, демо-
     строки `h1` остаются в кадре — D22 валит сборку при любом заполнении, и
     починить это агенту нечем."""
-    assert "news-ticker" in skipped_blocks()
+    assert "news-ticker" in skipped_positions()
     assert "news-ticker" not in overlay_names()
 
 
@@ -325,7 +326,7 @@ def test_use_when_попадает_в_строку_карточки_индекс
 
 def test_block_names_не_включает_компоненты():
     """`block_names` открывает файл по пути `blocks/<имя>` — отдай он имя
-    компонента, следующий читатель (`block_backing`, `skipped_blocks`, …)
+    компонента, следующий читатель (`block_backing`, `block_durations`, …)
     получил бы `FileNotFoundError` на `blocks/count-up`."""
     blocks = set(block_names())
     comps = set(component_names())
@@ -431,8 +432,43 @@ def test_позиция_с_причиной_отказа_в_индекс_не_п
     предлагают: исправить её он не может — это дефект каталога, а не плана."""
     with caplog.at_level(logging.DEBUG, logger="reels_factory.hf_catalog"):
         assert "demo-skip" not in catalog_cards(FIXTURE)
-    assert "demo-skip" in skipped_blocks(FIXTURE)
+    assert "demo-skip" in skipped_positions(FIXTURE)
     assert "demo-skip" in caplog.text
+
+
+def test_skipped_positions_видит_и_блок_и_компонент():
+    """До этой правки функция обходила только `blocks/` (написана 11.08.2026,
+    a68f242, — раньше, чем в каталоге завелись компоненты, 04.09.2026,
+    6df1bba). `demo-skip` — блок со `skip`, `demo-skip-component` — компонент
+    со `skip`: обе подпапки обязаны быть видны одним и тем же читателем,
+    иначе `hf_gates`/`hf_compose` снова примут снятую позицию за отсутствующую
+    в каталоге (ревью PR #90, 07.09.2026)."""
+    found = skipped_positions(FIXTURE)
+    assert "demo-skip" in found
+    assert "demo-skip-component" in found
+    assert found["demo-skip-component"] == "их же проверка валит компонент под --strict"
+
+
+def test_каждая_карточка_со_skip_видна_skipped_positions():
+    """Инвариант на весь боевой каталог, а не на список имён: любая карточка
+    (блок или компонент) с `reels.skip` обязана быть в `skipped_positions()`,
+    иначе обход снова разъедется — ровно так, как разошёлся для 123
+    компонентов до этой правки (ревью PR #90, 07.09.2026)."""
+    root = CATALOG_DIR / REGISTRY_SUBDIR
+    expected = set()
+    for subdir, names in (("blocks", block_names()),
+                          ("components", component_names())):
+        for name in names:
+            card = root / subdir / name / "registry-item.json"
+            if not card.exists():
+                continue
+            item = json.loads(card.read_text(encoding="utf-8"))
+            if (item.get("reels") or {}).get("skip"):
+                expected.add(name)
+    assert expected, "в живом каталоге нет ни одной позиции со skip"
+    found = set(skipped_positions())
+    missing = expected - found
+    assert not missing, f"skipped_positions не видит: {sorted(missing)}"
 
 
 def test_карточка_без_вида_остаётся_плашкой_по_старому_правилу():
@@ -642,7 +678,7 @@ def test_держатель_кадра_имеет_канал_содержимо�
     from reels_factory.hf_montage import FRAME_KINDS
 
     cards = catalog_cards()
-    skipped = skipped_blocks()
+    skipped = skipped_positions()
     offered = {name: card for name, card in cards.items()
               if name not in skipped}
     assert offered, "каталог не предлагает ни одной позиции"
@@ -1152,7 +1188,7 @@ def test_image_переменная_получает_файл_в_data_variable_v
     catalog_dir = _synthetic_catalog(tmp_path)
     cards = catalog_cards(catalog_dir)
     monkeypatch.setattr(hf_compose, "_catalog_cards", lambda: cards)
-    monkeypatch.setattr(hf_compose, "_skipped_blocks", dict)
+    monkeypatch.setattr(hf_compose, "_skipped_positions", dict)
     monkeypatch.setattr(hf_compose, "_texture_blocks", frozenset)
     monkeypatch.setattr(hf_compose, "write_caption_data",
                         lambda public, **kw: public / "caption-data.json")
