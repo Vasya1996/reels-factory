@@ -1853,6 +1853,37 @@ def test_приём_на_слово_титра_берёт_ровно_одно_с
     assert 'document.querySelectorAll(".hl-word-text"), 2, 4)' not in code
 
 
+def test_приём_на_слово_титра_стартует_с_секунды_слова_а_не_сцены(каталог):
+    """Старт рецепта на мишени `caption` — секунда, на которой начинает
+    звучать САМО слово, а не начало сцены: их же полка вяжет вход слова
+    ровно так («titr FLOW_IN на `w.start`», `_anatomy.md:176-191`;
+    `caption-pill-karaoke.html:365-376` красит слово от его же
+    `word.start`). Слово «точка» из глобального `WORDS` звучит в 4,0 с,
+    сцена s-02 начинается в 3,0333 с — до этой правки рецепт стартовал со
+    сценой и успевал отыграть невидимо до появления слова (ревью PR #87,
+    scratchpad review-word-target.md, замечание 1)."""
+    _build(каталог, scenes=_с_элементами(
+        {"name": "demo-decor", "target": "caption", "word": "точка"}),
+        resolved={})
+    code = (каталог / "public" / hf_compose.DECOR_SCRIPT).read_text(
+        encoding="utf-8")
+    assert "const startTime = 4.0;" in code
+    assert "const startTime = 3.0333;" not in code
+
+
+def test_приёму_на_окно_ведущей_старт_остаётся_началом_сцены(каталог):
+    """Мишени уровня сцены (`presenter`, `insert`, `schema`) появление не
+    сужает: `target_absent` спрашивает про них по сцене целиком, и рецепт
+    стартует с её начала, как и до этой правки — регрессия на случай, если
+    её случайно сузят до секунды заказа ведущей."""
+    html, board = _build(каталог, scenes=_с_элементами(
+        {"name": "demo-decor", "target": "presenter"}), resolved={})
+    assert "el-s-02-0" not in html
+    code = (каталог / "public" / hf_compose.DECOR_SCRIPT).read_text(
+        encoding="utf-8")
+    assert "const startTime = 3.0333;" in code
+
+
 def test_приёму_без_слова_на_мишени_титра_отказывают_до_сборки_и_в_сборке(
         каталог, capsys, monkeypatch):
     """Мишень `caption` держит ОДНО слово, а не строку: без поля `word`
