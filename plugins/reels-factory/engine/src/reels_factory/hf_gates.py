@@ -173,12 +173,13 @@ def _element_problems(scene: dict, element: dict, cards: dict,
     в него не лезет, как не лезет в выбор формы схемы.
     """
     from reels_factory.hf_catalog import word_variables
-    from reels_factory.hf_compose import effect_zone
+    from reels_factory.hf_compose import (effect_zone, paste_target,
+                                          target_absent)
     from reels_factory.hf_montage import insert_of
 
     scene_id = scene.get("id", "?")
     name = str(element.get("name") or "").strip()
-    where = f"{scene_id}.elements[{name}]"
+    where_id = f"{scene_id}.elements[{name}]"
     if name in skipped:
         return [f"{scene_id}: позицию {name!r} ставить нельзя — "
                 f"{skipped[name]}"]
@@ -195,12 +196,25 @@ def _element_problems(scene: dict, element: dict, cards: dict,
     # заказа.
     if card.get("kind") == "scene" and position in FULL_FRAME_PRESENTER:
         problems.append(
-            f"{where}: позиция вида `scene` встаёт подложкой ПОД окно "
+            f"{where_id}: позиция вида `scene` встаёт подложкой ПОД окно "
             f"ведущей, а ведущая {position!r} занимает кадр целиком и закроет "
             "её собой — дай сцене уголок (`pip-*`), `stack` или `none`")
-    if card.get("kind") == "effect" and effect_zone(position) is None:
+    # Приём поверх нашего элемента (`targets` в карточке): своей разметки у
+    # позиции нет, и живёт она чужим элементом кадра — окном ведущей,
+    # вставкой, словами титра, схемой. Спрашивается это ДО заказа: приём,
+    # которому не на чем лежать, — оплаченная установка без единого кадра
+    # эффекта. Вид `effect` у таких позиций стоит из-за их же карточки
+    # реестра, но зона кадра им не нужна: в кадр они не встают вовсе.
+    where, refusal = paste_target(card, element)
+    if refusal:
+        problems.append(f"{where_id}: {refusal}")
+    elif where and where != "self":
+        lack = target_absent(scene, where)
+        if lack:
+            problems.append(f"{where_id}: {lack}")
+    if card.get("kind") == "effect" and not card.get("targets")             and effect_zone(position) is None:
         problems.append(
-            f"{where}: позиция вида `effect` встаёт в свободную зону кадра, а "
+            f"{where_id}: позиция вида `effect` встаёт в свободную зону кадра, а "
             f"ведущая {position!r} её не оставляет — дай сцене уголок "
             "(`pip-*`) или `none`, либо назови позицию другого вида")
     # Слот под файл: позиция несёт рамку под кадр биролла или снимок, и без
@@ -215,7 +229,7 @@ def _element_problems(scene: dict, element: dict, cards: dict,
         # и проверено живой сборкой. Кадр даёт вставка вида `photo`.
         if str(insert.get("kind") or "") != "photo":
             problems.append(
-                f"{where}: позиция ждёт картинку в слоты "
+                f"{where_id}: позиция ждёт картинку в слоты "
                 + ", ".join(f"`{one}`" for one in sorted(card["media_slots"]))
                 + " — её даёт вставка сцены вида `photo`, а у сцены "
                 + (f'вставка вида {insert.get("kind")!r}' if insert
@@ -229,7 +243,7 @@ def _element_problems(scene: dict, element: dict, cards: dict,
     # скелетом-заглушкой, о чём предупреждает и сама позиция в `avoid_when`.
     if card.get("host_slots"):
         problems.append(
-            f"{where}: содержимое слотов "
+            f"{where_id}: содержимое слотов "
             + ", ".join(f"`{one}`" for one in sorted(card["host_slots"]))
             + " эта позиция ждёт разметкой из хостовой страницы, а наша сборка "
             "ставит её сабкомпозицией и такой разметки не пишет — в кадре "
@@ -237,13 +251,13 @@ def _element_problems(scene: dict, element: dict, cards: dict,
     declared = card.get("variables") or {}
     named = element.get("variables")
     if named is not None and not isinstance(named, dict):
-        problems.append(f"{where}: `variables` — объект «имя → значение»")
+        problems.append(f"{where_id}: `variables` — объект «имя → значение»")
         named = {}
     for key, value in (named or {}).items():
         rule = declared.get(key)
         if rule is None:
             problems.append(
-                f"{where}: переменной {key!r} у позиции нет, есть "
+                f"{where_id}: переменной {key!r} у позиции нет, есть "
                 + (", ".join(f"`{one}`" for one in sorted(declared))
                    or "ни одной"))
             continue
@@ -253,18 +267,18 @@ def _element_problems(scene: dict, element: dict, cards: dict,
         if kinds and (not isinstance(value, kinds)
                       or (isinstance(value, bool) and bool not in kinds)):
             problems.append(
-                f"{where}: переменная {key!r} объявлена типом "
+                f"{where_id}: переменная {key!r} объявлена типом "
                 f'{rule.get("type")}, а в плане {type(value).__name__}')
             continue
         options = rule.get("options")
         if options and value not in options:
             problems.append(
-                f"{where}: переменная {key!r} принимает "
+                f"{where_id}: переменная {key!r} принимает "
                 + ", ".join(f"`{one}`" for one in options)
                 + f", а в плане {value!r}")
     words = element.get("words")
     if words is not None and not isinstance(words, list):
-        problems.append(f"{where}: `words` — список строк по числу слотов")
+        problems.append(f"{where_id}: `words` — список строк по числу слотов")
     elif words:
         # Слова ложатся либо в слоты разметки, либо — у позиции без слотов —
         # в её текстовые переменные (`hf_catalog.word_variables`): канал один
@@ -272,7 +286,7 @@ def _element_problems(scene: dict, element: dict, cards: dict,
         slots = (card.get("text_slots") or []) or word_variables(card)
         if len(words) > len(slots):
             problems.append(
-                f"{where}: слов {len(words)}, а мест под них у позиции "
+                f"{where_id}: слов {len(words)}, а мест под них у позиции "
                 f"{len(slots)} — лишние в кадр не попадут")
     return problems
 

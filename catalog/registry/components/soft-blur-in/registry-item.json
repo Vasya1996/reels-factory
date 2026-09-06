@@ -1,109 +1,115 @@
 {
-  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-  "name": "soft-blur-in",
-  "type": "hyperframes:component",
-  "title": "Soft Blur In",
-  "description": "A soft opacity, blur, and lift reveal for headlines, captions, and product UI callouts",
-  "tags": [
-    "motion-primitive",
-    "text",
-    "reveal",
-    "blur"
-  ],
-  "files": [
-    {
-      "path": "soft-blur-in.html",
-      "target": "compositions/components/soft-blur-in.html",
-      "type": "hyperframes:snippet"
-    }
-  ],
-  "variables": [
-    {
-      "id": "distance",
-      "type": "enum",
-      "role": "motion",
-      "label": "Distance",
-      "description": "How far the element is offset before it slides home: 14px, 28px or 52px.",
-      "default": "standard",
-      "options": [
-        {
-          "value": "close",
-          "label": "Close"
-        },
-        {
-          "value": "standard",
-          "label": "Standard"
-        },
-        {
-          "value": "far",
-          "label": "Far"
-        }
-      ]
-    },
-    {
-      "id": "direction",
-      "type": "enum",
-      "role": "motion",
-      "label": "Direction",
-      "description": "up starts the element below its resting place so it rises in, down starts it above so it drops in.",
-      "default": "up",
-      "options": [
-        {
-          "value": "up",
-          "label": "Up"
-        },
-        {
-          "value": "down",
-          "label": "Down"
-        }
-      ]
-    },
-    {
-      "id": "blur",
-      "type": "enum",
-      "role": "style",
-      "label": "Blur",
-      "description": "Starting blur radius, from a light haze to a full smear.",
-      "default": "standard",
-      "options": [
-        {
-          "value": "soft",
-          "label": "Soft"
-        },
-        {
-          "value": "standard",
-          "label": "Standard"
-        },
-        {
-          "value": "heavy",
-          "label": "Heavy"
-        }
-      ]
-    }
-  ],
-  "preview": {
-    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/soft-blur-in.png"
-  },
-  "reels": {
-    "use_when": "Строка или карточка должны мягко проявиться: спокойное появление подписи.",
-    "kind": "effect",
-    "mount": "paste",
-    "decor_texts": [],
-    "text_slots": [],
-    "variables": {
-      "distance": {
-        "type": "enum",
-        "default": "standard"
-      },
-      "direction": {
-        "type": "enum",
-        "default": "up"
-      },
-      "blur": {
-        "type": "enum",
-        "default": "standard"
-      }
-    },
-    "skip": "DROPPED (настоящая сборка, hf_compose.paste_fragment): у позиции нет своей разметки — это приём поверх ЧУЖИХ элементов кадра, а не самостоятельный кусок кадра, и вставлять литералом нечего. Их собственная формулировка того же: «This fragment has no markup of its own» (registry/components/bottom-up-letters, тот же класс позиций). Вида `effect`, который встаёт в свободную зону кадра сам по себе, из такой позиции не выходит. Ревью 05.09.2026: прежняя причина («нет корневого div с class — разметка не по контракту полки») была неверна дважды — разметка по контракту, а поиск корня у нас смотрел только `<div class=…>` и заодно шапку-комментарий (починено, hf_compose.paste_root_name). Её собственная строка контракта: «Add class=\"hf-soft-blur-in\" to the element you want to reveal» (soft-blur-in.html:5)."
+ "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+ "name": "soft-blur-in",
+ "type": "hyperframes:component",
+ "title": "Soft Blur In",
+ "description": "A soft opacity, blur, and lift reveal for headlines, captions, and product UI callouts",
+ "tags": [
+  "motion-primitive",
+  "text",
+  "reveal",
+  "blur"
+ ],
+ "files": [
+  {
+   "path": "soft-blur-in.html",
+   "target": "compositions/components/soft-blur-in.html",
+   "type": "hyperframes:snippet"
   }
+ ],
+ "variables": [
+  {
+   "id": "distance",
+   "type": "enum",
+   "role": "motion",
+   "label": "Distance",
+   "description": "How far the element is offset before it slides home: 14px, 28px or 52px.",
+   "default": "standard",
+   "options": [
+    {
+     "value": "close",
+     "label": "Close"
+    },
+    {
+     "value": "standard",
+     "label": "Standard"
+    },
+    {
+     "value": "far",
+     "label": "Far"
+    }
+   ]
+  },
+  {
+   "id": "direction",
+   "type": "enum",
+   "role": "motion",
+   "label": "Direction",
+   "description": "up starts the element below its resting place so it rises in, down starts it above so it drops in.",
+   "default": "up",
+   "options": [
+    {
+     "value": "up",
+     "label": "Up"
+    },
+    {
+     "value": "down",
+     "label": "Down"
+    }
+   ]
+  },
+  {
+   "id": "blur",
+   "type": "enum",
+   "role": "style",
+   "label": "Blur",
+   "description": "Starting blur radius, from a light haze to a full smear.",
+   "default": "standard",
+   "options": [
+    {
+     "value": "soft",
+     "label": "Soft"
+    },
+    {
+     "value": "standard",
+     "label": "Standard"
+    },
+    {
+     "value": "heavy",
+     "label": "Heavy"
+    }
+   ]
+  }
+ ],
+ "preview": {
+  "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/soft-blur-in.png"
+ },
+ "reels": {
+  "use_when": "Названный элемент кадра должен проявиться из размытия, а не появиться разом: мягкий вход в новую мысль.",
+  "kind": "effect",
+  "mount": "paste",
+  "decor_texts": [],
+  "text_slots": [],
+  "variables": {
+   "distance": {
+    "type": "enum",
+    "default": "standard"
+   },
+   "direction": {
+    "type": "enum",
+    "default": "up"
+   },
+   "blur": {
+    "type": "enum",
+    "default": "standard"
+   }
+  },
+  "avoid_when": "Элемент и так въезжает движением стыка: два входа подряд читаются как заминка.",
+  "targets": [
+   "presenter",
+   "insert",
+   "schema",
+   "caption"
+  ]
+ }
 }

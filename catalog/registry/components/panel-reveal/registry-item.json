@@ -1,117 +1,117 @@
 {
-  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-  "name": "panel-reveal",
-  "type": "hyperframes:component",
-  "title": "Panel Reveal",
-  "description": "A panel reveal primitive with height expansion and content fade",
-  "tags": [
-    "transition-primitive",
-    "transitions-dev-port",
-    "panel",
-    "reveal"
-  ],
-  "files": [
-    {
-      "path": "panel-reveal.html",
-      "target": "compositions/components/panel-reveal.html",
-      "type": "hyperframes:snippet"
-    }
-  ],
-  "variables": [
-    {
-      "id": "title",
-      "type": "string",
-      "role": "content",
-      "label": "Title",
-      "description": "The header line that sits above the folded body.",
-      "default": "Motion tokens"
-    },
-    {
-      "id": "width",
-      "type": "enum",
-      "role": "layout",
-      "label": "Width",
-      "description": "How wide the panel sits, 280, 360 or 480 px.",
-      "default": "standard",
-      "options": [
-        {
-          "value": "narrow",
-          "label": "Narrow"
-        },
-        {
-          "value": "standard",
-          "label": "Standard"
-        },
-        {
-          "value": "wide",
-          "label": "Wide"
-        }
-      ]
-    },
-    {
-      "id": "tone",
-      "type": "enum",
-      "role": "style",
-      "label": "Tone",
-      "description": "Surface family: paper is the white card for light frames, ink inverts it for dark frames.",
-      "default": "paper",
-      "options": [
-        {
-          "value": "paper",
-          "label": "Paper"
-        },
-        {
-          "value": "ink",
-          "label": "Ink"
-        }
-      ]
-    },
-    {
-      "id": "reveal",
-      "type": "enum",
-      "role": "motion",
-      "label": "Reveal",
-      "description": "Whether the body fades in with the height. fade is the shipped motion, solid opens the height only.",
-      "default": "fade",
-      "options": [
-        {
-          "value": "fade",
-          "label": "Fade"
-        },
-        {
-          "value": "solid",
-          "label": "Solid"
-        }
-      ]
-    }
-  ],
-  "preview": {
-    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/panel-reveal.png"
-  },
-  "reels": {
-    "use_when": "Названо раскрытие подробностей: панель разворачивается и показывает содержимое.",
-    "kind": "effect",
-    "mount": "paste",
-    "decor_texts": [],
-    "text_slots": [],
-    "variables": {
-      "title": {
-        "type": "string",
-        "default": "Motion tokens"
-      },
-      "width": {
-        "type": "enum",
-        "default": "standard"
-      },
-      "tone": {
-        "type": "enum",
-        "default": "paper"
-      },
-      "reveal": {
-        "type": "enum",
-        "default": "fade"
-      }
-    },
-    "skip": "Собирается и монтируется (корень на `<section class=\"hf-transition-panel-reveal\">`, не на div — поиск корня починен ревью 05.09.2026). Не предлагается по кадру: панель стоит статично своим демо-текстом «Motion tokens / Duration 420ms / Easing power3.out» — раскрытия не видно (таймлайн не подключаем), а текст английский и подменить его нечем: карточка слотов не объявляет. Кадр: work/catalog-sweep-review/panel-reveal/contact-sheet.jpg."
+ "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+ "name": "panel-reveal",
+ "type": "hyperframes:component",
+ "title": "Panel Reveal",
+ "description": "A panel reveal primitive with height expansion and content fade",
+ "tags": [
+  "transition-primitive",
+  "transitions-dev-port",
+  "panel",
+  "reveal"
+ ],
+ "files": [
+  {
+   "path": "panel-reveal.html",
+   "target": "compositions/components/panel-reveal.html",
+   "type": "hyperframes:snippet"
   }
+ ],
+ "variables": [
+  {
+   "id": "title",
+   "type": "string",
+   "role": "content",
+   "label": "Title",
+   "description": "The header line that sits above the folded body.",
+   "default": "Motion tokens"
+  },
+  {
+   "id": "width",
+   "type": "enum",
+   "role": "layout",
+   "label": "Width",
+   "description": "How wide the panel sits, 280, 360 or 480 px.",
+   "default": "standard",
+   "options": [
+    {
+     "value": "narrow",
+     "label": "Narrow"
+    },
+    {
+     "value": "standard",
+     "label": "Standard"
+    },
+    {
+     "value": "wide",
+     "label": "Wide"
+    }
+   ]
+  },
+  {
+   "id": "tone",
+   "type": "enum",
+   "role": "style",
+   "label": "Tone",
+   "description": "Surface family: paper is the white card for light frames, ink inverts it for dark frames.",
+   "default": "paper",
+   "options": [
+    {
+     "value": "paper",
+     "label": "Paper"
+    },
+    {
+     "value": "ink",
+     "label": "Ink"
+    }
+   ]
+  },
+  {
+   "id": "reveal",
+   "type": "enum",
+   "role": "motion",
+   "label": "Reveal",
+   "description": "Whether the body fades in with the height. fade is the shipped motion, solid opens the height only.",
+   "default": "fade",
+   "options": [
+    {
+     "value": "fade",
+     "label": "Fade"
+    },
+    {
+     "value": "solid",
+     "label": "Solid"
+    }
+   ]
+  }
+ ],
+ "preview": {
+  "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/panel-reveal.png"
+ },
+ "reels": {
+  "use_when": "Названо раскрытие подробностей: панель разворачивается и показывает содержимое.",
+  "kind": "effect",
+  "mount": "paste",
+  "decor_texts": [],
+  "text_slots": [],
+  "variables": {
+   "title": {
+    "type": "string",
+    "default": "Motion tokens"
+   },
+   "width": {
+    "type": "enum",
+    "default": "standard"
+   },
+   "tone": {
+    "type": "enum",
+    "default": "paper"
+   },
+   "reveal": {
+    "type": "enum",
+    "default": "fade"
+   }
+  },
+  "skip": "Рецепт подключается, но панель раскрывается вокруг своего текста — заголовка «Motion tokens» и тела по умолчанию из её же `data-composition-variables`. Пока карточка не называет эти переменные текстовыми (`word_variables`), слова плана в них не доезжают, и в кадре останется английская демо-строка."
+ }
 }

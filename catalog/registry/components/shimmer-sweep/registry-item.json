@@ -1,31 +1,36 @@
 {
-  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-  "name": "shimmer-sweep",
-  "type": "hyperframes:component",
-  "title": "Shimmer Sweep",
-  "description": "Animated light sweep across text or elements using a CSS gradient mask — ideal for AI accents and premium reveals",
-  "tags": [
-    "text",
-    "shimmer",
-    "highlight",
-    "effect"
-  ],
-  "files": [
-    {
-      "path": "shimmer-sweep.html",
-      "target": "compositions/components/shimmer-sweep.html",
-      "type": "hyperframes:snippet"
-    }
-  ],
-  "preview": {
-    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/shimmer-sweep.png"
-  },
-  "reels": {
-    "use_when": "По строке проходит блик: премиальная нота или ИИ-акцент на слове.",
-    "kind": "effect",
-    "mount": "paste",
-    "decor_texts": [],
-    "text_slots": [],
-    "skip": "DROPPED (настоящая сборка, hf_compose.paste_fragment): у позиции нет своей разметки — это приём поверх ЧУЖИХ элементов кадра, а не самостоятельный кусок кадра, и вставлять литералом нечего. Их собственная формулировка того же: «This fragment has no markup of its own» (registry/components/bottom-up-letters, тот же класс позиций). Вида `effect`, который встаёт в свободную зону кадра сам по себе, из такой позиции не выходит. Ревью 05.09.2026: прежняя причина («нет корневого div с class — разметка не по контракту полки») была неверна дважды — разметка по контракту, а поиск корня у нас смотрел только `<div class=…>` и заодно шапку-комментарий (починено, hf_compose.paste_root_name). Её собственная строка контракта: «Wrap your text element with class=\"shimmer-sweep-target\"» (shimmer-sweep.html:5)."
+ "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+ "name": "shimmer-sweep",
+ "type": "hyperframes:component",
+ "title": "Shimmer Sweep",
+ "description": "Animated light sweep across text or elements using a CSS gradient mask — ideal for AI accents and premium reveals",
+ "tags": [
+  "text",
+  "shimmer",
+  "highlight",
+  "effect"
+ ],
+ "files": [
+  {
+   "path": "shimmer-sweep.html",
+   "target": "compositions/components/shimmer-sweep.html",
+   "type": "hyperframes:snippet"
   }
+ ],
+ "preview": {
+  "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/shimmer-sweep.png"
+ },
+ "reels": {
+  "use_when": "По названному элементу должен пройти блик: вещь блестит, предложение выгодное, результат нарядный.",
+  "kind": "effect",
+  "mount": "paste",
+  "decor_texts": [],
+  "text_slots": [],
+  "avoid_when": "Речь о серьёзном или тревожном: блик читается как реклама и спорит со смыслом.",
+  "targets": [
+   "presenter",
+   "insert",
+   "caption"
+  ]
+ }
 }

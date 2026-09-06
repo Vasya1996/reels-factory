@@ -1,0 +1,33 @@
+{
+ "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+ "name": "demo-decor",
+ "type": "hyperframes:component",
+ "title": "Demo Decor",
+ "description": "Fixture decorator for tests: no markup of its own, attaches to a host element and drives it from the host timeline",
+ "tags": [
+  "demo"
+ ],
+ "files": [
+  {
+   "path": "demo-decor.html",
+   "target": "compositions/components/demo-decor.html",
+   "type": "hyperframes:snippet"
+  }
+ ],
+ "reels": {
+  "kind": "effect",
+  "mount": "paste",
+  "targets": [
+   "presenter",
+   "caption"
+  ],
+  "use_when": "Образец приёма поверх нашего элемента.",
+  "avoid_when": "Только для тестов.",
+  "variables": {
+   "tone": {
+    "type": "string",
+    "default": "soft"
+   }
+  }
+ }
+}

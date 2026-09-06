@@ -362,7 +362,15 @@ def _element_kinds() -> dict:
     from reels_factory.hf_catalog import catalog_cards
 
     try:
-        return {name: card.get("kind")
+        # Приём-декоратор (`targets` без `self`) своей разметки не несёт и в
+        # кадр не встаёт вовсе: он вешается на окно ведущей, вставку, слова
+        # титра или схему. Кадром он не закрыт — закрыт им тот элемент, на
+        # который он лёг, а его сцене надо иметь и без приёма. Без этой
+        # оговорки D20, D25 и D34 засчитывали бы сцену закрытой за подсветку
+        # слова в титре.
+        return {name: (None if (card.get("targets")
+                                and "self" not in card["targets"])
+                       else card.get("kind"))
                 for name, card in catalog_cards().items()}
     except (OSError, ValueError):
         return {}

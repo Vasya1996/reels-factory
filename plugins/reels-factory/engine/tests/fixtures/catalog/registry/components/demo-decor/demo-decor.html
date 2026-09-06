@@ -1,0 +1,41 @@
+<!--
+  Demo Decor - fixture decorator with no markup of its own.
+
+  Add class="demo-decor" to the element you want to reveal, paste this style
+  block and script once, and add the timeline snippet to your paused GSAP
+  timeline. The shape follows the real registry: the header names the class the
+  host must carry, and the trailing comment carries the recipe.
+-->
+
+<style>
+  .demo-decor {
+    opacity: 0;
+    filter: blur(12px);
+  }
+  .demo-decor-mark {
+    outline: 2px solid currentColor;
+  }
+</style>
+
+<script>
+  (function () {
+    "use strict";
+    var vars =
+      window.__hyperframes && window.__hyperframes.getVariables
+        ? window.__hyperframes.getVariables()
+        : {};
+    var tone = typeof vars.tone === "string" && vars.tone ? vars.tone : "soft";
+    document.querySelectorAll(".demo-decor").forEach(function (node) {
+      node.setAttribute("data-demo-tone", tone);
+      node.classList.add("demo-decor-mark");
+    });
+  })();
+</script>
+
+<!--
+  Timeline integration:
+
+  tl.to(".demo-decor", { opacity: 1, filter: "blur(0px)", duration: 0.4 },
+        startTime);
+  tl.set("#somebody-elses-scene", { opacity: 0 }, 0.9);
+-->

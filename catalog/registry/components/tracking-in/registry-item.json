@@ -1,117 +1,120 @@
 {
-  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-  "name": "tracking-in",
-  "type": "hyperframes:component",
-  "title": "Tracking In",
-  "description": "A precise letter-spacing reveal for premium headings and interface labels",
-  "tags": [
-    "motion-primitive",
-    "text",
-    "reveal",
-    "typography"
-  ],
-  "files": [
-    {
-      "path": "tracking-in.html",
-      "target": "compositions/components/tracking-in.html",
-      "type": "hyperframes:snippet"
-    }
-  ],
-  "variables": [
-    {
-      "id": "tracking",
-      "type": "enum",
-      "role": "style",
-      "label": "Tracking",
-      "description": "Multiplies the letter-spacing the timeline drives, so the reveal starts and settles proportionally wider or tighter.",
-      "default": "standard",
-      "options": [
-        {
-          "value": "tight",
-          "label": "Tight"
-        },
-        {
-          "value": "standard",
-          "label": "Standard"
-        },
-        {
-          "value": "wide",
-          "label": "Wide"
-        }
-      ]
-    },
-    {
-      "id": "rise",
-      "type": "enum",
-      "role": "motion",
-      "label": "Rise",
-      "description": "Vertical offset the text starts from, which the timeline reads as the start of its travel and eases to zero.",
-      "default": "standard",
-      "options": [
-        {
-          "value": "subtle",
-          "label": "Subtle"
-        },
-        {
-          "value": "standard",
-          "label": "Standard"
-        },
-        {
-          "value": "bold",
-          "label": "Bold"
-        }
-      ]
-    },
-    {
-      "id": "tone",
-      "type": "enum",
-      "role": "style",
-      "label": "Tone",
-      "description": "Text colour: inherit keeps the surrounding page colour, ink suits light frames, paper dark ones, accent rides --brand.",
-      "default": "inherit",
-      "options": [
-        {
-          "value": "inherit",
-          "label": "Inherit"
-        },
-        {
-          "value": "ink",
-          "label": "Ink"
-        },
-        {
-          "value": "paper",
-          "label": "Paper"
-        },
-        {
-          "value": "accent",
-          "label": "Accent"
-        }
-      ]
-    }
-  ],
-  "preview": {
-    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/tracking-in.png"
-  },
-  "reels": {
-    "use_when": "Заголовок раздвигается в имя: премиальная подпись, название.",
-    "kind": "effect",
-    "mount": "paste",
-    "decor_texts": [],
-    "text_slots": [],
-    "variables": {
-      "tracking": {
-        "type": "enum",
-        "default": "standard"
-      },
-      "rise": {
-        "type": "enum",
-        "default": "standard"
-      },
-      "tone": {
-        "type": "enum",
-        "default": "inherit"
-      }
-    },
-    "skip": "DROPPED (настоящая сборка, hf_compose.paste_fragment): у позиции нет своей разметки — это приём поверх ЧУЖИХ элементов кадра, а не самостоятельный кусок кадра, и вставлять литералом нечего. Их собственная формулировка того же: «This fragment has no markup of its own» (registry/components/bottom-up-letters, тот же класс позиций). Вида `effect`, который встаёт в свободную зону кадра сам по себе, из такой позиции не выходит. Ревью 05.09.2026: прежняя причина («нет корневого div с class — разметка не по контракту полки») была неверна дважды — разметка по контракту, а поиск корня у нас смотрел только `<div class=…>` и заодно шапку-комментарий (починено, hf_compose.paste_root_name). Её собственная строка контракта: «Add class=\"hf-tracking-in\" to text elements» (tracking-in.html:4)."
+ "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+ "name": "tracking-in",
+ "type": "hyperframes:component",
+ "title": "Tracking In",
+ "description": "A precise letter-spacing reveal for premium headings and interface labels",
+ "tags": [
+  "motion-primitive",
+  "text",
+  "reveal",
+  "typography"
+ ],
+ "files": [
+  {
+   "path": "tracking-in.html",
+   "target": "compositions/components/tracking-in.html",
+   "type": "hyperframes:snippet"
   }
+ ],
+ "variables": [
+  {
+   "id": "tracking",
+   "type": "enum",
+   "role": "style",
+   "label": "Tracking",
+   "description": "Multiplies the letter-spacing the timeline drives, so the reveal starts and settles proportionally wider or tighter.",
+   "default": "standard",
+   "options": [
+    {
+     "value": "tight",
+     "label": "Tight"
+    },
+    {
+     "value": "standard",
+     "label": "Standard"
+    },
+    {
+     "value": "wide",
+     "label": "Wide"
+    }
+   ]
+  },
+  {
+   "id": "rise",
+   "type": "enum",
+   "role": "motion",
+   "label": "Rise",
+   "description": "Vertical offset the text starts from, which the timeline reads as the start of its travel and eases to zero.",
+   "default": "standard",
+   "options": [
+    {
+     "value": "subtle",
+     "label": "Subtle"
+    },
+    {
+     "value": "standard",
+     "label": "Standard"
+    },
+    {
+     "value": "bold",
+     "label": "Bold"
+    }
+   ]
+  },
+  {
+   "id": "tone",
+   "type": "enum",
+   "role": "style",
+   "label": "Tone",
+   "description": "Text colour: inherit keeps the surrounding page colour, ink suits light frames, paper dark ones, accent rides --brand.",
+   "default": "inherit",
+   "options": [
+    {
+     "value": "inherit",
+     "label": "Inherit"
+    },
+    {
+     "value": "ink",
+     "label": "Ink"
+    },
+    {
+     "value": "paper",
+     "label": "Paper"
+    },
+    {
+     "value": "accent",
+     "label": "Accent"
+    }
+   ]
+  }
+ ],
+ "preview": {
+  "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/tracking-in.png"
+ },
+ "reels": {
+  "use_when": "Слова сцены должны собраться из разрежённых букв: так входит заголовок или название.",
+  "kind": "effect",
+  "mount": "paste",
+  "decor_texts": [],
+  "text_slots": [],
+  "variables": {
+   "tracking": {
+    "type": "enum",
+    "default": "standard"
+   },
+   "rise": {
+    "type": "enum",
+    "default": "standard"
+   },
+   "tone": {
+    "type": "enum",
+    "default": "inherit"
+   }
+  },
+  "avoid_when": "Сцена быстрая и слов много: сбор букв занимает почти секунду на каждое слово и читать их некогда.",
+  "targets": [
+   "caption"
+  ]
+ }
 }

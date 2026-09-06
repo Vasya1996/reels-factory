@@ -1013,7 +1013,7 @@ def paste_fragment(sdk, public, source, *, selector: str | None = None
 
 
 def paste_effect(sdk, public, name: str, *, unique: str,
-                 variables: dict) -> str:
+                 variables: dict) -> tuple:
     """Позиция каталога вида `paste` литералом: стиль + корень + скрипт.
 
     `reels.mount == "paste"` (карточка B1) — полка размечает такую позицию
@@ -1039,12 +1039,12 @@ def paste_effect(sdk, public, name: str, *, unique: str,
     общему имени). Переименование — тем же приёмом, каким `_stage_overlay`
     переименовывает `data-composition-id`.
 
-    Анимация из комментария «Timeline integration» в их файле не
-    подключается: это рецепт для хоста, не исполняемый код (их полка ждёт,
-    что автор допишет вызовы в свой таймлайн руками,
-    `hyperframes-registry/SKILL.md:78`). Позиция встаёт статичным финальным
-    кадром на весь свой интервал, без входа и выхода — сознательно оставленная
-    граница объёма, не забытая деталь.
+    Анимация из комментария «Timeline integration» больше не остаётся в
+    комментарии: её разбирает `wire_recipe` и отдаёт строками нашего
+    таймлайна — это и есть пятый шаг их контракта («add those calls to your
+    timeline», `hyperframes-registry/SKILL.md:81`). Отдаём их вторым
+    значением, а не вписываем здесь: секунда сцены известна вызывающему, а
+    не куску разметки.
     """
     source = _installed_path(public, name, "component")
     style, root, script = paste_fragment(sdk, public, source)
@@ -1070,8 +1070,538 @@ def paste_effect(sdk, public, name: str, *, unique: str,
            " window.__hyperframes.getVariables = function () { return "
            + json.dumps(variables or {}, ensure_ascii=False) +
            "; };</script>")
-    return f"{style}\n{root}\n{shim}\n{script}"
+    lines, refused, _ = wire_recipe(
+        source.read_text(encoding="utf-8"), unique=unique,
+        target=None)
+    return f"{style}\n{root}\n{shim}\n{script}", lines, refused
 
+
+
+# ── пятый шаг их контракта: рецепт таймлайна в наш таймлайн ────────────────
+# Их полка описывает вставку компонента пятью шагами, и пятый звучит так: «If
+# the component exposes GSAP timeline integration (see the comment block in the
+# snippet), add those calls to your timeline»
+# (hyperframes-registry/SKILL.md:81). Четыре первых шага делает `paste_effect`
+# (стиль, разметка, скрипт, переменные), пятый не делал никто — позиция
+# вставала статичным кадром. Ниже он и живёт.
+#
+# Формат рецепта у них один на весь реестр, и назван он их же документом
+# ремонта каталога: «fold the trailing `Timeline integration:` recipe into a
+# real `<script>`»
+# (hyperframes-registry/references/component-quality-bar.md:101). То есть
+# признак — комментарий, чья строка начинается словами `Timeline integration`;
+# всё после неё до конца комментария и есть код для хостового таймлайна.
+# Шестнадцати частных случаев тут нет: разбор один, а что из него не уложилось,
+# называется дословно причиной отказа.
+
+#: Строка-заголовок рецепта. За ней в том же комментарии идёт сам код.
+_RECIPE_HEAD = re.compile(r"^[ \t]*Timeline integration\b[^\n]*\n",
+                          re.M | re.I)
+#: Класс, который их шапка велит повесить на СВОЙ элемент: «Wrap target text
+#: with class="hf-inline-highlight"», «Add class="hf-soft-blur-in" to the
+#: element you want to reveal». Другого места, где этот класс назван, у файла
+#: нет — ни в реестровой карточке, ни в стиле его от собственных классов не
+#: отличить. Шапка — первый комментарий файла: во втором у части позиций стоит
+#: пример хостовой композиции с чужими классами (`caption-blend-difference`).
+_HEAD_CLASS = re.compile(r'class="([^"]+)"')
+#: Имя, объявленное скриптом самой позиции: её API (`attachMotionBlur`) и её
+#: же служебные функции. По нему рецепт отличает вызов контракта позиции от
+#: демонстрационного твина, который автор написал ради примера.
+_SCRIPT_DECL = re.compile(
+    r"\bfunction\s+([A-Za-z_$][\w$]*)|\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)"
+    r"\s*=|\bwindow\.([A-Za-z_$][\w$]*)\s*=")
+#: Классы, объявленные стилем позиции: её собственные узлы, которые строит её
+#: же скрипт (`.hf-number-wheel-strip`, `.hf-bottom-up-letters-char`).
+_STYLE_CLASS = re.compile(r"\.(-?[A-Za-z_][\w-]*)")
+#: Имена, которые рецепту разрешено называть, ничего не объявив: наш таймлайн,
+#: их рантайм и то, что даёт браузер.
+_RECIPE_GLOBALS = frozenset(
+    ("tl", "gsap", "window", "document", "Math", "String", "Number", "Array",
+     "startTime", "true", "false", "null", "undefined",
+     # Ключевые слова самого языка: `if`, `const` и прочие именами не
+     # являются, а разбор видит их такими же словами.
+     "if", "else", "for", "while", "function", "return", "const", "let",
+     "var", "new", "typeof", "in", "of", "this"))
+_IDENT = re.compile(r"(?<![\w.$])([A-Za-z_$][\w$]*)")
+#: Параметры стрелочной функции и `function (…)`: имена, объявленные
+#: самим рецептом на месте.
+_ARROW_PARAMS = re.compile(
+    r"\(([^()]*)\)\s*=>|\bfunction\s*\w*\s*\(([^()]*)\)")
+_NUMBER = re.compile(r"^-?\d+(?:\.\d+)?$")
+
+
+def paste_head(html: str) -> str:
+    """Шапка их файла — первый комментарий. Нет комментария — пустая строка."""
+    found = _HTML_COMMENT.search(html)
+    return found.group(0) if found else ""
+
+
+def paste_attach_classes(html: str) -> list[str]:
+    """Классы, которые их шапка велит повесить на элемент ХОСТА.
+
+    Пустой список значит, что позиция самостоятельна: свою разметку она несёт
+    сама (`confetti`, `icon-swap`, `grid-pixelate-wipe`), и вешать её не на
+    что. Классы с подстановкой в имени (`hf-texture-{name}`) не берём: имя
+    выбирает автор из списка в той же шапке, канала такого выбора у плана нет,
+    и подставить за автора значит выдумать содержание.
+    """
+    seen: list[str] = []
+    for group in _HEAD_CLASS.findall(paste_head(html)):
+        for token in group.split():
+            if "{" in token or token in seen:
+                continue
+            seen.append(token)
+    return seen
+
+
+def paste_own_names(html: str) -> tuple[set, set]:
+    """Имена самой позиции: (классы её стиля, имена её скрипта)."""
+    style = "".join(_PASTE_STYLE.findall(html))
+    script = "".join(_PASTE_SCRIPT.findall(html))
+    declared = {name for triple in _SCRIPT_DECL.findall(script)
+                for name in triple if name}
+    return set(_STYLE_CLASS.findall(style)), declared
+
+
+def _statements(code: str) -> list:
+    """Рецепт на инструкции. Проза комментария сюда не доезжает: она не
+    кончается `;` и не закрывает блок, и остаток без конца отбрасывается."""
+    out, buf, depth, quote = [], [], 0, ""
+    index = 0
+    while index < len(code):
+        char = code[index]
+        if quote:
+            buf.append(char)
+            if char == "\\" and index + 1 < len(code):
+                buf.append(code[index + 1])
+                index += 2
+                continue
+            if char == quote:
+                quote = ""
+            index += 1
+            continue
+        if char in "\"'":
+            quote = char
+            buf.append(char)
+            index += 1
+            continue
+        if code.startswith("//", index):
+            found = code.find("\n", index)
+            if found < 0:
+                break
+            index = found
+            continue
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+            # Блок (`if (…) { … }`) кончается закрывающей скобкой, а не `;`.
+            # Объектный литерал в конце присваивания — нет: `window.x = {};`
+            # закрывается точкой с запятой, и разрыв по `}` оставил бы от него
+            # хвост из одного знака.
+            if depth == 0 and char == "}" and re.match(
+                    r"^\s*(?:if|for|while|function)\b|^\s*\{",
+                    "".join(buf)):
+                buf.append(char)
+                out.append("".join(buf).strip())
+                buf = []
+                index += 1
+                continue
+        if char == ";" and depth == 0:
+            out.append("".join(buf).strip() + ";")
+            buf = []
+            index += 1
+            continue
+        buf.append(char)
+        index += 1
+    return [one for one in out if one]
+
+
+def paste_recipe(html: str) -> list:
+    """Инструкции из комментария «Timeline integration». Нет его — пусто."""
+    for comment in _HTML_COMMENT.findall(html):
+        head = _RECIPE_HEAD.search(comment)
+        if not head:
+            continue
+        body = comment[head.end():]
+        body = body[:body.rfind("-->")] if "-->" in body else body
+        return _statements(body)
+    return []
+
+
+def _string_literals(text: str) -> list:
+    """Строковые литералы инструкции: (начало, конец, кавычка, содержимое)."""
+    out, index = [], 0
+    while index < len(text):
+        char = text[index]
+        if char in "\"'":
+            end = index + 1
+            while end < len(text) and text[end] != char:
+                end += 2 if text[end] == "\\" else 1
+            out.append((index, end + 1, char, text[index + 1:end]))
+            index = end + 1
+            continue
+        index += 1
+    return out
+
+
+def _resolve_selector(selector: str, *, root, scoped_root: str,
+                      attach: list, scoped_attach: str, own: set):
+    """Их селектор — в наш. `None` значит, что имя в кадре ничему не отвечает.
+
+    Три случая, и все три — из самого файла: корень позиции (переименован в
+    копию), класс из её шапки (висит на нашей мишени) и её собственный класс,
+    который строит её же скрипт (живёт ВНУТРИ первых двух, поэтому доезжает
+    потомком).
+    """
+    body = selector.strip()
+    first = body.split(",")[0].strip().split()[0]
+    match = re.match(r"^([.#])([-\w]+)", first)
+    if not match:
+        return None
+    mark, name = match.group(1), match.group(2)
+    tail = body[len(first):]
+    if root and name == root[1] \
+            and mark == ("." if root[0] == "class" else "#"):
+        return mark + scoped_root + tail
+    if name in attach:
+        return "." + scoped_attach + tail
+    if name in own:
+        anchor = ("." + scoped_attach if attach
+                  else ("." if root and root[0] == "class" else "#")
+                  + scoped_root)
+        return f"{anchor} {body}"
+    return None
+
+
+def _time_slot(statement: str):
+    """Последний аргумент вызова `tl.<метод>(…)` — позиция на шкале."""
+    call = re.match(r"^tl\.\w+\s*\(", statement)
+    if not call:
+        return None
+    start = call.end()
+    depth, quote, splits = 1, "", [start]
+    index = start
+    while index < len(statement) and depth:
+        char = statement[index]
+        if quote:
+            if char == "\\":
+                index += 2
+                continue
+            if char == quote:
+                quote = ""
+        elif char in "\"'":
+            quote = char
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+            if not depth:
+                break
+        elif char == "," and depth == 1:
+            splits.append(index + 1)
+        index += 1
+    if depth != 0 or len(splits) < 2:
+        return None
+    # Висячая запятая перед скобкой: последний аргумент пуст, и позиция на
+    # шкале — предыдущий (`parallax-zoom` пишет рецепт именно так).
+    while len(splits) > 1 and not statement[splits[-1]:index].strip():
+        index = splits.pop() - 1
+    if len(splits) < 2:
+        return None
+    return splits[-1], index, statement[splits[-1]:index].strip()
+
+
+def _declared_name(text: str):
+    found = re.match(r"^(?:const|let|var)\s+([A-Za-z_$][\w$]*)", text)
+    return found.group(1) if found else ""
+
+
+def wire_recipe(html: str, *, unique: str, target=None):
+    """Рецепт позиции — строками нашего таймлайна.
+
+    Отдаёт `(строки, отказы, классы-на-мишень)`. Отказ — дословная инструкция
+    их файла, которой в нашем кадре не на что лечь: чужой селектор их примера
+    (`#scene-a`), имя, которого никто не объявил (`DATA_DURATION`), их же
+    заготовка нашего таймлайна (`const tl = …`). Отказ не роняет позицию: он
+    записывается причиной, а остальные строки встают.
+
+    Секунда в рецепте бывает двух видов: `startTime` (плюс смещение) и голое
+    число их примера. Голое число — не наша секунда, но РИТМ примера в нём
+    настоящий: `3.0` и `3.6` у `grid-pixelate-wipe` значат «накрыть и через
+    0,6 с открыть». Поэтому числа пересчитываются от самого раннего из них к
+    началу сцены, а не выбрасываются и не берутся как есть.
+    """
+    statements = paste_recipe(html)
+    if not statements:
+        return [], [], []
+    root = paste_root_name(html)
+    attach = paste_attach_classes(html)
+    own_classes, own_names = paste_own_names(html)
+    scoped_root = f"{root[1]}--{unique}" if root else ""
+    scoped_attach = f"{attach[0]}--{unique}" if attach else ""
+    kept, refused, declared = [], [], set()
+    for statement in statements:
+        text = statement
+        if re.match(r"^(?:const|let|var)\s+(?:tl|startTime)\b", text) \
+                or text.startswith("window.__timelines"):
+            refused.append(statement)
+            continue
+        bad = False
+        for start, end, quote, value in reversed(_string_literals(text)):
+            if not value.startswith((".", "#")):
+                continue
+            found = _resolve_selector(
+                value, root=root, scoped_root=scoped_root, attach=attach,
+                scoped_attach=scoped_attach, own=own_classes)
+            if found is None:
+                # Селектор их примера, а не контракта: он называет элемент
+                # ХОСТА, придуманный автором для показа (`#my-box`,
+                # `#scene-a`). Подставлять на его место нашу мишень можно
+                # только там, где контракт сам просит селектор, — в вызове
+                # функции ПОЗИЦИИ с нашим таймлайном аргументом
+                # (`attachMotionBlur(sel, tl)`, её же шапка, раздел `API`).
+                api = re.match(r"^([A-Za-z_$][\w$]*)\s*\(", text)
+                if (target and api and api.group(1) in own_names
+                        and re.search(r"(?<![\w.$])tl(?![\w$])", text)):
+                    found = target
+                else:
+                    bad = True
+                    break
+            text = text[:start] + quote + found + quote + text[end:]
+        if bad:
+            refused.append(statement)
+            continue
+        # Имена ищем по коду без строк: внутри литерала стоят их же ключи
+        # анимации («power2.out», «--hf-highlight-scale»), и они не имена.
+        code = text
+        for start, end, _, _ in reversed(_string_literals(code)):
+            code = code[:start] + '""' + code[end:]
+        params = {one for pair in _ARROW_PARAMS.findall(code)
+                  for group in pair
+                  for one in re.findall(r"[A-Za-z_$][\w$]*", group)}
+        # Имя, которое инструкция сама и объявляет, неизвестным не считаем.
+        if _declared_name(text):
+            declared.add(_declared_name(text))
+        names = {name for name in _IDENT.findall(code)
+                 if name not in _RECIPE_GLOBALS and name not in own_names
+                 and name not in declared and name not in params
+                 and not re.search(r"(?<![\w.$])" + re.escape(name)
+                                   + r"\s*:", code)}
+        if names:
+            refused.append(statement)
+            continue
+        kept.append((statement, text))
+    # Объявление держим только там, где его кто-то читает ниже.
+    body = " ".join(text for _, text in kept)
+    keep = []
+    for statement, text in kept:
+        name = _declared_name(text)
+        if name and len(re.findall(
+                r"(?<![\w.$])" + re.escape(name) + r"(?![\w$])", body)) < 2:
+            refused.append(statement)
+            continue
+        keep.append((statement, text))
+    # Инструкция, которая наш таймлайн не называет вовсе, рецептом не была:
+    # `tl` в ней либо метод (`tl.to`), либо аргумент их же функции
+    # (`attachMotionBlur(sel, tl)`, `motion-blur.html`, раздел `API`).
+    if not any(re.search(r"(?<![\w.$])tl(?![\w$])", text)
+               for _, text in keep):
+        return [], refused + [one for one, _ in keep], attach
+    numbers = [float(_time_slot(text)[2]) for _, text in keep
+               if _time_slot(text) and _NUMBER.match(_time_slot(text)[2])]
+    base = min(numbers) if numbers else 0.0
+    lines = []
+    for _, text in keep:
+        slot = _time_slot(text)
+        if slot and _NUMBER.match(slot[2]):
+            shift = round(float(slot[2]) - base, 4)
+            where = "startTime" if not shift else f"startTime + {shift}"
+            text = text[:slot[0]] + " " + where + text[slot[1]:]
+        lines.append(text)
+    return lines, refused, attach
+
+
+
+#: Мишень приёма — наш элемент кадра, на который их шапка велит повесить свой
+#: класс. Список закрытый и общий на всех: по нему судит гейт до оплаты
+#: (`hf_gates._element_problems`), по нему же сборка ищет селектор, и по нему
+#: карточка каталога называет, куда позицию вообще можно поставить.
+#:
+#: - `self` — у позиции своя разметка, вешать не на что (`confetti`,
+#:   `icon-swap`): рецепт целится в её собственный корень;
+#: - `presenter` — окно ведущей (`#video-wrap`);
+#: - `insert` — вставки сцены, все планы серии разом;
+#: - `caption` — слова титра, которые звучат в этой сцене;
+#: - `schema` — коробка схемы сцены.
+PASTE_TARGETS = ("self", "presenter", "insert", "caption", "schema")
+
+
+def paste_attach(selector: str, classes: list, *,
+                 first=None, last=None) -> str:
+    """Скрипт, вешающий классы их шапки на наш элемент.
+
+    Классов два: их собственный (его читает их же CSS и их же скрипт) и наш
+    `имя--маунт` — по нему рецепт целится в ЭТУ копию, а не во все сразу.
+    Иначе второй такой же приём в другой сцене поехал бы по чужому времени.
+
+    Вешаем скриптом, а не атрибутом разметки, по одной причине: слова титра
+    рисует их же движок (`captions.js`) в момент разбора страницы, и в нашей
+    разметке их нет вовсе. Скрипт стоит в теле документа после движка титра и
+    до нашего таймлайна — к моменту создания твинов узлы на месте, а сама
+    навеска происходит один раз при загрузке и от перемотки не зависит.
+    """
+    slice_from = "0" if first is None else str(int(first))
+    slice_to = "undefined" if last is None else str(int(last))
+    return ("<script>(function () { Array.prototype.slice.call("
+            f"document.querySelectorAll({_js(selector)}), {slice_from}, "
+            f"{slice_to}).forEach(function (node) {{ node.classList.add("
+            + ", ".join(_js(one) for one in classes)
+            + "); }); })();</script>")
+
+
+def paste_recipe_block(lines: list, at: float) -> list:
+    """Рецепт — блоком со своей `startTime`.
+
+    Их рецепты называют секунду именем `startTime` (а `three-orbiting-cards`
+    ещё и объявляет его сам). Блок `{ … }` даёт каждому элементу своё
+    объявление, не мешая соседям: `const` в JS живёт блоком.
+    """
+    if not lines:
+        return []
+    return (["{", f"const startTime = {markup_time(at)};"]
+            + list(lines) + ["}"])
+
+
+def paste_decorator(sdk, public, name: str, *, unique: str, variables: dict,
+                    target: dict) -> tuple:
+    """Приём их полки поверх НАШЕГО элемента кадра. Пятый шаг их контракта.
+
+    Отдаёт `(кусок разметки, строки таймлайна, отказы)`.
+
+    Отличие от `paste_effect` одно и оно же — вся суть: у такой позиции своей
+    разметки нет («This fragment has no markup of its own», их же
+    `bottom-up-letters`), и ставить в кадр нечего. Она декорирует элемент
+    ХОСТА: «Wrap target text with class="hf-inline-highlight"»
+    (`inline-highlight.html:4`), «call attachMotionBlur() with any element
+    animated by your GSAP timeline» (`motion-blur.html:4-5`). Поэтому корень
+    не режется вовсе, а класс из шапки вешается на наш элемент
+    (`paste_attach`), и рецепт их комментария едет в наш таймлайн
+    (`wire_recipe`).
+
+    Класс их шапки НЕ переименовываем, в отличие от корня в `paste_effect`:
+    на него смотрит их собственный CSS и их собственный скрипт
+    (`document.querySelectorAll(".shimmer-sweep-target")`), и переименование
+    погасило бы позицию целиком. Разводит копии второй класс, `имя--маунт`, —
+    его знает только рецепт.
+    """
+    source = _installed_path(public, name, "component")
+    html = source.read_text(encoding="utf-8")
+    fixed = _rewrite_sibling_assets(
+        html, install_dir=source.parent, project_root=Path(public))
+    if fixed != html:
+        source.write_text(fixed, encoding="utf-8")
+        html = fixed
+    classes = paste_attach_classes(html)
+    if not classes:
+        raise RuntimeError(
+            f"{name}: в шапке позиции не назван класс, который вешают на свой "
+            "элемент («class=…»), — вешать на мишень нечего")
+    lines, refused, _ = wire_recipe(
+        html, unique=unique, target=target["selector"])
+    style = "".join(_PASTE_STYLE.findall(html))
+    script = "".join(_PASTE_SCRIPT.findall(html))
+    style = _CDN_FONTS.sub("", style)
+    style = _FONT_FAMILY.sub(_OUR_STACK, style)
+    script = _CDN_GSAP.sub('src="gsap-vendor.min.js"', script)
+    rewrite_kw = {"install_dir": source.parent, "project_root": Path(public)}
+    style = _rewrite_sibling_assets(style, **rewrite_kw)
+    script = _rewrite_sibling_assets(script, **rewrite_kw)
+    shim = (" <script>window.__hyperframes = window.__hyperframes || {};"
+            " window.__hyperframes.getVariables = function () { return "
+            + json.dumps(variables or {}, ensure_ascii=False) +
+            "; };</script>")
+    attach = paste_attach(
+        target["selector"], classes + [f"{classes[0]}--{unique}"],
+        first=target.get("first"), last=target.get("last"))
+    # Порядок обязателен: сперва классы, потом скрипт позиции. Их скрипты
+    # обходят `document.querySelectorAll` СВОЕГО класса один раз на старте
+    # (`shimmer-sweep` вставляет маску, `bottom-up-letters` режет текст на
+    # буквы) — до навески они не нашли бы ничего.
+    return f"{style}\n{attach}\n{shim}\n{script}", lines, refused
+
+
+def paste_target(card: dict, element: dict) -> tuple:
+    """Мишень элемента: `(имя, причина отказа)`. Одно из двух всегда пусто.
+
+    Позиция без `targets` в карточке мишени не знает вовсе — это обычная
+    позиция, которая встаёт в кадр сама собой, и пустое имя тут не отказ.
+
+    Мишень одна-единственная в карточке — её и берём: выбора нет, а
+    заставлять агента переписывать единственное значение значит просить его
+    угадать наше поле. Мишеней несколько — выбирает агент по содержанию
+    сцены: подсветить слово или смазать вставку решает смысл, а не код.
+    """
+    allowed = list(card.get("targets") or [])
+    if not allowed:
+        return "", ""
+    named = str(element.get("target") or "").strip()
+    if not named:
+        if len(allowed) == 1:
+            return allowed[0], ""
+        return "", ("мишень не названа: приём вешают на элемент кадра, и эта "
+                    "позиция ложится на " + ", ".join(f"`{one}`"
+                                                      for one in allowed))
+    if named not in allowed:
+        return "", (f"мишень {named!r} этой позиции не годится, она ложится "
+                    "на " + ", ".join(f"`{one}`" for one in allowed))
+    return named, ""
+
+
+def target_absent(scene: dict, target: str) -> str:
+    """Чего сцене не хватает под эту мишень. Пустая строка — всё на месте.
+
+    Спрашивается дважды и одним кодом: гейтом `D36_elements` до заказа
+    ведущей и сборкой перед вставкой. Разойтись двум местам нечем, а цена
+    расхождения — оплаченный кадр с приёмом, которому не на чем лежать.
+    """
+    from reels_factory.hf_montage import insert_of
+
+    if target == "presenter" and str(scene.get("presenter") or "none") == "none":
+        return ("окна ведущей в этой сцене нет (`presenter: \"none\"`), а "
+                "приём вешают на него")
+    if target == "insert" and not insert_of(scene):
+        return "вставки у сцены нет, а приём вешают на неё"
+    if target == "schema" and not schema_plan(scene):
+        return "схемы у сцены нет, а приём вешают на неё"
+    return ""
+
+
+def paste_target_selector(scene: dict, target: str, *, insert_targets: dict,
+                          words: list) -> dict:
+    """Мишень — селектором и, у титра, счётом слов этой сцены.
+
+    Слова титра рисует их движок в момент разбора страницы, все разом на весь
+    ролик; сцене принадлежат не все, а те, что в её секунды и звучат. Их
+    счёт — арифметика, и делает её код (`hf_captions.caption_word_range`), а
+    не агент: границы сцены он и так назвал.
+    """
+    from reels_factory.hf_captions import caption_word_range
+
+    if target == "presenter":
+        return {"selector": "#video-wrap"}
+    if target == "insert":
+        found = insert_targets.get(scene["id"]) or []
+        return {"selector": ", ".join(found)} if found else {}
+    if target == "schema":
+        return {"selector": f'#schema-{scene["id"]}'}
+    if target == "caption":
+        first, last = caption_word_range(
+            words, float(scene["startSec"]), float(scene["endSec"]))
+        if first == last:
+            return {}
+        return {"selector": ".hl-word-text", "first": first, "last": last}
+    return {}
 
 #: Корневой элемент позиции: тот, что несёт `data-composition-id`. Его id
 #: нужен правилу палитры и шрифта — целиться в `:root` их контракт тем прямо
@@ -1690,6 +2220,10 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     shot_count = sum(len(files) for files in series.values())
     insert_tracks = max(2, -(-shot_count // INSERTS_PER_TRACK))
     staged = 0
+    #: Сцена -> селекторы её вставок. Мишень `insert` у paste-приёма
+    #: (`PASTE_TARGETS`) целится в них же, а не в новый селектор: элемент
+    #: один, и второе имя для него разошлось бы с первым.
+    insert_targets: dict = {}
     for scene in scenes:
         files = series.get(scene["id"])
         if not files:
@@ -1719,6 +2253,11 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 track=TRACK_INSERT + staged % insert_tracks, name=name))
             image = file.lower().split("?")[0].endswith(_IMAGE_SUFFIXES)
             target = f"#{name} .ins-media" if image else f"#{name}-box"
+            # Тот же селектор — мишень `insert` у paste-приёма: элемент,
+            # который наш таймлайн уже двигает по x/y, и на который их
+            # `attachMotionBlur` ждёт ссылку («any element animated by your
+            # GSAP timeline», motion-blur.html:5).
+            insert_targets.setdefault(scene["id"], []).append(target)
             if shot:
                 # шов внутри серии: второй план приезжает движением
                 timeline += _entry(target, beat, open_at)
@@ -1859,6 +2398,10 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # - вида нет — это сегодняшняя плашка, и геометрия у неё та же
     #   (`_overlay_geometry`).
     staged_elements = 0
+    #: Куски приёмов-декораторов. Уезжают в конец тела, ПОСЛЕ движка титра:
+    #: слова титра рисует он, и скрипт позиции, стоящий выше, не нашёл бы
+    #: ни одного узла (`paste_decorator`, порядок в её докстринге).
+    decorators: list = []
     #: Имя -> тип карточки: исходник компонента снят по `components/`, не по
     #: плоской `compositions/` — тип нужен ниже, чтобы объявить ему коробку
     #: по верному пути (`_installed_path`).
@@ -1892,7 +2435,11 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                              f"{duration - begin:.2f} с")
                 continue
             rect = None
-            if kind == "effect":
+            # Приёму-декоратору коробка в кадре не нужна: он не встаёт в кадр,
+            # а ложится на чужой элемент (`targets` в карточке). Вид `effect`
+            # у него от их же карточки реестра, и требовать под него свободную
+            # зону значит снять приём там, где он и не занимает места.
+            if kind == "effect" and not card.get("targets"):
                 position = str(scene.get("presenter") or "none")
                 rect = effect_zone(position)
                 if rect is None:
@@ -1983,14 +2530,54 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             if named:
                 element["variables"] = named
             paste_html = None
+            # Приём поверх НАШЕГО элемента (`targets` в карточке): своей
+            # разметки у позиции нет, в кадр она не встаёт, а вешается на окно
+            # ведущей, вставку, слова титра или схему — пятый шаг их
+            # контракта («add those calls to your timeline»,
+            # hyperframes-registry/SKILL.md:81).
+            where, refusal = paste_target(card, element)
+            if refusal:
+                drop_element(storyboard, scene, name, refusal)
+                continue
+            if where and where != "self":
+                lack = target_absent(scene, where)
+                if lack:
+                    drop_element(storyboard, scene, name, lack)
+                    continue
+                spot = paste_target_selector(
+                    scene, where, insert_targets=insert_targets, words=words)
+                if not spot:
+                    drop_element(
+                        storyboard, scene, name,
+                        f"мишени `{where}` в этой сцене не нашлось: вешать "
+                        "приём не на что")
+                    continue
+                unique = f"{name}--{scene['id']}"
+                try:
+                    fragment, lines, refused = paste_decorator(
+                        sdk, public, name, unique=unique, variables=named,
+                        target=spot)
+                except RuntimeError as error:
+                    drop_element(storyboard, scene, name, str(error))
+                    continue
+                decorators.append(fragment)
+                timeline += paste_recipe_block(lines, begin)
+                if refused:
+                    element["recipeSkipped"] = refused
+                staged_elements += 1
+                kept.append(element)
+                continue
             if kind == "effect" and mount_kind == "paste":
                 unique = f"{name}--{scene['id']}"
                 try:
-                    paste_html = paste_effect(
+                    paste_html, lines, refused = paste_effect(
                         sdk, public, name, unique=unique, variables=named)
                 except RuntimeError as error:
                     drop_element(storyboard, scene, name, str(error))
                     continue
+                timeline += paste_recipe_block(lines, begin)
+                if refused:
+                    element["recipeSkipped"] = refused
             else:
                 source = _installed_path(public, name, card_type)
                 root = (block_root(source.read_text(encoding="utf-8"))
@@ -2502,6 +3089,10 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                               "accentColor": colors["accent"]})
     body.append(caption_snippet(sdk, public, track_index=TRACK_CAPTION,
                                 duration=duration))
+    # Приёмы-декораторы — последними в теле: их скрипты обходят
+    # `document.querySelectorAll` своего класса один раз на старте, и слова
+    # титра к этому моменту уже нарисованы движком выше.
+    body += [f"    {one}" for one in decorators]
 
     body.append(
         f'    <audio id="voice" src="voice.wav" data-start="0"'

@@ -205,19 +205,14 @@ def caption_snippet(sdk, public, *, track_index: int, duration: float) -> str:
             f'    <script src="{CAPTION_SCRIPT}"></script>')
 
 
-def write_caption_data(public, *, words: list[dict], duration: float,
-                       brand: dict | None = None) -> Path:
-    """Данные титра в их контракте (`version: 1`, сегменты со словами).
+def caption_segments(words: list[dict]) -> list[list[dict]]:
+    """Слова титра сегментами — ровно так, как их нарисует движок компонента.
 
-    Титр идёт весь ролик и ни под чем не молчит. Гасить его приходилось, пока
-    сцена была непрозрачным блоком со своим текстом: два текста в одном кадре —
-    это `content_overlap` и `text_occluded` их же линтера. В слоёном кадре
-    своего текста нет ни у вставки, ни у ведущей, а эталонные рилсы держат титр
-    непрерывно — «текста в кадре нет ни секунды без».
-
-    Пунктуацию, с которой слова приходят из распознавания, снимаем с краёв
-    (`_TRIM_CHARS`): титр показывает слово по одному, и запятая с точкой висят
-    в кадре хвостом.
+    Одно определение на двоих: данные титра (`write_caption_data`) и мишень
+    `caption` у paste-приёма (`hf_compose`) обязаны считать слова одинаково,
+    иначе класс ляжет не на то слово. Движок рисует по одному `.hl-word-text`
+    на слово в порядке этого списка, сегмент за сегментом, и слов-пустышек в
+    нём нет: чистка уже прошла.
     """
     kept = [{"text": word["text"], "start": round(float(word["start"]), 3),
              "end": round(float(word["end"]), 3)} for word in words]
@@ -244,6 +239,37 @@ def write_caption_data(public, *, words: list[dict], duration: float,
         left = [word for word in left if word["text"]]
         if left:
             clean.append(left)
+    return clean
+
+
+def caption_word_range(words: list[dict], start: float, end: float) -> tuple:
+    """Какие по счёту слова титра звучат между `start` и `end`.
+
+    Отдаёт полуинтервал `[первое, за последним)` в том же счёте, в каком
+    движок титра расставляет `.hl-word-text`. Пусто — в эти секунды не звучит
+    ни одного слова, и вешать приём не на что.
+    """
+    flat = [word for segment in caption_segments(words) for word in segment]
+    found = [index for index, word in enumerate(flat)
+             if start - 0.001 <= word["start"] < end - 0.001]
+    return (found[0], found[-1] + 1) if found else (0, 0)
+
+
+def write_caption_data(public, *, words: list[dict], duration: float,
+                       brand: dict | None = None) -> Path:
+    """Данные титра в их контракте (`version: 1`, сегменты со словами).
+
+    Титр идёт весь ролик и ни под чем не молчит. Гасить его приходилось, пока
+    сцена была непрозрачным блоком со своим текстом: два текста в одном кадре —
+    это `content_overlap` и `text_occluded` их же линтера. В слоёном кадре
+    своего текста нет ни у вставки, ни у ведущей, а эталонные рилсы держат титр
+    непрерывно — «текста в кадре нет ни секунды без».
+
+    Пунктуацию, с которой слова приходят из распознавания, снимаем с краёв
+    (`_TRIM_CHARS`): титр показывает слово по одному, и запятая с точкой висят
+    в кадре хвостом.
+    """
+    clean = caption_segments(words)
 
     payload = {
         "version": 1,
