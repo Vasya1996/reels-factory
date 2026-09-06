@@ -149,6 +149,60 @@ _VARIABLE_TYPES = {
     "enum": (str,),
 }
 
+#: Со скольких слов подряд текст позиции читается пересказом титра, а не
+#: подписью. Одно-два слова — это ярлык: карточка НАЗЫВАЕТ то, о чём идёт
+#: речь («Помощь», «срок две недели»), и совпадение с титром здесь неизбежно
+#: и безвредно. Три слова подряд — это уже реплика, прочитанная второй раз, и
+#: в кадре она стоит буква в букву под тем же, что горит в титре.
+CAPTION_ECHO_WORDS = 3
+
+_WORD = re.compile(r"[^\W\d_]+|\d+", re.UNICODE)
+
+
+def _plain_words(text: str) -> list[str]:
+    """Текст на слова для сравнения с титром: нижний регистр, без пунктуации.
+    Тот же счёт, каким титр отдаёт свои слова (`caption_scene_words`)."""
+    return _WORD.findall(str(text or "").lower())
+
+
+def _caption_echo(text: str, spoken: list[str]) -> str:
+    """Самый длинный кусок титра, который этот текст повторяет слово в слово.
+    Пусто — такого куска нет либо он короче `CAPTION_ECHO_WORDS`.
+
+    Их собственная полка разводит две работы по этой самой границе: «Captions
+    add the _spoken words_ as a readable subtitle; this adds _designed
+    graphics_ on top of the playing video»
+    (`skills/talking-head-recut/SKILL.md:19-20`), а карточка там — «designed
+    graphic cards … — not plain captions (the spoken words as text)» (там
+    же:18). Титр у нас идёт весь ролик и ни под чем не молчит
+    (`hf_captions.write_caption_data`), значит уступает позиция каталога: она
+    и есть карточка.
+
+    Ищется самый длинный ОБЩИЙ кусок, а не совпадение текста целиком: агент
+    списывает реплику не буква в букву. В варианте Б прогона
+    `exp-beat-direction-2` он выбросил из неё одно слово — титр говорит
+    «чтобы человек ТОЧНО согласился», карточка напечатала «чтобы человек
+    согласился», — и сравнение целых строк такой пересказ бы пропустило,
+    хотя «составь сообщение чтобы человек» стоит в кадре ровно под тем же
+    в титре.
+    """
+    said = _plain_words(text)
+    best: list[str] = []
+    # Длины короткие (слова карточки против слов одной сцены), поэтому
+    # перебор, а не таблица: считать её дольше, чем сравнить.
+    for start in range(len(said)):
+        for stop in range(start + len(best) + 1, len(said) + 1):
+            run = said[start:stop]
+            if not _run_inside(run, spoken):
+                break
+            best = run
+    return " ".join(best) if len(best) >= CAPTION_ECHO_WORDS else ""
+
+
+def _run_inside(run: list[str], spoken: list[str]) -> bool:
+    return any(spoken[at:at + len(run)] == run
+               for at in range(len(spoken) - len(run) + 1))
+
 
 def _element_problems(scene: dict, element: dict, cards: dict, skipped: dict,
                       caption_words: list | None = None) -> list[str]:
@@ -353,6 +407,57 @@ def _element_problems(scene: dict, element: dict, cards: dict, skipped: dict,
             problems.append(
                 f"{where_id}: слов {len(words)}, а мест под них у позиции "
                 f"{len(slots)} — лишние в кадр не попадут")
+    problems += _echo_problems(scene, element, card, where_id, caption_words)
+    return problems
+
+
+def _echo_problems(scene: dict, element: dict, card: dict, where_id: str,
+                   caption_words: list | None) -> list[str]:
+    """Слова позиции не пересказывают титр этой же секунды.
+
+    Оба канала подстановки разом: `words` (слоты разметки) и текстовые
+    значения `variables` — содержание кладёт код одним и тем же способом, и
+    судить их порознь значило бы поймать одно и пропустить другое. Прогон
+    `exp-beat-direction-2`, вариант Б, 6,4 с: слова доехали ПЕРЕМЕННОЙ
+    (`chat-message.text`), а не слотом, и позиция напечатала «Составь
+    сообщение, чтобы человек согласился со мной» ровно тогда, когда титр
+    горел теми же словами.
+
+    Правило до этой работы жило только у форм схемы и только прозой задания
+    («одиночный ярлык-существительное … повторит слово, которое в эту секунду
+    горит в титре», `hf_montage_skill.py`, форма `items`) — раздел про
+    позиции каталога писался позже и её не получил. Здесь оно машинерией и
+    одно на оба канала.
+
+    `caption_words` — расшифровка ролика; её нет у D11 после сборки, и тогда
+    сравнивать не с чем: молчим, как молчит рядом `target_absent`.
+    """
+    from reels_factory.hf_captions import caption_scene_words
+
+    if not caption_words or "startSec" not in scene or "endSec" not in scene:
+        return []
+    spoken = caption_scene_words(caption_words, float(scene["startSec"]),
+                                 float(scene["endSec"]))
+    if not spoken:
+        return []
+    declared = card.get("variables") or {}
+    texts = [str(one) for one in (element.get("words") or [])
+             if isinstance(one, str)]
+    for key, value in (element.get("variables") or {}).items():
+        if isinstance(value, str) and str(
+                (declared.get(key) or {}).get("type") or "") == "string":
+            texts.append(value)
+    problems = []
+    for text in texts:
+        echo = _caption_echo(text, spoken)
+        if echo:
+            problems.append(
+                f"{where_id}: текст «{text}» повторяет титр этой же секунды "
+                f"слово в слово («{echo}»). Слова реплики показывает титр, он "
+                "идёт весь ролик и не молчит; позиция каталога — карточка, и "
+                "она добавляет то, чего в озвучке нет: назови вещь, а не "
+                "прочитай фразу заново")
+            break
     return problems
 
 
