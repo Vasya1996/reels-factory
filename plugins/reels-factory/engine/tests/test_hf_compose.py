@@ -724,7 +724,7 @@ def test_плашка_остаётся_над_полосой_титра(run):
     scenes[1]["overlay"] = {"block": "lt-clean-bar", "text": {"name": "М"}}
     html, _ = _build(run, scenes=scenes)
     layer = html[html.index('<div class="ovl"'):]
-    assert "left:0;top:372px" in layer[:80] and "scale(0.5625)" in layer[:400]
+    assert "left:0px;top:372px" in layer[:80] and "scale(0.5625)" in layer[:400]
 
 
 def _scrim_scenes(count: int, span: float = 4.0):
@@ -1762,12 +1762,45 @@ def test_стык_встаёт_за_срез_сцены_и_живёт_свою_�
 
 def test_позиция_без_вида_встаёт_плашкой_над_полосой_титра(каталог):
     """Обратная совместимость: карточка без `reels.kind` — сегодняшняя плашка,
-    и геометрия у неё та же."""
+    и геометрия у неё та же. Канвас `demo-plain` — широкий (1920x1080), тот
+    же, что у `lt-clean-bar`, и число совпадает с
+    `test_плашка_остаётся_над_полосой_титра`."""
     html, _ = _build(каталог, scenes=_с_элементами(
         {"name": "demo-plain", "words": ["Имя"]}), resolved={})
     before = html[:html.index('id="el-s-02-0"')]
-    assert 'class="ovl" style="left:0;top:' in before
+    assert 'class="ovl" style="left:0px;top:372px' in before
     assert "top:0px" not in before.rsplit('class="ovl"', 1)[1]
+
+
+def test_вертикальная_плашка_без_вида_остаётся_над_полосой_титра(каталог):
+    """Причина четверти находок `content_overlap`/`frame_out_of_frame`
+    прогона каталога 06.09.2026: у вертикальной плашки (1080x1920, тот же
+    канвас, что у кадра) масштаб по ширине не оставлял вовсе места над
+    полосой титра — бокс высотой в кадр вставал `top:0` как есть и ложился
+    прямо на слова титра (`spotify-card` #track-name, живой пример). Правило
+    теперь одно на оба канваса (`_overlay_geometry`): не умещается высота —
+    масштаб уменьшается ещё, лишнее по ширине уходит в поля по бокам.
+
+    `demo-plain-vertical` — тот же `demo-plain`, но канвасом 1080x1920:
+    масштаб по ширине (1) даёт высоту 1920 — больше зоны 980
+    (`CAPTION_BAND_TOP - CAPTION_BAND_SAFETY`), значит масштаб уменьшается
+    до 980/1920 = 0.5104(2), бокс шириной 1080*0.51042 ≈ 551px встаёт по
+    центру (поля по 264/265px), и весь кончается на 980, не заезжая на
+    титр."""
+    html, _ = _build(каталог, scenes=_с_элементами(
+        {"name": "demo-plain-vertical", "words": ["Имя"]}), resolved={})
+    before = html[:html.index('id="el-s-02-0"')]
+    box = before.rsplit('class="ovl"', 1)[1]
+    left = int(re.search(r"left:(\d+)px", box).group(1))
+    top = int(re.search(r"top:(\d+)px", box).group(1))
+    scale = float(re.search(r"scale\(([\d.]+)\)", box).group(1))
+    box_height = round(1920 * scale)
+    box_width = round(1080 * scale)
+    # Бокс не заезжает на полосу титра ни на пиксель.
+    assert top + box_height <= hf_compose.CAPTION_BAND_TOP - hf_compose.CAPTION_BAND_SAFETY
+    # И не встаёт во весь кадр как раньше — масштаб реально уменьшен.
+    assert scale < 1.0
+    assert left == round((1080 - box_width) / 2)
 
 
 def test_старый_план_с_полем_overlay_собирается_как_прежде(каталог, monkeypatch):

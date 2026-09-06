@@ -27,6 +27,6 @@
     "mount": "composition",
     "decor_texts": [],
     "text_slots": [],
-    "skip": "caption_text_overflow_risk [lint] .caption-line: Caption selector \".caption-line\" has white-space: nowrap but no max-width. Long phrases will clip off-screen.; composition_file_too_large [lint] [data-composition-id]: This HTML composition file has 311 lines. Smaller sub-compositions are easier to read, iterate on, and diff.; content_overlap [layout] #b1L1w0: Two text blocks overlap and may render unreadable."
+    "skip": "`caption_text_overflow_risk` на `.caption-line` (`white-space: nowrap` без `max-width` — длинная фраза уедет за край кадра) и `content_overlap` сразу на пяти парах слов (`#b9L1w0`, `#b1L1w0`+`#b1L1w1`, `#b3L1w0`+`#b3L1w1`). На кадре это видно живьём: на 4-й секунде «and render» и «professional» стоят одно поверх другого. Прежняя причина (`composition_file_too_large`) на 0.8.27 не воспроизводится. Перепроверено настоящей сборкой на 0.8.27 06.09.2026 (work/overlay-band/caption-editorial-emphasis)."
   }
 }
