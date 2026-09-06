@@ -376,8 +376,39 @@ def _element_kinds() -> dict:
         return {}
 
 
+@functools.lru_cache(maxsize=1)
+def _element_channels() -> dict:
+    """Есть ли у карточки позиции канал содержимого, по имени — тем же счётом
+    и тем же кэшем, каким `_element_kinds` даёт вид.
+
+    Кадр без канала — не более закрыт, чем кадр вовсе без элемента: `kind` у
+    позиции говорит, В КАКОЙ зоне кадра она встанет, а канал —
+    (`hf_catalog.content_channels`) — есть ли ей чем эту зону наполнить.
+    Прежде этот вопрос не задавали вовсе, и `keyframe-scrub-stack` со
+    `scroll-feed` — обе `kind: scene`/`effect` без единого слота или
+    переменной — держателями кадра значились, а в кадре стояла пустая стопка
+    карточек и пустая лента постов (живой прогон `exp-beat-direction`).
+    """
+    from reels_factory.hf_catalog import catalog_cards, content_channels
+
+    try:
+        return {name: bool(content_channels(card))
+                for name, card in catalog_cards().items()}
+    except (OSError, ValueError):
+        return {}
+
+
 def filling_element(scene: dict) -> str:
     """Имя элемента каталога, которым закрыт кадр сцены. Пусто — такого нет.
+
+    Держателем считается позиция вида `scene`/`effect` только с каналом
+    содержимого: без слота под слова, число или картинку кадр — не
+    содержание сцены, а голый каркас позиции, и незачем засчитывать его
+    закрытым. Позиция вида `effect` без канала остаётся допустимой —
+    декором, а не держателем: она держится только ПОВЕРХ другого держателя
+    (полная ведущая, вставка, схема), и тот держатель отвечает раньше её,
+    выше по счёту `frame_filler` — до того, как дело дойдёт до
+    `filling_element`.
 
     Один ответ на двоих: `frame_filler` (D25) и `frame_filled_problems` (D20)
     спрашивают его одинаково. Прежде эти двое расходились на плашке — она
@@ -385,9 +416,11 @@ def filling_element(scene: dict) -> str:
     расхождение на элементах незачем.
     """
     kinds = _element_kinds()
+    channels = _element_channels()
     for element in scene_elements(scene):
-        if kinds.get(str(element["name"]).strip()) in FRAME_KINDS:
-            return str(element["name"]).strip()
+        name = str(element["name"]).strip()
+        if kinds.get(name) in FRAME_KINDS and channels.get(name):
+            return name
     return ""
 
 

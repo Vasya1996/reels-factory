@@ -554,6 +554,9 @@ def каталог(monkeypatch):
     monkeypatch.setattr(hf_montage, "_element_kinds",
                         lambda: {name: card.get("kind")
                                  for name, card in cards(FIXTURE_CATALOG).items()})
+    monkeypatch.setattr(hf_montage, "_element_channels",
+                        lambda: {name: bool(hf_catalog.content_channels(card))
+                                 for name, card in cards(FIXTURE_CATALOG).items()})
     return FIXTURE_CATALOG
 
 
@@ -627,10 +630,17 @@ def test_эффект_без_свободной_зоны_ловится_до_з�
                                                presenter=position))
         assert len(problems) == 1, position
         assert "свободную зону" in problems[0] and position in problems[0]
-    # Уголок и отсутствие ведущей зону оставляют — план законен.
-    for position in ("pip-tr", "pip-br", "none"):
+    # Уголок оставляет ведущую в кадре — зона свободна, план законен.
+    for position in ("pip-tr", "pip-br"):
         assert elements_problems(_элементы({"name": "count-up"},
                                            presenter=position)) == [], position
+    # Без ведущей зона у `count-up` свободна, но у самой позиции нет канала
+    # содержимого (`content_channels`) — она не наполняет кадр, а держателя
+    # в сцене больше нет ни одного (ни вставки, ни схемы, ни ведущей): план
+    # возвращается на пересдачу тем же гейтом, до заказа.
+    problems = elements_problems(_элементы({"name": "count-up"},
+                                           presenter="none"))
+    assert len(problems) == 1 and "канала содержимого" in problems[0], problems
     # Правило про зону — только у вида `effect`: подложка лежит под окном
     # ведущей, стык живёт на срезе, и зона им не нужна.
     for name in ("demo-scene", "demo-stitch"):
@@ -698,7 +708,9 @@ def test_фирменная_переменная_словами_плана_не_
     `variable-axis-type` — свободную строку, и разница видна коду, а не
     глазам. (Была `matrix-decode` — 06.09.2026 снята `reels.skip`: её
     экранный текст всегда остаётся рядом нулей независимо от слова плана,
-    см. `registry-item.json` позиции.)"""
+    см. `registry-item.json` позиции. `chart-story` — тоже `reels.skip`
+    06.09.2026, но по другой причине: канала содержимого у неё нет вовсе,
+    `skeletons-report.md`.)"""
     from reels_factory.hf_catalog import catalog_cards, word_variables
 
     cards = catalog_cards()
@@ -706,7 +718,7 @@ def test_фирменная_переменная_словами_плана_не_
     assert word_variables(cards["variable-axis-type"]) == ["text"]
     # Домен и список — не фраза, слова плана туда не кладут.
     assert "url" not in word_variables(cards["logo-brand-close"])
-    assert word_variables(cards["chart-story"]) == []
+    assert word_variables(cards["menu-morph"]) == []
 
 
 def test_позиция_ждущая_разметки_из_хоста_планом_не_называется(каталог):

@@ -168,14 +168,25 @@ def test_каждый_компонент_несёт_reels_effect_и_контра
 #: на середине сцены (time=4) — обычный слишком светлый серый, не связано
 #: с угасанием таймлайна. `pull-back-reveal` — `content_overlap` на
 #: `div.pbr-detail-context`: два текстовых блока накладываются.
+#: Семь имён этого списка (`beat-timeline`, `caption-texture`,
+#: `multiplayer-cursors`, `scroll-feed`, `spotlight-card`, `stagger-cascade`,
+#: `star-rating-fill`) снова несут `reels.skip` — но по НОВОЙ причине,
+#: не по старой B15-находке, которую этот список защищал. У всех семи нет
+#: канала содержимого (`hf_catalog.content_channels`): ни слота под слова,
+#: ни рабочей переменной, ни слота под файл, — а держателем кадра
+#: (`hf_montage.filling_element`) без канала теперь не встаёт ничто (решение
+#: Васи 06.09.2026, `skeletons-report.md`). Это не регресс находки B15 —
+#: `check --strict` по ним по-прежнему даёт PASS, — а отдельное, более
+#: строгое требование поверх неё, и снятие из списка здесь честное, не
+#: молчаливое.
 _B15_UNSKIPPED = [
     "aurora-drift",
-    "beat-accent", "beat-timeline", "caption-texture", "chromatic-aberration-wipe",
+    "beat-accent", "chromatic-aberration-wipe",
     "decline-chart", "directional-wipe", "drift-hold", "gloss-sweep",
     "grain-field", "kinetic-type-swap", "light-sweep-pass", "line-swap",
-    "multiplayer-cursors", "overwhelm-surround", "physical-exit",
-    "push-in", "scramble-reveal", "scroll-feed", "spotlight-card", "spring-pop",
-    "stagger-cascade", "star-rating-fill", "store-badge-lockup", "svg-mask-reveal",
+    "overwhelm-surround", "physical-exit",
+    "push-in", "scramble-reveal", "spring-pop",
+    "store-badge-lockup", "svg-mask-reveal",
     "tilt-card", "variable-font-flex",
 ]
 
@@ -185,9 +196,15 @@ _B15_UNSKIPPED = [
 #: реестра по дороге, — и на 0.8.27 настоящая сборка даёт по каждой PASS, а
 #: кадр (work/skips-recheck/<имя>/ours) показывает каркас интерфейса нашей
 #: палитрой без единой чужой надписи.
+#:
+#: `scroll-camera-story` и `ui-focus-zoom` из этого списка снова несут
+#: `reels.skip` — по той же новой причине, что и семь позиций выше
+#: (`_B15_UNSKIPPED`): канала содержимого нет ни у одной, а без канала
+#: держателем кадра позиция больше не встаёт. Прежняя находка (файл
+#: реестра не терял маркер) остаётся в силе — это второе, независимое
+#: требование поверх неё.
 _ВЕРНУТЫ_ПЕРЕПРОВЕРКОЙ = [
-    "scroll-camera-story", "spring-stack-shuffle", "ui-focus-zoom",
-    "whip-pan-cut",
+    "spring-stack-shuffle", "whip-pan-cut",
 ]
 
 
@@ -230,11 +247,19 @@ def test_позиции_снятые_в_b15_предложены_и_валидн
 #: `particle-image-reveal` снята: хостовый слот содержимого сборка не
 #: достаёт, и `reels.skip` держит её вне `catalog_cards()`
 #: (`registry-item.json` компонента).
+#:
+#: `browser-device-stage`, `count-up`, `chart-story`, `scroll-feed` из этой
+#: полки тоже сняты `reels.skip` (06.09.2026): у всех четырёх нет канала
+#: содержимого (`hf_catalog.content_channels`) — экран без слота под снимок,
+#: число без рабочей переменной, лента постов без слота под текст, — и
+#: держателем кадра без канала (`hf_montage.filling_element`) теперь не
+#: встаёт ничто (`skeletons-report.md`). Перевод `use_when`/`avoid_when`
+#: остаётся в карточке, просто вне списка предлагаемых.
 _ПОЛКА = [
     "per-word-rise", "scramble-reveal", "kinetic-type-swap", "oversized-cursor",
-    "press-ripple", "browser-device-stage", "count-up", "chart-story",
+    "press-ripple",
     "titlecard-lockup", "svg-stroke-trace", "whiteboard-ink", "cta-close",
-    "logo-brand-close", "before-after-wipe", "cut-the-curve", "scroll-feed",
+    "logo-brand-close", "before-after-wipe", "cut-the-curve",
     "iris-reveal", "telemetry-hud",
     "native-notification-pop", "vox-annotate",
 ]
@@ -577,6 +602,67 @@ def test_нет_позиции_с_текстовыми_слотами_и_раб�
         "удержать статичную правку под перезаписью скрипта позиции")
 
 
+def test_держатель_кадра_имеет_канал_содержимого_или_честный_avoid_when():
+    """Правило проекта: держателем кадра (`hf_montage.filling_element`) может
+    быть только позиция с каналом содержимого (`content_channels`) — без
+    слота под слова, число или картинку в кадре встаёт голый каркас позиции,
+    а не содержание сцены. Ровно так `keyframe-scrub-stack` и `scroll-feed`
+    встали держателями на живом прогоне `exp-beat-direction`: пустая стопка
+    карточек и пустая лента постов, а гейт молчал — про канал не спрашивал.
+
+    Мерка на весь каталог, а не по перечню имён:
+
+    - предлагаемая позиция вида `scene` кроет кадр целиком — без канала это
+      значит показать пустой фон вместо содержания сцены, и такой позиции
+      среди предложенных быть не должно (либо заведи канал, либо сними
+      `skip` с честной причиной, как это сделано для 40 каркасов и
+      бессмысленных позиций отчёта `skeletons-report.md`);
+    - предлагаемая позиция вида `effect` без канала не запрещена — она
+      законный декор (`aurora-drift`, `grain-overlay`), но только ПОВЕРХ
+      другого держателя (ведущая целиком, вставка, схема), и `avoid_when`
+      обязана честно об этом предупреждать — иначе агент возьмёт её
+      единственным содержимым сцены, и план откатится гейтом уже после
+      выбора, вместо того чтобы позиция сама назвала своё место.
+
+    Позиция с `targets` (приём поверх чужого элемента — окна ведущей,
+    вставки, слов титра) в счёт не идёт вовсе: держателем её не считает и
+    сам `filling_element` (`hf_montage._element_kinds` гасит вид у такой
+    позиции), а место, на которое она ляжет, спрашивает отдельный гейт
+    (`hf_gates.paste_target`/`target_absent`).
+    """
+    from reels_factory.hf_catalog import content_channels
+    from reels_factory.hf_montage import FRAME_KINDS
+
+    cards = catalog_cards()
+    skipped = skipped_blocks()
+    offered = {name: card for name, card in cards.items()
+              if name not in skipped}
+    assert offered, "каталог не предлагает ни одной позиции"
+
+    naked_scenes = []
+    silent_decor = []
+    for name, card in offered.items():
+        targets = card.get("targets")
+        resolved_kind = (None if (targets and "self" not in targets)
+                         else card.get("kind"))
+        if resolved_kind not in FRAME_KINDS or content_channels(card):
+            continue
+        if resolved_kind == "scene":
+            naked_scenes.append(name)
+        elif "не держит кадр один" not in str(
+                card.get("avoid_when") or "").lower():
+            silent_decor.append(name)
+    assert not naked_scenes, (
+        f"{naked_scenes}: позиция вида `scene` кроет кадр целиком, а канала "
+        "содержимого у неё нет — заведи канал или сними позицию `skip` с "
+        "причиной")
+    assert not silent_decor, (
+        f"{silent_decor}: позиция вида `effect` без канала содержимого не "
+        "предупреждает в `avoid_when`, что не держит кадр одна, — агент "
+        "возьмёт её единственным содержимым сцены, и план откатится гейтом "
+        "уже после выбора")
+
+
 #: Пять образцов B3 и то, чем их разметка обязана дать заполнить кадр: у
 #: терминала и диффа видимый текст жил в скрипте, и слотами он не был вовсе
 #: (отчёт B4). Имена — от классов разметки, порядок — документа.
@@ -693,16 +779,24 @@ def test_поиск_не_даёт_очков_за_слова_из_avoid_when():
 
 def test_позиции_с_чужим_контентом_говорят_чего_у_плана_нет():
     """Живые ранние шаги отказывали этим позициям своими словами: «в сценарии
-    нет имени бренда и нет числовой оценки — эти позиции держат вымышленный
-    логотип или рейтинг» (донор B), «экран-слот `browser-device-stage` требует
-    контента, которого на этапе плана нет» (донор A). Условие это карточное, а
-    не плановое: позиция годна, когда контент есть, — поэтому оно записано
-    строкой `avoid_when`, а не `skip`.
+    нет имени бренда — эта позиция держит вымышленный логотип» (донор B).
+    Условие это карточное, а не плановое: позиция годна, когда контент есть, —
+    поэтому оно записано строкой `avoid_when`, а не `skip`. Отличие от
+    `reels.skip` по каналу содержимого (`skeletons-report.md`) важное: у всех
+    четырёх канал ЕСТЬ (`word_variables`/`text_slots` — код умеет положить имя
+    бренда из плана), рисковано только его отсутствие В СЦЕНАРИИ, а не в
+    позиции.
+
+    `browser-device-stage`, `trust-strip`, `star-rating-fill` раньше стояли
+    в этом же списке той же логикой («скриншота/рейтинга в плане может не
+    быть»), но у них канала нет вовсе — код не умеет положить туда ни снимок
+    экрана, ни число, ни имя клиента, — и 06.09.2026 они ушли в `reels.skip`
+    с более сильной причиной: без канала кадр пуст всегда, а не только когда
+    план не назвал факт.
     """
     cards = catalog_cards()
-    for name in ("browser-device-stage", "logo-sting", "logo-wall",
-                 "logo-brand-close", "trust-strip", "svg-mask-reveal",
-                 "star-rating-fill"):
+    for name in ("logo-sting", "logo-wall",
+                 "logo-brand-close", "svg-mask-reveal"):
         avoid = cards[name].get("avoid_when") or ""
         assert "нет" in avoid, f"{name}: не сказано, чего у плана нет: {avoid}"
         # И позиция остаётся предложенной: контент бывает и настоящий.
@@ -825,8 +919,11 @@ def test_слоты_под_файл_названы_в_карточке_ката�
     cards = catalog_cards()
     assert sorted(cards["before-after-wipe"]["media_slots"]) == ["after",
                                                                 "before"]
-    assert cards["browser-device-stage"]["host_slots"] == [
-        "browser-device-stage-screen", "browser-device-stage-screen-b"]
+    # `browser-device-stage` (тот же контракт `host_slots`) ушла в
+    # `reels.skip` 06.09.2026 — у неё нет канала содержимого вовсе
+    # (`skeletons-report.md`), и пример берётся у оставшейся предложенной
+    # позиции с тем же контрактом.
+    assert cards["echo-trail"]["host_slots"] == ["echo-trail-subject"]
     # Слот, который заполняет не файл, а переменная или скрипт позиции, в
     # список не попадает: `light-sweep-pass` кладёт в `scene` свою разметку,
     # `whiteboard-ink` рисует `strokes` скриптом.
