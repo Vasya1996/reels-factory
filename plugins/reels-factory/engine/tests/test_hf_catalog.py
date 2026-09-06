@@ -349,6 +349,9 @@ def test_индекс_отдаёт_карточки_всех_трёх_видов
     assert {name: card.get("kind") for name, card in cards.items()} == {
         "count-up": "effect", "demo-scene": "scene", "demo-stitch": "overlay",
         "demo-paste": "effect", "demo-media": "scene", "demo-host": "scene",
+        # Приём поверх нашего элемента: вид у него их же, `effect`, а мишени
+        # он называет полем `targets` — в кадр сам по себе не встаёт.
+        "demo-decor": "effect",
         # Карточка без `reels.kind` — сегодняшняя плашка: вид у неё не объявлен.
         "demo-plain": None}
     поля = set(cards["demo-scene"])
@@ -409,10 +412,11 @@ def test_индекс_печатается_json_ом_с_нашими_полям�
     text = catalog_index(FIXTURE)
     body = json.loads(text.split("```json")[1].split("```")[0])
     assert [item["name"] for item in body] == sorted(
-        ["count-up", "demo-host", "demo-media", "demo-paste", "demo-plain",
-         "demo-scene", "demo-stitch"])
+        ["count-up", "demo-decor", "demo-host", "demo-media", "demo-paste",
+         "demo-plain", "demo-scene", "demo-stitch"])
     assert "Search by intent" not in text, "правило поиска живёт в своде правил"
     assert "`kind`" in text and "`text_slots`" in text and "`variables`" in text
+    assert "`targets`" in text, "мишень приёма агенту не названа"
 
 
 def test_карточка_индекса_занимает_одну_строку():
