@@ -17,8 +17,15 @@
       /* Свой фон у сцены, а не только у body: врезанная сабкомпозиция —
          отдельная страница со своим `html,body{background:…}`, и это правило
          красит весь кадр. Цвет — из frame.md (их спека оформления). */
+      /* `isolation: isolate` — требование их же приёма
+         `caption-blend-difference`: «The composition root … MUST have
+         `isolation: isolate` so the blend operates against sibling content,
+         not the page background» (caption-blend-difference.html:10-12). Без
+         него смешение считалось бы с фоном страницы, и текст не
+         инвертировался бы вовсе. Своего слоя правило не создаёт ничему
+         другому: весь кадр и так лежит внутри `#stage`. */
       #stage { position: relative; width: 100%; height: 100%; overflow: hidden;
-        background: __BG__; }
+        isolation: isolate; background: __BG__; }
       /* Фоновый слой по их рецепту (house-style.md:33-47): радиальные глоу в
          тон акцента с медленным «дыханием» — статичные декоративы «мертвы».
          Радиальный, не линейный: полноэкранный линейный градиент на тёмном

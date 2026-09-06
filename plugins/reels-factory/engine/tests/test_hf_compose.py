@@ -1704,11 +1704,160 @@ def test_paste_эффект_вставляется_литералом_а_не_с
     assert 'window.__hyperframes.getVariables = function () { return' in box[:2000]
     assert '"label": "42"' in box[:2000]
     assert 'data-variable-values' not in box[:2000]
+    # Рецепт её же комментария доехал до нашего таймлайна на секундах сцены —
+    # пятый шаг их контракта (hyperframes-registry/SKILL.md:81). Прежде
+    # позиция вставала статичным финальным кадром на весь свой интервал.
+    code = (каталог / "public" / hf_compose.DECOR_SCRIPT).read_text(
+        encoding="utf-8")
+    assert "tl.fromTo('.demo-paste-badge--demo-paste--s-02'" in code
+    assert "const startTime = 3.0333;" in code
     # Стенсиль на диске не тронут: paste не копируется отдельным файлом.
     stencil = (каталог / "public" / "compositions" / "components"
               / "demo-paste.html")
     assert 'demo-paste-badge--' not in stencil.read_text(encoding="utf-8")
 
+
+
+def test_рецепт_их_комментария_доезжает_до_нашего_таймлайна():
+    """Пятый шаг их контракта на настоящем файле реестра.
+
+    «If the component exposes GSAP timeline integration (see the comment block
+    in the snippet), add those calls to your timeline»
+    (hyperframes-registry/SKILL.md:81) — до этой работы он не делался никогда,
+    и позиция вставала статичным кадром. Признак рецепта у них один на весь
+    реестр: комментарий, чья строка начинается словами «Timeline integration»
+    («fold the trailing `Timeline integration:` recipe into a real `<script>`»,
+    hyperframes-registry/references/component-quality-bar.md:101).
+    """
+    source = (Path("C:/Users/123/projects/hyperframes-ref/registry/components")
+              / "inline-highlight" / "inline-highlight.html")
+    if not source.exists():
+        pytest.skip("клона HyperFrames нет рядом")
+    html = source.read_text(encoding="utf-8")
+    lines, refused, attach = hf_compose.wire_recipe(
+        html, unique="s-02", target=".hl-word-text")
+    # Класс берётся из шапки их файла, а не из нашего словаря имён:
+    # «Wrap target text with class="hf-inline-highlight"» (там же:4).
+    assert attach == ["hf-inline-highlight"]
+    assert len(lines) == 1 and not refused
+    # Селектор рецепта разведён под конкретный маунт: вторая копия приёма в
+    # другой сцене поехала бы по чужому времени.
+    assert '".hf-inline-highlight--s-02"' in lines[0]
+    assert lines[0].rstrip().endswith("startTime);")
+
+
+def test_рецепт_отказывается_от_чужого_селектора_их_примера():
+    """Инструкция, называющая элемент ИХ примера, в наш таймлайн не едет.
+
+    `grid-pixelate-wipe` в рецепте меняет местами `#scene-a` и `#scene-b` —
+    две сцены, придуманные автором для показа. В нашем кадре таких элементов
+    нет, и подставить туда мишень нельзя: их две, а мишень одна. Остальные
+    инструкции того же рецепта встают, а отказ записывается дословно.
+    """
+    source = (Path("C:/Users/123/projects/hyperframes-ref/registry/components")
+              / "grid-pixelate-wipe" / "grid-pixelate-wipe.html")
+    if not source.exists():
+        pytest.skip("клона HyperFrames нет рядом")
+    lines, refused, _ = hf_compose.wire_recipe(
+        source.read_text(encoding="utf-8"), unique="s-02", target=None)
+    assert len(lines) == 2, lines
+    assert all("grid-pixelate-overlay--s-02" in one for one in lines)
+    assert [one for one in refused if "#scene-a" in one]
+    # Ритм их примера сохранён: накрытие и открытие разведены на 0,6 с — те
+    # самые, что стоят у них между 3.0 и 3.6, — но отсчёт идёт от сцены.
+    assert "startTime)" in lines[0] and "startTime + 0.6)" in lines[1]
+
+
+def test_приём_вешается_на_окно_ведущей_и_ведёт_его_нашим_таймлайном(каталог):
+    """Позиция без своей разметки не встаёт в кадр коробкой, а декорирует наш
+    элемент: класс из её шапки навешивается на окно ведущей скриптом, а
+    рецепт её комментария едет строкой в наш таймлайн на секундах сцены."""
+    html, board = _build(каталог, scenes=_с_элементами(
+        {"name": "demo-decor", "target": "presenter"}), resolved={})
+    # Коробки в кадре нет: приём ничего не приносит, он ложится на чужое.
+    assert "el-s-02-0" not in html
+    # Скрипт приёма уехал отдельным файлом: счётчик строк их линтера
+    # (`composition_file_too_large`) считает `index.html`, и приёмы литералом
+    # его переполняют — тем же приёмом уезжает движок титра.
+    code = (каталог / "public" / hf_compose.DECOR_SCRIPT).read_text(
+        encoding="utf-8")
+    assert 'node.classList.add("demo-decor", "demo-decor--demo-decor--s-02")' \
+        in code
+    assert 'document.querySelectorAll("#video-wrap")' in code
+    assert 'tl.to(".demo-decor--demo-decor--s-02"' in code
+    # Твины дописываются в КОРНЕВОЙ таймлайн, а не в свой соседний: свой их
+    # плеер не ведёт — он связывает только те дочерние, чей ключ отвечает
+    # `data-composition-id` в разметке (init.ts:1562-1581), и живой прогон
+    # это подтвердил (ключ есть, стиля на мишени нет ни на одной секунде).
+    assert 'var tl = (window.__timelines || {})["reel"];' in code
+    # Файл ждёт разбора тела и шрифтов: их рантайм исполняет внешний скрипт
+    # ДО разбора тела, и вешать классы иначе не на что.
+    assert 'document.addEventListener("DOMContentLoaded", ready);' in code
+    # Своя `startTime` у каждого приёма: рецепт живёт блоком, и `const`
+    # соседям не мешает.
+    assert "const startTime = 3.0333;" in code
+    # Стиль и скрипт уехали в конец тела — после движка титра: слова титра
+    # рисует он, и выше приём не нашёл бы ни одного узла.
+    assert html.index(".demo-decor {") > html.index('id="highlight"')
+    assert (html.index(f'src="{hf_compose.DECOR_SCRIPT}"')
+            > html.index('id="highlight"'))
+    assert board["scenes"][1]["elements"][0]["name"] == "demo-decor"
+
+
+def test_приём_на_слова_титра_берёт_только_слова_своей_сцены(каталог):
+    """Мишень `caption` — слова, которые звучат в секунды этой сцены, а не
+    весь титр ролика: их счёт делает код (`hf_captions.caption_word_range`),
+    и он же ставит границы среза в навеске классов."""
+    _build(каталог, scenes=_с_элементами(
+        {"name": "demo-decor", "target": "caption"}), resolved={})
+    code = (каталог / "public" / hf_compose.DECOR_SCRIPT).read_text(
+        encoding="utf-8")
+    # WORDS: два слова до 1,1 с и одно на 4,0 с; сцена s-02 идёт с 3,033.
+    assert 'document.querySelectorAll(".hl-word-text"), 2, 3)' in code
+
+
+def test_приёму_без_мишени_в_сцене_отказывают_до_сборки_и_в_сборке(
+        каталог, capsys, monkeypatch):
+    """Сцена без ведущей мишени `presenter` не даёт. Спрашивается это дважды и
+    одним кодом: гейтом `D36_elements` до заказа ведущей (деньги ещё целы) и
+    сборкой перед вставкой — разойтись двум местам нечем."""
+    from reels_factory import hf_catalog
+    from reels_factory.hf_gates import elements_problems
+
+    cards = hf_catalog.catalog_cards(FIXTURE_CATALOG)
+    monkeypatch.setattr(hf_catalog, "catalog_cards",
+                        lambda *a, **kw: cards)
+    monkeypatch.setattr(hf_catalog, "skipped_blocks", lambda *a, **kw: {})
+    scenes = _с_элементами({"name": "demo-decor", "target": "presenter"},
+                           presenter="none")
+    problems = elements_problems(json.loads(json.dumps(scenes)))
+    assert any("окна ведущей в этой сцене нет" in one for one in problems), \
+        problems
+    html, board = _build(каталог, scenes=scenes, resolved={})
+    assert "demo-decor" not in html
+    assert "окна ведущей в этой сцене нет" in capsys.readouterr().out
+    assert board["scenes"][1]["elements"] == []
+
+
+def test_приём_кадра_не_закрывает(каталог):
+    """Подсветка слова в титре — не то, чем занят кадр. Позиция с мишенью,
+    среди которых нет `self`, своей картинки не приносит вовсе, и считать ею
+    сцену закрытой значило бы разрешить сцену без вставки, схемы и ведущей
+    (D20, D25 и D34 считают одним `filling_element`)."""
+    from reels_factory.hf_catalog import catalog_cards
+    from reels_factory import hf_montage
+
+    cards = catalog_cards(FIXTURE_CATALOG)
+    hf_montage._element_kinds.cache_clear()
+    try:
+        kinds = {name: (None if (card.get("targets")
+                                 and "self" not in card["targets"])
+                        else card.get("kind"))
+                 for name, card in cards.items()}
+        assert kinds["demo-decor"] is None
+        assert kinds["demo-paste"] == "effect"
+    finally:
+        hf_montage._element_kinds.cache_clear()
 
 def test_paste_копии_одной_позиции_не_делят_класс_и_переменные(каталог):
     """Два маунта ОДНОЙ и той же paste-позиции в одном документе — то, что
@@ -1719,10 +1868,10 @@ def test_paste_копии_одной_позиции_не_делят_класс_�
     при ревью — тест закрепляет находку."""
     public = каталог / "public"
     with sdk_session() as sdk:
-        first = hf_compose.paste_effect(
+        first, _, _ = hf_compose.paste_effect(
             sdk, public, "demo-paste", unique="demo-paste--s-02",
             variables={"label": "42"})
-        second = hf_compose.paste_effect(
+        second, _, _ = hf_compose.paste_effect(
             sdk, public, "demo-paste", unique="demo-paste--s-03",
             variables={"label": "7"})
 

@@ -1,29 +1,33 @@
 {
-  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-  "name": "caption-blend-difference",
-  "type": "hyperframes:component",
-  "title": "Blend Difference",
-  "description": "Auto-inverting text using mix-blend-mode: difference — flips between white and black per-pixel against the background",
-  "tags": [
-    "text",
-    "text-effect",
-    "effect",
-    "blend-mode",
-    "contrast",
-    "inversion"
-  ],
-  "files": [
-    {
-      "path": "caption-blend-difference.html",
-      "target": "compositions/components/caption-blend-difference.html",
-      "type": "hyperframes:snippet"
-    }
-  ],
-  "reels": {
-    "kind": "effect",
-    "mount": "paste",
-    "decor_texts": [],
-    "text_slots": [],
-    "skip": "paste-контракт: то же самое — без анимации из их комментария зона пустая на всех трёх кадрах пробы, контента не видно вовсе."
+ "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+ "name": "caption-blend-difference",
+ "type": "hyperframes:component",
+ "title": "Blend Difference",
+ "description": "Auto-inverting text using mix-blend-mode: difference — flips between white and black per-pixel against the background",
+ "tags": [
+  "text",
+  "text-effect",
+  "effect",
+  "blend-mode",
+  "contrast",
+  "inversion"
+ ],
+ "files": [
+  {
+   "path": "caption-blend-difference.html",
+   "target": "compositions/components/caption-blend-difference.html",
+   "type": "hyperframes:snippet"
   }
+ ],
+ "reels": {
+  "kind": "effect",
+  "mount": "paste",
+  "decor_texts": [],
+  "text_slots": [],
+  "use_when": "Титр идёт поверх пёстрой вставки и то белеет, то тонет: смешение инвертирует буквы по тому, что под ними.",
+  "avoid_when": "Фон под титром ровный и тёмный: инвертировать нечего, буквы останутся какими были.",
+  "targets": [
+   "caption"
+  ]
+ }
 }

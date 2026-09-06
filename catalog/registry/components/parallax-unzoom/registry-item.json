@@ -1,33 +1,33 @@
 {
-  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-  "name": "parallax-unzoom",
-  "type": "hyperframes:component",
-  "title": "Parallax Unzoom",
-  "description": "Reveal transition — focus card scales down from full frame as siblings parallax in to form a grid (reverse of parallax-zoom)",
-  "tags": [
-    "transition",
-    "reveal",
-    "unzoom",
-    "parallax",
-    "grid",
-    "hero"
-  ],
-  "files": [
-    {
-      "path": "parallax-unzoom.html",
-      "target": "compositions/components/parallax-unzoom.html",
-      "type": "hyperframes:snippet"
-    }
-  ],
-  "preview": {
-    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/parallax-unzoom.png"
-  },
-  "reels": {
-    "use_when": "От одного примера речь расходится ко многим: это не единичный случай.",
-    "kind": "effect",
-    "mount": "paste",
-    "decor_texts": [],
-    "text_slots": [],
-    "skip": "DROPPED (настоящая сборка, hf_compose.paste_fragment): у позиции нет своей разметки — это приём поверх ЧУЖИХ элементов кадра, а не самостоятельный кусок кадра, и вставлять литералом нечего. Их собственная формулировка того же: «This fragment has no markup of its own» (registry/components/bottom-up-letters, тот же класс позиций). Вида `effect`, который встаёт в свободную зону кадра сам по себе, из такой позиции не выходит. Ревью 05.09.2026: прежняя причина («нет корневого div с class — разметка не по контракту полки») была неверна дважды — разметка по контракту, а поиск корня у нас смотрел только `<div class=…>` и заодно шапку-комментарий (починено, hf_compose.paste_root_name). Её собственная строка контракта: «Wrap your card grid with class=\"parallax-unzoom-grid\"» (parallax-unzoom.html:9)."
+ "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+ "name": "parallax-unzoom",
+ "type": "hyperframes:component",
+ "title": "Parallax Unzoom",
+ "description": "Reveal transition — focus card scales down from full frame as siblings parallax in to form a grid (reverse of parallax-zoom)",
+ "tags": [
+  "transition",
+  "reveal",
+  "unzoom",
+  "parallax",
+  "grid",
+  "hero"
+ ],
+ "files": [
+  {
+   "path": "parallax-unzoom.html",
+   "target": "compositions/components/parallax-unzoom.html",
+   "type": "hyperframes:snippet"
   }
+ ],
+ "preview": {
+  "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/parallax-unzoom.png"
+ },
+ "reels": {
+  "use_when": "От одного примера речь расходится ко многим: это не единичный случай.",
+  "kind": "effect",
+  "mount": "paste",
+  "decor_texts": [],
+  "text_slots": [],
+  "skip": "То же, что у `parallax-zoom`, зеркально: «Wrap your card grid with class=\"parallax-unzoom-grid\" … Mark each card with class=\"parallax-unzoom-card\" … Add data-pu-row/data-pu-col per card» (parallax-unzoom.html:10-14). Сетки карточек среди наших мишеней нет."
+ }
 }

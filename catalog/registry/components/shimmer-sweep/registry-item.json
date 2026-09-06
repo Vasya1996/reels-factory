@@ -1,31 +1,32 @@
 {
-  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-  "name": "shimmer-sweep",
-  "type": "hyperframes:component",
-  "title": "Shimmer Sweep",
-  "description": "Animated light sweep across text or elements using a CSS gradient mask — ideal for AI accents and premium reveals",
-  "tags": [
-    "text",
-    "shimmer",
-    "highlight",
-    "effect"
-  ],
-  "files": [
-    {
-      "path": "shimmer-sweep.html",
-      "target": "compositions/components/shimmer-sweep.html",
-      "type": "hyperframes:snippet"
-    }
-  ],
-  "preview": {
-    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/shimmer-sweep.png"
-  },
-  "reels": {
-    "use_when": "По строке проходит блик: премиальная нота или ИИ-акцент на слове.",
-    "kind": "effect",
-    "mount": "paste",
-    "decor_texts": [],
-    "text_slots": [],
-    "skip": "DROPPED (настоящая сборка, hf_compose.paste_fragment): у позиции нет своей разметки — это приём поверх ЧУЖИХ элементов кадра, а не самостоятельный кусок кадра, и вставлять литералом нечего. Их собственная формулировка того же: «This fragment has no markup of its own» (registry/components/bottom-up-letters, тот же класс позиций). Вида `effect`, который встаёт в свободную зону кадра сам по себе, из такой позиции не выходит. Ревью 05.09.2026: прежняя причина («нет корневого div с class — разметка не по контракту полки») была неверна дважды — разметка по контракту, а поиск корня у нас смотрел только `<div class=…>` и заодно шапку-комментарий (починено, hf_compose.paste_root_name). Её собственная строка контракта: «Wrap your text element with class=\"shimmer-sweep-target\"» (shimmer-sweep.html:5)."
+ "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+ "name": "shimmer-sweep",
+ "type": "hyperframes:component",
+ "title": "Shimmer Sweep",
+ "description": "Animated light sweep across text or elements using a CSS gradient mask — ideal for AI accents and premium reveals",
+ "tags": [
+  "text",
+  "shimmer",
+  "highlight",
+  "effect"
+ ],
+ "files": [
+  {
+   "path": "shimmer-sweep.html",
+   "target": "compositions/components/shimmer-sweep.html",
+   "type": "hyperframes:snippet"
   }
+ ],
+ "preview": {
+  "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/shimmer-sweep.png"
+ },
+ "reels": {
+  "use_when": "По названному элементу должен пройти блик: вещь блестит, предложение выгодное, результат нарядный.",
+  "kind": "effect",
+  "mount": "paste",
+  "decor_texts": [],
+  "text_slots": [],
+  "avoid_when": "Речь о серьёзном или тревожном: блик читается как реклама и спорит со смыслом.",
+  "skip": "Приём подключается (класс вешается, рецепт едет в таймлайн), но её CSS правит хостовому элементу раскладку: `.shimmer-sweep-target { position: relative; display: inline-block; }` (shimmer-sweep.html, её `<style>`). Их шапка так и говорит — «Wrap your text element with class=\"shimmer-sweep-target\"» (там же:6-7): приём для ТЕКСТА, который оборачивают, а не для коробки, которую раскладка уже поставила. Живой прогон (work/paste-target): на вставке 78 % пикселей кадра отличаются от той же сборки без приёма, но не бликом — маска `mix-blend-mode: overlay` лежит на вставке ровной пеленой весь её интервал; на окне ведущей (там селектор по id сильнее, раскладку приём не ломает) отличий от кадра без приёма 0,00 %. Ни одна наша мишень не даёт того, чего приём ждёт."
+ }
 }

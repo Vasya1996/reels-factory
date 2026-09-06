@@ -1,27 +1,27 @@
 {
-  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-  "name": "confetti",
-  "type": "hyperframes:component",
-  "title": "Confetti",
-  "description": "A deterministic celebration burst with seeded particles and gravity.",
-  "tags": [
-    "effect"
-  ],
-  "files": [
-    {
-      "path": "confetti.html",
-      "target": "compositions/components/confetti.html",
-      "type": "hyperframes:snippet"
-    }
-  ],
-  "preview": {
-    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/confetti.png"
-  },
-  "reels": {
-    "kind": "effect",
-    "mount": "paste",
-    "decor_texts": [],
-    "text_slots": [],
-    "skip": "paste-контракт: карточка с заголовком «Confetti» встаёт и читается, но сама конфетти-анимация (весь смысл позиции) держится на их таймлайне из комментария, который наш путь не подключает — кадр обещает эффект и не показывает его."
+ "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+ "name": "confetti",
+ "type": "hyperframes:component",
+ "title": "Confetti",
+ "description": "A deterministic celebration burst with seeded particles and gravity.",
+ "tags": [
+  "effect"
+ ],
+ "files": [
+  {
+   "path": "confetti.html",
+   "target": "compositions/components/confetti.html",
+   "type": "hyperframes:snippet"
   }
+ ],
+ "preview": {
+  "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/confetti.png"
+ },
+ "reels": {
+  "kind": "effect",
+  "mount": "paste",
+  "decor_texts": [],
+  "text_slots": [],
+  "skip": "Рецепт таймлайна теперь подключается (работа paste-target: `mount: paste` разбирает «Timeline integration» и вписывает четыре инструкции в наш таймлайн), но позиция несёт СВОЙ видимый текст: «Confetti» заголовком и «A deterministic celebration burst with seeded particles and gravity» подписью (confetti.html, разметка `.card`). Слотами эти узлы не размечены, переменных у позиции нет — заполнить их словами плана нечем, и в оплаченный ролик поехала бы английская демо-строка. Снимать skip до того, как у карточки появятся слоты, нельзя."
+ }
 }

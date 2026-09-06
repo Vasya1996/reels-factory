@@ -1,32 +1,33 @@
 {
-  "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-  "name": "motion-blur",
-  "type": "hyperframes:component",
-  "title": "Motion Blur",
-  "description": "Velocity-driven motion blur — samples element position each frame and applies a one-sided SVG feGaussianBlur ghost trail proportional to speed",
-  "tags": [
-    "effect",
-    "motion-blur",
-    "velocity",
-    "animation",
-    "physics"
-  ],
-  "files": [
-    {
-      "path": "motion-blur.html",
-      "target": "compositions/components/motion-blur.html",
-      "type": "hyperframes:snippet"
-    }
-  ],
-  "preview": {
-    "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/motion-blur.png"
-  },
-  "reels": {
-    "use_when": "Названа скорость: движение должно смазываться, как быстрое.",
-    "kind": "effect",
-    "mount": "paste",
-    "decor_texts": [],
-    "text_slots": [],
-    "skip": "DROPPED (настоящая сборка, hf_compose.paste_fragment): у позиции нет своей разметки — это приём поверх ЧУЖИХ элементов кадра, а не самостоятельный кусок кадра, и вставлять литералом нечего. Их собственная формулировка того же: «This fragment has no markup of its own» (registry/components/bottom-up-letters, тот же класс позиций). Вида `effect`, который встаёт в свободную зону кадра сам по себе, из такой позиции не выходит. Ревью 05.09.2026: прежняя причина («нет корневого div с class — разметка не по контракту полки») была неверна дважды — разметка по контракту, а поиск корня у нас смотрел только `<div class=…>` и заодно шапку-комментарий (починено, hf_compose.paste_root_name). Её собственная строка контракта: «paste this snippet into your composition, then call attachMotionBlur() with any element animated by your GSAP timeline» (motion-blur.html:4-5)."
+ "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+ "name": "motion-blur",
+ "type": "hyperframes:component",
+ "title": "Motion Blur",
+ "description": "Velocity-driven motion blur — samples element position each frame and applies a one-sided SVG feGaussianBlur ghost trail proportional to speed",
+ "tags": [
+  "effect",
+  "motion-blur",
+  "velocity",
+  "animation",
+  "physics"
+ ],
+ "files": [
+  {
+   "path": "motion-blur.html",
+   "target": "compositions/components/motion-blur.html",
+   "type": "hyperframes:snippet"
   }
+ ],
+ "preview": {
+  "poster": "https://static.heygen.ai/hyperframes-oss/docs/images/catalog/components/motion-blur.png"
+ },
+ "reels": {
+  "use_when": "Названа скорость: вставка должна смазываться на ходу, как быстрая.",
+  "kind": "effect",
+  "mount": "paste",
+  "decor_texts": [],
+  "text_slots": [],
+  "avoid_when": "Вставка в сцене одна и никуда не едет: смазывать нечего — приём считает скорость движения, а неподвижная вставка остаётся резкой.",
+  "skip": "Приём подключается: её собственный API берёт наш селектор и наш таймлайн («attachMotionBlur(selector, timeline, options?)», motion-blur.html, раздел API), и вставка — ровно тот элемент, который наш таймлайн двигает по x/y. Но считает она СКОРОСТЬ: «hooks into the timeline's onUpdate callback, tracks the GSAP x/y position of each target frame-by-frame» (там же:7-8) — то есть кадр N зависит от кадра N-1. Их собственный разбор каталога зовёт это F5, «Cannot be made seekable» (hyperframes-registry/references/component-quality-bar.md:86-90), а наш кадр снимается перемоткой на секунду. Живой прогон подтвердил: на трёх кадрах сцены со вставкой отличий от той же сборки без приёма 0,00 %."
+ }
 }

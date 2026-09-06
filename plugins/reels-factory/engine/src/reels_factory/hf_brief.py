@@ -384,6 +384,15 @@ def _shown_scenes(groups: list[tuple[list[int], bool]], phrases: list[dict], *,
 SAMPLE_ELEMENT = {"name": "count-up",
                   "variables": {"end": 12, "suffix": " раз в год"}}
 
+#: Второй образец — приём поверх чужого элемента, с мишенью. Правило про
+#: `target` без такого образца остаётся текстом: приёма, которого в образце
+#: нет, агент не применяет — так же, как не применял `elements` вовсе, пока
+#: образец обходился без них (докстринг `_sample_element`, три живых ранних
+#: шага). Мишень названа явно, хотя `targets` у этой карточки одна и код взял
+#: бы её сам: образец показывает поле, а не его отсутствие.
+SAMPLE_DECORATOR = {"name": "inline-highlight", "target": "caption",
+                    "variables": {"tint": "yellow"}}
+
 
 def _sample_element() -> dict | None:
     """Позиция каталога для образца — если она есть в каталоге ЭТОГО прогона.
@@ -414,6 +423,25 @@ def _sample_element() -> dict | None:
     return SAMPLE_ELEMENT
 
 
+def _sample_decorator() -> dict | None:
+    """Приём с мишенью для образца — если он есть в каталоге ЭТОГО прогона.
+
+    Та же проверка по каталогу, что у `_sample_element`, и по той же причине:
+    образец, называющий позицию или мишень, которых в индексе нет, учил бы
+    плану, который заворачивает `D36_elements`.
+    """
+    try:
+        card = catalog_cards().get(SAMPLE_DECORATOR["name"])
+    except (OSError, ValueError):
+        return None
+    if not card or SAMPLE_DECORATOR["target"] not in (card.get("targets") or []):
+        return None
+    known = card.get("variables") or {}
+    if not set(SAMPLE_DECORATOR["variables"]) <= set(known):
+        return None
+    return SAMPLE_DECORATOR
+
+
 def _add_element(scenes: list[dict]) -> None:
     """Поставить позицию каталога одной сцене образца.
 
@@ -428,12 +456,28 @@ def _add_element(scenes: list[dict]) -> None:
     element = _sample_element()
     if not element:
         return
+    put = None
     for scene in scenes[1:-1]:
         if scene.get("schema"):
             continue
         if effect_zone(str(scene.get("presenter") or "none")) is None:
             continue
         scene["elements"] = [element]
+        put = scene
+        break
+    if put is None:
+        return
+    # Приём с мишенью — другой сцене, а не той же: рядом они читались бы как
+    # «набей кадр обоими». Зона кадра приёму не нужна вовсе (он ложится на
+    # слова титра), поэтому условие тут одно — не занимать сцену образца
+    # дважды.
+    decorator = _sample_decorator()
+    if not decorator:
+        return
+    for scene in scenes[1:-1]:
+        if scene is put or scene.get("schema") or scene.get("elements"):
+            continue
+        scene["elements"] = [decorator]
         return
 
 
@@ -464,6 +508,9 @@ def _add_frames(scenes: list[dict],
         if taken:
             reason = (f'взял `{taken[0]}`: сцена называет число, и позиция '
                       "показывает его же")
+            if taken[0] == SAMPLE_DECORATOR["name"]:
+                reason = (f'взял `{taken[0]}`: в реплике одно слово главное, '
+                          "и приём выделяет его прямо в титре")
             scene["frame"] = {"holder": holder, "catalog_checked": taken,
                               "catalog_reason": reason}
             continue
@@ -1397,7 +1444,11 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
                     "ищут, сказано в своде правил, раздел «Чем занять кадр:\n"
                     "   позиция каталога». Взятую позицию назови в "
                     "`elements`, а что ты решил\n   и почему — в `frame` "
-                    "сцены, у каждой.")
+                    "сцены, у каждой. У позиции, чья карточка несёт\n"
+                    "   `targets`, назови ещё и мишень — поле `target`: такая "
+                    "позиция ничего\n   в кадр не приносит, она ложится на "
+                    "окно ведущей, вставку, слова титра\n   или схему, и "
+                    "мишень должна в этой сцене быть.")
     if avatar_ordered:
         steps_block = f"""{skill_step}
 2. {scenes_step}
@@ -1452,7 +1503,9 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     catalog_check = (
         "У каждой сцены заполнен `frame`: чем держится кадр, какие позиции "
         "каталога\n   ты рассмотрел и почему взял или не взял. Взятая позиция "
-        "названа ещё и в\n   `elements` (`D36_elements`).")
+        "названа ещё и в\n   `elements`, а если её карточка несёт `targets` — "
+        "у неё стоит `target`,\n   и названная мишень в этой сцене есть "
+        "(`D36_elements`).")
     if avatar_ordered:
         self_check = f"""Прежде чем записывать файлы, сверь план по списку.
 
