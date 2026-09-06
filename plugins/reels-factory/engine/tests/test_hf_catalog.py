@@ -535,6 +535,42 @@ def test_видимый_текст_предлагаемой_позиции_не�
                 "списку, а код по другому")
 
 
+def test_нет_позиции_с_текстовыми_слотами_и_рабочей_переменной_разом():
+    """У позиции с непустым `word_variables` не бывает `text_slots`.
+
+    Это не два независимых правила, а один и тот же контракт с двух концов:
+    `hf_catalog.word_variables()` сам гасит канал переменной, как только у
+    карточки заведён `text_slots` (`if card.get("text_slots"): return []`) —
+    так и должно быть, а не наоборот, потому что для семи позиций отчёта
+    slots-deep (`marker-checklist-card`, `social-proof-card`,
+    `store-badge-lockup`, `svg-mask-reveal`, `variable-axis-type`,
+    `type-match-cut`, `focus-rack`) их видимый текст в разметке — ЖИВОЙ
+    ПРЕВЬЮ работающей переменной: собственный `<script>` позиции на монтаже
+    безусловно переписывает его словом плана. Дай такой позиции `text_slots`
+    по одной лишь разметке — и код погасит канал переменной для ВСЕХ её
+    полей, а `fill_ops` всё равно не удержит статичную правку под перезаписью
+    скрипта: кадр откатится к английскому умолчанию карточки (живое
+    доказательство — `marker-checklist-card`, ревью PR #80, пункт 6:
+    с `text_slots` в кадре осталось «THE POWER OF ONE FILE» вместо слов
+    плана).
+
+    До этого теста инвариант проверялся вручную по каждой из одиннадцати
+    позиций (`slots-deep-report.md`, раздел 7.1) — здесь он держит ВЕСЬ
+    боевой каталог, не только уже проверенные карточки, и упадёт первым же
+    красным на следующей позиции с тем же паттерном.
+    """
+    from reels_factory.hf_catalog import word_variables
+
+    cards = catalog_cards()
+    assert cards, "каталог не предлагает ни одной позиции"
+    broken = [name for name, card in cards.items()
+             if word_variables(card) and card.get("text_slots")]
+    assert not broken, (
+        f"{broken}: несут и `text_slots`, и рабочую переменную разом — "
+        "переменная гасится `word_variables()`, а слот всё равно может не "
+        "удержать статичную правку под перезаписью скрипта позиции")
+
+
 #: Пять образцов B3 и то, чем их разметка обязана дать заполнить кадр: у
 #: терминала и диффа видимый текст жил в скрипте, и слотами он не был вовсе
 #: (отчёт B4). Имена — от классов разметки, порядок — документа.
@@ -791,3 +827,148 @@ def test_слоты_под_файл_названы_в_карточке_ката�
     for name in ("light-sweep-pass", "whiteboard-ink", "press-ripple"):
         assert not cards[name].get("media_slots"), name
         assert not cards[name].get("host_slots"), name
+
+#: Синтетическая позиция (не в боевом каталоге): их явный `type: "image"`
+#: (`docs/concepts/variables.mdx:63-73`) вместо `data-slot` в разметке.
+#: Живой пример их полки — `share-sheet-carousel.registry-item.json:65-72`
+#: (`slideImage1`), но своих карточек этим не трогаем — заводим фикстуру.
+_DEMO_IMAGE_VAR_ITEM = {
+    "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+    "name": "demo-image-var",
+    "type": "hyperframes:block",
+    "title": "Demo Image Variable",
+    "description": "Fixture position whose photo slot is a type:image variable, not data-slot",
+    "tags": ["demo"],
+    "dimensions": {"width": 1080, "height": 1920},
+    "duration": 4.0,
+    "files": [{"path": "demo-image-var.html",
+              "target": "compositions/demo-image-var.html",
+              "type": "hyperframes:composition"}],
+    "reels": {
+        "kind": "scene",
+        "use_when": "Фикстура: слот под файл — переменная, а не узел разметки.",
+        "decor_texts": [], "text_slots": [],
+        "variables": {
+            "shot": {"type": "image", "default": "assets/placeholder.jpg"},
+            "logo": {"type": "image", "default": "assets/logo.svg"},
+        },
+    },
+}
+_DEMO_IMAGE_VAR_HTML = (
+    "<!doctype html>\n"
+    "<html lang=\"en\">\n"
+    "  <head><meta charset=\"utf-8\" /><title>demo-image-var</title></head>\n"
+    "  <body>\n"
+    "    <div id=\"demo-image-var-root\" data-composition-id=\"demo-image-var\"\n"
+    "        data-width=\"1080\" data-height=\"1920\" data-duration=\"4\"\n"
+    "        data-composition-variables='[\n"
+    "          {\"id\": \"shot\", \"type\": \"image\", \"role\": \"content\", \"default\": \"assets/placeholder.jpg\"},\n"
+    "          {\"id\": \"logo\", \"type\": \"image\", \"role\": \"content\", \"portrays\": [\"subject_logo\"], \"default\": \"assets/logo.svg\"}\n"
+    "        ]'>\n"
+    "      <img data-var-src=\"shot\" class=\"div-shot\" />\n"
+    "      <img data-var-src=\"logo\" class=\"div-logo\" />\n"
+    "    </div>\n"
+    "    <script>\n"
+    "      window.__timelines = window.__timelines || {};\n"
+    "      window.__timelines[\"demo-image-var\"] = null;\n"
+    "    </script>\n"
+    "  </body>\n"
+    "</html>\n"
+)
+
+
+def _synthetic_catalog(tmp_path):
+    folder = tmp_path / "registry" / "blocks" / "demo-image-var"
+    folder.mkdir(parents=True)
+    (folder / "registry-item.json").write_text(
+        json.dumps(_DEMO_IMAGE_VAR_ITEM, ensure_ascii=False), encoding="utf-8")
+    (folder / "demo-image-var.html").write_text(
+        _DEMO_IMAGE_VAR_HTML, encoding="utf-8")
+    # `block_names()` спрашивает манифест реестра, не подпапки на диске —
+    # именам и виду хватает, содержимое каждая карточка несёт сама.
+    (tmp_path / "registry" / "registry.json").write_text(
+        json.dumps({"items": [{"name": "demo-image-var",
+                               "type": "hyperframes:block"}]}),
+        encoding="utf-8")
+    return tmp_path
+
+
+def test_image_переменная_узнаётся_как_слот_под_файл(tmp_path):
+    """Их явный `type: "image"` — второй канал того же самого требования
+    «сцене нужен файл», не только `data-slot` в разметке. Без этой правки
+    `media_slots` видел только слоты-узлы, а `share-sheet-carousel`-подобная
+    позиция (файл — в переменной, не в разметке) осталась бы без гейта:
+    `D36_elements` не потребовал бы вставки, и в кадре мог остаться голый
+    `<img>` без `src`, зависящий от умолчания переменной."""
+    catalog_dir = _synthetic_catalog(tmp_path)
+    cards = catalog_cards(catalog_dir)
+    card = cards["demo-image-var"]
+    # `shot` — без `portrays`, узнаётся; `logo` несёт `portrays` и в число
+    # заполняемых не попадает — то же правило, что и у слов плана.
+    assert card["media_slots"] == ["shot"]
+    assert card["media_variable_slots"] == ["shot"]
+    assert "logo" not in card["media_slots"]
+
+
+def test_image_переменная_получает_файл_в_data_variable_values(tmp_path, monkeypatch):
+    """Полный канал до сборки: подобранный файл ложится в
+    `data-variable-values` тем же путём, каким туда ложится слово плана
+    (`word_variables`) — не в `fill_ops`, у переменной может не быть в
+    разметке никакого `data-slot` вовсе."""
+    from reels_factory import hf_compose
+    from reels_factory.hf_sdk import sdk_session
+    import shutil
+
+    catalog_dir = _synthetic_catalog(tmp_path)
+    cards = catalog_cards(catalog_dir)
+    monkeypatch.setattr(hf_compose, "_catalog_cards", lambda: cards)
+    monkeypatch.setattr(hf_compose, "_skipped_blocks", dict)
+    monkeypatch.setattr(hf_compose, "_texture_blocks", frozenset)
+    monkeypatch.setattr(hf_compose, "write_caption_data",
+                        lambda public, **kw: public / "caption-data.json")
+    monkeypatch.setattr(hf_compose, "caption_snippet",
+                        lambda sdk, public, **kw: '<div id="highlight"></div>')
+
+    public = tmp_path / "run" / "public"
+    public.mkdir(parents=True)
+    (public / "compositions").mkdir()
+    shutil.copyfile(catalog_dir / "registry" / "blocks" / "demo-image-var"
+                    / "demo-image-var.html",
+                    public / "compositions" / "demo-image-var.html")
+
+    board = {
+        "schemaVersion": 3,
+        "composition": {"fps": 30, "width": 1080, "height": 1920,
+                        "durationSeconds": 6.0, "layout": "portrait"},
+        "videoTrack": {"sourcePath": "clips/clip-00.mp4", "startSec": 0,
+                       "endSec": 6.0,
+                       "bounds": {"x": 0, "y": 0, "width": 1080,
+                                 "height": 1920}},
+        "subtitles": {"enabled": True},
+        "scenes": [
+            {"id": "s-01", "intent": "хук", "startSec": 0, "endSec": 3.0,
+             "presenter": "full", "insert": None},
+            {"id": "s-02", "intent": "разбор", "startSec": 3.0,
+             "endSec": 6.0, "presenter": "pip-tr", "insert": None,
+             "elements": [{"name": "demo-image-var"}]},
+        ],
+    }
+    resolved = {"s-02::shot0": {"file": ".media/images/a.jpg"},
+               "s-02::shot1": {"file": ".media/images/b.jpg"}}
+    with sdk_session() as sdk:
+        hf_compose.build_composition(
+            tmp_path / "run", sdk, storyboard=board,
+            clips=[{"file": "clips/clip-00.mp4", "start": 0.0,
+                   "duration": 6.0}],
+            duration=6.0,
+            words=[{"start": 0.2, "end": 0.6, "text": "Всё"}],
+            resolved=resolved)
+    index = (public / "index.html").read_text(encoding="utf-8")
+    assert 'data-composition-src="compositions/demo-image-var--s-02.html"' \
+        in index
+    mount = index[index.index(
+        'data-composition-src="compositions/demo-image-var--s-02.html"'):]
+    values = mount[:mount.index(">")]
+    assert '"shot": ".media/images/a.jpg"' in values
+    assert "logo" not in values, "фирменный логотип не заполняется файлом биролла"
+

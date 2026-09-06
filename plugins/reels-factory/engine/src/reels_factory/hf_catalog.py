@@ -415,8 +415,19 @@ def _slot_contract(folder: Path, item: dict) -> dict[str, str]:
 #: не заполнили её. Запятая сама по себе фразу не отменяет («Less, but
 #: better»), а три и больше кусков через запятую — уже список
 #: (`_LIST_DEFAULT`).
+#:
+#: `|` фразу не отменяет: это перенос строки ВНУТРИ одной фразы, а не
+#: разделитель списка, и так его называют сами позиции — «A `|` breaks
+#: the line» (`notes-typing.html:21`, `ai-chat-reveal.html:13` —
+#: `ecHeadline`, `social-proof-card.html:19` — `f1`/`f2`/`f3`, «First
+#: feature, `|` breaks the line»). Раньше `|` лежал в общем запрете вместе
+#: с `;`/`<`/`>` и т.д., и этим держал в кадре английскую рекламу
+#: HyperFrames — `social-proof-card.f1/f2/f3` («Write / plain HTML» и
+#: т.д.) не проходили правило вовсе, хотя канал остальных полей позиции
+#: уже чинил PR #80 (ревью, пункт 6): исключение работало для домена,
+#: списка через запятую, пути SVG — но не имело причины для `|`.
 _PHRASE_DEFAULT = re.compile(
-    r"^(?=.*[^\W\d_])[^|;<>/\\@#{}]{1,80}$")
+    r"^(?=.*[^\W\d_])[^;<>/\\@#{}]{1,80}$")
 #: Домен, а не фраза: одно слово с точкой внутри.
 _DOMAIN_DEFAULT = re.compile(r"^\S+\.\S+$")
 
@@ -463,6 +474,35 @@ def word_variables(card: dict) -> list[str]:
         # `Docs,Tickets,Dashboards,Inbox`, одна подставленная строка убрала бы
         # четыре чипа из четырёх.
         if len(default.split(",")) >= 3:
+            continue
+        found.append(key)
+    return found
+
+
+def image_variables(card: dict) -> list[str]:
+    """Переменные-картинки позиции: куда код кладёт путь к подобранному файлу.
+
+    Их собственный явный тип объявления, седьмой в списке рядом со `string`
+    (`docs/concepts/variables.mdx:63-73`: «`image` | An image path or image
+    value»). Значение показывает зрителю не наш `hf_slots.fill_ops` (там
+    слот — это узел `data-slot` в разметке, и с такой переменной у него может
+    не быть ничего общего вовсе), а их собственный рантайм:
+    `data-var-src="<id>"` на элементе читает `data-variable-values` тем же
+    способом, каким `word_variables` кладёт туда фразу
+    (`packages/core/src/runtime/applyVariableBindings.ts:168-174` клона
+    0.8.27 — `resolveUrl(...)`, затем `el.setAttribute("src", url)`). Живой
+    пример их полки — `share-sheet-carousel.registry-item.json:65-72`,
+    `slideImage1`.
+
+    `portrays` исключает переменную тем же запретом, что и слова: лого бренда
+    нельзя подменить случайным кадром биролла (тот же живой пример держит
+    `brandLogo` с `portrays: ["subject_logo"]`).
+    """
+    found = []
+    for key, rule in (card.get("variables") or {}).items():
+        if rule.get("type") != "image":
+            continue
+        if rule.get("portrays"):
             continue
         found.append(key)
     return found
@@ -582,6 +622,16 @@ def catalog_cards(catalog_dir=None) -> dict[str, dict]:
         contract = _slot_contract(folder, item)
         media = [key for key, kind in contract.items() if kind in MEDIA_KINDS]
         host = [key for key, kind in contract.items() if kind == HOST_SLOT]
+        # Их явный `type: "image"` — второй, отдельный канал того же самого
+        # требования «сцене нужен файл»: слот у него не в разметке (`data-
+        # slot`), а в объявлении переменной (`image_variables`). Гейт
+        # `D36_elements` спрашивает `media_slots` не заботясь об источнике, а
+        # где именно подавать файл — в узел или в `data-variable-values` —
+        # решает `media_variable_slots` уже в сборке (`hf_compose`).
+        image_vars = image_variables(card) if card.get("variables") else []
+        if image_vars:
+            media = sorted(set(media) | set(image_vars))
+            card["media_variable_slots"] = sorted(image_vars)
         if media:
             card["media_slots"] = media
         if host:
@@ -797,7 +847,12 @@ _INDEX_HEAD = r"""# Каталог этого прогона
   нет вовсе — там ищи по `use_when`, как раньше.
 - `media_slots` — слоты, куда встаёт файл (кадр биролла, снимок): позиция с
   ними берётся ТОЛЬКО в сцену со вставкой (`insert`), иначе в кадре останется
-  пустой макет и план вернётся с `D36_elements`.
+  пустой макет и план вернётся с `D36_elements`. Источник у имени в списке
+  может быть разным — узел `data-slot` в разметке или их явный `type:
+  "image"` у переменной (`media_variable_slots` называет, какие из
+  `media_slots` — второго рода): агенту это безразлично, сцене нужен файл в
+  обоих случаях, а куда его положить — в узел или в `data-variable-values` —
+  решает сборка.
 - `host_slots` — слоты, содержимое которых их контракт ждёт из хостовой
   страницы; наша сборка их не заполняет, и такую позицию ставить нельзя.
 - `kind` — чем позиция становится в кадре: `scene` (во весь кадр подложкой под

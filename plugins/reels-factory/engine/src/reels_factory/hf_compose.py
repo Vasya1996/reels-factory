@@ -1947,8 +1947,23 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                     "слот их линтер не пускает — `hf_slots._media_child`) — в "
                     "кадре остался бы пустой макет")
                 continue
-            supply = {slot: {"file": files[position % len(files)]}
-                      for position, slot in enumerate(slots)} or None
+            # Слот под файл бывает двух родов (`hf_catalog.catalog_cards`):
+            # узел `data-slot` в разметке — файл встаёт в него `fill_ops`
+            # (`supply`); их явный `type: "image"` у переменной —
+            # `media_variable_slots` называет, какие из `slots` этого рода, и
+            # файл ложится в `data-variable-values` тем же путём, каким туда
+            # ложится слово плана (`word_variables`, выше). Один счётчик
+            # позиции на оба рода — файлы разбираются по кругу вперемешку, а
+            # не с двух отдельных нулей.
+            var_slots = set(card.get("media_variable_slots") or [])
+            supply = {}
+            for position, slot in enumerate(slots):
+                file = files[position % len(files)]
+                if slot in var_slots:
+                    named.setdefault(slot, file)
+                else:
+                    supply[slot] = {"file": file}
+            supply = supply or None
             card_type = str(card.get("type") or "block")
             # Paste-контрактный эффект (`reels.mount`, карточка B1) не
             # монтируется саб-композицией вовсе — своего `data-composition-id`
