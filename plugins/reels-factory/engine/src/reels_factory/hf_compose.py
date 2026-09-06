@@ -632,6 +632,9 @@ _OUR_STACK = "font-family: 'Manrope', sans-serif"
 #: мешает: он меряет ширину, а рисует буквы всё равно CSS позиции, где замена
 #: и нужна.
 _SCRIPT_BLOCK = re.compile(r"<script\b[^>]*>.*?</script>", re.I | re.S)
+#: Обёртка `<script …>` и `</script>`: снимается, когда тело скрипта
+#: уезжает в отдельный файл.
+_SCRIPT_BODY = re.compile(r"<script[^>]*>|</script>", re.I)
 
 
 def _restyle_fonts(html: str) -> str:
@@ -940,6 +943,19 @@ _PASTE_SCRIPT = re.compile(
     r'<script(?![^>]*\btype="module")(?![^>]*\bsrc=)[^>]*>.*?</script>', re.S)
 
 
+def paste_body(html: str) -> str:
+    """Файл позиции без комментариев.
+
+    Шапка их файла — проза, и в ней встречаются те же теги, о которых она
+    рассказывает: `bottom-up-letters` пишет «the declaration rides the <style>
+    element below». Регэксп стиля хватал этот кусок прозы первым, и в
+    композицию уезжал `<style>` с английским абзацем внутри — их `check`
+    отвечал `css_parse_error: Unknown word element` (живой прогон
+    `work/paste-target`). Разбор — только по телу.
+    """
+    return _HTML_COMMENT.sub("", html)
+
+
 def paste_root_name(html: str) -> tuple[str, str] | None:
     """Имя корня paste-примитива: («class»|«id», токен). Нет корня — None.
 
@@ -949,7 +965,7 @@ def paste_root_name(html: str) -> tuple[str, str] | None:
     (с шапкой-комментарием), а имя для развода — по вырезанному корню, и они
     расходились ровно там, где корень нашёлся в примере из шапки.
     """
-    body = _HTML_COMMENT.sub("", html)
+    body = paste_body(html)
     for tag in _PASTE_ROOT_TAG.finditer(body):
         found = {kind: name for kind, name
                  in _PASTE_ROOT_NAME.findall(tag.group(1))}
@@ -1005,8 +1021,9 @@ def paste_fragment(sdk, public, source, *, selector: str | None = None
     if not found:
         raise RuntimeError(f"в {source} не нашёлся корень {selector}")
     root = found[0]["outer"]
-    style_match = _PASTE_STYLE.search(html)
-    script_match = _PASTE_SCRIPT.search(html)
+    body = paste_body(html)
+    style_match = _PASTE_STYLE.search(body)
+    script_match = _PASTE_SCRIPT.search(body)
     return (style_match.group(0) if style_match else "",
            root,
            script_match.group(0) if script_match else "")
@@ -1156,8 +1173,9 @@ def paste_attach_classes(html: str) -> list[str]:
 
 def paste_own_names(html: str) -> tuple[set, set]:
     """Имена самой позиции: (классы её стиля, имена её скрипта)."""
-    style = "".join(_PASTE_STYLE.findall(html))
-    script = "".join(_PASTE_SCRIPT.findall(html))
+    body = paste_body(html)
+    style = "".join(_PASTE_STYLE.findall(body))
+    script = "".join(_PASTE_SCRIPT.findall(body))
     declared = {name for triple in _SCRIPT_DECL.findall(script)
                 for name in triple if name}
     return set(_STYLE_CLASS.findall(style)), declared
@@ -1433,8 +1451,43 @@ def wire_recipe(html: str, *, unique: str, target=None):
 #: - `presenter` — окно ведущей (`#video-wrap`);
 #: - `insert` — вставки сцены, все планы серии разом;
 #: - `caption` — слова титра, которые звучат в этой сцене;
-#: - `schema` — коробка схемы сцены.
+#: - `schema` — коробка схемы сцены. Ни одна карточка её сегодня не называет:
+#:   живой прогон показать её не смог — сцена со схемой в пробе выходит пустой
+#:   и БЕЗ приёма тоже (контрольная сборка, `work/paste-target-control`), то
+#:   есть дело не в приёме. Мишень остаётся в словаре: путь до неё общий с
+#:   `presenter`, а карточка добавится, когда кадр со схемой удастся снять.
 PASTE_TARGETS = ("self", "presenter", "insert", "caption", "schema")
+
+#: Куда уезжают скрипты приёмов-декораторов. Отдельным файлом, а не
+#: строками композиции, — по той же причине и тем же приёмом, каким
+#: уезжает движок титра (`hf_captions.CAPTION_SCRIPT`): их линтер считает
+#: физические строки `index.html` и за 300 даёт `composition_file_too_large`
+#: (packages/lint/src/rules/composition.ts:16), а под `--strict`
+#: предупреждение роняет сборку. Живой прогон на десяти приёмах литералом
+#: дал 672 строки.
+DECOR_SCRIPT = "paste-decor.js"
+
+#: Внешний скрипт в их рантайме исполняется ДО разбора тела: живой прогон
+#: (`work/paste-target`) с пробой в этом самом файле ответил
+#: `readyState=loading stage=0 wrap=0 words=0` — на месте нет ещё ни окна
+#: ведущей, ни вставок, ни слов титра, и вешать классы не на что. Их
+#: собственный движок титра решает это тем же ожиданием —
+#: `document.fonts.ready.then(...)` (`assets/caption-highlight.html:506-516`),
+#: — и таймлайн регистрирует уже в нём; соседний таймлайн их плеер подхватит
+#: и поздний (`packages/core/src/runtime/player.ts:68-84`). Ждём и разбора
+#: тела, и шрифтов: одного `fonts.ready` мало, когда шрифты врезаны в файл и
+#: промис успевает решиться раньше конца разбора.
+DECOR_BOOT = """function ready() {
+var fonts = document.fonts && document.fonts.ready
+  ? document.fonts.ready : Promise.resolve();
+fonts.then(start);
+}
+if (document.readyState === "loading") {
+document.addEventListener("DOMContentLoaded", ready);
+} else {
+ready();
+}
+"""
 
 
 def paste_attach(selector: str, classes: list, *,
@@ -1477,7 +1530,7 @@ def paste_decorator(sdk, public, name: str, *, unique: str, variables: dict,
                     target: dict) -> tuple:
     """Приём их полки поверх НАШЕГО элемента кадра. Пятый шаг их контракта.
 
-    Отдаёт `(кусок разметки, строки таймлайна, отказы)`.
+    Отдаёт `(стиль, тело скрипта, строки таймлайна, отказы)`.
 
     Отличие от `paste_effect` одно и оно же — вся суть: у такой позиции своей
     разметки нет («This fragment has no markup of its own», их же
@@ -1503,14 +1556,20 @@ def paste_decorator(sdk, public, name: str, *, unique: str, variables: dict,
         source.write_text(fixed, encoding="utf-8")
         html = fixed
     classes = paste_attach_classes(html)
-    if not classes:
-        raise RuntimeError(
-            f"{name}: в шапке позиции не назван класс, который вешают на свой "
-            "элемент («class=…»), — вешать на мишень нечего")
     lines, refused, _ = wire_recipe(
         html, unique=unique, target=target["selector"])
-    style = "".join(_PASTE_STYLE.findall(html))
-    script = "".join(_PASTE_SCRIPT.findall(html))
+    if not classes and not lines:
+        # Контракт позиции состоит из двух каналов, и хотя бы один обязан
+        # сработать: класс в шапке («Add class="…" to the element you want to
+        # reveal») или её собственная функция с нашим таймлайном аргументом
+        # («API: attachMotionBlur(selector, timeline, options?)»,
+        # motion-blur.html). Нет ни того, ни другого — приёма не выйдет.
+        raise RuntimeError(
+            f"{name}: шапка позиции не называет ни класса для своего элемента "
+            "(«class=…»), ни рецепта таймлайна — вешать на мишень нечего")
+    body = paste_body(html)
+    style = "".join(_PASTE_STYLE.findall(body))
+    script = "".join(_PASTE_SCRIPT.findall(body))
     style = _CDN_FONTS.sub("", style)
     style = _FONT_FAMILY.sub(_OUR_STACK, style)
     script = _CDN_GSAP.sub('src="gsap-vendor.min.js"', script)
@@ -1521,14 +1580,25 @@ def paste_decorator(sdk, public, name: str, *, unique: str, variables: dict,
             " window.__hyperframes.getVariables = function () { return "
             + json.dumps(variables or {}, ensure_ascii=False) +
             "; };</script>")
-    attach = paste_attach(
+    attach = (paste_attach(
         target["selector"], classes + [f"{classes[0]}--{unique}"],
         first=target.get("first"), last=target.get("last"))
+        if classes else "")
     # Порядок обязателен: сперва классы, потом скрипт позиции. Их скрипты
     # обходят `document.querySelectorAll` СВОЕГО класса один раз на старте
     # (`shimmer-sweep` вставляет маску, `bottom-up-letters` режет текст на
     # буквы) — до навески они не нашли бы ничего.
-    return f"{style}\n{attach}\n{shim}\n{script}", lines, refused
+    # Скрипт отдаём ТЕЛОМ, без тега: он уезжает в отдельный файл, как
+    # уже уезжает движок титра (`hf_captions.CAPTION_SCRIPT`). Причина
+    # та же и измерена тем же: их линтер считает физические строки
+    # `index.html` и за 300 даёт `composition_file_too_large`, а под
+    # `--strict` предупреждение роняет сборку
+    # (packages/lint/src/rules/composition.ts:16). Живой прогон
+    # `work/paste-target` на десяти приёмах дал 672 строки — тело
+    # `<style>` их счётчик выбрасывает, а тела скриптов нет.
+    code = "\n".join(_SCRIPT_BODY.sub("", one).strip()
+                     for one in (attach, shim, script) if one.strip())
+    return style, code, lines, refused
 
 
 def paste_target(card: dict, element: dict) -> tuple:
@@ -1594,7 +1664,7 @@ def paste_target_selector(scene: dict, target: str, *, insert_targets: dict,
         found = insert_targets.get(scene["id"]) or []
         return {"selector": ", ".join(found)} if found else {}
     if target == "schema":
-        return {"selector": f'#schema-{scene["id"]}'}
+        return {"selector": f'#schema-box-{scene["id"]}'}
     if target == "caption":
         first, last = caption_word_range(
             words, float(scene["startSec"]), float(scene["endSec"]))
@@ -2398,10 +2468,14 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # - вида нет — это сегодняшняя плашка, и геометрия у неё та же
     #   (`_overlay_geometry`).
     staged_elements = 0
-    #: Куски приёмов-декораторов. Уезжают в конец тела, ПОСЛЕ движка титра:
+    #: Стили приёмов-декораторов. Уезжают в конец тела, ПОСЛЕ движка титра:
     #: слова титра рисует он, и скрипт позиции, стоящий выше, не нашёл бы
     #: ни одного узла (`paste_decorator`, порядок в её докстринге).
     decorators: list = []
+    #: Их же скрипты — одним файлом рядом, а не строками композиции: счётчик
+    #: строк их линтера (`composition_file_too_large`) считает `index.html`, и
+    #: десять приёмов литералом дают 672 строки при пороге 300.
+    decor_code: list = []
     #: Имя -> тип карточки: исходник компонента снят по `components/`, не по
     #: плоской `compositions/` — тип нужен ниже, чтобы объявить ему коробку
     #: по верному пути (`_installed_path`).
@@ -2434,12 +2508,20 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                              "до конца ролика остаётся "
                              f"{duration - begin:.2f} с")
                 continue
+            # Мишень приёма (`targets` в карточке) — до коробки: она и
+            # решает, нужна ли коробка вообще.
+            where, refusal = paste_target(card, element)
+            if refusal:
+                drop_element(storyboard, scene, name, refusal)
+                continue
             rect = None
-            # Приёму-декоратору коробка в кадре не нужна: он не встаёт в кадр,
-            # а ложится на чужой элемент (`targets` в карточке). Вид `effect`
-            # у него от их же карточки реестра, и требовать под него свободную
-            # зону значит снять приём там, где он и не занимает места.
-            if kind == "effect" and not card.get("targets"):
+            # Приёму поверх чужого элемента коробка в кадре не нужна: он не
+            # встаёт в кадр, а ложится на окно ведущей, вставку, слова титра
+            # или схему. Вид `effect` у него от их же карточки реестра, и
+            # требовать под него свободную зону значит снять приём там, где он
+            # и не занимает места. Мишень `self` — другое дело: у такой
+            # позиции разметка своя, и коробка ей нужна.
+            if kind == "effect" and where in ("", "self"):
                 position = str(scene.get("presenter") or "none")
                 rect = effect_zone(position)
                 if rect is None:
@@ -2530,15 +2612,10 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             if named:
                 element["variables"] = named
             paste_html = None
-            # Приём поверх НАШЕГО элемента (`targets` в карточке): своей
-            # разметки у позиции нет, в кадр она не встаёт, а вешается на окно
-            # ведущей, вставку, слова титра или схему — пятый шаг их
-            # контракта («add those calls to your timeline»,
-            # hyperframes-registry/SKILL.md:81).
-            where, refusal = paste_target(card, element)
-            if refusal:
-                drop_element(storyboard, scene, name, refusal)
-                continue
+            # Приём поверх НАШЕГО элемента: своей разметки у позиции нет, в
+            # кадр она не встаёт, а вешается на окно ведущей, вставку, слова
+            # титра или схему — пятый шаг их контракта («add those calls to
+            # your timeline», hyperframes-registry/SKILL.md:81).
             if where and where != "self":
                 lack = target_absent(scene, where)
                 if lack:
@@ -2554,14 +2631,17 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                     continue
                 unique = f"{name}--{scene['id']}"
                 try:
-                    fragment, lines, refused = paste_decorator(
+                    style, code, lines, refused = paste_decorator(
                         sdk, public, name, unique=unique, variables=named,
                         target=spot)
                 except RuntimeError as error:
                     drop_element(storyboard, scene, name, str(error))
                     continue
-                decorators.append(fragment)
-                timeline += paste_recipe_block(lines, begin)
+                if style.strip():
+                    decorators.append(style)
+                if code.strip():
+                    decor_code.append(f"/* {unique} */\n{code}")
+                decor_code += paste_recipe_block(lines, begin)
                 if refused:
                     element["recipeSkipped"] = refused
                 staged_elements += 1
@@ -2575,7 +2655,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 except RuntimeError as error:
                     drop_element(storyboard, scene, name, str(error))
                     continue
-                timeline += paste_recipe_block(lines, begin)
+                decor_code += paste_recipe_block(lines, begin)
                 if refused:
                     element["recipeSkipped"] = refused
             else:
@@ -2923,8 +3003,15 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         # их `inlineSubCompositions.ts` вклеивает копию в тот же
         # документ, и совпадающий `data-composition-id` путал их
         # скоуп-скрипт при повторном seek.
+        # Коробка схемы несёт своё имя: мишень `schema` у paste-приёма
+        # целится в НЕЁ, а не в сам клип-маунт. Причина измерена живым
+        # прогоном (`work/paste-target`, первый заход): класс, повешенный на
+        # маунт саб-композиции, в кадре не сработал — их рантайм вклеивает
+        # содержимое в тот же документ и узел маунта под собой меняет, а
+        # твин GSAP держит ссылку на прежний. Обёртка — наша, её их рантайм
+        # не трогает.
         body.append(
-            f'    <div class="ovl">'
+            f'    <div class="ovl" id="schema-box-{scene["id"]}">'
             f'<div id="schema-{scene["id"]}" class="clip"'
             f' data-composition-id="{unique}-host"'
             f' data-composition-src="compositions/{unique}.html"'
@@ -3091,8 +3178,45 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                                 duration=duration))
     # Приёмы-декораторы — последними в теле: их скрипты обходят
     # `document.querySelectorAll` своего класса один раз на старте, и слова
-    # титра к этому моменту уже нарисованы движком выше.
+    # титра к этому моменту уже нарисованы движком выше. Порядок внутри файла
+    # тот же, в каком приёмы шли по сценам: тень переменных каждого стоит
+    # прямо перед его же скриптом.
     body += [f"    {one}" for one in decorators]
+    if decor_code:
+        # Твины дописываются в КОРНЕВОЙ таймлайн, уже созданный композицией, а
+        # не в свой соседний. Два живых прогона (`work/paste-target`):
+        # 1. Внешний `<script src>` в их рантайме исполняется ДО разбора тела
+        #    (проба в этом же файле: `readyState=loading stage=0 wrap=0
+        #    words=0`), поэтому файл ждёт разбора и шрифтов (`DECOR_BOOT`) —
+        #    иначе вешать классы не на что и корневой таймлайн отвечает
+        #    `GSAP target … not found` по каждому приёму.
+        # 2. Свой соседний таймлайн (`window.__timelines["paste-decor"]`) их
+        #    плеер не ведёт: он резолвит КОРНЕВОЙ по документу и связывает
+        #    только те дочерние, чей ключ отвечает `data-composition-id` в
+        #    разметке (`packages/core/src/runtime/init.ts:1562-1581`,
+        #    `resolveRootTimelineFromDocument`/`bindRootTimelineIfAvailable`).
+        #    Проба показала: ключ в `window.__timelines` есть, а стиль на
+        #    мишени так и не появился ни на одной секунде.
+        # Дописанные в тот же объект твины плеер отыгрывает на следующем же
+        # seek; их же ручка `__hfForceTimelineRebind` (там же:1590) заодно
+        # публикует длительность.
+        (public / DECOR_SCRIPT).write_text(
+            "(function () {\n"
+            "function start() {\n"
+            'var tl = (window.__timelines || {})["reel"];\n'
+            "if (!tl) return;\n"
+            + "\n".join(decor_code)
+            # Досыпанный твин сам собой не проявится: их плеер перематывает
+            # таймлайн по своему расписанию, и один снимок (`snapshot`,
+            # `check --at`) успевает перемотаться ДО того, как файл дождался
+            # шрифтов. Принудительный перерасчёт на текущей секунде ставит
+            # кадр в то состояние, которое эти твины и описывают.
+            + "\ntl.render(tl.time(), false, true);\n"
+            + "if (window.__hfForceTimelineRebind)"
+            " window.__hfForceTimelineRebind();\n}\n"
+            + DECOR_BOOT + "})();\n",
+            encoding="utf-8")
+        body.append(f'    <script src="{DECOR_SCRIPT}"></script>')
 
     body.append(
         f'    <audio id="voice" src="voice.wav" data-start="0"'

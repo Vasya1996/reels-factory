@@ -28,8 +28,6 @@
   "decor_texts": [],
   "text_slots": [],
   "avoid_when": "Вставка в сцене одна и никуда не едет: смазывать нечего — приём считает скорость движения, а неподвижная вставка остаётся резкой.",
-  "targets": [
-   "insert"
-  ]
+  "skip": "Приём подключается: её собственный API берёт наш селектор и наш таймлайн («attachMotionBlur(selector, timeline, options?)», motion-blur.html, раздел API), и вставка — ровно тот элемент, который наш таймлайн двигает по x/y. Но считает она СКОРОСТЬ: «hooks into the timeline's onUpdate callback, tracks the GSAP x/y position of each target frame-by-frame» (там же:7-8) — то есть кадр N зависит от кадра N-1. Их собственный разбор каталога зовёт это F5, «Cannot be made seekable» (hyperframes-registry/references/component-quality-bar.md:86-90), а наш кадр снимается перемоткой на секунду. Живой прогон подтвердил: на трёх кадрах сцены со вставкой отличий от той же сборки без приёма 0,00 %."
  }
 }

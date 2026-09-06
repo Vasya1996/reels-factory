@@ -1672,8 +1672,10 @@ def test_paste_эффект_вставляется_литералом_а_не_с
     # Рецепт её же комментария доехал до нашего таймлайна на секундах сцены —
     # пятый шаг их контракта (hyperframes-registry/SKILL.md:81). Прежде
     # позиция вставала статичным финальным кадром на весь свой интервал.
-    assert "tl.fromTo('.demo-paste-badge--demo-paste--s-02'" in html
-    assert "const startTime = 3.0333;" in html
+    code = (каталог / "public" / hf_compose.DECOR_SCRIPT).read_text(
+        encoding="utf-8")
+    assert "tl.fromTo('.demo-paste-badge--demo-paste--s-02'" in code
+    assert "const startTime = 3.0333;" in code
     # Стенсиль на диске не тронут: paste не копируется отдельным файлом.
     stencil = (каталог / "public" / "compositions" / "components"
               / "demo-paste.html")
@@ -1739,15 +1741,28 @@ def test_приём_вешается_на_окно_ведущей_и_ведёт_
         {"name": "demo-decor", "target": "presenter"}), resolved={})
     # Коробки в кадре нет: приём ничего не приносит, он ложится на чужое.
     assert "el-s-02-0" not in html
+    # Скрипт приёма уехал отдельным файлом: счётчик строк их линтера
+    # (`composition_file_too_large`) считает `index.html`, и приёмы литералом
+    # его переполняют — тем же приёмом уезжает движок титра.
+    code = (каталог / "public" / hf_compose.DECOR_SCRIPT).read_text(
+        encoding="utf-8")
     assert 'node.classList.add("demo-decor", "demo-decor--demo-decor--s-02")' \
-        in html
-    assert 'document.querySelectorAll("#video-wrap")' in html
-    assert 'tl.to(".demo-decor--demo-decor--s-02"' in html
+        in code
+    assert 'document.querySelectorAll("#video-wrap")' in code
+    assert 'tl.to(".demo-decor--demo-decor--s-02"' in code
+    # Свой таймлайн приёмов зарегистрирован рядом с корневым — тем же
+    # приёмом, каким живёт движок титра: в их рантайме внешний скрипт
+    # исполняется ПОСЛЕ строчных, и корневой таймлайн не нашёл бы ещё не
+    # навешенных классов.
+    assert 'window.__timelines["paste-decor"] = tl;' in code
     # Своя `startTime` у каждого приёма: рецепт живёт блоком, и `const`
     # соседям не мешает.
-    assert "const startTime = 3.0333;" in html
-    # Кусок уехал в конец тела — после движка титра: слова титра рисует он.
-    assert html.index("demo-decor--demo-decor--s-02") > html.index('id="highlight"')
+    assert "const startTime = 3.0333;" in code
+    # Стиль и скрипт уехали в конец тела — после движка титра: слова титра
+    # рисует он, и выше приём не нашёл бы ни одного узла.
+    assert html.index(".demo-decor {") > html.index('id="highlight"')
+    assert (html.index(f'src="{hf_compose.DECOR_SCRIPT}"')
+            > html.index('id="highlight"'))
     assert board["scenes"][1]["elements"][0]["name"] == "demo-decor"
 
 
@@ -1755,10 +1770,12 @@ def test_приём_на_слова_титра_берёт_только_слов�
     """Мишень `caption` — слова, которые звучат в секунды этой сцены, а не
     весь титр ролика: их счёт делает код (`hf_captions.caption_word_range`),
     и он же ставит границы среза в навеске классов."""
-    html, _ = _build(каталог, scenes=_с_элементами(
+    _build(каталог, scenes=_с_элементами(
         {"name": "demo-decor", "target": "caption"}), resolved={})
+    code = (каталог / "public" / hf_compose.DECOR_SCRIPT).read_text(
+        encoding="utf-8")
     # WORDS: два слова до 1,1 с и одно на 4,0 с; сцена s-02 идёт с 3,033.
-    assert 'document.querySelectorAll(".hl-word-text"), 2, 3)' in html
+    assert 'document.querySelectorAll(".hl-word-text"), 2, 3)' in code
 
 
 def test_приёму_без_мишени_в_сцене_отказывают_до_сборки_и_в_сборке(
