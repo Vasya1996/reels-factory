@@ -551,8 +551,70 @@ def _beat(scene: dict) -> str:
     return value if value in BEATS else "point"
 
 
+#: Класс перехода по их правилу выбора — beat-direction.md:64-70, три
+#: столбца «shader / CSS / hard cut» по тому, ЧТО делает бит, не по тому,
+#: ГДЕ он стоит. Наши пять битов — позиция в рассказе (`hf_montage_skill.py`,
+#: «Ритм и биты»), а не тип содержимого, поэтому один в один на их три
+#: класса не ложатся — решение по каждому и его основание:
+#:
+#: - `climax`, `outro` → `zoom-arrival`/`blur-crossfade` (их класс shader).
+#:   Прямая цитата, не натяжка: «the hero reveal + the CTA» — их же пример
+#:   типового бренд-ролика на 1-2 шейдерных перехода (beat-direction.md:70)
+#:   называет ровно эти две позиции. Настоящий WebGL-шейдер
+#:   (`@hyperframes/shader-transitions`) сюда не встаёт: пакет строит СВОЙ
+#:   таймлайн асинхронно через `html2canvas` и требует, чтобы `HyperShader.
+#:   init()` первым создавал `tl` (README.md:5-15,33; overview.md:136,140:
+#:   «Shader transitions capture DOM scenes to WebGL textures via
+#:   html2canvas»), а их же линтер под самим этим сценарием стоит отдельным
+#:   правилом — `gsap_timeline_registered_before_async_build`
+#:   (determinism-rules.md:13). У нас один синхронный `tl` на композицию
+#:   (`templates/reel.html`, `const tl = gsap.timeline({paused:true})`), и
+#:   рендер перематывает его покадрово без проигрывания — `sweepStatic`
+#:   (`hf_probe.py`) уже проверяет ровно это, и асинхронная сборка чужого
+#:   таймлайна уже стоила прогона: их же субтитровый компонент строит свой
+#:   таймлайн внутри `document.fonts.ready.then(...)`, и гонка один раз
+#:   съела весь слой субтитров в рендере (докстринг модуля, этот файл,
+#:   строки 42-54).
+#:   Взамен — их же честный, чисто-GSAP рецепт без канваса под ту же роль:
+#:   `outro` уже стоял на блёр-гашении (их куратный список пяти переходов,
+#:   `TRANSITION-REGISTRY.md:9-14`, назван там `blur-crossfade`); `climax`
+#:   получает «Inverse Zoom-Through» (cut-catalog.md:81-113) — их же рецепт
+#:   назван ровно под «arrival beats… a payoff line» (:88-91), то есть под
+#:   кульминацию буквально, никакого нового пакета не требует.
+#: - `point` → `cut-the-curve` (их класс CSS): «Beats that ease from one
+#:   composition into the next… Minimal/editorial pacing» — обычная точка
+#:   рассказа, таких большинство, ничего не меняем.
+#: - `turn` → `cut-the-curve`, тоже CSS, а НЕ shader, хотя их формулировка
+#:   «energy shifts» в столбце shader звучит похоже на смену главы. Причина
+#:   не брать: turn может стоять один-три раза за ролик
+#:   (`hf_montage_skill.py`), а их же лимит на весь ролик — «1-2 shader
+#:   transitions… too many flatten their impact» (:70), уже израсходован
+#:   climax'ом и outro. Класс держим прежним, вертикальную ось — тоже: она
+#:   и была придумана как маркер смены главы внутри CSS-семьи, не как заявка
+#:   на шейдер.
+#: - `hook` → `hard-cut`. У hook нет входа вовсе (первая сцена), решение
+#:   касается только его выхода. Их таблица называет rapid-fire/percussive
+#:   контент, а не позицию «открытие», так что буквального попадания нет;
+#:   решение опирается на их же ограничение по длительности — «Anytime a
+#:   0.3-0.8s transition would feel too slow» (:68) — открытие обязано
+#:   отдать кадр сути без разгона на eased-стыке. Раньше hook получал ту же
+#:   `cut-the-curve`, что и все точки; отличие внесено этой правкой.
+_TRANSITION_CLASS = {
+    "hook": "hard-cut",
+    "point": "cut-the-curve",
+    "turn": "cut-the-curve",
+    "climax": "zoom-arrival",
+    "outro": "blur-crossfade",
+}
+
+
+def _transition_class(beat: str) -> str:
+    """Класс перехода по биту — словарь `_TRANSITION_CLASS`, см. его коммент."""
+    return _TRANSITION_CLASS.get(beat, "cut-the-curve")
+
+
 def _axis(beat: str) -> tuple[str, int]:
-    """Ось стыка и знак направления движения.
+    """Ось стыка и знак направления движения — только для `cut-the-curve`.
 
     Обычные стыки едут влево — одно направление на весь ролик, глаз ведёт
     движение через границу (cut-the-curve: «Same path, same direction»).
@@ -563,7 +625,7 @@ def _axis(beat: str) -> tuple[str, int]:
 
 
 def _entry(target: str, beat: str, at: float) -> list[str]:
-    """Вход вставки: продолжение движения через стык, а не появление из ничего.
+    """Вход вставки: класс перехода решает бит сцены (`_transition_class`).
 
     `fromTo`, не `from`: их правило — начальное состояние явно, иначе холодная
     перемотка рисует элемент до входа (transitions/overview.md:22).
@@ -571,11 +633,27 @@ def _entry(target: str, beat: str, at: float) -> list[str]:
     # Позиция твина — время на шкале, значит через `markup_time`. Длительности
     # твинов оставлены как есть: GSAP интерполирует непрерывно.
     at = markup_time(at)
-    if beat == "outro":
+    cls = _transition_class(beat)
+    if cls == "blur-crossfade":
         return [f'tl.fromTo({_js(target)}, {{ autoAlpha: 0, '
                 f'filter: "blur(20px)" }}, {{ autoAlpha: 1, '
                 f'filter: "blur(0px)", duration: 0.6, ease: "sine.inOut" }}, '
                 f'{at});']
+    if cls == "hard-cut":
+        # Их же приём для percussive-стыков: «Hard cut / smash cut: instant»
+        # (beat-direction.md:98) — мгновенный `tl.set`, без пути и без
+        # гашения: разгонять открытие eased-твином — то, что их правило
+        # прямо называет слишком медленным для этого случая.
+        return [f'tl.set({_js(target)}, {{ autoAlpha: 1 }}, {at});']
+    if cls == "zoom-arrival":
+        # «Inverse Zoom-Through», фаза 3: элемент прилетает укрупнённым
+        # из-за камеры и втягивается на место (cut-catalog.md:106-109) —
+        # blur 20px, не их 10px: наши вставки — полнокадровый биролл, а не
+        # текст, и «Full-frame surface… 18-20px» (cut-catalog.md:28-31).
+        return [f'tl.fromTo({_js(target)}, {{ scale: 1.25, '
+                f'filter: "blur(20px)", autoAlpha: 0.15 }}, '
+                f'{{ scale: 1, filter: "blur(0px)", autoAlpha: 1, '
+                f'duration: 0.5, ease: "expo.out" }}, {at});']
     axis, sign = _axis(beat)
     return [f'tl.fromTo({_js(target)}, {{ {axis}: {-sign * CUT_TRAVEL}, '
             f'autoAlpha: 0.35 }}, {{ {axis}: 0, autoAlpha: 1, '
@@ -583,16 +661,28 @@ def _entry(target: str, beat: str, at: float) -> list[str]:
 
 
 def _exit(target: str, next_beat: str, at: float) -> list[str]:
-    """Выход вставки под входящую: ось и направление задаёт следующая сцена.
+    """Выход вставки: класс перехода решает бит сцены (`_transition_class`).
 
     Гашение короче пути (CUT_FADE < CUT_SECONDS): элемент исчезает, ещё
     разгоняясь, — «the exit's opacity completes at ~25-30% of its travel»
     (cut-catalog.md:145-149). Выход `power4.in` зеркален входу `power4.out`.
     """
     at = markup_time(at)
-    if next_beat == "outro":
+    cls = _transition_class(next_beat)
+    if cls == "blur-crossfade":
         return [f'tl.to({_js(target)}, {{ autoAlpha: 0, duration: 0.5, '
                 f'ease: "sine.inOut" }}, {at});']
+    if cls == "hard-cut":
+        return [f'tl.set({_js(target)}, {{ autoAlpha: 0 }}, {at});']
+    if cls == "zoom-arrival":
+        # «Inverse Zoom-Through», фаза 1: элемент отступает от камеры,
+        # блюрится и гаснет отдельным линейным твином — «Opacity: 1.0 ->
+        # 0.15 on none (separate tween)» (cut-catalog.md:97-98).
+        return [
+            f'tl.to({_js(target)}, {{ scale: 0.8, filter: "blur(20px)", '
+            f'duration: 0.2, ease: "power3.in" }}, {at});',
+            f'tl.to({_js(target)}, {{ autoAlpha: 0, duration: 0.2, '
+            f'ease: "none" }}, {at});']
     axis, sign = _axis(next_beat)
     return [
         f'tl.to({_js(target)}, {{ {axis}: {sign * CUT_TRAVEL}, '
