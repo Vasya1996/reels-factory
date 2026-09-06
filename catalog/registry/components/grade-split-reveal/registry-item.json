@@ -118,6 +118,6 @@
         "default": "on"
       }
     },
-    "skip": "duplicate_media_discovery_risk [lint] [data-composition-id]: Detected 2 matching img entries with the same source/start/duration.; composition_file_too_large [lint] [data-composition-id]: This HTML composition file has 385 lines. Smaller sub-compositions are easier to read, iterate on, and diff.; check_runtime_failure [runtime] [data-composition-id]: Navigation timeout of 10000 ms exceeded"
+    "skip": "`check_runtime_failure` — «Navigation timeout of 10000 ms exceeded», воспроизведено дважды на 0.8.27: её WebGL-шейдер цветокоррекции не успевает инициализироваться за отведённые check'у 10 секунд. Плюс `duplicate_media_discovery_risk` (предупреждение, не блокирует): два `img` с одинаковым источником/началом/длительностью — before/after самой сцены. Кадр не снят: check не проходит навигацию, snapshot тоже не отдаёт кадр. Прежняя причина (`composition_file_too_large`) снята маркером реестра, но настоящий отказ не про размер файла, а про время инициализации самого шейдера. Перепроверено настоящей сборкой на 0.8.27 06.09.2026 (work/overlay-band/grade-split-reveal)."
   }
 }

@@ -353,7 +353,9 @@ def test_индекс_отдаёт_карточки_всех_трёх_видов
         # он называет полем `targets` — в кадр сам по себе не встаёт.
         "demo-decor": "effect",
         # Карточка без `reels.kind` — сегодняшняя плашка: вид у неё не объявлен.
-        "demo-plain": None}
+        # Две штуки — широкий канвас и портретный: у обоих геометрия одна
+        # (`_overlay_geometry`), проверяется по отдельности в hf_compose.
+        "demo-plain": None, "demo-plain-vertical": None}
     поля = set(cards["demo-scene"])
     assert {"name", "type", "title", "description", "tags", "dimensions",
             "duration"} <= поля, "формат разошёлся с `catalog --json`"
@@ -404,7 +406,7 @@ def test_позиция_с_причиной_отказа_в_индекс_не_п
 def test_карточка_без_вида_остаётся_плашкой_по_старому_правилу():
     """Обратная совместимость: пока вид в карточке не объявлен, позиция живёт
     по нынешнему правилу — тег `overlay` и старое поле плана."""
-    assert overlay_names(FIXTURE) == ["demo-plain"]
+    assert overlay_names(FIXTURE) == ["demo-plain", "demo-plain-vertical"]
     assert catalog_cards(FIXTURE)["demo-plain"].get("kind") is None
 
 
@@ -413,7 +415,7 @@ def test_индекс_печатается_json_ом_с_нашими_полям�
     body = json.loads(text.split("```json")[1].split("```")[0])
     assert [item["name"] for item in body] == sorted(
         ["count-up", "demo-decor", "demo-host", "demo-media", "demo-paste",
-         "demo-plain", "demo-scene", "demo-stitch"])
+         "demo-plain", "demo-plain-vertical", "demo-scene", "demo-stitch"])
     assert "Search by intent" not in text, "правило поиска живёт в своде правил"
     assert "`kind`" in text and "`text_slots`" in text and "`variables`" in text
     assert "`targets`" in text, "мишень приёма агенту не названа"

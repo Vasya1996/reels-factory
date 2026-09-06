@@ -172,6 +172,6 @@
         "default": "hyperframes.heygen.com"
       }
     },
-    "skip": "`content_overlap [layout] div.nc-title: Two text blocks overlap and may render unreadable.` (и то же на `div.nc-subtitle`, `div.nc-credit`, `#nc-pill`). На кадре позиция кроет верх кадра своей фотографией стола и кладёт английские карточки уведомлений «New render / All checks passed» прямо на полосу титра. Прежняя причина (`contrast_aa_failure`) на 0.8.27 не воспроизводится. Перепроверено настоящей сборкой на 0.8.27 06.09.2026 (work/skips-recheck/notification-cascade)."
+    "skip": "`content_overlap [layout] div.nc-title: Two text blocks overlap and may render unreadable.` (и то же на `div.nc-subtitle` дважды, `div.nc-credit`, `#nc-pill`, `div.nc-now`). На кадре позиция кроет верх кадра своей фотографией стола и кладёт английские карточки уведомлений «New render / All checks passed» прямо на полосу титра. Позиция `kind: scene` (кроет кадр целиком, `hf_compose.py:2078-2088`) — правка полосы титра под плашки (`_overlay_geometry`) этого места не касается вовсе, отказ не в размещении, а в собственной разметке позиции. Прежняя причина (`contrast_aa_failure`) на 0.8.27 не воспроизводится. Перепроверено настоящей сборкой на 0.8.27 06.09.2026 (work/overlay-band/notification-cascade)."
   }
 }

@@ -7,8 +7,9 @@ import pytest
 from reels_factory.avatar_islands import avatar_budget_targets
 from reels_factory.editplan import MIN_FULLSCREEN_S
 from reels_factory.hf_montage_skill import seconds
-from reels_factory.hf_render import (CHECK_IGNORED_CODES, STEPS, _check_ok,
-                                     _check_verdict, reset_step, run_step,
+from reels_factory.hf_render import (CHECK_IGNORED_CODES, KEYFRAMES_SELECTOR,
+                                     STEPS, _check_ok, _check_verdict,
+                                     _keyframes_verdict, reset_step, run_step,
                                      step_done)
 
 
@@ -1783,6 +1784,94 @@ def test_находка_studio_missing_editable_id_одна_не_валит_chec
     log = tmp_path / "check.json"
     log.write_text(json.dumps({"ok": False, **report}), encoding="utf-8")
     assert _check_verdict(log) == "PASS"
+
+
+def _kf_report(*tweens):
+    """Минимальный отчёт `hyperframes keyframes --json` — одна композиция,
+    твины на прицеле камеры (реальная форма снята прогоном 0.8.27 против
+    нашей же сборки: `compositions[].tweens[].{target,start,end}`)."""
+    return {"project": "public", "runtime": "all",
+            "compositions": [{"composition": "index.html",
+                              "source": "index.html", "tweens": list(tweens),
+                              "traces": [], "cssKeyframes": [], "anime": []}]}
+
+
+def _tween(start, end, target=KEYFRAMES_SELECTOR):
+    return {"id": f"{target}-{start}", "target": target, "method": "fromTo",
+            "group": "scale", "start": start, "duration": end - start,
+            "end": end, "shape": "flat", "keyframes": [], "path": None}
+
+
+def test_без_наездов_сверять_нечего(tmp_path):
+    """`camera` пуст либо `plans` пуст — как и у `D27_zoom`, это не провал:
+    сцена могла обойтись без ведущей крупным планом вовсе."""
+    log = tmp_path / "keyframes.json"
+    assert _keyframes_verdict(None, log) == "PASS: наездов не было — камере нечего сверять"
+    assert _keyframes_verdict({"plans": []}, log).startswith("PASS")
+
+
+def test_план_камеры_долетел_и_не_наложен(tmp_path):
+    camera = {"plans": [{"start": 0, "ramp": 1.5, "kind": "push"},
+                        {"start": 3.033, "ramp": 0, "kind": "static"}]}
+    log = tmp_path / "keyframes.json"
+    log.write_text(json.dumps(_kf_report(_tween(0, 1.5),
+                                         _tween(3.033, 3.033))),
+                   encoding="utf-8")
+    verdict = _keyframes_verdict(camera, log)
+    assert verdict == "PASS: наездов 2, все дошли до скрипта и не наложены"
+
+
+def test_пропавшая_ступень_роняет_гейт(tmp_path):
+    """План насчитал две ступени, а в разметке — один твин: вторую ступень
+    скрипт потерял по дороге, и пиксель этого не увидит — мерить нечем на
+    том месте, где наезда попросту нет."""
+    camera = {"plans": [{"start": 0, "ramp": 1.5, "kind": "push"},
+                        {"start": 3.033, "ramp": 0, "kind": "static"}]}
+    log = tmp_path / "keyframes.json"
+    log.write_text(json.dumps(_kf_report(_tween(0, 1.5))), encoding="utf-8")
+    verdict = _keyframes_verdict(camera, log)
+    assert verdict.startswith("FAIL")
+    assert "2 ступеней" in verdict and "1 твинов" in verdict
+
+
+def test_наложенные_наезды_роняют_гейт(tmp_path):
+    """Их же запрет — «Do not overlap tweens that write the same transform
+    property unless the overlap is intentional and verified»
+    (hyperframes-keyframes/SKILL.md, «Timing»): второй наезд начинается
+    раньше, чем первый успел доехать."""
+    camera = {"plans": [{"start": 0, "ramp": 2.0, "kind": "push"},
+                        {"start": 1.0, "ramp": 1.0, "kind": "push"}]}
+    log = tmp_path / "keyframes.json"
+    log.write_text(json.dumps(_kf_report(_tween(0, 2.0), _tween(1.0, 2.0))),
+                   encoding="utf-8")
+    verdict = _keyframes_verdict(camera, log)
+    assert verdict.startswith("FAIL")
+    assert "наложены" in verdict
+
+
+def test_чужой_прицел_в_счёт_не_идёт(tmp_path):
+    """Твины на другом селекторе (наши же вставки, `#ins-*`) не считаются
+    наездами камеры — их серия отдельных `#video-wrap video` не касается."""
+    camera = {"plans": [{"start": 0, "ramp": 1.5, "kind": "push"}]}
+    log = tmp_path / "keyframes.json"
+    log.write_text(json.dumps(_kf_report(_tween(0, 1.5),
+                                         _tween(0, 0.3, target="#ins-s-02-0"))),
+                   encoding="utf-8")
+    assert _keyframes_verdict(camera, log) == \
+        "PASS: наездов 1, все дошли до скрипта и не наложены"
+
+
+def test_отчёт_keyframes_не_разобрать(tmp_path):
+    log = tmp_path / "keyframes.json"
+    log.write_text("не json", encoding="utf-8")
+    verdict = _keyframes_verdict({"plans": [{"start": 0, "ramp": 1}]}, log)
+    assert verdict == "FAIL: отчёт их `keyframes` не разбирается"
+
+
+def test_отчёт_keyframes_не_нашёлся(tmp_path):
+    log = tmp_path / "keyframes.json"
+    verdict = _keyframes_verdict({"plans": [{"start": 0, "ramp": 1}]}, log)
+    assert verdict == "FAIL: их `keyframes` не оставил отчёта"
 
 
 def test_единственная_находка_ложного_правила_не_даёт_агенту_пересдачу(

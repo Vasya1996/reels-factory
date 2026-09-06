@@ -1,297 +1,326 @@
 {
- "$schema": "https://hyperframes.heygen.com/schema/registry.json",
- "name": "reels-factory-fixture",
- "homepage": "https://example.invalid",
- "items": [
-  {
-   "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-   "name": "count-up",
-   "type": "hyperframes:component",
-   "title": "Count Up",
-   "description": "A token-native stat counter that eases between values and lands with a restrained scale pulse.",
-   "tags": [
-    "motion-primitive",
-    "proof",
-    "stats",
-    "counter",
-    "number"
-   ],
-   "duration": 3.0,
-   "files": [
+  "$schema": "https://hyperframes.heygen.com/schema/registry.json",
+  "name": "reels-factory-fixture",
+  "homepage": "https://example.invalid",
+  "items": [
     {
-     "path": "count-up.html",
-     "target": "compositions/count-up.html",
-     "type": "hyperframes:snippet"
-    }
-   ],
-   "reels": {
-    "kind": "effect",
-    "variables": {
-     "start": {
-      "type": "number",
-      "default": 0
-     },
-     "end": {
-      "type": "number",
-      "default": 100
-     },
-     "prefix": {
-      "type": "string",
-      "default": ""
-     },
-     "suffix": {
-      "type": "string",
-      "default": "%"
-     },
-     "accent": {
-      "type": "enum",
-      "default": "green"
-     },
-     "glow": {
-      "type": "boolean",
-      "default": false
-     }
-    }
-   }
-  },
-  {
-   "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-   "name": "demo-host",
-   "type": "hyperframes:block",
-   "title": "Demo Host",
-   "description": "Fixture position whose screen slot the framework expects from the host page",
-   "tags": [
-    "demo"
-   ],
-   "dimensions": {
-    "width": 1080,
-    "height": 1920
-   },
-   "duration": 4.0,
-   "files": [
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "count-up",
+      "type": "hyperframes:component",
+      "title": "Count Up",
+      "description": "A token-native stat counter that eases between values and lands with a restrained scale pulse.",
+      "tags": [
+        "motion-primitive",
+        "proof",
+        "stats",
+        "counter",
+        "number"
+      ],
+      "duration": 3.0,
+      "files": [
+        {
+          "path": "count-up.html",
+          "target": "compositions/count-up.html",
+          "type": "hyperframes:snippet"
+        }
+      ],
+      "reels": {
+        "kind": "effect",
+        "variables": {
+          "start": {
+            "type": "number",
+            "default": 0
+          },
+          "end": {
+            "type": "number",
+            "default": 100
+          },
+          "prefix": {
+            "type": "string",
+            "default": ""
+          },
+          "suffix": {
+            "type": "string",
+            "default": "%"
+          },
+          "accent": {
+            "type": "enum",
+            "default": "green"
+          },
+          "glow": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      }
+    },
     {
-     "path": "demo-host.html",
-     "target": "compositions/demo-host.html",
-     "type": "hyperframes:composition"
-    }
-   ],
-   "reels": {
-    "kind": "scene",
-    "use_when": "Экран устройства, разметку которого даёт хостовая страница."
-   }
-  },
-  {
-   "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-   "name": "demo-media",
-   "type": "hyperframes:block",
-   "title": "Demo Media",
-   "description": "Fixture position with one content slot the caller fills with a file",
-   "tags": [
-    "demo"
-   ],
-   "dimensions": {
-    "width": 1080,
-    "height": 1920
-   },
-   "duration": 4.0,
-   "files": [
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-decor",
+      "type": "hyperframes:component",
+      "title": "Demo Decor",
+      "description": "Fixture decorator for tests: no markup of its own, attaches to a host element and drives it from the host timeline",
+      "tags": [
+        "demo"
+      ],
+      "files": [
+        {
+          "path": "demo-decor.html",
+          "target": "compositions/components/demo-decor.html",
+          "type": "hyperframes:snippet"
+        }
+      ],
+      "reels": {
+        "kind": "effect",
+        "mount": "paste",
+        "targets": [
+          "presenter",
+          "caption"
+        ],
+        "use_when": "Образец приёма поверх нашего элемента.",
+        "avoid_when": "Только для тестов.",
+        "variables": {
+          "tone": {
+            "type": "string",
+            "default": "soft"
+          }
+        }
+      }
+    },
     {
-     "path": "demo-media.html",
-     "target": "compositions/demo-media.html",
-     "type": "hyperframes:composition"
-    }
-   ],
-   "reels": {
-    "kind": "scene",
-    "text_slots": [
-     "chip"
-    ],
-    "use_when": "Сцене нужен кадр вставки в рамке — панель под файл."
-   }
-  },
-  {
-   "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-   "name": "demo-paste",
-   "type": "hyperframes:component",
-   "title": "Demo Paste",
-   "description": "Fixture paste-contract effect for tests: a badge whose script reads window.__hyperframes.getVariables()",
-   "tags": [
-    "demo"
-   ],
-   "duration": 2.0,
-   "files": [
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-host",
+      "type": "hyperframes:block",
+      "title": "Demo Host",
+      "description": "Fixture position whose screen slot the framework expects from the host page",
+      "tags": [
+        "demo"
+      ],
+      "dimensions": {
+        "width": 1080,
+        "height": 1920
+      },
+      "duration": 4.0,
+      "files": [
+        {
+          "path": "demo-host.html",
+          "target": "compositions/demo-host.html",
+          "type": "hyperframes:composition"
+        }
+      ],
+      "reels": {
+        "kind": "scene",
+        "use_when": "Экран устройства, разметку которого даёт хостовая страница."
+      }
+    },
     {
-     "path": "demo-paste.html",
-     "target": "compositions/components/demo-paste.html",
-     "type": "hyperframes:snippet"
-    }
-   ],
-   "reels": {
-    "kind": "effect",
-    "mount": "paste",
-    "variables": {
-     "label": {
-      "type": "string",
-      "default": "3"
-     },
-     "headline": {
-      "type": "string",
-      "default": "Ship it today"
-     },
-     "wordmark": {
-      "type": "string",
-      "default": "HYPERFRAMES"
-     }
-    }
-   }
-  },
-  {
-   "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-   "name": "demo-plain",
-   "type": "hyperframes:block",
-   "title": "Demo Plain",
-   "description": "Yesterday's lower third: the card declares no kind",
-   "tags": [
-    "demo",
-    "overlay"
-   ],
-   "dimensions": {
-    "width": 1920,
-    "height": 1080
-   },
-   "duration": 4.0,
-   "files": [
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-media",
+      "type": "hyperframes:block",
+      "title": "Demo Media",
+      "description": "Fixture position with one content slot the caller fills with a file",
+      "tags": [
+        "demo"
+      ],
+      "dimensions": {
+        "width": 1080,
+        "height": 1920
+      },
+      "duration": 4.0,
+      "files": [
+        {
+          "path": "demo-media.html",
+          "target": "compositions/demo-media.html",
+          "type": "hyperframes:composition"
+        }
+      ],
+      "reels": {
+        "kind": "scene",
+        "text_slots": [
+          "chip"
+        ],
+        "use_when": "Сцене нужен кадр вставки в рамке — панель под файл."
+      }
+    },
     {
-     "path": "demo-plain.html",
-     "target": "compositions/demo-plain.html",
-     "type": "hyperframes:composition"
-    }
-   ],
-   "reels": {
-    "backing": "none",
-    "text_slots": [
-     "line"
-    ]
-   }
-  },
-  {
-   "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-   "name": "demo-scene",
-   "type": "hyperframes:block",
-   "title": "Demo Scene",
-   "description": "Full-frame demo scene with one headline slot",
-   "tags": [
-    "demo",
-    "scene"
-   ],
-   "dimensions": {
-    "width": 1920,
-    "height": 1080
-   },
-   "duration": 4.0,
-   "files": [
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-paste",
+      "type": "hyperframes:component",
+      "title": "Demo Paste",
+      "description": "Fixture paste-contract effect for tests: a badge whose script reads window.__hyperframes.getVariables()",
+      "tags": [
+        "demo"
+      ],
+      "duration": 2.0,
+      "files": [
+        {
+          "path": "demo-paste.html",
+          "target": "compositions/components/demo-paste.html",
+          "type": "hyperframes:snippet"
+        }
+      ],
+      "reels": {
+        "kind": "effect",
+        "mount": "paste",
+        "variables": {
+          "label": {
+            "type": "string",
+            "default": "3"
+          },
+          "headline": {
+            "type": "string",
+            "default": "Ship it today"
+          },
+          "wordmark": {
+            "type": "string",
+            "default": "HYPERFRAMES"
+          }
+        }
+      }
+    },
     {
-     "path": "demo-scene.html",
-     "target": "compositions/demo-scene.html",
-     "type": "hyperframes:composition"
-    }
-   ],
-   "reels": {
-    "kind": "scene",
-    "text_slots": [
-     "line"
-    ]
-   }
-  },
-  {
-   "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-   "name": "demo-skip",
-   "type": "hyperframes:block",
-   "title": "Demo Skip",
-   "description": "Broken demo position",
-   "tags": [
-    "demo",
-    "overlay"
-   ],
-   "dimensions": {
-    "width": 1920,
-    "height": 1080
-   },
-   "duration": 4.0,
-   "files": [
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-plain",
+      "type": "hyperframes:block",
+      "title": "Demo Plain",
+      "description": "Yesterday's lower third: the card declares no kind",
+      "tags": [
+        "demo",
+        "overlay"
+      ],
+      "dimensions": {
+        "width": 1920,
+        "height": 1080
+      },
+      "duration": 4.0,
+      "files": [
+        {
+          "path": "demo-plain.html",
+          "target": "compositions/demo-plain.html",
+          "type": "hyperframes:composition"
+        }
+      ],
+      "reels": {
+        "backing": "none",
+        "text_slots": [
+          "line"
+        ]
+      }
+    },
     {
-     "path": "demo-skip.html",
-     "target": "compositions/demo-skip.html",
-     "type": "hyperframes:composition"
-    }
-   ],
-   "reels": {
-    "kind": "effect",
-    "skip": "их же проверка валит блок под --strict"
-   }
-  },
-  {
-   "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-   "name": "demo-stitch",
-   "type": "hyperframes:block",
-   "title": "Demo Stitch",
-   "description": "Overlay transition: bands cover the frame, the host cuts beneath, the bands clear",
-   "tags": [
-    "demo",
-    "transition",
-    "wipe"
-   ],
-   "dimensions": {
-    "width": 1920,
-    "height": 1080
-   },
-   "duration": 2.2,
-   "files": [
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-plain-vertical",
+      "type": "hyperframes:block",
+      "title": "Demo Plain Vertical",
+      "description": "Same no-kind card as demo-plain, but a portrait canvas matching the frame",
+      "tags": [
+        "demo",
+        "overlay"
+      ],
+      "dimensions": {
+        "width": 1080,
+        "height": 1920
+      },
+      "duration": 4.0,
+      "files": [
+        {
+          "path": "demo-plain-vertical.html",
+          "target": "compositions/demo-plain-vertical.html",
+          "type": "hyperframes:composition"
+        }
+      ],
+      "reels": {
+        "backing": "none",
+        "text_slots": [
+          "line"
+        ]
+      }
+    },
     {
-     "path": "demo-stitch.html",
-     "target": "compositions/demo-stitch.html",
-     "type": "hyperframes:composition"
-    }
-   ],
-   "reels": {
-    "kind": "overlay",
-    "decor_texts": [
-     "Заголовок"
-    ]
-   }
-  },
-  {
-   "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
-   "name": "demo-decor",
-   "type": "hyperframes:component",
-   "title": "Demo Decor",
-   "description": "Fixture decorator for tests: no markup of its own, attaches to a host element and drives it from the host timeline",
-   "tags": [
-    "demo"
-   ],
-   "files": [
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-scene",
+      "type": "hyperframes:block",
+      "title": "Demo Scene",
+      "description": "Full-frame demo scene with one headline slot",
+      "tags": [
+        "demo",
+        "scene"
+      ],
+      "dimensions": {
+        "width": 1920,
+        "height": 1080
+      },
+      "duration": 4.0,
+      "files": [
+        {
+          "path": "demo-scene.html",
+          "target": "compositions/demo-scene.html",
+          "type": "hyperframes:composition"
+        }
+      ],
+      "reels": {
+        "kind": "scene",
+        "text_slots": [
+          "line"
+        ]
+      }
+    },
     {
-     "path": "demo-decor.html",
-     "target": "compositions/components/demo-decor.html",
-     "type": "hyperframes:snippet"
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-skip",
+      "type": "hyperframes:block",
+      "title": "Demo Skip",
+      "description": "Broken demo position",
+      "tags": [
+        "demo",
+        "overlay"
+      ],
+      "dimensions": {
+        "width": 1920,
+        "height": 1080
+      },
+      "duration": 4.0,
+      "files": [
+        {
+          "path": "demo-skip.html",
+          "target": "compositions/demo-skip.html",
+          "type": "hyperframes:composition"
+        }
+      ],
+      "reels": {
+        "kind": "effect",
+        "skip": "их же проверка валит блок под --strict"
+      }
+    },
+    {
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-stitch",
+      "type": "hyperframes:block",
+      "title": "Demo Stitch",
+      "description": "Overlay transition: bands cover the frame, the host cuts beneath, the bands clear",
+      "tags": [
+        "demo",
+        "transition",
+        "wipe"
+      ],
+      "dimensions": {
+        "width": 1920,
+        "height": 1080
+      },
+      "duration": 2.2,
+      "files": [
+        {
+          "path": "demo-stitch.html",
+          "target": "compositions/demo-stitch.html",
+          "type": "hyperframes:composition"
+        }
+      ],
+      "reels": {
+        "kind": "overlay",
+        "decor_texts": [
+          "Заголовок"
+        ]
+      }
     }
-   ],
-   "reels": {
-    "kind": "effect",
-    "mount": "paste",
-    "targets": [
-     "presenter",
-     "caption"
-    ],
-    "use_when": "Образец приёма поверх нашего элемента.",
-    "avoid_when": "Только для тестов.",
-    "variables": {
-     "tone": {
-      "type": "string",
-      "default": "soft"
-     }
-    }
-   }
-  }
- ]
+  ]
 }
