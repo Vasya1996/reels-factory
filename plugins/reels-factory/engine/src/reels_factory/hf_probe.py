@@ -311,15 +311,59 @@ FRAME_CONTENT_PREFIXES = ("clip-", "ins-", "schema-", "ovl-", "icon-", "el-")
 #: а не дыра. Третья значит, что смотреть не на что уже больше полусекунды.
 EMPTY_FRAME_MAX = 0.5
 
+#: Долю кадра ниже этой ведущая держит уголком, а уголок кадра не держит.
+#: Числа наши же (`hf_layout.VIDEO_RECTS`): `pip-*` — 312x555, это 8 % кадра,
+#: `stack` — 1080x844, это 44 %, `full` и `punch` — весь кадр. Порог лежит
+#: между уголком и половиной, и это не новое правило, а то же самое, что
+#: записано в `hf_montage.positions_for`: уголок код даёт сцене ТОЛЬКО там,
+#: где кадр держит вставка, схема или позиция каталога. Значит уголок сам по
+#: себе значит ровно обратное — что держать кадр больше нечем.
+PRESENTER_HOLDS_FRAME = 0.25
+
+#: Клип ведущей (`clip-NN`, его ставит `hf_compose`) — то же самое окно, что и
+#: `videoRect` пробы: она берёт его обёртку `#video-wrap`, а клип — само
+#: `<video>` внутри, прямоугольник у них знак в знак один. Значит и мерка одна:
+#: без этой оговорки уголок, отсечённый по `videoRect`, возвращался бы в счёт
+#: вторым каналом — на прогоне `exp-beat-direction-2` (вариант Б, 11,4 с) так и
+#: вышло, и кадр с пустой позицией снова читался занятым.
+PRESENTER_CLIP_PREFIX = "clip-"
+
+
+def _presenter_share(rect: dict) -> float:
+    """Какую долю кадра занимает окно ведущей."""
+    return (float(rect.get("width") or 0) * float(rect.get("height") or 0)
+            / (OUT_W * OUT_H))
+
 
 def _frame_covered(sample: dict) -> bool:
-    """В этот момент в кадре есть что-то из закрытого списка."""
-    if (sample.get("videoRect") or {}).get("visible"):
+    """В этот момент в кадре есть что-то из закрытого списка.
+
+    Два уточнения, обоими из которых прогон `exp-beat-direction-2` (вариант Б,
+    11,4 и 14,3 с) прошёл мимо гейта — кадр показывал тёмный градиент, титр и
+    уголок ведущей, а D26 сказал PASS:
+
+    * уголок ведущей кадра не держит (`PRESENTER_HOLDS_FRAME`);
+    * клип держит кадр тем, что НАРИСОВАЛ, а не тем, что занял коробкой.
+      `visible` у хоста считается по его собственным display/visibility/opacity
+      и остаётся true, когда внутри не видно ни знака: у `streaming-text` слова
+      лежат в `.w { opacity: 0 }` и проявляются рецептом таймлайна. Что нарисовано,
+      считает проба в браузере (`drawn` в `probe_composition.cjs`) — здесь
+      только читается. Ключа нет — значит проба его не мерила, и судить нечем:
+      кадром такой клип по-прежнему считается.
+    """
+    rect = sample.get("videoRect") or {}
+    if rect.get("visible") and _presenter_share(rect) >= PRESENTER_HOLDS_FRAME:
         return True
     for clip in sample.get("clips") or []:
-        if clip.get("visible") and str(clip.get("id") or "").startswith(
-                FRAME_CONTENT_PREFIXES):
-            return True
+        name = str(clip.get("id") or "")
+        if not (clip.get("visible") and clip.get("drawn") is not False
+                and name.startswith(FRAME_CONTENT_PREFIXES)):
+            continue
+        if (name.startswith(PRESENTER_CLIP_PREFIX)
+                and _presenter_share(clip.get("rect") or {})
+                < PRESENTER_HOLDS_FRAME):
+            continue
+        return True
     return False
 
 
@@ -370,8 +414,10 @@ def _gate_frame_content(samples: list[dict]) -> str:
         return "PASS: кадр занят на всех выборках"
     shown = "; ".join(f"{start:g}–{end:g} с ({end - start:.1f} с)"
                       for start, end in spans[:5])
-    return (f"FAIL: кадр пуст — {shown}: ни ведущей, ни вставки, ни схемы, ни "
-            "значка, ни накладки, только фон с титром")
+    return (f"FAIL: кадр пуст — {shown}: ни ведущей крупно, ни вставки, ни "
+            "схемы, ни значка, ни накладки — только фон с титром и, может "
+            "быть, уголок ведущей. Уголок кадра не держит, и позиция "
+            "каталога, которая ничего не нарисовала, тоже")
 
 
 def gates_from_report(report: dict, face: dict | None = None) -> dict[str, str]:
