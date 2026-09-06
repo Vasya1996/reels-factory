@@ -1,0 +1,382 @@
+<!doctype html>
+<html
+  lang="en"
+  data-composition-variables='[
+    {
+      "id": "direction",
+      "type": "enum",
+      "label": "Dolly direction",
+      "default": "out",
+      "options": [
+        { "value": "out", "label": "Dolly out + zoom in (background rushes in)" },
+        { "value": "in", "label": "Dolly in + zoom out (background falls away)" }
+      ]
+    },
+    {
+      "id": "strength",
+      "type": "number",
+      "label": "Move strength (end / start distance ratio)",
+      "default": 2,
+      "min": 1.1,
+      "max": 4,
+      "step": 0.1
+    },
+    {
+      "id": "subjectDistance",
+      "type": "number",
+      "label": "Camera-to-subject distance at the start of the move",
+      "default": 1400,
+      "min": 600,
+      "max": 3000,
+      "step": 50,
+      "unit": "px"
+    },
+    {
+      "id": "easing",
+      "type": "enum",
+      "label": "Dolly easing",
+      "default": "power2.inOut",
+      "options": [
+        { "value": "none", "label": "Linear" },
+        { "value": "sine.inOut", "label": "Sine in-out" },
+        { "value": "power1.inOut", "label": "Power1 in-out" },
+        { "value": "power2.inOut", "label": "Power2 in-out" },
+        { "value": "power3.inOut", "label": "Power3 in-out" }
+      ]
+    }
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <title>Dolly Zoom -- portrait</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      ===================================================================
+      DOLLY ZOOM (Vertigo / Hitchcock shot) -- portrait port
+      ===================================================================
+
+      Same rig as the landscape source (camera-dolly-zoom.html): the
+      camera tracks toward or away from the subject while the field of
+      view changes the opposite way, so the SUBJECT HOLDS ITS FRAME SIZE
+      while the background collapses behind it or rushes in. The solve
+      (d * tan(FOV/2) = const, focal length derived from dolly distance
+      every frame) is untouched -- it is independent of canvas aspect,
+      see the script below.
+
+      WHAT CHANGED FOR PORTRAIT (1080x1920 vs the source's 1920x1080)
+      -------------------------------------------------------------------
+      Only geometry, not the solve. Every depth-layer box (arches, back
+      wall, portal) is scaled by (1080/1920) horizontally and (1920/1080)
+      vertically -- each layer keeps the SAME angular footprint against
+      the new aspect it did against the old one, so it still fully
+      overscans the frame at every point of the move (a plain uniform
+      scale would leave gaps at top/bottom or crop the sides, because a
+      dolly zoom's depth layers do not scale isotropically with a canvas
+      resize the way flat content does). The subject keeps its ORIGINAL
+      pixel footprint (240x620) -- it sits on the z=0 plane the solve
+      holds constant, so scaling it would fight the whole point of the
+      shot -- and is re-centred on the new, narrower width.
+
+      The demo caption (`.dz-label`, English, hard-coded in the source)
+      becomes the block's one text slot: a scene occupying its own beat
+      of the talking segment needs a channel for the plan's words (the
+      project's own rule -- a scene that cannot show any of the plan's
+      text gets `reels.skip` instead of a card, see the catalog's own
+      history for the ten-plus prior cards that took that route). Class
+      name (`dz-label`, a two-letter prefix + dash) is what the slot
+      finder reads as the slot's name, so it stays; only the baked
+      English copy, size (x1.3, portrait scale) and position (moved off
+      the caption band, which starts at y=1000 in a 1920-tall frame) are
+      new. Sitting at the top keeps it clear of the arches receding
+      toward the subject in the frame's lower two-thirds.
+
+      -------------------------------------------------------------------
+      WHAT THIS PRIMITIVE REQUIRES OF ITS CONTENT (unchanged from source)
+      -------------------------------------------------------------------
+
+      DEPTH. A flat element gains nothing from a dolly zoom -- with one
+      layer there is no background to collapse and the move is invisible.
+      Content dropped into #dz-rig MUST be layered or genuinely 3D:
+
+        * The SUBJECT sits on the z = 0 plane -- `translateZ(0)`. That is
+          the plane the solve holds; anything you want frame-locked goes
+          there and nowhere else.
+        * BACKGROUND layers get `translateZ(-N px)`, N > 0, at least two or
+          three distinct depths (this demo ships five arches plus a back
+          wall). More separation = stronger effect.
+        * Everything inside #dz-rig must keep `transform-style: preserve-3d`
+          on its ancestors and must NOT sit behind `overflow: hidden`, or
+          the browser flattens the scene and the depth disappears.
+        * Keep every layer at a depth where `d + N > 0` for the whole move,
+          i.e. no layer in front of the camera's closest approach.
+
+      -------------------------------------------------------------------
+      DETERMINISM (unchanged from source)
+      -------------------------------------------------------------------
+
+      State at frame N is computed from N alone. d(t) is a lerp of the
+      eased tween progress, P is solved from d, and both are written by a
+      property setter on the tweened driver object. Nothing accumulates,
+      nothing reads a clock, and no frame depends on the frame before it.
+      (The setter matters: `tl.eventCallback("onUpdate", ...)` does NOT
+      fire on `tl.seek()`, so anything driven that way freezes on frame 0.)
+    -->
+    <div
+      id="dz-root"
+      data-composition-id="v-camera-dolly-zoom"
+      data-start="0"
+      data-duration="4"
+      data-width="1080"
+      data-height="1920"
+    >
+      <style>
+        #dz-root {
+          width: 1080px;
+          height: 1920px;
+          position: relative;
+          overflow: hidden;
+          background: #0b1020;
+          font-family: Inter, sans-serif;
+        }
+
+        /* The camera. `perspective` is the focal length and is solved from
+           the dolly distance every frame -- see the script. */
+        #dz-stage {
+          position: absolute;
+          inset: 0;
+          perspective-origin: 50% 50%;
+        }
+
+        /* The rig root. Carries the camera's z offset so the subject plane
+           always sits exactly `d` in front of the camera. */
+        #dz-rig {
+          position: absolute;
+          inset: 0;
+          transform-style: preserve-3d;
+        }
+
+        /* --- authored depth layers (portrait-scaled, see note above) --- */
+
+        .dz-arch {
+          position: absolute;
+          left: -79px;
+          top: -142px;
+          width: 1238px;
+          height: 2204px;
+          border: 16px solid #465280;
+          border-radius: 8px;
+          transform-style: preserve-3d;
+        }
+
+        #dz-backwall {
+          position: absolute;
+          left: -1710px;
+          top: -3040px;
+          width: 4500px;
+          height: 8000px;
+          background: #10162c;
+          transform-style: preserve-3d;
+        }
+
+        /* Bright doorway on the back wall -- the layer whose on-screen size
+           changes while the subject's does not. */
+        #dz-portal {
+          position: absolute;
+          left: 1856px;
+          top: 3289px;
+          width: 788px;
+          height: 2667px;
+          background: #cfe4ff;
+        }
+
+        /* --- the subject: z = 0, the plane the solve holds ------------- */
+        /* Original pixel footprint kept as-is (240x620) -- re-centred on
+           the narrower 1080px width, vertically placed in the frame's
+           middle third so the receding arches read above and below it. */
+
+        #dz-subject {
+          position: absolute;
+          left: 420px;
+          top: 650px;
+          width: 240px;
+          height: 620px;
+          transform-style: preserve-3d;
+        }
+        .dz-fig-head {
+          width: 120px;
+          height: 120px;
+          margin: 0 auto;
+          border-radius: 50%;
+          background: #f2b134;
+        }
+        .dz-fig-body {
+          width: 240px;
+          height: 470px;
+          margin-top: 30px;
+          border-radius: 120px 120px 10px 10px;
+          background: #f2b134;
+        }
+
+        /* --- flat overlay (outside the 3D rig) -- text slot ------------ */
+        /* Portrait-scaled (x1.3, talking-head-recut's own rule) and moved
+           to the top safe zone: y=262 clears platform status-bar chrome
+           (same offset the v-world-map port uses) and stays far above the
+           caption band, which starts at y=1000 in this 1920-tall frame. */
+
+        .dz-label {
+          position: absolute;
+          top: 262px;
+          left: 64px;
+          right: 64px;
+          padding: 18px 29px;
+          border-radius: 10px;
+          background: #0b1020;
+          color: #e9eeff;
+          font-size: 34px;
+          line-height: 1.25;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+        }
+      </style>
+
+      <div id="dz-stage" class="clip" data-start="0" data-duration="4" data-track-index="0">
+        <div id="dz-rig">
+          <div id="dz-backwall" data-layout-allow-overflow style="transform: translateZ(-3200px)">
+            <div id="dz-portal"></div>
+          </div>
+
+          <div
+            class="dz-arch"
+            data-layout-allow-overflow
+            style="transform: translateZ(-2360px); border-color: #384166"
+          ></div>
+          <div
+            class="dz-arch"
+            data-layout-allow-overflow
+            style="transform: translateZ(-1720px); border-color: #465280"
+          ></div>
+          <div
+            class="dz-arch"
+            data-layout-allow-overflow
+            style="transform: translateZ(-1120px); border-color: #57669c"
+          ></div>
+          <div
+            class="dz-arch"
+            data-layout-allow-overflow
+            style="transform: translateZ(-560px); border-color: #6b7cb8"
+          ></div>
+          <div
+            class="dz-arch"
+            data-layout-allow-overflow
+            style="transform: translateZ(0px); border-color: #8194d4"
+          ></div>
+
+          <div id="dz-subject" style="transform: translateZ(0px)">
+            <div class="dz-fig-head"></div>
+            <div class="dz-fig-body"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dz-label">Резкий сдвиг</div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+
+      (function () {
+        var DEFAULTS = {
+          direction: "out",
+          strength: 2,
+          subjectDistance: 1400,
+          easing: "power2.inOut",
+        };
+        var declared =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = Object.assign({}, DEFAULTS, declared);
+
+        function clamp(value, lo, hi, fallback) {
+          var n = Number(value);
+          if (!isFinite(n)) return fallback;
+          return Math.min(hi, Math.max(lo, n));
+        }
+        function oneOf(value, allowed, fallback) {
+          return allowed.indexOf(String(value)) >= 0 ? String(value) : fallback;
+        }
+
+        var direction = oneOf(vars.direction, ["in", "out"], DEFAULTS.direction);
+        var strength = clamp(vars.strength, 1.1, 4, DEFAULTS.strength);
+        var ease = oneOf(
+          vars.easing,
+          ["none", "sine.inOut", "power1.inOut", "power2.inOut", "power3.inOut"],
+          DEFAULTS.easing,
+        );
+
+        // d0 = camera-to-subject distance at the start of the move (px).
+        // d1 = distance at the end. "out" pulls the camera back and zooms in;
+        // "in" pushes the camera forward and zooms out.
+        var d0 = clamp(vars.subjectDistance, 600, 3000, DEFAULTS.subjectDistance);
+        var d1 = direction === "in" ? d0 / strength : d0 * strength;
+
+        // ---- the solve --------------------------------------------------
+        // Subject size is fixed iff  d * tan(FOV/2) = const. With CSS 3D,
+        // tan(FOV/2) = (width/2) / perspective, so that invariant is exactly
+        // perspective / distance = SUBJECT_SCALE. Focal length is therefore
+        // derived from the dolly, never animated alongside it. This ratio is
+        // independent of the canvas's own width/height -- only the depth
+        // layers' own on-screen footprint (set in CSS above) depends on the
+        // canvas aspect, not this constant.
+        var SUBJECT_SCALE = 1; // subject renders 1:1 => its plane is z = 0
+
+        var stage = document.getElementById("dz-stage");
+        var rig = document.getElementById("dz-rig");
+
+        function applyCamera(u) {
+          var d = d0 + (d1 - d0) * u; // dolly -- pure function of u
+          var P = SUBJECT_SCALE * d; // focal length solved from d
+          var camZ = P - d; // put the subject plane at camera distance d
+          stage.style.perspective = P + "px";
+          rig.style.transform = "translateZ(" + camZ + "px)";
+        }
+
+        // GSAP suppresses timeline-level onUpdate during seek(), so the camera
+        // is driven by a property setter on the tweened object instead: that
+        // fires on every render, seeks included.
+        var camera = {
+          _u: 0,
+          get u() {
+            return this._u;
+          },
+          set u(value) {
+            this._u = value;
+            applyCamera(value);
+          },
+        };
+
+        applyCamera(0);
+
+        var tl = gsap.timeline({ paused: true });
+        tl.to(camera, { u: 1, duration: 4, ease: ease }, 0);
+        window.__timelines["v-camera-dolly-zoom"] = tl;
+      })();
+    </script>
+  </body>
+</html>
