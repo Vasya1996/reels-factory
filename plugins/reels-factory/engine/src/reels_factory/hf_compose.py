@@ -1857,8 +1857,20 @@ def paste_target_selector(scene: dict, target: str, *, insert_targets: dict,
     звучит). Их контракт оборачивает текст, а не строку («Wrap target text
     with class=…», `inline-highlight.html:4`), и слайс `[i, i+1)` даёт
     ровно один узел `.hl-word-text` вместо всех слов сцены разом.
+
+    `start` в ответе — секунда, на которую вызывающий ставит рецепт: у
+    мишени-слова это её СОБСТВЕННАЯ секунда начала (`flat[first]["start"]`),
+    не начало сцены. Их же полка вяжет вход слова ровно так, не с 0: разбор
+    их движка титра кладёт `FLOW_IN` каждого слова на `w.start`
+    (`skills/embedded-captions/modes/standard/_anatomy.md:176-191`), а
+    демо-позиция `caption-pill-karaoke` красит слово в момент, отсчитанный
+    от его же `word.start`, а не от начала клипа
+    (`caption-pill-karaoke.html:365-376`). У остальных мишеней сцена и есть
+    их появление — `presenter`/`insert`/`schema` в `target_absent` спрошены
+    по сцене целиком, ключ `start` для них не нужен, и вызывающий сам берёт
+    начало сцены (`begin`) для них по умолчанию.
     """
-    from reels_factory.hf_captions import caption_word_range
+    from reels_factory.hf_captions import caption_segments, caption_word_range
 
     if target == "presenter":
         return {"selector": "#video-wrap"}
@@ -1873,7 +1885,10 @@ def paste_target_selector(scene: dict, target: str, *, insert_targets: dict,
             word=word)
         if first == last:
             return {}
-        return {"selector": ".hl-word-text", "first": first, "last": last}
+        flat = [word_ for segment in caption_segments(words)
+               for word_ in segment]
+        return {"selector": ".hl-word-text", "first": first, "last": last,
+                "start": flat[first]["start"]}
     return {}
 
 #: Корневой элемент позиции: тот, что несёт `data-composition-id`. Его id
@@ -2862,7 +2877,20 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                     decorators.append(style)
                 if code.strip():
                     decor_code.append(f"/* {unique} */\n{code}")
-                decor_code += paste_recipe_block(lines, begin)
+                # Старт рецепта — секунда самой мишени, не сцены: у слова
+                # титра это `spot["start"]` (`paste_target_selector`, там же
+                # обоснование их конвенцией). Сцена ставит его в кадр
+                # заранее только для окна ведущей, вставки и схемы — у них
+                # появление в сцене и есть её начало (`target_absent` там
+                # спрашивает по сцене целиком), и `spot` для них `start` не
+                # несёт вовсе. Раньше рецепт ВСЕГДА стартовал с `begin`, и
+                # слово, звучащее в середине или в конце сцены, получало
+                # вход, отыгравший невидимо до его появления (ревью PR #87,
+                # scratchpad review-word-target.md, замечание 1: слово
+                # «боль» на 18,36–18,64 с при сцене с 16,0 с — твин
+                # заканчивался к 16,9 с, за 1,5 с до слова).
+                decor_code += paste_recipe_block(
+                    lines, spot.get("start", begin))
                 if refused:
                     element["recipeSkipped"] = refused
                 staged_elements += 1

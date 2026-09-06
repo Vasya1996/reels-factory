@@ -773,16 +773,16 @@ class="hf-inline-highlight"») — значит, из фразы этой сце
 <example>
 Сцена s-05, реплика «И вот это слово — бесплатно — здесь главное». Показывать
 нечего: содержание сцены — одно слово, которое надо выделить. По индексу
-отвечает `inline-highlight`, у неё в карточке `targets: ["caption"]` — приём
-ложится на слово титра, и мишень называет ровно его полем `word`: «бесплатно»
-из этой же реплики, а не вся фраза целиком. Кадр держит вставка, приём её не
-заменяет.
+отвечает `tracking-in`, у неё в карточке `targets: ["caption"]` — приём
+собирает слово титра из разрежённых букв, и мишень называет ровно его полем
+`word`: «бесплатно» из этой же реплики, а не вся фраза целиком. Кадр держит
+вставка, приём её не заменяет.
 `{{"id": "s-05", "beat": "point", "presenter": "pip-br",
    "insert": {{"kind": "video", "query": "free trial signup"}},
    "fallback": {{"kind": "photo", "query": "laptop desk"}},
-   "elements": [{{"name": "inline-highlight", "target": "caption",
-                "word": "бесплатно", "variables": {{"tint": "yellow"}}}}],
-   "frame": {{"holder": "вставка", "catalog_checked": ["inline-highlight"],
+   "elements": [{{"name": "tracking-in", "target": "caption",
+                "word": "бесплатно", "variables": {{"tracking": "wide"}}}}],
+   "frame": {{"holder": "вставка", "catalog_checked": ["tracking-in"],
              "catalog_reason": "взял: надо выделить одно слово"}}}}`
 </example>
 
