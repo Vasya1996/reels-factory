@@ -1581,7 +1581,9 @@ def wire_recipe(html: str, *, unique: str, target=None):
 #:   `icon-swap`): рецепт целится в её собственный корень;
 #: - `presenter` — окно ведущей (`#video-wrap`);
 #: - `insert` — вставки сцены, все планы серии разом;
-#: - `caption` — слова титра, которые звучат в этой сцене;
+#: - `caption` — ОДНО слово титра, звучащее в этой сцене; какое — называет
+#:   элемент полем `word` (их же контракт оборачивает текст, а не строку:
+#:   «Wrap target text», `inline-highlight.html:4`);
 #: - `schema` — коробка схемы сцены. Ни одна карточка её сегодня не называет:
 #:   живой прогон показать её не смог — сцена со схемой в пробе выходит пустой
 #:   и БЕЗ приёма тоже (контрольная сборка, `work/paste-target-control`), то
@@ -1759,13 +1761,25 @@ def paste_target(card: dict, element: dict) -> tuple:
     return named, ""
 
 
-def target_absent(scene: dict, target: str) -> str:
+def target_absent(scene: dict, target: str, *, words: list | None = None,
+                  word: str | None = None) -> str:
     """Чего сцене не хватает под эту мишень. Пустая строка — всё на месте.
 
     Спрашивается дважды и одним кодом: гейтом `D36_elements` до заказа
     ведущей и сборкой перед вставкой. Разойтись двум местам нечем, а цена
     расхождения — оплаченный кадр с приёмом, которому не на чем лежать.
+
+    `caption` — единственная мишень уровня слова, а не элемента: их же
+    контракт оборачивает ОДНО слово («Wrap target text with class=…»,
+    `inline-highlight.html:4`), а не строку целиком. Поэтому здесь спрошено
+    не «есть ли титр», а «есть ли в титре этой сцены ИМЕННО это слово» —
+    имя называет агент (`word` элемента), счёт делает код
+    (`hf_captions.caption_word_range`). `words` — расшифровка ролика; её
+    здесь может не быть (гейт D11 после сборки зовёт эту же функцию по
+    раскадровке, где расшифровка уже не под рукой) — тогда судить нечем, и
+    молчим, как молчали до этой работы.
     """
+    from reels_factory.hf_captions import caption_word_range
     from reels_factory.hf_montage import insert_of
 
     if target == "presenter" and str(scene.get("presenter") or "none") == "none":
@@ -1775,19 +1789,52 @@ def target_absent(scene: dict, target: str) -> str:
         return "вставки у сцены нет, а приём вешают на неё"
     if target == "schema" and not schema_plan(scene):
         return "схемы у сцены нет, а приём вешают на неё"
+    if target == "caption":
+        named = str(word or "").strip()
+        if not named:
+            return ("мишень `caption` ложится на ОДНО слово титра, а какое "
+                    "— поле `word` элемента не называет: назови слово, "
+                    "которое приём выделит (не строку и не фразу)")
+        if words is None:
+            return ""
+        first, last = caption_word_range(
+            words, float(scene["startSec"]), float(scene["endSec"]),
+            word=named)
+        if first == last:
+            return (f"слова {named!r} в титре этой сцены нет: приём "
+                    "вешают на слово, которое в неё звучит, а не на любое "
+                    "слово ролика")
     return ""
 
 
 def paste_target_selector(scene: dict, target: str, *, insert_targets: dict,
-                          words: list) -> dict:
+                          words: list, word: str | None = None) -> dict:
     """Мишень — селектором и, у титра, счётом слов этой сцены.
 
     Слова титра рисует их движок в момент разбора страницы, все разом на весь
     ролик; сцене принадлежат не все, а те, что в её секунды и звучат. Их
     счёт — арифметика, и делает её код (`hf_captions.caption_word_range`), а
     не агент: границы сцены он и так назвал.
+
+    `caption` сужен до ОДНОГО слова — того, что назвал агент полем `word`
+    элемента (`target_absent` тем же кодом уже проверил, что оно в сцене
+    звучит). Их контракт оборачивает текст, а не строку («Wrap target text
+    with class=…», `inline-highlight.html:4`), и слайс `[i, i+1)` даёт
+    ровно один узел `.hl-word-text` вместо всех слов сцены разом.
+
+    `start` в ответе — секунда, на которую вызывающий ставит рецепт: у
+    мишени-слова это её СОБСТВЕННАЯ секунда начала (`flat[first]["start"]`),
+    не начало сцены. Их же полка вяжет вход слова ровно так, не с 0: разбор
+    их движка титра кладёт `FLOW_IN` каждого слова на `w.start`
+    (`skills/embedded-captions/modes/standard/_anatomy.md:176-191`), а
+    демо-позиция `caption-pill-karaoke` красит слово в момент, отсчитанный
+    от его же `word.start`, а не от начала клипа
+    (`caption-pill-karaoke.html:365-376`). У остальных мишеней сцена и есть
+    их появление — `presenter`/`insert`/`schema` в `target_absent` спрошены
+    по сцене целиком, ключ `start` для них не нужен, и вызывающий сам берёт
+    начало сцены (`begin`) для них по умолчанию.
     """
-    from reels_factory.hf_captions import caption_word_range
+    from reels_factory.hf_captions import caption_segments, caption_word_range
 
     if target == "presenter":
         return {"selector": "#video-wrap"}
@@ -1798,10 +1845,14 @@ def paste_target_selector(scene: dict, target: str, *, insert_targets: dict,
         return {"selector": f'#schema-box-{scene["id"]}'}
     if target == "caption":
         first, last = caption_word_range(
-            words, float(scene["startSec"]), float(scene["endSec"]))
+            words, float(scene["startSec"]), float(scene["endSec"]),
+            word=word)
         if first == last:
             return {}
-        return {"selector": ".hl-word-text", "first": first, "last": last}
+        flat = [word_ for segment in caption_segments(words)
+               for word_ in segment]
+        return {"selector": ".hl-word-text", "first": first, "last": last,
+                "start": flat[first]["start"]}
     return {}
 
 #: Корневой элемент позиции: тот, что несёт `data-composition-id`. Его id
@@ -2676,10 +2727,26 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             # how we ship.»). Канал их штатный — `data-variable-values` ниже;
             # какие переменные его принимают и почему не всякая, сказано в
             # `hf_catalog.word_variables`. Названное планом значение сильнее.
-            from reels_factory.hf_catalog import word_variables
+            from reels_factory.hf_catalog import (
+                number_mirror_variable, number_variables, word_variables,
+            )
             named = dict(element.get("variables") or {})
             for key, phrase in zip(word_variables(card), said):
                 named.setdefault(key, phrase)
+            # Число плана в строковую переменную-зеркало той же позиции: у
+            # `conic-progress-ring` видимый счётчик в центре — не `progress`
+            # сам, а отдельная строка `label`, и без слова агента она
+            # остаётся на умолчании карточки, пока кольцо доезжает до
+            # спетого числа (`hf_catalog.number_mirror_variable`, там же —
+            # кадр находки). Названное планом слово в `label` сильнее.
+            for number_key in number_variables(card):
+                value = named.get(number_key)
+                if not isinstance(value, (int, float)) or isinstance(
+                        value, bool):
+                    continue
+                mirror_key = number_mirror_variable(card)
+                if mirror_key:
+                    named.setdefault(mirror_key, str(int(round(value))))
             # Слоты позиции под файл: кадр биролла этой же сцены ложится ВНУТРЬ
             # них. Подавать нечего — позиция снимается с причиной вслух: пустой
             # макет (телефон без экрана, панель «Before» без картинки) хуже
@@ -2748,12 +2815,14 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             # титра или схему — пятый шаг их контракта («add those calls to
             # your timeline», hyperframes-registry/SKILL.md:81).
             if where and where != "self":
-                lack = target_absent(scene, where)
+                lack = target_absent(scene, where, words=words,
+                                     word=element.get("word"))
                 if lack:
                     drop_element(storyboard, scene, name, lack)
                     continue
                 spot = paste_target_selector(
-                    scene, where, insert_targets=insert_targets, words=words)
+                    scene, where, insert_targets=insert_targets, words=words,
+                    word=element.get("word"))
                 if not spot:
                     drop_element(
                         storyboard, scene, name,
@@ -2772,7 +2841,20 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                     decorators.append(style)
                 if code.strip():
                     decor_code.append(f"/* {unique} */\n{code}")
-                decor_code += paste_recipe_block(lines, begin)
+                # Старт рецепта — секунда самой мишени, не сцены: у слова
+                # титра это `spot["start"]` (`paste_target_selector`, там же
+                # обоснование их конвенцией). Сцена ставит его в кадр
+                # заранее только для окна ведущей, вставки и схемы — у них
+                # появление в сцене и есть её начало (`target_absent` там
+                # спрашивает по сцене целиком), и `spot` для них `start` не
+                # несёт вовсе. Раньше рецепт ВСЕГДА стартовал с `begin`, и
+                # слово, звучащее в середине или в конце сцены, получало
+                # вход, отыгравший невидимо до его появления (ревью PR #87,
+                # scratchpad review-word-target.md, замечание 1: слово
+                # «боль» на 18,36–18,64 с при сцене с 16,0 с — твин
+                # заканчивался к 16,9 с, за 1,5 с до слова).
+                decor_code += paste_recipe_block(
+                    lines, spot.get("start", begin))
                 if refused:
                     element["recipeSkipped"] = refused
                 staged_elements += 1

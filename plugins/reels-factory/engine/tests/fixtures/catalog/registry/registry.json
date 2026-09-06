@@ -56,6 +56,43 @@
     },
     {
       "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "conic-progress-ring",
+      "type": "hyperframes:component",
+      "title": "Conic Progress Ring",
+      "description": "A token-driven conic progress ring whose angular fill and center count settle together from one registered percentage.",
+      "tags": [
+        "data",
+        "progress",
+        "ring"
+      ],
+      "duration": 3.0,
+      "files": [
+        {
+          "path": "conic-progress-ring.html",
+          "target": "compositions/conic-progress-ring.html",
+          "type": "hyperframes:snippet"
+        }
+      ],
+      "reels": {
+        "kind": "effect",
+        "variables": {
+          "progress": {
+            "type": "number",
+            "default": 100
+          },
+          "thickness": {
+            "type": "number",
+            "default": 12
+          },
+          "label": {
+            "type": "string",
+            "default": "100"
+          }
+        }
+      }
+    },
+    {
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
       "name": "demo-decor",
       "type": "hyperframes:component",
       "title": "Demo Decor",

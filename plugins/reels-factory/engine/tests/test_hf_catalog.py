@@ -168,24 +168,27 @@ def test_каждый_компонент_несёт_reels_effect_и_контра
 #: на середине сцены (time=4) — обычный слишком светлый серый, не связано
 #: с угасанием таймлайна. `pull-back-reveal` — `content_overlap` на
 #: `div.pbr-detail-context`: два текстовых блока накладываются.
-#: Семь имён этого списка (`beat-timeline`, `caption-texture`,
-#: `multiplayer-cursors`, `scroll-feed`, `spotlight-card`, `stagger-cascade`,
-#: `star-rating-fill`) снова несут `reels.skip` — но по НОВОЙ причине,
-#: не по старой B15-находке, которую этот список защищал. У всех семи нет
-#: канала содержимого (`hf_catalog.content_channels`): ни слота под слова,
-#: ни рабочей переменной, ни слота под файл, — а держателем кадра
+#: Шесть имён этого списка (`beat-timeline`, `caption-texture`,
+#: `multiplayer-cursors`, `scroll-feed`, `spotlight-card`, `stagger-cascade`)
+#: снова несут `reels.skip` — но по НОВОЙ причине, не по старой B15-находке,
+#: которую этот список защищал. У всех шести нет канала содержимого
+#: (`hf_catalog.content_channels`): ни слота под слова, ни рабочей
+#: переменной, ни слота под файл, — а держателем кадра
 #: (`hf_montage.filling_element`) без канала теперь не встаёт ничто (решение
 #: Васи 06.09.2026, `skeletons-report.md`). Это не регресс находки B15 —
 #: `check --strict` по ним по-прежнему даёт PASS, — а отдельное, более
 #: строгое требование поверх неё, и снятие из списка здесь честное, не
-#: молчаливое.
+#: молчаливое. `star-rating-fill` из того же разбора осталась в списке: у
+#: неё есть числовая переменная `rating` (`hf_catalog.number_variables`,
+#: PR #86, влит в main после первого прохода разбора) — канал есть, и повод
+#: снимать её отпал.
 _B15_UNSKIPPED = [
     "aurora-drift",
     "beat-accent", "chromatic-aberration-wipe",
     "decline-chart", "directional-wipe", "drift-hold", "gloss-sweep",
     "grain-field", "kinetic-type-swap", "light-sweep-pass", "line-swap",
     "overwhelm-surround", "physical-exit",
-    "push-in", "scramble-reveal", "spring-pop",
+    "push-in", "scramble-reveal", "spring-pop", "star-rating-fill",
     "store-badge-lockup", "svg-mask-reveal",
     "tilt-card", "variable-font-flex",
 ]
@@ -198,7 +201,7 @@ _B15_UNSKIPPED = [
 #: палитрой без единой чужой надписи.
 #:
 #: `scroll-camera-story` и `ui-focus-zoom` из этого списка снова несут
-#: `reels.skip` — по той же новой причине, что и семь позиций выше
+#: `reels.skip` — по той же новой причине, что и шесть позиций выше
 #: (`_B15_UNSKIPPED`): канала содержимого нет ни у одной, а без канала
 #: держателем кадра позиция больше не встаёт. Прежняя находка (файл
 #: реестра не терял маркер) остаётся в силе — это второе, независимое
@@ -248,16 +251,19 @@ def test_позиции_снятые_в_b15_предложены_и_валидн
 #: достаёт, и `reels.skip` держит её вне `catalog_cards()`
 #: (`registry-item.json` компонента).
 #:
-#: `browser-device-stage`, `count-up`, `chart-story`, `scroll-feed` из этой
-#: полки тоже сняты `reels.skip` (06.09.2026): у всех четырёх нет канала
-#: содержимого (`hf_catalog.content_channels`) — экран без слота под снимок,
-#: число без рабочей переменной, лента постов без слота под текст, — и
-#: держателем кадра без канала (`hf_montage.filling_element`) теперь не
-#: встаёт ничто (`skeletons-report.md`). Перевод `use_when`/`avoid_when`
-#: остаётся в карточке, просто вне списка предлагаемых.
+#: `browser-device-stage`, `chart-story`, `scroll-feed` из этой полки тоже
+#: сняты `reels.skip` (06.09.2026): у всех трёх нет канала содержимого
+#: (`hf_catalog.content_channels`) — экран без слота под снимок, лента
+#: постов без слота под текст, — и держателем кадра без канала
+#: (`hf_montage.filling_element`) теперь не встаёт ничто
+#: (`skeletons-report.md`). Перевод `use_when`/`avoid_when` остаётся в
+#: карточке, просто вне списка предлагаемых. `count-up` из той же полки в
+#: списке осталась: у неё есть числовая переменная `end`
+#: (`hf_catalog.number_variables`, PR #86, влит в main после первого прохода
+#: разбора) — канал есть, и повод снимать её отпал.
 _ПОЛКА = [
     "per-word-rise", "scramble-reveal", "kinetic-type-swap", "oversized-cursor",
-    "press-ripple",
+    "press-ripple", "count-up",
     "titlecard-lockup", "svg-stroke-trace", "whiteboard-ink", "cta-close",
     "logo-brand-close", "before-after-wipe", "cut-the-curve",
     "iris-reveal", "telemetry-hud",
@@ -372,7 +378,8 @@ def test_индекс_отдаёт_карточки_всех_трёх_видов
     тегам, а вид позиции говорит коду, чем она станет в кадре."""
     cards = catalog_cards(FIXTURE)
     assert {name: card.get("kind") for name, card in cards.items()} == {
-        "count-up": "effect", "demo-scene": "scene", "demo-stitch": "overlay",
+        "count-up": "effect", "conic-progress-ring": "effect",
+        "demo-scene": "scene", "demo-stitch": "overlay",
         "demo-paste": "effect", "demo-media": "scene", "demo-host": "scene",
         # Приём поверх нашего элемента: вид у него их же, `effect`, а мишени
         # он называет полем `targets` — в кадр сам по себе не встаёт.
@@ -439,8 +446,9 @@ def test_индекс_печатается_json_ом_с_нашими_полям�
     text = catalog_index(FIXTURE)
     body = json.loads(text.split("```json")[1].split("```")[0])
     assert [item["name"] for item in body] == sorted(
-        ["count-up", "demo-decor", "demo-host", "demo-media", "demo-paste",
-         "demo-plain", "demo-plain-vertical", "demo-scene", "demo-stitch"])
+        ["count-up", "conic-progress-ring", "demo-decor", "demo-host",
+         "demo-media", "demo-paste", "demo-plain", "demo-plain-vertical",
+         "demo-scene", "demo-stitch"])
     assert "Search by intent" not in text, "правило поиска живёт в своде правил"
     assert "`kind`" in text and "`text_slots`" in text and "`variables`" in text
     assert "`targets`" in text, "мишень приёма агенту не названа"
@@ -663,6 +671,123 @@ def test_держатель_кадра_имеет_канал_содержимо�
         "уже после выбора")
 
 
+def test_числовая_переменная_позиции_отдаёт_ключ_под_величину_из_речи():
+    """`number_variables` — второй канал содержания рядом со словами.
+
+    Список закрытый (`_NUMBER_CONTENT_CARDS`), а не структурный фильтр по
+    `type`/`role`: у клона 0.8.27 таких переменных 20, а печатает спетое
+    число зрителю на экран едва ли треть — разбор в комментарии над
+    константой. Тест держит ровно те пять позиций, что прошли разбор, и
+    ровно те ключи, что несут величину — `decline-chart` двумя (обе точки
+    интерполяции видны зрителю), остальные одним.
+    """
+    from reels_factory.hf_catalog import number_variables
+
+    cards = catalog_cards()
+    assert number_variables(cards["count-up"]) == ["end"]
+    assert number_variables(cards["conic-progress-ring"]) == ["progress"]
+    assert number_variables(cards["star-rating-fill"]) == ["rating"]
+    assert (number_variables(cards["decline-chart"])
+            == ["start_value", "end_value"])
+    assert number_variables(cards["testimonial-card"]) == ["rating"]
+    # `overwhelm-surround` несёт `type: "number"` + `role: "content"`
+    # (`count`), но ключ не входит в закрытый список — она не печатает это
+    # число зрителю текстом, а рисует им количество плиток вокруг центра.
+    # (Была `chart-story` — та же оговорка, но 06.09.2026 ушла `reels.skip`:
+    # канала содержимого у неё нет вовсе, `skeletons-report.md`.)
+    assert number_variables(cards["overwhelm-surround"]) == []
+    # Переменных вовсе нет — разметка литеральна. (Были `animated-bar-chart`,
+    # `x-follow-card` — обе тем же `reels.skip` 06.09.2026.)
+    assert number_variables(cards["grain-overlay"]) == []
+    assert number_variables(cards["svg-line-draw-loader"]) == []
+
+
+def test_каждая_позиция_числового_канала_несёт_объявленную_переменную():
+    """Инвариант по ВСЕЙ таблице `_NUMBER_CONTENT_CARDS`, не по именованным
+    строкам руками — по образцу соседнего
+    `test_нет_позиции_с_текстовыми_слотами_и_рабочей_переменной_разом` для
+    `word_variables`: цикл по каждой записи таблицы, а не точечные `assert`
+    по уже проверенным именам. Упадёт первым же красным, если кто-то впишет
+    в таблицу имя, которого каталог не предлагает, или ключ, который несёт
+    не число content-роли, или значение вне допустимого диапазона.
+    """
+    from reels_factory.hf_catalog import _NUMBER_CONTENT_CARDS, number_variables
+
+    cards = catalog_cards()
+    assert _NUMBER_CONTENT_CARDS, "таблица числового канала пуста"
+    for name, keys in _NUMBER_CONTENT_CARDS.items():
+        assert name in cards, (
+            f"{name}: стоит в `_NUMBER_CONTENT_CARDS`, а каталог его не "
+            "предлагает (снят `skip` или переименован)")
+        card = cards[name]
+        # `number_variables` — сама боевая функция, а не повтор её проверок
+        # руками: если таблица назовёт ключ без `type:number`/`role:content`
+        # или с `portrays`, функция молча его выронит, и это расхождение
+        # тест обязан поймать.
+        assert number_variables(card) == list(keys), (
+            f"{name}: таблица называет {list(keys)}, а `number_variables` "
+            f"отдаёт {number_variables(card)} — ключ не проходит собственные "
+            "проверки функции (тип, роль, `portrays`)")
+        for key in keys:
+            rule = (card.get("variables") or {}).get(key)
+            assert rule is not None, (
+                f"{name}.{key}: таблица называет переменную, которой нет в "
+                "карточке")
+            default = rule.get("default")
+            lo, hi = rule.get("min"), rule.get("max")
+            if isinstance(default, (int, float)) and not isinstance(
+                    default, bool):
+                if lo is not None:
+                    assert default >= lo, (
+                        f"{name}.{key}: умолчание {default} ниже min {lo}")
+                if hi is not None:
+                    assert default <= hi, (
+                        f"{name}.{key}: умолчание {default} выше max {hi}")
+
+
+def test_числовая_переменная_несёт_допустимую_границу():
+    """`min`/`max` доезжают до карточки той же дорогой, что `options`
+    у `enum`: не вторым изданием в `registry-item.json`, а чтением
+    `data-composition-variables` (`_declared_options`). Без них D36 не
+    может отличить число в допустимом диапазоне от того, что их же скрипт
+    молча подрежет уже в оплаченном кадре (`conic-progress-ring.html:
+    170-180`)."""
+    cards = catalog_cards()
+    progress = cards["conic-progress-ring"]["variables"]["progress"]
+    assert (progress["min"], progress["max"]) == (0, 100)
+    rating = cards["star-rating-fill"]["variables"]["rating"]
+    assert (rating["min"], rating["max"]) == (0, 5)
+    # `count-up` не объявляет границу вовсе — ни у нас, ни в клоне 0.8.27
+    # (`count-up.html`: только `default`/`step`), и поле молчит, а не лжёт
+    # нулём.
+    end = cards["count-up"]["variables"]["end"]
+    assert "min" not in end and "max" not in end
+
+
+def test_число_зеркала_названо_только_у_кольца_прогресса():
+    """`number_mirror_variable` — только `conic-progress-ring`: у `count-up`
+    и `star-rating-fill` видимый счётчик читает свою же числовую переменную
+    напрямую, второго слова для них не нужно (разбор — в комментарии над
+    `_NUMBER_MIRROR`)."""
+    from reels_factory.hf_catalog import number_mirror_variable
+
+    cards = catalog_cards()
+    assert number_mirror_variable(cards["conic-progress-ring"]) == "label"
+    assert number_mirror_variable(cards["count-up"]) is None
+    assert number_mirror_variable(cards["star-rating-fill"]) is None
+
+
+def test_индекс_называет_числовой_канал_обязательным():
+    """Позиция без `text_slots`, чья `variables` несёт величину из речи, —
+    та же плашка индекса, что уже называет обязательным слот под файл
+    (`media_slots`). Без строки агент оставляет умолчание карточки (живой
+    пример — `count-up`: демо-строка «100», а не число из реплики)."""
+    text = catalog_index()
+    assert "`end`" in text and "`count-up`" in text
+    assert "обязательное" in text
+    assert "min" in text and "max" in text
+
+
 #: Пять образцов B3 и то, чем их разметка обязана дать заполнить кадр: у
 #: терминала и диффа видимый текст жил в скрипте, и слотами он не был вовсе
 #: (отчёт B4). Имена — от классов разметки, порядок — документа.
@@ -783,20 +908,22 @@ def test_позиции_с_чужим_контентом_говорят_чего
     Условие это карточное, а не плановое: позиция годна, когда контент есть, —
     поэтому оно записано строкой `avoid_when`, а не `skip`. Отличие от
     `reels.skip` по каналу содержимого (`skeletons-report.md`) важное: у всех
-    четырёх канал ЕСТЬ (`word_variables`/`text_slots` — код умеет положить имя
-    бренда из плана), рисковано только его отсутствие В СЦЕНАРИИ, а не в
-    позиции.
+    пяти канал ЕСТЬ (`word_variables`/`text_slots`/`number_variables` — код
+    умеет положить в кадр то, что называет план), рисковано только его
+    отсутствие В СЦЕНАРИИ, а не в позиции.
 
-    `browser-device-stage`, `trust-strip`, `star-rating-fill` раньше стояли
-    в этом же списке той же логикой («скриншота/рейтинга в плане может не
-    быть»), но у них канала нет вовсе — код не умеет положить туда ни снимок
-    экрана, ни число, ни имя клиента, — и 06.09.2026 они ушли в `reels.skip`
-    с более сильной причиной: без канала кадр пуст всегда, а не только когда
-    план не назвал факт.
+    `browser-device-stage`, `trust-strip` раньше стояли в этом же списке той
+    же логикой («скриншота в плане может не быть»), но у них канала нет
+    вовсе — код не умеет положить туда ни снимок экрана, ни имя клиента, — и
+    06.09.2026 они ушли в `reels.skip` с более сильной причиной: без канала
+    кадр пуст всегда, а не только когда план не назвал факт. `star-rating-
+    fill` из того же прохода вернулась в список: у неё нашёлся числовой
+    канал (`rating`, PR #86, влит после первого прохода разбора) — тот же
+    случай, что у оставшихся четырёх, просто число вместо слова.
     """
     cards = catalog_cards()
-    for name in ("logo-sting", "logo-wall",
-                 "logo-brand-close", "svg-mask-reveal"):
+    for name in ("logo-sting", "logo-wall", "logo-brand-close",
+                 "svg-mask-reveal", "star-rating-fill"):
         avoid = cards[name].get("avoid_when") or ""
         assert "нет" in avoid, f"{name}: не сказано, чего у плана нет: {avoid}"
         # И позиция остаётся предложенной: контент бывает и настоящий.
