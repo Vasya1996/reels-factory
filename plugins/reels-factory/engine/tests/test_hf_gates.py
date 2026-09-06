@@ -580,7 +580,7 @@ def test_позиция_с_причиной_отказа_планом_не_на�
 
 def test_чужая_переменная_и_чужой_тип_ловятся_по_карточке(каталог):
     чужая = elements_problems(_элементы(
-        {"name": "count-up", "variables": {"finish": 250}}))
+        {"name": "count-up", "variables": {"finish": 250, "end": 250}}))
     assert len(чужая) == 1 and "finish" in чужая[0]
     тип = elements_problems(_элементы(
         {"name": "count-up", "variables": {"end": "двести"}}))
@@ -588,7 +588,7 @@ def test_чужая_переменная_и_чужой_тип_ловятся_п�
     # Булево не число и число не булево: в Python `True` — это `int`, и без
     # оговорки `glow: 1` прошло бы за флаг.
     флаг = elements_problems(_элементы(
-        {"name": "count-up", "variables": {"glow": 1}}))
+        {"name": "count-up", "variables": {"glow": 1, "end": 250}}))
     assert len(флаг) == 1 and "boolean" in флаг[0]
     assert elements_problems(_элементы(
         {"name": "count-up", "variables": {"end": 250, "glow": True,
@@ -601,11 +601,13 @@ def test_значение_вне_выбора_ловится_до_заказа(�
     умолчанием — уже после оплаты. Причина отказа называет весь список: агент
     поправит поле, не открывая каталог заново."""
     problems = elements_problems(_элементы(
-        {"name": "count-up", "variables": {"accent": "малиновый"}}))
+        {"name": "count-up",
+         "variables": {"accent": "малиновый", "end": 250}}))
     assert len(problems) == 1
     assert "`green`, `blue`, `violet`" in problems[0], problems[0]
     assert elements_problems(_элементы(
-        {"name": "count-up", "variables": {"accent": "violet"}})) == []
+        {"name": "count-up",
+         "variables": {"accent": "violet", "end": 250}})) == []
 
 
 def test_лишние_слова_ловятся_по_числу_слотов(каталог):
@@ -623,14 +625,16 @@ def test_эффект_без_свободной_зоны_ловится_до_з�
     плану до денег.
     """
     for position in ("full", "punch", "stack"):
-        problems = elements_problems(_элементы({"name": "count-up"},
-                                               presenter=position))
+        problems = elements_problems(_элементы(
+            {"name": "count-up", "variables": {"end": 250}},
+            presenter=position))
         assert len(problems) == 1, position
         assert "свободную зону" in problems[0] and position in problems[0]
     # Уголок и отсутствие ведущей зону оставляют — план законен.
     for position in ("pip-tr", "pip-br", "none"):
-        assert elements_problems(_элементы({"name": "count-up"},
-                                           presenter=position)) == [], position
+        assert elements_problems(_элементы(
+            {"name": "count-up", "variables": {"end": 250}},
+            presenter=position)) == [], position
     # Правило про зону — только у вида `effect`: подложка лежит под окном
     # ведущей, стык живёт на срезе, и зона им не нужна.
     for name in ("demo-scene", "demo-stitch"):
@@ -707,6 +711,58 @@ def test_фирменная_переменная_словами_плана_не_
     # Домен и список — не фраза, слова плана туда не кладут.
     assert "url" not in word_variables(cards["logo-brand-close"])
     assert word_variables(cards["chart-story"]) == []
+
+
+def test_число_из_речи_обязательно_до_заказа(каталог):
+    """Второй канал содержания рядом со словами — тот же довод, что и у
+    слота под файл: без числа в кадре останется умолчание карточки, а не
+    то, что названо вслух, и переиграть выбор после оплаты уже нельзя.
+    """
+    problems = elements_problems(_элементы({"name": "count-up"}))
+    assert len(problems) == 1
+    assert "`end`" in problems[0] and "число из речи" in problems[0]
+    assert elements_problems(_элементы(
+        {"name": "count-up", "variables": {"end": 12}})) == []
+
+
+def test_число_вне_диапазона_карточки_ловится_до_заказа():
+    """`min`/`max` — та же граница, которой их код клэмпит число уже в
+    кадре (`conic-progress-ring.html:170-180`): за ней их скрипт молча
+    подрезал бы значение в оплаченном кадре, и план не узнал бы, что
+    назвал не то число. Живой каталог: `count-up` не объявляет её вовсе, и
+    там правило молчит, а не лжёт запретом."""
+    # `conic-progress-ring`: 0-100.
+    вне = elements_problems(_элементы(
+        {"name": "conic-progress-ring", "variables": {"progress": 150}}))
+    assert len(вне) == 1 and "от 0 до 100" in вне[0], вне
+    assert elements_problems(_элементы(
+        {"name": "conic-progress-ring",
+         "variables": {"progress": 82}})) == []
+    # `star-rating-fill`: 0-5, дробный шаг.
+    вне = elements_problems(_элементы(
+        {"name": "star-rating-fill", "variables": {"rating": 7}}))
+    assert len(вне) == 1 and "от 0 до 5" in вне[0], вне
+    assert elements_problems(_элементы(
+        {"name": "star-rating-fill", "variables": {"rating": 4.8}})) == []
+    # `count-up`: границы нет — обе стороны и не жалуются, кроме
+    # обязательности самого числа.
+    assert elements_problems(_элементы(
+        {"name": "count-up", "variables": {"end": 10_000}})) == []
+
+
+def test_позиции_с_числовым_каналом_не_несут_текстовых_слотов():
+    """Тот же инвариант, что и у слов (`test_нет_позиции_с_текстовыми_
+    слотами_и_рабочей_переменной_разом`), зеркалом для чисел: `number_
+    variables` сам гасит канал, как только у карточки заведён `text_slots`
+    (`if card.get("text_slots"): return []`) — тест держит это фактом
+    боевого каталога, а не только кодом функции."""
+    from reels_factory.hf_catalog import catalog_cards, number_variables
+
+    cards = catalog_cards()
+    broken = [name for name, card in cards.items()
+             if number_variables(card) and card.get("text_slots")]
+    assert not broken, (
+        f"{broken}: несут и `text_slots`, и числовую переменную разом")
 
 
 def test_позиция_ждущая_разметки_из_хоста_планом_не_называется(каталог):
