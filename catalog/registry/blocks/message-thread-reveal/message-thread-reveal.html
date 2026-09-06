@@ -3,9 +3,9 @@
   lang="en"
   data-composition-variables='[
     { "id": "contactName", "type": "string", "role": "content", "label": "Contact name", "description": "Name pill in the chat header; the avatar shows its first letter.", "default": "Rachel" },
-    { "id": "cardTitle", "type": "string", "role": "content", "label": "Link card title", "description": "Title on the shared link card.", "default": "HyperFrames | Write HTML, render pixel-perfect video" },
-    { "id": "cardDomain", "type": "string", "role": "content", "label": "Link card domain", "description": "Domain line under the card title.", "default": "hyperframes.heygen.com" },
-    { "id": "ecProof", "type": "string", "role": "content", "label": "End-card proof", "description": "Social-proof line under the stars.", "default": "12,000+ creators" },
+    { "id": "cardTitle", "type": "string", "role": "content", "label": "Link card title", "description": "Title on the shared link card.", "default": "HyperFrames | Write HTML, render pixel-perfect video", "portrays": ["subject_name"] },
+    { "id": "cardDomain", "type": "string", "role": "content", "label": "Link card domain", "description": "Domain line under the card title.", "default": "hyperframes.heygen.com", "portrays": ["subject_domain"] },
+    { "id": "ecProof", "type": "string", "role": "content", "label": "End-card proof", "description": "Social-proof line under the stars.", "default": "12,000+ creators", "portrays": ["authority_badge"] },
     { "id": "ecCta", "type": "string", "role": "content", "label": "End-card CTA", "description": "Label on the closing card button.", "default": "Start rendering free" }
   ]'
 >

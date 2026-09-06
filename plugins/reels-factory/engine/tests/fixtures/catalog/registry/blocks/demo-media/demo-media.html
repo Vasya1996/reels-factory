@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>demo-media</title>
+    <style>
+      #demo-media-root { position: absolute; inset: 0; }
+      .dmm-slot { position: absolute; inset: 0; overflow: hidden; }
+      .dmm-slot > img,
+      .dmm-slot > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .dmm-chip { color: #ffffff; font-size: 40px; }
+    </style>
+  </head>
+  <body>
+    <div id="demo-media-root" data-composition-id="demo-media" data-width="1080" data-height="1920" data-duration="4">
+      <div class="dmm-slot" data-slot="panel"><div class="dmm-wire">Panel</div></div>
+      <div class="dmm-chip">Подпись</div>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      window.__timelines["demo-media"] = null;
+    </script>
+  </body>
+</html>

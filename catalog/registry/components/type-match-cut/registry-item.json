@@ -67,7 +67,10 @@
     "use_when": "Из слов вырастает следующая сцена: заголовок расступается и пускает картинку.",
     "kind": "effect",
     "mount": "composition",
-    "decor_texts": [],
+    "decor_texts": [
+      "New editor",
+      "Ready"
+    ],
     "text_slots": [],
     "variables": {
       "text": {

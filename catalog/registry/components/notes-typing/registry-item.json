@@ -52,7 +52,11 @@
     "use_when": "Сцена — записка от первого лица: признание, заметка, письмо, которое печатают на глазах.",
     "kind": "effect",
     "mount": "composition",
-    "decor_texts": [],
+    "decor_texts": [
+      "Things nobody told me about video.",
+      "A",
+      "a"
+    ],
     "text_slots": [],
     "variables": {
       "title": {

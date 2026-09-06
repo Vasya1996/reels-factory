@@ -27,8 +27,94 @@ from reels_factory.hf_sdk import Node, add_element, remove_element, set_text
 #: полусобранную сцену.
 MIN_BLOCK_SHARE = 0.7
 
-#: Слоты под файл. Значение атрибута `data-slot` в блоках каталога.
-MEDIA_KINDS = ("image", "video")
+#: Виды слота, который заполняется файлом, а не строкой. `image`/`video` —
+#: наши собственные блоки: там видом назван сам слот (`data-slot="video"`), и
+#: тег встаёт ВМЕСТО него. `media` — контентный слот их полки: файл ложится
+#: ВНУТРЬ слота, потому что так написан контракт позиции (см. `slot_contract`).
+MEDIA_KINDS = ("image", "video", "media")
+
+#: Слот, чьё содержимое их контракт ждёт `<template>`-ом в ХОСТОВОЙ странице:
+#: «Callers supply content by placing inert templates anywhere in the HOST page»
+#: (`catalog/registry/components/browser-device-stage/browser-device-stage.html:22-25`).
+#: Наша сборка монтирует позицию сабкомпозицией и такой шаблон не пишет, а их
+#: разбор внутрь обычного `<template>` намеренно не заходит
+#: (`isCompositionTemplate`, `packages/parsers/src/hfIds.ts:125-132`) — узла
+#: слота в снимке нет вовсе, заполнять нечего.
+HOST_SLOT = "host"
+
+#: Правило CSS: `селектор { тело }`. Разбирается ровно настолько, чтобы
+#: увидеть, для какого предка автор позиции описал прямого потомка `img`/
+#: `video` — это и есть его собственное объявление «сюда кладут файл».
+_CSS_RULE = re.compile(r"([^{}@]+?)\{([^{}]*)\}", re.S)
+
+#: Хвост селектора, целящегося в картинку или видео.
+_CSS_MEDIA_TAIL = re.compile(r"(?:^|[\s>+~])(?:img|video)\s*(?:::?[\w-]+)?$")
+
+#: Токены классов и id в голове селектора.
+_CSS_TOKEN = re.compile(r"[.#]([A-Za-z_][\w-]*)")
+
+#: Открывающий тег с атрибутами — тем же приёмом, каким читается корень
+#: paste-примитива в `hf_compose`.
+_HTML_TAG = re.compile(r'''<(\w[\w-]*)((?:"[^"]*"|'[^']*'|[^>"'])*)>''')
+_ATTR_SLOT = re.compile(r'(?:^|\s)data-slot="([^"]+)"')
+_ATTR_CLASS = re.compile(r'(?:^|\s)class="([^"]*)"')
+_ATTR_ID = re.compile(r'(?:^|\s)id="([^"]*)"')
+
+
+def slot_contract(html: str) -> dict[str, str]:
+    """Слоты позиции по её собственной разметке: имя слота → чем заполняется.
+
+    `data-slot` — единственный признак слота, который есть у фреймворка: в их
+    коде и общих скиллах атрибут не упоминается вовсе, его контракт пишет
+    автор позиции в шапке своего файла и в своём же CSS. Список имён
+    (`"image"`/`"video"`) поэтому не годился: 29 позиций зовут свои слоты
+    по-своему — `before`/`after`, `card-a`, `subject`, — и код их не видел.
+
+    Три вида:
+
+    - `image`/`video` — так слот назван в НАШИХ блоках `gNN-*`: имя слота и
+      есть вид файла, а тег встаёт вместо самого слота.
+    - `media` — контентный слот их позиции: «Replace the children of this
+      element … Direct img/video children of a slot are sized to cover the
+      panel» (`before-after-wipe.html:16-20`). Признак — не имя, а то, что
+      автор позиции ОПИСАЛ такого потомка в своём CSS
+      (`.baw-slot > video {…}`, `.tq-avatar video {…}`): описал — файл сюда
+      кладут, не описал — слот заполняется переменной или скриптом позиции
+      (`grid-card-assemble` — переменной `items`, `whiteboard-ink` — рисует
+      скрипт), и файлу там не место.
+    - `host` (`HOST_SLOT`) — тот же контентный слот, но объявленный
+      `<template>`: его содержимое их контракт ждёт из хостовой страницы, и
+      нашей сборкой он недостижим.
+    """
+    hosts: set[str] = set()
+    for selector, _ in _CSS_RULE.findall(html):
+        selector = selector.strip()
+        if not selector or selector.startswith("@"):
+            continue
+        for part in selector.split(","):
+            part = part.strip()
+            tail = _CSS_MEDIA_TAIL.search(part)
+            if tail:
+                hosts |= set(_CSS_TOKEN.findall(part[:tail.start()]))
+    found: dict[str, str] = {}
+    for tag, attrs in _HTML_TAG.findall(html):
+        slot = _ATTR_SLOT.search(attrs)
+        if not slot:
+            continue
+        name = slot.group(1)
+        if name.lower() in ("image", "video"):
+            found[name] = name.lower()
+            continue
+        if tag.lower() == "template":
+            found[name] = HOST_SLOT
+            continue
+        classes = _ATTR_CLASS.search(attrs)
+        ident = _ATTR_ID.search(attrs)
+        tokens = set((classes.group(1).split() if classes else [])
+                     + ([ident.group(1)] if ident else []))
+        if tokens & hosts:
+            found[name] = "media"
+    return found
 
 #: Токен слова внутри строки: `<span class="gNN-w …">`. Такие строки движок
 #: блока анимирует пословно (`words(".gNN-wa", …)`), поэтому при подстановке
@@ -175,9 +261,33 @@ def _descendants(nodes: list[Node], index: int) -> set[int]:
     return found
 
 
+def slot_kind(node: Node, contract: dict[str, str] | None) -> str | None:
+    """Вид слота под файл у этого узла — или `None`, если узел не такой слот.
+
+    `contract` — разбор разметки позиции (`slot_contract`). Без него остаётся
+    прежнее правило по имени: `data-slot="image"`/`"video"` наших собственных
+    блоков. Позиция полки зовёт слот своим именем (`before`, `card-a`,
+    `subject`), и узнать его можно только по контракту её файла.
+    """
+    name = node.attrs.get("data-slot")
+    if not name:
+        return None
+    if contract is None:
+        kind = name.lower()
+        return kind if kind in ("image", "video") else None
+    kind = contract.get(name)
+    return kind if kind in MEDIA_KINDS else None
+
+
 def find_slots(nodes: list[Node],
-               decor: set[str] | frozenset[str] | None = None) -> list[Slot]:
+               decor: set[str] | frozenset[str] | None = None,
+               contract: dict[str, str] | None = None) -> list[Slot]:
     """Перечислить слоты блока в порядке появления.
+
+    `contract` — `slot_contract` разметки позиции: чем заполняется каждый её
+    `data-slot`. Без него слотом под файл считаются только `image`/`video`
+    наших блоков, и 29 позиций полки со своими именами слотов остаются с
+    пустым макетом в кадре.
 
     `decor` — видимые тексты карточки (`reels.decor_texts`, `hf_catalog.py`):
     надписи, нарисованные в блоке, а не оставленные агенту заполнить. Слот, чей
@@ -197,15 +307,15 @@ def find_slots(nodes: list[Node],
     # заполняется целиком.
     consumed: set[int] = set()
     for index, node in enumerate(nodes):
-        if (node.attrs.get("data-slot") or "").lower() in MEDIA_KINDS:
+        if slot_kind(node, contract):
             consumed |= _descendants(nodes, index)
 
     found: list[tuple[int, str, str]] = []   # индекс, вид, что лежит сейчас
     for index, node in enumerate(nodes):
         if index not in scene:
             continue
-        kind = (node.attrs.get("data-slot") or "").lower()
-        if kind in MEDIA_KINDS:
+        kind = slot_kind(node, contract)
+        if kind:
             found.append((index, kind, ""))
             continue
         if index in consumed:
@@ -226,8 +336,13 @@ def find_slots(nodes: list[Node],
         node = nodes[index]
         if kind in MEDIA_KINDS:
             role = node.attrs.get("data-slot-role")
-            name = role or re.sub(r"^g\d\d-|-slot$", "",
-                                  node.attrs.get("id") or f"media-{index}")
+            declared = str(node.attrs.get("data-slot") or "")
+            # Слот полки зовут его собственным именем: агенту в паспорте
+            # видно `before`/`card-a`, а не `media-7`. У наших блоков именем
+            # слота назван вид файла, и имя по-прежнему берётся у `id`.
+            name = (declared if kind == "media"
+                    else role or re.sub(r"^g\d\d-|-slot$", "",
+                                        node.attrs.get("id") or f"media-{index}"))
             slots.append(Slot(name=name, kind=kind, placeholder="", index=index,
                               role=role,
                               rect=_parse_rect(node.attrs.get("data-slot-rect"))))
@@ -250,7 +365,8 @@ def find_slots(nodes: list[Node],
 
 
 def text_slot_names(nodes: list[Node],
-                    decor: set[str] | frozenset[str] | None = None) -> list[str]:
+                    decor: set[str] | frozenset[str] | None = None,
+                    contract: dict[str, str] | None = None) -> list[str]:
     """Имена слотов позиции, которые заполняет агент, в порядке разметки.
 
     Одно определение слота на всех: карточка каталога печатает этот список
@@ -264,7 +380,7 @@ def text_slot_names(nodes: list[Node],
     (`required` — там же сказано, почему). Ни то, ни другое агенту не
     предлагается и слов не принимает.
     """
-    return [slot.name for slot in find_slots(nodes, decor)
+    return [slot.name for slot in find_slots(nodes, decor, contract)
             if slot.required and not slot.service]
 
 
@@ -280,9 +396,10 @@ def min_card_seconds(native: float) -> float:
 
 def passport(nodes: list[Node], *, name: str, title: str = "",
              description: str = "", duration: float | None = None,
-             decor: set[str] | frozenset[str] | None = None) -> str:
+             decor: set[str] | frozenset[str] | None = None,
+             contract: dict[str, str] | None = None) -> str:
     """Паспорт блока для задания: что за сцена и какие в ней слоты."""
-    slots = find_slots(nodes, decor)
+    slots = find_slots(nodes, decor, contract)
     head = f"### `{name}`"
     if duration:
         head += (f" — сцена собирается {duration:g} с, "
@@ -477,6 +594,39 @@ def _media_tag(node: Node, source: str, *, start: float = 0.0,
     return f"<video {' '.join(attrs)}></video>"
 
 
+def _media_child(name: str, source: str) -> str:
+    """Файл ВНУТРЬ контентного слота их позиции, а не вместо него.
+
+    Так написан их контракт: «Replace the children of this element … Direct
+    img/video children of a slot are sized to cover the panel»
+    (`before-after-wipe.html:16-20`) — сам слот несёт рамку, маску и класс, по
+    которому его находит скрипт позиции, и заменять его тегом значило бы снять
+    с кадра панель вместе с содержимым. Размер файлу задаёт CSS самой позиции
+    (`.baw-slot > video {…}`) — тем же правилом, по которому слот и опознан
+    (`slot_contract`), поэтому своей геометрии тег не несёт.
+
+    Только картинка. Видео в такой слот их линтер не пускает вовсе, и это
+    проверено живой сборкой (прогон scratchpad/slots-deep 06.09.2026):
+    слот лежит внутри клипа позиции, у которого есть свой `data-start`, и
+    `<video data-start>` под таким предком — ошибка
+    `video_nested_in_timed_element` («Time the wrapper OR the video, never
+    both», `packages/lint/src/rules/media.ts:426-432`), а `<video src>` без
+    `data-start` — ошибка `media_missing_data_start` (там же:517-519). Обе
+    стороны их правила закрыты, и снять её можно только сняв время с клипа
+    самой позиции — то есть сломав её таймлайн. Значит слот принимает кадр, а
+    не ролик; сцене это говорит `D36_elements` до заказа ведущей.
+    """
+    del name  # рамку и класс держит сам слот; тегу от них ничего не нужно
+    return f'<img src="{source}" alt="">'
+
+
+#: Чем слот под файл заполняется: их линтер пускает в него только картинку
+#: (см. `_media_child`). Проверяется по имени файла, как и у `_media_tag`.
+def is_slot_file(source: str) -> bool:
+    """Годится ли файл в контентный слот позиции."""
+    return source.lower().split("?")[0].endswith(_IMAGE_SUFFIXES)
+
+
 _QUOTED_SELECTOR = re.compile(r'"([.#][^"]+)"')
 _SCRIPT_BODY = re.compile(r"(<script>)(.*?)(</script>)", re.S)
 
@@ -551,7 +701,8 @@ def _drop(nodes: list[Node], index: int) -> list[dict]:
 
 def fill_ops(nodes: list[Node], *, text: dict[str, str] | None = None,
              media: dict[str, dict] | None = None,
-             decor: set[str] | frozenset[str] | None = None) -> list[dict]:
+             decor: set[str] | frozenset[str] | None = None,
+             contract: dict[str, str] | None = None) -> list[dict]:
     """Правки, подставляющие содержимое в слоты блока.
 
     `text` — имя слота → строка. `media` — имя слота → `{"file": …}` и, для
@@ -562,7 +713,7 @@ def fill_ops(nodes: list[Node], *, text: dict[str, str] | None = None,
     """
     text = {k: (v or "").strip() for k, v in (text or {}).items()}
     media = media or {}
-    slots = find_slots(nodes, decor)
+    slots = find_slots(nodes, decor, contract)
     known = {slot.name for slot in slots if not slot.service}
     unknown = (set(text) | set(media)) - known
     if unknown:
@@ -578,8 +729,27 @@ def fill_ops(nodes: list[Node], *, text: dict[str, str] | None = None,
         if slot.kind in MEDIA_KINDS:
             filled = media.get(slot.name)
             if not filled or not filled.get("file"):
+                if slot.kind == "media":
+                    # Контентный слот полки держит рамку и маску сцены: убери
+                    # его — и позиция останется без панели вовсе. Подавать
+                    # нечего — позицию не берут для сцены, и говорит это гейт
+                    # `D36_elements` ДО заказа ведущей
+                    # (`hf_gates._element_problems`), а не сборка после.
+                    continue
                 # Пустая рамка со словом «slot» — тот же плейсхолдер на экране.
                 ops += _drop(nodes, slot.index)
+                continue
+            if slot.kind == "media":
+                if not is_slot_file(filled["file"]):
+                    # Ролик в такой слот их линтер не пускает (`_media_child`);
+                    # сцена узнаёт об этом до заказа (`hf_gates`), а сюда
+                    # такой файл доходить не должен.
+                    continue
+                ops += [remove_element(nodes[child].hfid)
+                        for child in node.children]
+                ops.append(set_text(node.hfid, ""))
+                ops.append(add_element(node.hfid, 0, _media_child(
+                    f"slot-{slot.name}-{slot.index}", filled["file"])))
                 continue
             tag = _media_tag(node, filled["file"],
                              start=float(filled.get("start", 0.0)),

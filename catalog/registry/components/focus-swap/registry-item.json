@@ -80,7 +80,16 @@
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],
-    "text_slots": [],
+    "text_slots": [
+      "card-letter-1",
+      "status-1",
+      "title-1",
+      "detail-1",
+      "card-letter-2",
+      "status-2",
+      "title-2",
+      "detail-2"
+    ],
     "variables": {
       "focus": {
         "type": "enum",

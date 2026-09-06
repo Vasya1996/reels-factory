@@ -2,7 +2,7 @@
 <html
   lang="en"
   data-composition-variables='[
-    { "id": "botName", "type": "string", "role": "content", "label": "Assistant name", "description": "Title in the chat header.", "default": "Assistant" },
+    { "id": "botName", "type": "string", "role": "content", "label": "Assistant name", "description": "Title in the chat header.", "default": "Assistant", "portrays": ["host_identity"] },
     { "id": "userMessage", "type": "string", "role": "content", "label": "User message", "description": "The question typed on the keyboard and sent. Around 40 characters keeps the measured pacing.", "default": "How do I turn my HTML into real video?" },
     { "id": "answer1", "type": "string", "role": "content", "label": "Answer paragraph 1", "description": "First streamed paragraph.", "default": "You do not need an editor. HyperFrames renders the HTML you already write into deterministic, pixel-perfect video." },
     { "id": "answer2", "type": "string", "role": "content", "label": "Answer paragraph 2", "description": "Short second beat.", "default": "It is markup, not magic." },
@@ -11,9 +11,9 @@
     { "id": "bullet2", "type": "string", "role": "content", "label": "Bullet 2", "description": "Second list item.", "default": "GSAP timelines that seek to any frame" },
     { "id": "bullet3", "type": "string", "role": "content", "label": "Bullet 3", "description": "Third list item.", "default": "4K renders from a single CLI command" },
     { "id": "ecHeadline", "type": "string", "role": "content", "label": "End-card headline", "description": "Closing card headline. A | breaks the line.", "default": "It&#39;s not magic.|It&#39;s HTML." },
-    { "id": "ecSub", "type": "string", "role": "content", "label": "End-card subline", "description": "Supporting sentence on the closing card.", "default": "Open-source video rendering — write HTML, ship pixel-perfect video." },
-    { "id": "ecCta", "type": "string", "role": "content", "label": "End-card CTA", "description": "Label on the closing card button.", "default": "Try HyperFrames" },
-    { "id": "ecFooter", "type": "string", "role": "content", "label": "End-card footer", "description": "Letter-spaced line at the very bottom.", "default": "HYPERFRAMES.HEYGEN.COM" }
+    { "id": "ecSub", "type": "string", "role": "content", "label": "End-card subline", "description": "Supporting sentence on the closing card.", "default": "Open-source video rendering — write HTML, ship pixel-perfect video.", "portrays": ["subject_tagline"] },
+    { "id": "ecCta", "type": "string", "role": "content", "label": "End-card CTA", "description": "Label on the closing card button.", "default": "Try HyperFrames", "portrays": ["subject_name"] },
+    { "id": "ecFooter", "type": "string", "role": "content", "label": "End-card footer", "description": "Letter-spaced line at the very bottom.", "default": "HYPERFRAMES.HEYGEN.COM", "portrays": ["subject_domain"] }
   ]'
 >
   <head>

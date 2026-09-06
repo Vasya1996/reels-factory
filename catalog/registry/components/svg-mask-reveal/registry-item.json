@@ -64,7 +64,9 @@
     "use_when": "Имя бренда служит маской: сквозь его буквы проступает картинка.",
     "kind": "effect",
     "mount": "composition",
-    "decor_texts": [],
+    "decor_texts": [
+      "REVEAL"
+    ],
     "text_slots": [],
     "variables": {
       "text": {

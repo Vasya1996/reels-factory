@@ -116,7 +116,18 @@
     "avoid_when": "Шаги ещё предстоят, не сделаны — готовая галочка соврёт: это onboarding-stepper-flow.",
     "kind": "effect",
     "mount": "composition",
-    "decor_texts": [],
+    "decor_texts": [
+      "THE POWER",
+      "OF",
+      "ONE",
+      "FILE",
+      "WRITE",
+      "HTML",
+      "RENDER",
+      "IN 4K",
+      "SHIP",
+      "TODAY"
+    ],
     "text_slots": [],
     "variables": {
       "top": {

@@ -23,6 +23,7 @@
 // через канал по два раза на карточку дороже, чем прочитать с диска.
 import { openComposition } from "@hyperframes/sdk";
 import { parseHTML } from "linkedom";
+import { walkCompositionDescendants } from "@hyperframes/parsers/hf-ids";
 import { readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -37,18 +38,32 @@ const sessions = new Map();
  * разметки их же разборщиком — linkedom, зависимость их SDK. Метки
  * `data-hf-id` проставляет сам SDK (`parsers/src/hfIds.ts:5`), по ним и
  * сходятся два взгляда на один документ.
+ *
+ * Обход — их собственный `walkCompositionDescendants`
+ * (`packages/parsers/src/hfIds.ts:140-158`), а не `document.querySelectorAll`:
+ * «linkedom's querySelectorAll does not expose template contents» — их же
+ * слова там же (`hfIds.ts:136-138`). Разметка портированной позиции лежит
+ * внутри `<template data-composition-id="…">`, и голый `querySelectorAll` не
+ * отдавал из неё ни одного узла: карта текста выходила пустой, каждый узел
+ * получал `text: ""`, и `find_slots` не видел в позиции ни одной надписи —
+ * латиница карточки ехала в кадр русского ролика нетронутой
+ * (`focus-swap.html:189`, «Shape the idea»). Их `comp.getElements()` ходит
+ * тем же обходом (`sdk/src/engine/model.ts:435`), поэтому два взгляда на
+ * документ снова сходятся узел в узел.
  */
 function ownTexts(comp) {
   const { document } = parseHTML(comp.serialize());
   const map = new Map();
-  for (const element of document.querySelectorAll("[data-hf-id]")) {
+  walkCompositionDescendants(document, (element) => {
+    const id = element.getAttribute("data-hf-id");
+    if (id === null) return;
     let text = "";
     element.childNodes.forEach((node) => {
       if (node.nodeType === 3) text += node.nodeValue ?? "";
       else if (node.nodeType === 1 && node.tagName === "BR") text += "\n";
     });
-    map.set(element.getAttribute("data-hf-id"), text);
-  }
+    map.set(id, text);
+  });
   return map;
 }
 

@@ -227,12 +227,15 @@ def test_позиции_снятые_в_b15_предложены_и_валидн
 #: Полка примитивов их клона (`catalog/reference/CATALOG.md`) — те её позиции,
 #: что дошли до нашего каталога. У них `use_when`/`avoid_when` уже написаны
 #: авторами блоков, и наши строки — их перевод, а не сочинение заново.
+#: `particle-image-reveal` снята: хостовый слот содержимого сборка не
+#: достаёт, и `reels.skip` держит её вне `catalog_cards()`
+#: (`registry-item.json` компонента).
 _ПОЛКА = [
     "per-word-rise", "scramble-reveal", "kinetic-type-swap", "oversized-cursor",
     "press-ripple", "browser-device-stage", "count-up", "chart-story",
     "titlecard-lockup", "svg-stroke-trace", "whiteboard-ink", "cta-close",
     "logo-brand-close", "before-after-wipe", "cut-the-curve", "scroll-feed",
-    "iris-reveal", "particle-image-reveal", "telemetry-hud",
+    "iris-reveal", "telemetry-hud",
     "native-notification-pop", "vox-annotate",
 ]
 
@@ -345,15 +348,15 @@ def test_индекс_отдаёт_карточки_всех_трёх_видов
     cards = catalog_cards(FIXTURE)
     assert {name: card.get("kind") for name, card in cards.items()} == {
         "count-up": "effect", "demo-scene": "scene", "demo-stitch": "overlay",
-        "demo-paste": "effect",
+        "demo-paste": "effect", "demo-media": "scene", "demo-host": "scene",
         # Карточка без `reels.kind` — сегодняшняя плашка: вид у неё не объявлен.
         "demo-plain": None}
     поля = set(cards["demo-scene"])
     assert {"name", "type", "title", "description", "tags", "dimensions",
             "duration"} <= поля, "формат разошёлся с `catalog --json`"
     assert cards["demo-scene"]["text_slots"] == ["line"]
-    assert cards["count-up"]["variables"]["end"] == {"type": "number",
-                                                     "default": 100}
+    assert cards["count-up"]["variables"]["end"] == {
+        "type": "number", "default": 100, "role": "content"}
     # У упругой позиции размеров нет вовсе — она меряет себя коробкой хоста.
     assert "dimensions" not in cards["count-up"]
 
@@ -367,7 +370,7 @@ def test_варианты_выбора_берутся_из_разметки_по
     плане было нечем.
     """
     accent = catalog_cards(FIXTURE)["count-up"]["variables"]["accent"]
-    assert accent == {"type": "enum", "default": "green",
+    assert accent == {"type": "enum", "default": "green", "role": "style",
                       "options": ["green", "blue", "violet"]}
     # Тип без выбора вариантов не заводит.
     assert "options" not in catalog_cards(FIXTURE)["count-up"]["variables"]["end"]
@@ -406,7 +409,8 @@ def test_индекс_печатается_json_ом_с_нашими_полям�
     text = catalog_index(FIXTURE)
     body = json.loads(text.split("```json")[1].split("```")[0])
     assert [item["name"] for item in body] == sorted(
-        ["count-up", "demo-paste", "demo-plain", "demo-scene", "demo-stitch"])
+        ["count-up", "demo-host", "demo-media", "demo-paste", "demo-plain",
+         "demo-scene", "demo-stitch"])
     assert "Search by intent" not in text, "правило поиска живёт в своде правил"
     assert "`kind`" in text and "`text_slots`" in text and "`variables`" in text
 
@@ -491,14 +495,22 @@ def test_видимый_текст_предлагаемой_позиции_не�
     Разбор — настоящим мостом их SDK, как у `passport`: свой разборщик HTML у
     нас не тот, каким блок читает движок.
 
-    Чего эта сверка НЕ видит: позицию, у которой корень лежит внутри
-    `<template>` (`terminal-simulator`, `social-proof-card`) — их разбор не
-    отдаёт узлов вовсе, и `find_slots` возвращает пусто. Такие позиции
-    заполняются своими переменными (`data-composition-variables`), и их
-    содержание сверяется не здесь.
+    До 06.09.2026 сверка была тавтологичной у каждой позиции, чья разметка
+    лежит внутри `<template>` (73 из 147 предлагаемых): наш мост читал текст
+    голым `querySelectorAll` линкдома, а он внутрь шаблона не заходит, и обе
+    стороны сравнения выходили пустым списком. Прежний докстринг называл
+    причиной «их разбор» — по факту их `comp.getElements()` внутрь шаблона
+    смотрит, терял узлы НАШ мост (`scripts/hf_sdk.mjs`, чинится обходом
+    `walkCompositionDescendants`).
+
+    Чего эта сверка НЕ видит и после починки: позицию, чья разметка пуста, а
+    текст пишет её собственный `<script>` из умолчаний
+    `data-composition-variables` (`cta-lockup` — «Get HyperFrames»,
+    `testimonial-card` — выдуманный отзыв). Это отдельный канал, и судить его
+    надо по `variables`/`portrays` карточки, а не по узлам разбора.
     """
     from reels_factory.hf_sdk import sdk_session
-    from reels_factory.hf_slots import text_slot_names
+    from reels_factory.hf_slots import slot_contract, text_slot_names
 
     root = CATALOG_DIR / REGISTRY_SUBDIR
     cards = catalog_cards()
@@ -510,14 +522,53 @@ def test_видимый_текст_предлагаемой_позиции_не�
             item = json.loads((folder / "registry-item.json")
                               .read_text(encoding="utf-8"))
             decor = set((item.get("reels") or {}).get("decor_texts") or [])
+            html = (folder / f"{name}.html").read_text(encoding="utf-8")
             sdk.open(name, folder / f"{name}.html")
             nodes = sdk.elements(name)
             sdk.close(name)
-            names = text_slot_names(nodes, decor)
+            # Тем же контрактом, каким считает сборка (`_stage_overlay`):
+            # содержимое слота под файл — не надпись сцены.
+            names = text_slot_names(nodes, decor, slot_contract(html))
             assert (card.get("text_slots") or []) == names, (
                 f"{name}: карточка обещает {card.get('text_slots')}, "
                 f"а разметка даёт {names} — агент считает слоты по одному "
                 "списку, а код по другому")
+
+
+def test_нет_позиции_с_текстовыми_слотами_и_рабочей_переменной_разом():
+    """У позиции с непустым `word_variables` не бывает `text_slots`.
+
+    Это не два независимых правила, а один и тот же контракт с двух концов:
+    `hf_catalog.word_variables()` сам гасит канал переменной, как только у
+    карточки заведён `text_slots` (`if card.get("text_slots"): return []`) —
+    так и должно быть, а не наоборот, потому что для семи позиций отчёта
+    slots-deep (`marker-checklist-card`, `social-proof-card`,
+    `store-badge-lockup`, `svg-mask-reveal`, `variable-axis-type`,
+    `type-match-cut`, `focus-rack`) их видимый текст в разметке — ЖИВОЙ
+    ПРЕВЬЮ работающей переменной: собственный `<script>` позиции на монтаже
+    безусловно переписывает его словом плана. Дай такой позиции `text_slots`
+    по одной лишь разметке — и код погасит канал переменной для ВСЕХ её
+    полей, а `fill_ops` всё равно не удержит статичную правку под перезаписью
+    скрипта: кадр откатится к английскому умолчанию карточки (живое
+    доказательство — `marker-checklist-card`, ревью PR #80, пункт 6:
+    с `text_slots` в кадре осталось «THE POWER OF ONE FILE» вместо слов
+    плана).
+
+    До этого теста инвариант проверялся вручную по каждой из одиннадцати
+    позиций (`slots-deep-report.md`, раздел 7.1) — здесь он держит ВЕСЬ
+    боевой каталог, не только уже проверенные карточки, и упадёт первым же
+    красным на следующей позиции с тем же паттерном.
+    """
+    from reels_factory.hf_catalog import word_variables
+
+    cards = catalog_cards()
+    assert cards, "каталог не предлагает ни одной позиции"
+    broken = [name for name, card in cards.items()
+             if word_variables(card) and card.get("text_slots")]
+    assert not broken, (
+        f"{broken}: несут и `text_slots`, и рабочую переменную разом — "
+        "переменная гасится `word_variables()`, а слот всё равно может не "
+        "удержать статичную правку под перезаписью скрипта позиции")
 
 
 #: Пять образцов B3 и то, чем их разметка обязана дать заполнить кадр: у
@@ -704,3 +755,220 @@ def test_у_каждой_предложенной_позиции_все_файл
             if not (card.parent / str(f.get("path"))).exists():
                 broken.append(f"{item['name']}: {f.get('path')}")
     assert broken == []
+
+
+#: Позиция, объявляющая переменную их полем `portrays`: оно младше нашего
+#: порта каталога (введено у них 2026-09-01, есть на пине 0.8.27) и прямо
+#: перечисляет, что нельзя заполнять выдуманным текстом.
+_С_ЛИЧНОСТЬЮ = """<!doctype html>
+<html data-composition-id="брендовая" data-width="1080" data-height="1920"
+  data-composition-variables='[
+    {"id": "wordmark", "type": "string", "role": "content",
+     "portrays": ["subject_name"], "label": "Wordmark", "default": "HYPERFRAMES"},
+    {"id": "accent", "type": "string", "role": "style", "default": "green"}]'>
+<body><div class="clip" data-start="0" data-duration="4">HYPERFRAMES</div></body>
+</html>"""
+
+
+def test_импорт_сохраняет_role_и_portrays_переменной(tmp_path):
+    """`portrays` — их готовый признак «эта строка несёт чужую личность»:
+    «tells an editing agent which slots carry identity and must not be filled
+    with invented copy» (`docs/concepts/variables.mdx:88-90`). Наш
+    `reels.variables` — урезанное зеркало на тип и умолчание, и оба поля в
+    него не заведены; берём их из объявления автора позиции, оттуда же, откуда
+    варианты `enum`, — иначе агент не отличает свободную надпись от бренда,
+    и дефолт «HYPERFRAMES» доезжает до кадра русского ролика.
+    """
+    _with_blocks(tmp_path, ["брендовая"])
+    folder = _block(tmp_path, "брендовая", tags=["overlay"])
+    (folder / "брендовая.html").write_text(_С_ЛИЧНОСТЬЮ, encoding="utf-8")
+    card = json.loads((folder / "registry-item.json").read_text(encoding="utf-8"))
+    card["reels"] = {"kind": "scene",
+                     "variables": {"wordmark": {"type": "string",
+                                                "default": "HYPERFRAMES"},
+                                   "accent": {"type": "string",
+                                              "default": "green"}}}
+    (folder / "registry-item.json").write_text(
+        json.dumps(card, ensure_ascii=False), encoding="utf-8")
+    variables = catalog_cards(tmp_path)["брендовая"]["variables"]
+    assert variables["wordmark"] == {"type": "string", "default": "HYPERFRAMES",
+                                     "role": "content",
+                                     "portrays": ["subject_name"]}
+    assert variables["accent"] == {"type": "string", "default": "green",
+                                   "role": "style"}
+
+
+def test_семья_и_работа_позиции_едут_в_индекс_их_же_словами():
+    """Группировки по назначению у их реестра нет отдельным полем, но `family`
+    и `jobs` в карточке — их собственные слова о том же: позиции одной работы
+    закрывают одну задачу. Своей классификации не заводим — у 60 позиций из
+    147 этих полей нет вовсе, и пустое честнее выдуманного."""
+    cards = catalog_cards()
+    сравнение = {name for name, card in cards.items()
+                 if "compare" in (card.get("jobs") or [])}
+    assert {"before-after-wipe", "comparison-split"} <= сравнение, сравнение
+    index = catalog_index()
+    assert "`family` и `jobs`" in index
+    assert '"jobs": ["compare"]' in index
+
+
+def test_слоты_под_файл_названы_в_карточке_каталога():
+    """Позиция с рамкой под кадр биролла обязана сказать об этом индексу: без
+    файла в кадре остаётся пустой макет, и решает это `D36_elements` до
+    заказа ведущей, а не сборка после."""
+    cards = catalog_cards()
+    assert sorted(cards["before-after-wipe"]["media_slots"]) == ["after",
+                                                                "before"]
+    assert cards["browser-device-stage"]["host_slots"] == [
+        "browser-device-stage-screen", "browser-device-stage-screen-b"]
+    # Слот, который заполняет не файл, а переменная или скрипт позиции, в
+    # список не попадает: `light-sweep-pass` кладёт в `scene` свою разметку,
+    # `whiteboard-ink` рисует `strokes` скриптом.
+    for name in ("light-sweep-pass", "whiteboard-ink", "press-ripple"):
+        assert not cards[name].get("media_slots"), name
+        assert not cards[name].get("host_slots"), name
+
+#: Синтетическая позиция (не в боевом каталоге): их явный `type: "image"`
+#: (`docs/concepts/variables.mdx:63-73`) вместо `data-slot` в разметке.
+#: Живой пример их полки — `share-sheet-carousel.registry-item.json:65-72`
+#: (`slideImage1`), но своих карточек этим не трогаем — заводим фикстуру.
+_DEMO_IMAGE_VAR_ITEM = {
+    "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+    "name": "demo-image-var",
+    "type": "hyperframes:block",
+    "title": "Demo Image Variable",
+    "description": "Fixture position whose photo slot is a type:image variable, not data-slot",
+    "tags": ["demo"],
+    "dimensions": {"width": 1080, "height": 1920},
+    "duration": 4.0,
+    "files": [{"path": "demo-image-var.html",
+              "target": "compositions/demo-image-var.html",
+              "type": "hyperframes:composition"}],
+    "reels": {
+        "kind": "scene",
+        "use_when": "Фикстура: слот под файл — переменная, а не узел разметки.",
+        "decor_texts": [], "text_slots": [],
+        "variables": {
+            "shot": {"type": "image", "default": "assets/placeholder.jpg"},
+            "logo": {"type": "image", "default": "assets/logo.svg"},
+        },
+    },
+}
+_DEMO_IMAGE_VAR_HTML = (
+    "<!doctype html>\n"
+    "<html lang=\"en\">\n"
+    "  <head><meta charset=\"utf-8\" /><title>demo-image-var</title></head>\n"
+    "  <body>\n"
+    "    <div id=\"demo-image-var-root\" data-composition-id=\"demo-image-var\"\n"
+    "        data-width=\"1080\" data-height=\"1920\" data-duration=\"4\"\n"
+    "        data-composition-variables='[\n"
+    "          {\"id\": \"shot\", \"type\": \"image\", \"role\": \"content\", \"default\": \"assets/placeholder.jpg\"},\n"
+    "          {\"id\": \"logo\", \"type\": \"image\", \"role\": \"content\", \"portrays\": [\"subject_logo\"], \"default\": \"assets/logo.svg\"}\n"
+    "        ]'>\n"
+    "      <img data-var-src=\"shot\" class=\"div-shot\" />\n"
+    "      <img data-var-src=\"logo\" class=\"div-logo\" />\n"
+    "    </div>\n"
+    "    <script>\n"
+    "      window.__timelines = window.__timelines || {};\n"
+    "      window.__timelines[\"demo-image-var\"] = null;\n"
+    "    </script>\n"
+    "  </body>\n"
+    "</html>\n"
+)
+
+
+def _synthetic_catalog(tmp_path):
+    folder = tmp_path / "registry" / "blocks" / "demo-image-var"
+    folder.mkdir(parents=True)
+    (folder / "registry-item.json").write_text(
+        json.dumps(_DEMO_IMAGE_VAR_ITEM, ensure_ascii=False), encoding="utf-8")
+    (folder / "demo-image-var.html").write_text(
+        _DEMO_IMAGE_VAR_HTML, encoding="utf-8")
+    # `block_names()` спрашивает манифест реестра, не подпапки на диске —
+    # именам и виду хватает, содержимое каждая карточка несёт сама.
+    (tmp_path / "registry" / "registry.json").write_text(
+        json.dumps({"items": [{"name": "demo-image-var",
+                               "type": "hyperframes:block"}]}),
+        encoding="utf-8")
+    return tmp_path
+
+
+def test_image_переменная_узнаётся_как_слот_под_файл(tmp_path):
+    """Их явный `type: "image"` — второй канал того же самого требования
+    «сцене нужен файл», не только `data-slot` в разметке. Без этой правки
+    `media_slots` видел только слоты-узлы, а `share-sheet-carousel`-подобная
+    позиция (файл — в переменной, не в разметке) осталась бы без гейта:
+    `D36_elements` не потребовал бы вставки, и в кадре мог остаться голый
+    `<img>` без `src`, зависящий от умолчания переменной."""
+    catalog_dir = _synthetic_catalog(tmp_path)
+    cards = catalog_cards(catalog_dir)
+    card = cards["demo-image-var"]
+    # `shot` — без `portrays`, узнаётся; `logo` несёт `portrays` и в число
+    # заполняемых не попадает — то же правило, что и у слов плана.
+    assert card["media_slots"] == ["shot"]
+    assert card["media_variable_slots"] == ["shot"]
+    assert "logo" not in card["media_slots"]
+
+
+def test_image_переменная_получает_файл_в_data_variable_values(tmp_path, monkeypatch):
+    """Полный канал до сборки: подобранный файл ложится в
+    `data-variable-values` тем же путём, каким туда ложится слово плана
+    (`word_variables`) — не в `fill_ops`, у переменной может не быть в
+    разметке никакого `data-slot` вовсе."""
+    from reels_factory import hf_compose
+    from reels_factory.hf_sdk import sdk_session
+    import shutil
+
+    catalog_dir = _synthetic_catalog(tmp_path)
+    cards = catalog_cards(catalog_dir)
+    monkeypatch.setattr(hf_compose, "_catalog_cards", lambda: cards)
+    monkeypatch.setattr(hf_compose, "_skipped_blocks", dict)
+    monkeypatch.setattr(hf_compose, "_texture_blocks", frozenset)
+    monkeypatch.setattr(hf_compose, "write_caption_data",
+                        lambda public, **kw: public / "caption-data.json")
+    monkeypatch.setattr(hf_compose, "caption_snippet",
+                        lambda sdk, public, **kw: '<div id="highlight"></div>')
+
+    public = tmp_path / "run" / "public"
+    public.mkdir(parents=True)
+    (public / "compositions").mkdir()
+    shutil.copyfile(catalog_dir / "registry" / "blocks" / "demo-image-var"
+                    / "demo-image-var.html",
+                    public / "compositions" / "demo-image-var.html")
+
+    board = {
+        "schemaVersion": 3,
+        "composition": {"fps": 30, "width": 1080, "height": 1920,
+                        "durationSeconds": 6.0, "layout": "portrait"},
+        "videoTrack": {"sourcePath": "clips/clip-00.mp4", "startSec": 0,
+                       "endSec": 6.0,
+                       "bounds": {"x": 0, "y": 0, "width": 1080,
+                                 "height": 1920}},
+        "subtitles": {"enabled": True},
+        "scenes": [
+            {"id": "s-01", "intent": "хук", "startSec": 0, "endSec": 3.0,
+             "presenter": "full", "insert": None},
+            {"id": "s-02", "intent": "разбор", "startSec": 3.0,
+             "endSec": 6.0, "presenter": "pip-tr", "insert": None,
+             "elements": [{"name": "demo-image-var"}]},
+        ],
+    }
+    resolved = {"s-02::shot0": {"file": ".media/images/a.jpg"},
+               "s-02::shot1": {"file": ".media/images/b.jpg"}}
+    with sdk_session() as sdk:
+        hf_compose.build_composition(
+            tmp_path / "run", sdk, storyboard=board,
+            clips=[{"file": "clips/clip-00.mp4", "start": 0.0,
+                   "duration": 6.0}],
+            duration=6.0,
+            words=[{"start": 0.2, "end": 0.6, "text": "Всё"}],
+            resolved=resolved)
+    index = (public / "index.html").read_text(encoding="utf-8")
+    assert 'data-composition-src="compositions/demo-image-var--s-02.html"' \
+        in index
+    mount = index[index.index(
+        'data-composition-src="compositions/demo-image-var--s-02.html"'):]
+    values = mount[:mount.index(">")]
+    assert '"shot": ".media/images/a.jpg"' in values
+    assert "logo" not in values, "фирменный логотип не заполняется файлом биролла"
+
