@@ -242,17 +242,38 @@ def caption_segments(words: list[dict]) -> list[list[dict]]:
     return clean
 
 
-def caption_word_range(words: list[dict], start: float, end: float) -> tuple:
+def caption_word_range(words: list[dict], start: float, end: float,
+                       word: str | None = None) -> tuple:
     """Какие по счёту слова титра звучат между `start` и `end`.
 
     Отдаёт полуинтервал `[первое, за последним)` в том же счёте, в каком
     движок титра расставляет `.hl-word-text`. Пусто — в эти секунды не звучит
     ни одного слова, и вешать приём не на что.
+
+    `word` сужает интервал до ОДНОГО слова — того, что назвал агент. Одно
+    определение на двоих остаётся: сцена и без него уже давала интервал
+    словами, а не долями секунды, здесь тот же счёт лишь фильтруется по
+    тексту. Совпадение — без учёта регистра и краевой пунктуации, тем же
+    `_TRIM_CHARS`, которым уже очищено само слово титра (`caption_segments`
+    выше). Первое совпадение внутри интервала и берём — так же поступает их
+    собственная позиция `marker-highlight` со своей переменной
+    `emphasis_word` («First case-insensitive substring match … receives the
+    marker», `marker-highlight/registry-item.json`): выбор из нескольких
+    одинаковых слов сцены — не наш произвол, а их же конвенция. Слова нет
+    среди звучащих в этот интервал — пустой интервал `(0, 0)`, тот же отказ,
+    что и при полном отсутствии титра в сцене.
     """
-    flat = [word for segment in caption_segments(words) for word in segment]
-    found = [index for index, word in enumerate(flat)
-             if start - 0.001 <= word["start"] < end - 0.001]
-    return (found[0], found[-1] + 1) if found else (0, 0)
+    flat = [word_ for segment in caption_segments(words) for word_ in segment]
+    found = [index for index, word_ in enumerate(flat)
+             if start - 0.001 <= word_["start"] < end - 0.001]
+    if not found:
+        return (0, 0)
+    if word is None:
+        return (found[0], found[-1] + 1)
+    needle = str(word).strip(_TRIM_CHARS).lower()
+    matched = [index for index in found
+              if flat[index]["text"].strip(_TRIM_CHARS).lower() == needle]
+    return (matched[0], matched[0] + 1) if matched else (0, 0)
 
 
 def write_caption_data(public, *, words: list[dict], duration: float,

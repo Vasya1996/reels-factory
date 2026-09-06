@@ -1050,7 +1050,8 @@ def _blind_stretches(scenes: list[dict],
 
 def _early_plan_gates(scenes: list[dict], duration: float,
                       phrases: list[dict], settings: dict,
-                      order: dict | None = None) -> dict:
+                      order: dict | None = None,
+                      words: list[dict] | None = None) -> dict:
     """Что проверяем в плане ДО заказа аватара (работа D).
 
     Все проверки — про то, что после заказа уже не поправить. Ведущую на
@@ -1235,7 +1236,7 @@ def _early_plan_gates(scenes: list[dict], duration: float,
     # ставит он блоки уже после того, как ведущую сняли и оплатили. Тот же
     # список сверяет D11 после сборки, и считает его тот же код —
     # `elements_problems`.
-    named = elements_problems(scenes)
+    named = elements_problems(scenes, words)
     # Второе, что судит тот же гейт до оплаты, — сказано ли у сцены, чем
     # держится её кадр и что она сделала с каталогом (`frame`). Это покрытие:
     # число позиций в ролике гейт не меряет и порога на него не заводит.
@@ -1467,7 +1468,8 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
                  if edit_plan is not None else None)
         return {"board": board, "scenes": scenes, "order": order,
                 "gates": _early_plan_gates(scenes, duration, phrases,
-                                           settings, order=order)}
+                                           settings, order=order,
+                                           words=words)}
 
     board: dict = {}
     scenes: list[dict] = []
@@ -1518,7 +1520,7 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
             order = (order_facts(edit_plan, scenes, config)
                      if edit_plan is not None else None)
             gates = _early_plan_gates(scenes, duration, phrases, settings,
-                                      order=order)
+                                      order=order, words=words)
             failed = [f"{key}: {value}" for key, value in gates.items()
                       if value.startswith("FAIL")]
             if order is not None and order["plan"] is None:
@@ -1548,7 +1550,7 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
         order = (order_facts(edit_plan, scenes, config)
                  if edit_plan is not None else None)
         gates = _early_plan_gates(scenes, duration, phrases, settings,
-                                  order=order)
+                                  order=order, words=words)
 
     # Задание последней попытки — это то самое, по которому сделан лежащий
     # план: копию снимаем до того, как сборка перепишет оригинал.
