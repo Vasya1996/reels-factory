@@ -727,6 +727,65 @@ def _check_verdict(log: Path) -> str:
     return "FAIL: " + "; ".join(found[:6] or ["без находок, но ok=false"])
 
 
+#: Прицел их диагностики наездов — та же цель, что держит `_zoom_timeline`
+#: (`hf_compose.py`): единственный элемент, которому камера вообще назначает
+#: масштаб.
+KEYFRAMES_SELECTOR = "#video-wrap video"
+
+
+def _keyframes_verdict(camera: dict | None, log: Path) -> str:
+    """D37 — план камеры целиком дошёл до скрипта, и ни один наезд не наложен
+    на соседний.
+
+    `hyperframes keyframes --json` не открывает браузер и не воспроизводит
+    таймлайн: это разбор ГОТОВОГО текста композиции —
+    `packages/cli/src/commands/keyframes.ts` читает `index.html`, вынимает
+    инлайновый `<script>` и парсит в нём вызовы GSAP регулярным разбором
+    (`collectCompositions`/`parseGsapScript`, keyframes.ts:262-278,576-596).
+    Ни сети, ни рендера, ни кода выхода на находках — команда не роняет
+    процесс никогда (проверено на реальном прогоне 0.8.27: пустой список
+    твинов и полный список отдают код 0 одинаково), значит вердикт из
+    отчёта считаем сами, как и для их `check` (`_check_verdict` рядом).
+    Пиксели готового mp4 меряет другой гейт — `D27_zoom` (`hf_zoom.py`),
+    цифрой против ожидаемой кривой наезда; здесь — то, что пиксель не
+    видит вовсе: доехал ли план камеры до СКРИПТА и не пишут ли два наезда
+    в один и тот же `scale` в одно и то же время. Второе — их же прямой
+    запрет: «Do not overlap tweens that write the same transform property
+    unless the overlap is intentional and verified» (hyperframes-keyframes/
+    SKILL.md, «Timing»).
+
+    Наездов не было (`camera` пуст либо `plans` пуст) — сверять нечего,
+    и это не провал: гейт `D27_zoom` для той же ситуации отдаёт PASS той же
+    оговоркой.
+    """
+    plans = (camera or {}).get("plans") or []
+    if not plans:
+        return "PASS: наездов не было — камере нечего сверять"
+    if not log.exists():
+        return "FAIL: их `keyframes` не оставил отчёта"
+    try:
+        report = json.loads(log.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return "FAIL: отчёт их `keyframes` не разбирается"
+    tweens = [tween for comp in report.get("compositions") or []
+              for tween in comp.get("tweens") or []
+              if tween.get("target") == KEYFRAMES_SELECTOR]
+    if len(tweens) != len(plans):
+        return (f"FAIL: план камеры — {len(plans)} ступеней, в разметке "
+                f"{len(tweens)} твинов на {KEYFRAMES_SELECTOR}")
+    try:
+        windows = sorted((float(tween["start"]), float(tween["end"]))
+                         for tween in tweens)
+    except (KeyError, TypeError, ValueError) as error:
+        return f"FAIL: отчёт их `keyframes` без времени твина ({error})"
+    overlaps = [f"{left[1]:.3f}/{right[0]:.3f}"
+                for left, right in zip(windows, windows[1:])
+                if right[0] < left[1]]
+    if overlaps:
+        return "FAIL: наезды наложены друг на друга на " + "; ".join(overlaps)
+    return f"PASS: наездов {len(plans)}, все дошли до скрипта и не наложены"
+
+
 def _scene_midpoints(board: dict) -> list[float]:
     """Точка замера каждой сцены для их проверки.
 
@@ -1868,6 +1927,25 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                                       else f"FAIL: их `check` не запустился — {error}")
             else:
                 result["D0_check"] = _check_verdict(log)
+
+            # Их же диагностика наездов — заходом сразу после `check`, тем же
+            # `rdir`/`public`: план камеры уже лежит в `camera.json`
+            # (`build_composition` пишет его раньше в этом же цикле), значит
+            # сверять есть с чем. Решение «когда и насколько наезжать»
+            # остаётся арифметикой `hf_montage.zoom_ladder` — это только
+            # проверка того, что она встала в скрипт, а не новый расчёт.
+            kf_log = rdir / "keyframes.json"
+            try:
+                _cli("keyframes", "public", "--json",
+                     "--selector", KEYFRAMES_SELECTOR, cwd=rdir, log=kf_log)
+            except RuntimeError as error:
+                result["D37_keyframes"] = (
+                    _keyframes_verdict(read_camera(rdir), kf_log)
+                    if kf_log.exists() else
+                    f"FAIL: их `keyframes` не запустился — {error}")
+            else:
+                result["D37_keyframes"] = _keyframes_verdict(
+                    read_camera(rdir), kf_log)
 
             failed = [f"{k}: {v}" for k, v in result.items() if v.startswith("FAIL")]
             # Красные гейты больше не роняют ПОСЛЕДНЮЮ попытку (решение 05):
