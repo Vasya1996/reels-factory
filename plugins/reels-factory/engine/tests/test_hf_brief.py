@@ -2723,16 +2723,17 @@ def test_свод_объясняет_каждый_вид_позиции(tmp_path
 
 
 def test_образцы_позиций_в_своде_взяты_из_настоящего_каталога(tmp_path):
-    """Свод разбирает два примера — счётчик и дифф кода. Имя, вид и слоты в
+    """Свод разбирает два примера — метрику и дифф кода. Имя, вид и слоты в
     разборе обязаны совпадать с карточкой: пример, зовущий позицию, которой в
     каталоге нет или у которой другой вид, учит плану, который заворачивает
-    `D36_elements`.
+    `D36_elements`. Был `count-up` — 06.09.2026 снята `reels.skip`, канала
+    содержимого у неё нет (`skeletons-report.md`).
     """
     from reels_factory.hf_catalog import catalog_cards
 
     cards = catalog_cards()
     раздел = _позиция_каталога(_skill(tmp_path))
-    for имя, вид in (("count-up", "effect"), ("v-code-diff", "scene")):
+    for имя, вид in (("decline-chart", "effect"), ("v-code-diff", "scene")):
         card = cards.get(имя)
         assert card, f"позиции {имя} в каталоге нет, а свод её разбирает"
         assert card.get("kind") == вид, f"{имя}: вид карточки уже не {вид}"
@@ -3251,19 +3252,18 @@ def test_под_фразой_задания_стоят_кандидаты_кат
 
 
 def test_у_кандидата_названо_и_то_чего_у_плана_нет(tmp_path):
-    """`avoid_when` печатается там же, где кандидат: у брендовых позиций и у
-    экрана-слота он и есть решающее условие — контента, которого на этапе
-    плана не существует. Очков в поиске это поле не даёт (`_card_text`), но
-    решает по нему агент, а не индекс, до которого он на живых ранних шагах
-    доходил не всегда."""
+    """`avoid_when` печатается там же, где кандидат: у брендовых позиций он и
+    есть решающее условие — контента, которого на этапе плана не существует.
+    Очков в поиске это поле не даёт (`_card_text`), но решает по нему агент, а
+    не индекс, до которого он на живых ранних шагах доходил не всегда."""
     from reels_factory.hf_brief import _candidate_line
     from reels_factory.hf_catalog import catalog_cards
 
-    card = catalog_cards()["browser-device-stage"]
+    card = catalog_cards()["logo-sting"]
     строка = _candidate_line(card)
     assert card["avoid_when"] in строка, строка
     # У позиции без разобранного случая лишней пометки не появляется.
-    assert "зря:" not in _candidate_line(catalog_cards()["hw-pipeline"])
+    assert "зря:" not in _candidate_line(catalog_cards()["v-code-diff"])
 
 
 def test_у_кандидата_переменная_выбора_названа_вариантами(tmp_path):
@@ -3279,8 +3279,8 @@ def test_у_кандидата_переменная_выбора_названа_
     строка = _candidate_line(catalog_cards()["icon-morph-beat"])
     assert "pair: mic-check|play-check|lock-unlock" in строка, строка
     # У переменной без выбора печатается одно имя — списка вариантов у неё нет.
-    строка = _candidate_line(catalog_cards()["count-up"])
-    assert "end," in строка or строка.endswith("end"), строка
+    строка = _candidate_line(catalog_cards()["decline-chart"])
+    assert "label," in строка or строка.endswith("label"), строка
 
 
 def test_образец_показывает_решение_про_кадр(tmp_path):

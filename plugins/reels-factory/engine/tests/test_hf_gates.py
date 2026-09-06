@@ -554,6 +554,9 @@ def каталог(monkeypatch):
     monkeypatch.setattr(hf_montage, "_element_kinds",
                         lambda: {name: card.get("kind")
                                  for name, card in cards(FIXTURE_CATALOG).items()})
+    monkeypatch.setattr(hf_montage, "_element_channels",
+                        lambda: {name: bool(hf_catalog.content_channels(card))
+                                 for name, card in cards(FIXTURE_CATALOG).items()})
     return FIXTURE_CATALOG
 
 
@@ -630,7 +633,9 @@ def test_эффект_без_свободной_зоны_ловится_до_з�
             presenter=position))
         assert len(problems) == 1, position
         assert "свободную зону" in problems[0] and position in problems[0]
-    # Уголок и отсутствие ведущей зону оставляют — план законен.
+    # Уголок и отсутствие ведущей зону оставляют — план законен: у `count-up`
+    # есть канал содержимого (`number_variables`, PR #86), и без другого
+    # держателя в сцене она наполняет кадр сама.
     for position in ("pip-tr", "pip-br", "none"):
         assert elements_problems(_элементы(
             {"name": "count-up", "variables": {"end": 250}},
@@ -640,6 +645,27 @@ def test_эффект_без_свободной_зоны_ловится_до_з�
     for name in ("demo-scene", "demo-stitch"):
         assert elements_problems(_элементы({"name": name},
                                            presenter="pip-br")) == [], name
+
+
+def test_держатель_без_канала_ловится_до_заказа(каталог):
+    """`demo-host` — вида `scene`, без `text_slots`, без рабочей переменной
+    (`word_variables`/`number_variables`) и без `media_slots`: канала
+    содержимого у неё нет вовсе (`content_channels`). Уголком ведущей она
+    законный подложка-декор, а без другого держателя в сцене — голый каркас,
+    ровно тот же изъян, что `keyframe-scrub-stack` и `scroll-feed` показали
+    на живом прогоне `exp-beat-direction`. У неё же есть свой хостовый слот
+    (`host_slots`) — отдельный, уже пойманный вопрос; здесь смотрим только на
+    причину про канал, не на список целиком.
+    """
+    # Ведущая уголком уже держит кадр — про канал содержимого вопроса нет.
+    problems = elements_problems(_элементы({"name": "demo-host"},
+                                           presenter="pip-br"))
+    assert not any("канала содержимого" in one for one in problems), problems
+    # Без ведущей и без другого держателя (вставки, схемы) кадр не закрыт
+    # ничем — план возвращается на пересдачу до заказа.
+    problems = elements_problems(_элементы({"name": "demo-host"},
+                                           presenter="none"))
+    assert any("канала содержимого" in one for one in problems), problems
 
 
 def test_подложка_под_полнокадровой_ведущей_ловится_до_заказа(каталог):
@@ -702,7 +728,9 @@ def test_фирменная_переменная_словами_плана_не_
     `variable-axis-type` — свободную строку, и разница видна коду, а не
     глазам. (Была `matrix-decode` — 06.09.2026 снята `reels.skip`: её
     экранный текст всегда остаётся рядом нулей независимо от слова плана,
-    см. `registry-item.json` позиции.)"""
+    см. `registry-item.json` позиции. `chart-story` — тоже `reels.skip`
+    06.09.2026, но по другой причине: канала содержимого у неё нет вовсе,
+    `skeletons-report.md`.)"""
     from reels_factory.hf_catalog import catalog_cards, word_variables
 
     cards = catalog_cards()
@@ -710,7 +738,7 @@ def test_фирменная_переменная_словами_плана_не_
     assert word_variables(cards["variable-axis-type"]) == ["text"]
     # Домен и список — не фраза, слова плана туда не кладут.
     assert "url" not in word_variables(cards["logo-brand-close"])
-    assert word_variables(cards["chart-story"]) == []
+    assert word_variables(cards["menu-morph"]) == []
 
 
 def test_число_из_речи_обязательно_до_заказа(каталог):

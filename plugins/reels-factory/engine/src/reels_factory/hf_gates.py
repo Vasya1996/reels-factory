@@ -23,8 +23,8 @@ from reels_factory.hf_layout import (
     in_avatar_gap,
 )
 from reels_factory.hf_montage import (
-    SERIES_SHOTS, filling_element, frame_filler, insert_of, same_look,
-    scene_look, schema_scene, shot_queries,
+    FRAME_KINDS, SERIES_SHOTS, filling_element, frame_filler, insert_of,
+    same_look, scene_look, schema_scene, shot_queries,
 )
 from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 
@@ -178,7 +178,8 @@ def _element_problems(scene: dict, element: dict, cards: dict, skipped: dict,
     ту же путаницу своей переменной `said`, и здесь тень над параметром
     молча отдала бы `target_absent` не то, что нужно.
     """
-    from reels_factory.hf_catalog import number_variables, word_variables
+    from reels_factory.hf_catalog import (content_channels, number_variables,
+                                          word_variables)
     from reels_factory.hf_compose import (effect_zone, paste_target,
                                           target_absent)
     from reels_factory.hf_montage import insert_of
@@ -224,6 +225,28 @@ def _element_problems(scene: dict, element: dict, cards: dict, skipped: dict,
             f"{where_id}: позиция вида `effect` встаёт в свободную зону кадра, а "
             f"ведущая {position!r} её не оставляет — дай сцене уголок "
             "(`pip-*`) или `none`, либо назови позицию другого вида")
+    # Держатель кадра без канала содержимого — голый каркас позиции, а не
+    # содержание сцены: у `keyframe-scrub-stack` и `scroll-feed` (оба
+    # `kind: scene`/`effect`, ни слота, ни переменной) в кадре на живом
+    # прогоне `exp-beat-direction` стояла пустая стопка карточек и пустая
+    # лента постов, а этот гейт молчал — про канал не спрашивал вовсе.
+    # `filling_element` больше не считает такую позицию держателем
+    # (`hf_montage.py`), и `frame_filler(scene)` здесь пуст ровно тогда, когда
+    # в сцене не осталось ничего другого, чем закрыть кадр: ни ведущей, ни
+    # вставки, ни схемы, ни другого элемента с каналом. Позиция вида `effect`
+    # без канала не запрещена вовсе — она держится ПОВЕРХ другого держателя
+    # (декор, как `aurora-drift`), и там `frame_filler` уже не пуст.
+    if (card.get("kind") in FRAME_KINDS and not content_channels(card)
+            and frame_filler(scene) == ""):
+        problems.append(
+            f"{where_id}: позиция вида {card.get('kind')!r} без канала "
+            "содержимого (ни `text_slots`, ни рабочей переменной, ни "
+            "`media_slots`) сама по себе кадр не наполняет — это каркас "
+            "позиции, а не содержание сцены, и держателем кадра стоять не "
+            "может. Здесь она названа единственным содержимым, а больше "
+            "кадр в этой сцене ничем не закрыт — дай сцене вставку, схему "
+            "или полнокадровую ведущую, либо возьми позицию с каналом; эта "
+            "годится только декором поверх другого держателя")
     # Слот под файл: позиция несёт рамку под кадр биролла или снимок, и без
     # файла в кадре остаётся пустой макет — телефон без экрана, панель «Before»
     # без картинки. Файл сцене даёт вставка, и спрашивается она здесь, ДО

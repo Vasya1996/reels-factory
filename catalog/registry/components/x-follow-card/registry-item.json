@@ -22,6 +22,7 @@
     "kind": "effect",
     "mount": "paste",
     "decor_texts": [],
-    "text_slots": []
+    "text_slots": [],
+    "skip": "каркас без канала содержимого: нет слота под слова, число и картинку"
   }
 }

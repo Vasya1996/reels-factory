@@ -362,36 +362,46 @@ def test_без_запасной_схемы_уголок_уходит_под_п�
 
 @pytest.fixture
 def каталог(monkeypatch):
-    """Виды позиций берём из фикстурного каталога: `count-up` — `effect`."""
+    """Виды и каналы позиций берём из фикстурного каталога: `count-up` —
+    `effect` без канала (числовые переменные `word_variables` не берёт),
+    `demo-paste` — `effect` с каналом (`word_variables`, `headline`)."""
     from pathlib import Path
 
     from reels_factory import hf_catalog, hf_montage
 
     корень = Path(__file__).resolve().parent / "fixtures" / "catalog"
-    cards = hf_catalog.catalog_cards
+    cards = hf_catalog.catalog_cards(корень)
     monkeypatch.setattr(hf_montage, "_element_kinds",
                         lambda: {name: card.get("kind")
-                                 for name, card in cards(корень).items()})
+                                 for name, card in cards.items()})
+    monkeypatch.setattr(hf_montage, "_element_channels",
+                        lambda: {name: bool(hf_catalog.content_channels(card))
+                                 for name, card in cards.items()})
 
 
 def test_снятая_серия_не_отнимает_зону_у_элемента(каталог):
-    """Пересборка `artyom-rebuild-4b`: `count-up` стоял на сцене `pip-br`,
+    """Пересборка `artyom-rebuild-4b`: элемент-эффект (`demo-paste`, у него
+    есть канал содержимого — `word_variables`) стоял на сцене `pip-br`,
     ранняя сверка признала зону (`effect_zone("pip-br")` — не `None`), а
     дальше отбор серий по бюджету снял со сцены вставку. Код считал кадр
     пустым и поднимал ведущую во весь кадр — после чего сборка снимала
     элемент, для которого зоны уже не осталось, и в ролик он не попал.
 
-    Элемент кадр закрывает (`filling_element`, тот же счёт у D20 и D25),
-    значит досыпать в такую сцену нечего: положение агента остаётся, запасная
-    схема не включается — она встала бы прямо на элемент.
+    Держателем кадра теперь считается только позиция с каналом содержимого
+    (`content_channels`) — канал у неё есть, значит `filling_element` (тот же
+    счёт у D20 и D25) её видит, и досыпать в такую сцену нечего: положение
+    агента остаётся, запасная схема не включается — она встала бы прямо на
+    элемент. `count-up`, у которого канала нет, для этой роли больше не
+    годится: без него сцена читалась бы пустым каркасом (`hf_gates` теперь
+    отказывает такому плану сам).
     """
     from reels_factory.hf_compose import effect_zone
     from reels_factory.hf_montage import drop_series
 
     scenes = [_scene(0, 0.0, 3.0, "full", None),
               _scene(1, 3.0, 6.0, "pip-br")]
-    scenes[1]["elements"] = [{"name": "count-up",
-                              "variables": {"end": 12, "suffix": " раз в год"}}]
+    scenes[1]["elements"] = [{"name": "demo-paste",
+                              "variables": {"headline": "12 раз в год"}}]
     scenes[1]["fallback"] = {"form": "steps", "why": "порядок",
                              "nodes": ["кто", "что"]}
     clips = [{"file": "a.mp4", "start": 0.0, "duration": 6.0}]
@@ -420,14 +430,16 @@ def test_без_элемента_снятая_серия_поднимает_ве
 def test_разводя_соседей_код_оставляет_элементу_зону(каталог):
     """Второе место, где переписывается положение: `dedupe_neighbours`. Оно
     спрашивает те же `positions_for`, и уголки там остаются — иначе развод
-    пары стоил бы элемента."""
+    пары стоил бы элемента. `demo-paste` взят вместо `count-up` не случайно:
+    у него есть канал содержимого (`word_variables`), а без канала
+    `filling_element` элемент держателем больше не считает."""
     from reels_factory.hf_compose import effect_zone
     from reels_factory.hf_montage import dedupe_neighbours
 
     scenes = [_scene(0, 0.0, 3.0, "pip-br", None),
               _scene(1, 3.0, 6.0, "pip-br", None)]
     for scene in scenes:
-        scene["elements"] = [{"name": "count-up"}]
+        scene["elements"] = [{"name": "demo-paste"}]
     clips = [{"file": "a.mp4", "start": 0.0, "duration": 6.0}]
     dedupe_neighbours(scenes, clips=clips, duration=6.0)
     assert len(scenes) == 2, "пару склеили вместо развода положением"
@@ -607,6 +619,11 @@ def test_смена_картинки_позицией_каталога_счит�
 
     monkeypatch.setattr(hf_montage, "_element_kinds",
                         lambda: {"полный-кадр": "scene", "стык": "overlay"})
+    # Держателем считается только позиция с каналом содержимого — у стыка
+    # (`overlay`) вопрос не встаёт вовсе (не входит в `FRAME_KINDS`), а
+    # «полный-кадр» здесь стоит за позицию, которой есть чем наполнить кадр.
+    monkeypatch.setattr(hf_montage, "_element_channels",
+                        lambda: {"полный-кадр": True, "стык": False})
     scenes = [_scene(index, index * 3.0, index * 3.0 + 3.0,
                      "pip-tr" if index < 4 else "full",
                      "рука" if index < 4 else None)

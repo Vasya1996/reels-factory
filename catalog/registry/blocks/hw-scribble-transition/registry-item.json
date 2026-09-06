@@ -26,6 +26,7 @@
     "kind": "overlay",
     "backing": "textless",
     "decor_texts": [],
-    "text_slots": []
+    "text_slots": [],
+    "avoid_when": "Не держит кадр один, только поверх ведущей/вставки."
   }
 }

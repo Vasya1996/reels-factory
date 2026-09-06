@@ -626,7 +626,7 @@ slow path, and it fails whenever the author's wording differs from yours»
    по её `intent`: «показать, что число выросло», «показать, чем новый код
    отличается от старого», «назвать имя говорящего». Найди этой фразе строку в
    таблице ниже — она называет теги, по которым искать.
-3. Найди эти теги в `catalog.index.md` поиском — `grep -i '"counter"'
+3. Найди эти теги в `catalog.index.md` поиском — `grep -i '"metric"'
    catalog.index.md`, — а не чтением файла целиком: позиция в индексе занимает
    ровно одну строку, поэтому найденная строка и есть вся карточка, а всё
    вместе в одно чтение не влезает. Возьми ту, чьи `use_when` и `tags`
@@ -638,13 +638,13 @@ slow path, and it fails whenever the author's wording differs from yours»
 
 | Что названо в сцене | Теги, по которым искать в индексе |
 | --- | --- |
-| число, доля, счёт, рейтинг, график | `counter`, `number`, `stats`, `metric`, `chart`, `data`, `progress` |
+| число, доля, метрика, график | `metric`, `chart`, `data` |
 | сравнение, до и после, замена одного другим | `compare`, `before-after`, `diff`, `swap` |
 | код, команда, терминал | `code`, `code-animation`, `terminal`, `developer` |
-| порядок шагов, узлы и связи между ними | `stepper`, `onboarding`, `timeline`, `sequencing`, `nodes`, `connector` |
+| порядок шагов, узлы и связи между ними | `nodes`, `connector` |
 | место, страна, карта | `map`, `geography`, `world`, `choropleth` |
-| интерфейс, уведомление, переписка, устройство | `mock-ui`, `notification`, `ui-flow`, `chat`, `device`, `social` |
-| бренд, логотип, площадка | `brand`, `logo`, `wordmark`, `logo-strip`, `store-badges` |
+| интерфейс, уведомление, переписка | `mock-ui`, `notification`, `chat`, `social` |
+| бренд, логотип, площадка | `brand`, `logo`, `wordmark`, `store-badges` |
 | имя говорящего, его роль, подпись под лицом | `lower-third`, `podcast`, `interview` |
 
 Таблица — короткий путь, а не весь каталог: строк в ней восемь, а позиций
@@ -722,16 +722,19 @@ class="hf-inline-highlight"») — значит, из фразы этой сце
   числе: там, где для `effect` зоны нет, плашка встаёт.
 
 <example>
-Сцена s-04, реплика «За год это двенадцать платежей за один и тот же сервис».
-Фраза шага 1 — «показать, что счёт вырос до двенадцати». Строка таблицы —
-число, теги `counter` и `number`; по ним в индексе отвечает `count-up`, вид
-`effect`. Слов у него нет, меняем только значения; ведущая в этой сцене стоит
-уголком, и свободную зону под счётчик код найдёт сам.
+Сцена s-04, реплика «Удержание клиентов просело с семидесяти шести процентов
+до тридцати двух». Фраза шага 1 — «показать, что метрика упала». Строка
+таблицы — число, доля, метрика, график, теги `metric` и `chart`; по ним в
+индексе отвечает `decline-chart`, вид `effect`. Слотов у него нет — подпись
+`label` несёт своя переменная (её же для этого читает `word_variables`), а
+числа пишем в `variables` как есть; ведущая в этой сцене стоит уголком, и
+свободную зону под график код найдёт сам.
 `{{"id": "s-04", "beat": "point", "presenter": "pip-br",
-   "elements": [{{"name": "count-up",
-                "variables": {{"end": 12, "suffix": " раз в год"}}}}],
-   "frame": {{"holder": "ведущая", "catalog_checked": ["count-up"],
-             "catalog_reason": "взял: названо число"}}}}`
+   "elements": [{{"name": "decline-chart",
+                "variables": {{"label": "Удержание", "start_value": 76,
+                              "end_value": 32}}}}],
+   "frame": {{"holder": "ведущая", "catalog_checked": ["decline-chart"],
+             "catalog_reason": "взял: названа просевшая метрика"}}}}`
 </example>
 
 <example>

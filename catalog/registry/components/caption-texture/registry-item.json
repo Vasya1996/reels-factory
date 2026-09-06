@@ -63,6 +63,7 @@
     "kind": "effect",
     "mount": "composition",
     "decor_texts": [],
-    "text_slots": []
+    "text_slots": [],
+    "skip": "каркас без канала содержимого: нет слота под слова, число и картинку"
   }
 }
