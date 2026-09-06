@@ -2727,10 +2727,26 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             # how we ship.»). Канал их штатный — `data-variable-values` ниже;
             # какие переменные его принимают и почему не всякая, сказано в
             # `hf_catalog.word_variables`. Названное планом значение сильнее.
-            from reels_factory.hf_catalog import word_variables
+            from reels_factory.hf_catalog import (
+                number_mirror_variable, number_variables, word_variables,
+            )
             named = dict(element.get("variables") or {})
             for key, phrase in zip(word_variables(card), said):
                 named.setdefault(key, phrase)
+            # Число плана в строковую переменную-зеркало той же позиции: у
+            # `conic-progress-ring` видимый счётчик в центре — не `progress`
+            # сам, а отдельная строка `label`, и без слова агента она
+            # остаётся на умолчании карточки, пока кольцо доезжает до
+            # спетого числа (`hf_catalog.number_mirror_variable`, там же —
+            # кадр находки). Названное планом слово в `label` сильнее.
+            for number_key in number_variables(card):
+                value = named.get(number_key)
+                if not isinstance(value, (int, float)) or isinstance(
+                        value, bool):
+                    continue
+                mirror_key = number_mirror_variable(card)
+                if mirror_key:
+                    named.setdefault(mirror_key, str(int(round(value))))
             # Слоты позиции под файл: кадр биролла этой же сцены ложится ВНУТРЬ
             # них. Подавать нечего — позиция снимается с причиной вслух: пустой
             # макет (телефон без экрана, панель «Before» без картинки) хуже

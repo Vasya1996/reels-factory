@@ -178,7 +178,7 @@ def _element_problems(scene: dict, element: dict, cards: dict, skipped: dict,
     ту же путаницу своей переменной `said`, и здесь тень над параметром
     молча отдала бы `target_absent` не то, что нужно.
     """
-    from reels_factory.hf_catalog import word_variables
+    from reels_factory.hf_catalog import number_variables, word_variables
     from reels_factory.hf_compose import (effect_zone, paste_target,
                                           target_absent)
     from reels_factory.hf_montage import insert_of
@@ -283,6 +283,35 @@ def _element_problems(scene: dict, element: dict, cards: dict, skipped: dict,
                 f"{where_id}: переменная {key!r} принимает "
                 + ", ".join(f"`{one}`" for one in options)
                 + f", а в плане {value!r}")
+            continue
+        # Граница числа — их же клэмп (`conic-progress-ring.html:170-180`),
+        # переставленный до заказа: за границей их скрипт молча подрезал бы
+        # значение уже в оплаченном кадре, и план не узнал бы, что назвал не
+        # то число.
+        lo, hi = rule.get("min"), rule.get("max")
+        if ((lo is not None or hi is not None)
+                and isinstance(value, (int, float))
+                and not isinstance(value, bool)):
+            if lo is not None and value < lo:
+                problems.append(
+                    f"{where_id}: переменная {key!r} держит от {lo} до "
+                    f"{hi if hi is not None else '∞'}, а в плане {value!r}")
+            elif hi is not None and value > hi:
+                problems.append(
+                    f"{where_id}: переменная {key!r} держит от "
+                    f"{lo if lo is not None else '−∞'} до {hi}, а в плане "
+                    f"{value!r}")
+    # Число из речи — второй канал содержания рядом со словами
+    # (`hf_catalog.number_variables`): позиция без слотов разметки, чья
+    # величина живёт переменной, без неё оставляет в кадре умолчание
+    # карточки, а не то, что названо вслух. Спрашивается здесь, ДО заказа
+    # ведущей, тем же доводом, что и слот под файл выше — после оплаты выбор
+    # уже не переиграть.
+    for number_key in number_variables(card):
+        if number_key not in (named or {}):
+            problems.append(
+                f"{where_id}: позиция ждёт число из речи в переменную "
+                f"`{number_key}` (`variables`), а план его не назвал")
     words = element.get("words")
     if words is not None and not isinstance(words, list):
         problems.append(f"{where_id}: `words` — список строк по числу слотов")
