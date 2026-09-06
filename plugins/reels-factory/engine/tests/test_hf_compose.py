@@ -1672,6 +1672,29 @@ def test_эффект_встаёт_в_свободную_зону_кадра(к�
     assert 583 + 397 <= hf_compose.CAPTION_BAND_TOP
 
 
+def test_число_зеркалится_в_строковую_переменную_позиции(каталог):
+    """`conic-progress-ring`: центр — не `progress` сам, а отдельная строка
+    `label`, и её же скрипт анимирует в такт с кольцом только если она
+    названа. Без зеркала кольцо доезжает до спетого числа, а центр
+    досчитывает до умолчания карточки — проверено кадром
+    (`scratchpad/number-vars-check`, 06.09.2026: `progress: 64` без
+    `label` дал кольцо на 64% и центр «100»)."""
+    html, _ = _build(каталог, scenes=_с_элементами(
+        {"name": "conic-progress-ring", "variables": {"progress": 64}}),
+        resolved={})
+    at = html.index("data-variable-values=")
+    values = html[at:html.index(">", at)]
+    assert '"progress": 64' in values and '"label": "64"' in values, values
+    # Названное планом слово в `label` сильнее зеркала.
+    html, _ = _build(каталог, scenes=_с_элементами(
+        {"name": "conic-progress-ring",
+         "variables": {"progress": 64, "label": "64 %"}}),
+        resolved={})
+    at = html.index("data-variable-values=")
+    values = html[at:html.index(">", at)]
+    assert '"label": "64 %"' in values, values
+
+
 def test_эффекту_без_свободной_зоны_места_нет(каталог, capsys):
     """Ведущая во весь кадр не оставляет зоны — элемент снимается, а сборка
     идёт дальше: цена ошибки равна цене элемента, а не прогона."""
