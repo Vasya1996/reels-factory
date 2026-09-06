@@ -585,8 +585,9 @@ def test_числовая_переменная_позиции_отдаёт_кл�
     Список закрытый (`_NUMBER_CONTENT_CARDS`), а не структурный фильтр по
     `type`/`role`: у клона 0.8.27 таких переменных 20, а печатает спетое
     число зрителю на экран едва ли треть — разбор в комментарии над
-    константой. Тест держит ровно те три позиции, что прошли разбор, и
-    ровно тот ключ, что несёт величину.
+    константой. Тест держит ровно те пять позиций, что прошли разбор, и
+    ровно те ключи, что несут величину — `decline-chart` двумя (обе точки
+    интерполяции видны зрителю), остальные одним.
     """
     from reels_factory.hf_catalog import number_variables
 
@@ -594,6 +595,9 @@ def test_числовая_переменная_позиции_отдаёт_кл�
     assert number_variables(cards["count-up"]) == ["end"]
     assert number_variables(cards["conic-progress-ring"]) == ["progress"]
     assert number_variables(cards["star-rating-fill"]) == ["rating"]
+    assert (number_variables(cards["decline-chart"])
+            == ["start_value", "end_value"])
+    assert number_variables(cards["testimonial-card"]) == ["rating"]
     # `chart-story` несёт `type: "number"` + `role: "content"` (`emphasize`),
     # но это индекс акцентируемого столбца, не величина, — свой же
     # `avoid_when` карточки отправляет одиночное число в `count-up`.
@@ -601,6 +605,49 @@ def test_числовая_переменная_позиции_отдаёт_кл�
     # Ни у нас, ни в клоне 0.8.27 переменных вовсе нет — разметка литеральна.
     assert number_variables(cards["animated-bar-chart"]) == []
     assert number_variables(cards["x-follow-card"]) == []
+
+
+def test_каждая_позиция_числового_канала_несёт_объявленную_переменную():
+    """Инвариант по ВСЕЙ таблице `_NUMBER_CONTENT_CARDS`, не по именованным
+    строкам руками — по образцу соседнего
+    `test_нет_позиции_с_текстовыми_слотами_и_рабочей_переменной_разом` для
+    `word_variables`: цикл по каждой записи таблицы, а не точечные `assert`
+    по уже проверенным именам. Упадёт первым же красным, если кто-то впишет
+    в таблицу имя, которого каталог не предлагает, или ключ, который несёт
+    не число content-роли, или значение вне допустимого диапазона.
+    """
+    from reels_factory.hf_catalog import _NUMBER_CONTENT_CARDS, number_variables
+
+    cards = catalog_cards()
+    assert _NUMBER_CONTENT_CARDS, "таблица числового канала пуста"
+    for name, keys in _NUMBER_CONTENT_CARDS.items():
+        assert name in cards, (
+            f"{name}: стоит в `_NUMBER_CONTENT_CARDS`, а каталог его не "
+            "предлагает (снят `skip` или переименован)")
+        card = cards[name]
+        # `number_variables` — сама боевая функция, а не повтор её проверок
+        # руками: если таблица назовёт ключ без `type:number`/`role:content`
+        # или с `portrays`, функция молча его выронит, и это расхождение
+        # тест обязан поймать.
+        assert number_variables(card) == list(keys), (
+            f"{name}: таблица называет {list(keys)}, а `number_variables` "
+            f"отдаёт {number_variables(card)} — ключ не проходит собственные "
+            "проверки функции (тип, роль, `portrays`)")
+        for key in keys:
+            rule = (card.get("variables") or {}).get(key)
+            assert rule is not None, (
+                f"{name}.{key}: таблица называет переменную, которой нет в "
+                "карточке")
+            default = rule.get("default")
+            lo, hi = rule.get("min"), rule.get("max")
+            if isinstance(default, (int, float)) and not isinstance(
+                    default, bool):
+                if lo is not None:
+                    assert default >= lo, (
+                        f"{name}.{key}: умолчание {default} ниже min {lo}")
+                if hi is not None:
+                    assert default <= hi, (
+                        f"{name}.{key}: умолчание {default} выше max {hi}")
 
 
 def test_числовая_переменная_несёт_допустимую_границу():

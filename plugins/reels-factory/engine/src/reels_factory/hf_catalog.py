@@ -490,15 +490,34 @@ def word_variables(card: dict) -> list[str]:
     return found
 
 
-#: Позиция → её переменная, куда ложится величина, названная вслух.
+#: Позиция → её числовые переменные (одна или несколько), куда ложится
+#: величина, названная вслух.
 #:
 #: Не структурный признак (`type: "number"` + `role: "content"`), а
-#: перечень, сверенный со скриптом каждой позиции: их доля у клона 0.8.27 —
-#: 20 из 147 предложенных, а печатает спетое число зрителю на экран едва
-#: ли треть. Остальные — `beatCount` (строки таблицы), `swap_at` (секунды до
-#: подмены экрана), `cursorCount`/`count`/`screens`/`card_count`/`cards`
-#: (сколько повторов нарисовать), `expand`/`badge_state`/`accent_word_index`
-#: (индекс элемента), `revealProgress`/`anchor_x`/`anchor_y`/`zoom`/`travel`/
+#: перечень, сверенный со скриптом каждой позиции — потому что структурного
+#: признака «число видно зрителю» в их контракте нет вовсе (ревью PR #86,
+#: пункт 0a):
+#: - `role` не заведено в базовом типе переменной: `NumberVariable` несёт
+#:   `type`, `default`, `min?`, `max?`, `step?`, `unit?` и ничего сверх
+#:   (`packages/parsers/src/types.ts:241-248` клона 0.8.27), а в доке —
+#:   вольная метка без словаря значений («role says which aspect… content,
+#:   style, timing, motion, layout», `docs/concepts/variables.mdx:107-109`);
+#:   рантайм по нему не ветвится ни разу — `grep -rn '"role"' packages/`
+#:   находит только CLI-тесты и HTML-атрибут `role` accessibility, к
+#:   переменным композиции отношения не имеющий;
+#: - `unit` — про физическую единицу, не про видимость зрителю: живой скан
+#:   `registry/**/registry-item.json` даёт `unit` вперемешку у
+#:   `role:content` (`browser-device-stage.swap_at` — секунды до подмены
+#:   экрана, `svg-mask-reveal.revealProgress` — % маски) и у `role:layout`
+#:   (`ui-focus-zoom.anchor_x` — % кадра) — не дискриминатор;
+#: - поля `format` в контракте нет вовсе — ни в `types.ts`, ни в доке.
+#: Раз признака нет, таблица — не отказ от структурного решения ради
+#: закрытого списка, а факт: 20 карточек несут `type:number`+`role:content`
+#: (клон 0.8.27), а печатает спетое число зрителю на экран едва ли треть.
+#: Остальные — `beatCount` (строки таблицы), `swap_at` (секунды до подмены
+#: экрана), `cursorCount`/`count`/`screens`/`card_count`/`cards` (сколько
+#: повторов нарисовать), `expand`/`badge_state`/`accent_word_index` (индекс
+#: элемента), `revealProgress`/`anchor_x`/`anchor_y`/`zoom`/`travel`/
 #: `sections` (геометрия и прогресс анимации своей же анимации) — цифра
 #: плана легла бы туда числом, а не тем, что видит зритель, или разъехала бы
 #: раскладку. Разбор по каждой карточке — в ревью числовых переменных
@@ -517,15 +536,31 @@ def word_variables(card: dict) -> list[str]:
 #: обеих пуст полем `variables`, разметка литеральна). Число из речи там
 #: положить некуда, пока карточка не заведёт `data-composition-variables` и
 #: не прочитает её своим скриптом — работа над самим блоком, не канал.
+#:
+#: `decline-chart` и `testimonial-card` довешены ревью PR #86 (пункт 0b):
+#: печатают число зрителю тем же `textContent`, что и три исходные карточки,
+#: и до этой правки предлагались агенту без `skip` и без числового канала.
+#: `decline-chart.html:231` — `value.textContent = String(Math.round
+#: (startValue + (endValue - startValue) * p))`: за кадр видны ОБЕ точки —
+#: `start_value` в начале интерполяции и `end_value` в её конце, — обе
+#: реально называются вслух («упало с восьмидесяти двух до тридцати
+#: четырёх»), поэтому у карточки два ключа канала, не один; оставить только
+#: `end_value` подставило бы вымышленное умолчание (82) под видимое зрителю
+#: число начала. `testimonial-card.html:273` — `ratingValueEl.textContent =
+#: ratingText + " / 5"`: `.tc-rating-value` не несёт CSS-правила, прячущего
+#: его (`grep -n 'tc-rating-value\s*{'` по файлу — пусто), и `aria-hidden`
+#: на видимость не влияет — элемент цел в кадре.
 _NUMBER_CONTENT_CARDS = {
-    "count-up": "end",
-    "conic-progress-ring": "progress",
-    "star-rating-fill": "rating",
+    "count-up": ("end",),
+    "conic-progress-ring": ("progress",),
+    "star-rating-fill": ("rating",),
+    "decline-chart": ("start_value", "end_value"),
+    "testimonial-card": ("rating",),
 }
 
 
 def number_variables(card: dict) -> list[str]:
-    """Числовая переменная позиции, куда код кладёт величину из реплики.
+    """Числовые переменные позиции, куда код кладёт величину(ы) из реплики.
 
     Второй канал содержания рядом со словами (`word_variables`, выше) —
     правило проекта то же: содержание в кадр кладёт код, а не агент правкой
@@ -543,20 +578,25 @@ def number_variables(card: dict) -> list[str]:
     склеиваются, и второй способ подать то же значение был бы новым каналом
     там, где хватает старого.
 
-    Только позиции из `_NUMBER_CONTENT_CARDS` — почему список закрытый, а не
-    структурный фильтр по `type`/`role`, сказано в комментарии над ним.
+    Только позиции из `_NUMBER_CONTENT_CARDS`, и только те их ключи, что
+    таблица называет, — почему список закрытый, а не структурный фильтр по
+    `type`/`role`, сказано в комментарии над ним. У `decline-chart` ключей
+    два (`start_value`, `end_value`): позиция может печатать зрителю больше
+    одного числа разом, и обе точки нужны из речи, а не одна с воображаемым
+    вторым концом.
     """
     if card.get("text_slots"):
         return []
-    key = _NUMBER_CONTENT_CARDS.get(card.get("name"))
-    if not key:
-        return []
-    rule = (card.get("variables") or {}).get(key) or {}
-    if rule.get("type") != "number" or rule.get("role") != "content":
-        return []
-    if rule.get("portrays"):
-        return []
-    return [key]
+    keys = _NUMBER_CONTENT_CARDS.get(card.get("name")) or ()
+    found = []
+    for key in keys:
+        rule = (card.get("variables") or {}).get(key) or {}
+        if rule.get("type") != "number" or rule.get("role") != "content":
+            continue
+        if rule.get("portrays"):
+            continue
+        found.append(key)
+    return found
 
 
 #: `conic-progress-ring` → строковая переменная, куда код зеркалит то же
