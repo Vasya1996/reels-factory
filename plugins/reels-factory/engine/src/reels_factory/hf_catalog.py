@@ -205,24 +205,59 @@ _OUR_BLOCK = re.compile(r"^g\d\d-")
 KINDS = ("scene", "overlay", "effect")
 
 
+def _registry_cards(catalog_dir=None):
+    """Каждая карточка реестра, обеих подпапок — один проход для всех
+    читателей, которым нужна ЛЮБАЯ позиция, а не только та, что каталог
+    предлагает агенту.
+
+    До этой функции каждый читатель обходил реестр своим циклом и сам выбирал
+    подпапку: `_offered_in` брал обе, но по отдельному списку имён на каждую,
+    `decor_texts` — обе своим циклом, а `skipped_blocks` — только `blocks`,
+    потому что была написана 11.08.2026 (a68f242), до того как в каталоге
+    появились компоненты (04.09.2026, 6df1bba). Один новый вид позиций так и
+    не доехал до старого читателя: ревью PR #90 07.09.2026 нашло 123
+    компонента со `skip`, которых `skipped_blocks` не видел вовсе, и гейт
+    `D36_elements` вместо их настоящей причины отказа отвечал агенту «такой
+    позиции в каталоге нет». Один генератор на всех читателей избавляет от
+    выбора подпапки, который можно забыть повторить.
+
+    Отдаёт подпапку (`blocks`/`components`), имя, папку позиции и разобранный
+    JSON карточки — БЕЗ отбора: `skip`, недостающие файлы и что угодно ещё
+    решает вызывающий. Карточка без файла и файл с битым JSON пропускаются
+    здесь же — как раньше делал только `decor_texts`, — разбирать нечего, а
+    не отбор по смыслу.
+    """
+    root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
+    for subdir, names in (("blocks", block_names(catalog_dir)),
+                          ("components", component_names(catalog_dir))):
+        for name in names:
+            folder = root / subdir / name
+            card = folder / "registry-item.json"
+            if not card.exists():
+                continue
+            try:
+                item = json.loads(card.read_text(encoding="utf-8"))
+            except ValueError:
+                continue
+            yield subdir, name, folder, item
+
+
 def _offered_in(subdir, names, catalog_dir=None):
     """Отсев одной подпапки реестра (`blocks` или `components`) по имени.
 
     Правила общие — записанная причина отказа и недостающие файлы, — а
     подпапка и список имён у каждого читателя свои: `_offered` берёт `blocks`,
-    `_offered_components` берёт `components`.
+    `_offered_components` берёт `components`. Карточки идут из общего
+    генератора (`_registry_cards`); отбор — свой, здесь.
 
     Причина отказа записана в карточке: например у `lower-third-bild` текст
     приходит из переменных композиции, наши слоты его не видят, и в кадр уехал
     бы немецкий дефолт «BILD EXKLUSIV».
     """
-    root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
-    for name in names:
-        folder = root / subdir / name
-        card = folder / "registry-item.json"
-        if not card.exists():
+    wanted = set(names)
+    for card_subdir, name, folder, item in _registry_cards(catalog_dir):
+        if card_subdir != subdir or name not in wanted:
             continue
-        item = json.loads(card.read_text(encoding="utf-8"))
         skip = (item.get("reels") or {}).get("skip")
         if skip:
             log.debug("позиция %s не предложена: %s", name, skip)
@@ -1013,22 +1048,16 @@ def decor_texts(catalog_dir=None) -> dict[str, set[str]]:
     ронял две вещи: decor компонентов не видел вовсе, а `skip` на позиции
     забирал у гейта знание о её надписи — ревью 05.09.2026: стоило снять
     `camcorder-hud`, и D22 объявил его «REC» заглушкой.
+
+    Карточки идут из общего генератора обеих подпапок (`_registry_cards`) —
+    он уже пропускает карточку без файла и битый JSON тем же способом, каким
+    это раньше делал только этот читатель.
     """
-    root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
     found = {}
-    for subdir, names in (("blocks", block_names(catalog_dir)),
-                          ("components", component_names(catalog_dir))):
-        for name in names:
-            card = root / subdir / name / "registry-item.json"
-            if not card.exists():
-                continue
-            try:
-                item = json.loads(card.read_text(encoding="utf-8"))
-            except ValueError:
-                continue
-            texts = (item.get("reels") or {}).get("decor_texts")
-            if texts:
-                found[name] = {str(text) for text in texts}
+    for subdir, name, folder, item in _registry_cards(catalog_dir):
+        texts = (item.get("reels") or {}).get("decor_texts")
+        if texts:
+            found[name] = {str(text) for text in texts}
     return found
 
 
@@ -1155,20 +1184,25 @@ def write_catalog_files(rdir, catalog_dir=None) -> list[Path]:
 TEXTURE_TAG = "media-treatment-overlay"
 
 
-def skipped_blocks(catalog_dir=None) -> dict[str, str]:
-    """Блоки, которые нельзя ставить, и причина у каждого.
+def skipped_positions(catalog_dir=None) -> dict[str, str]:
+    """Позиции каталога — блоки и компоненты обеих подпапок реестра, —
+    которые нельзя ставить, и причина у каждой.
 
     Причина записана в карточке нашего каталога: например их же проверка под
     `--strict` валит блок, чей CSS адресуется по собственному
     `data-composition-id`, — исправить это может только автор блока.
+
+    Названа «позиции», не «блоки», и обходит обе подпапки одним генератором
+    (`_registry_cards`) не просто ради слова: до этой правки функция открывала
+    только `blocks/` — так и было написано 11.08.2026 (a68f242), когда
+    компонентов в каталоге ещё не было. Когда они появились 04.09.2026
+    (6df1bba), обход за ними не пошёл, и ревью PR #90 07.09.2026 нашло 123
+    компонента со `skip`, для которых `hf_gates._element_problems` и
+    `hf_compose.element_problem` отвечали агенту «такой позиции в каталоге
+    нет» вместо настоящей причины отказа из карточки.
     """
-    root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
     found = {}
-    for name in block_names(catalog_dir):
-        card = root / "blocks" / name / "registry-item.json"
-        if not card.exists():
-            continue
-        item = json.loads(card.read_text(encoding="utf-8"))
+    for subdir, name, folder, item in _registry_cards(catalog_dir):
         reason = (item.get("reels") or {}).get("skip")
         if reason:
             found[name] = str(reason)

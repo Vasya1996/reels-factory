@@ -1282,6 +1282,20 @@ def test_накладка_агента_попадает_в_установку_б
                                              "lt-soft-pill"]
 
 
+def test_позиция_со_skip_в_установку_не_попадает(monkeypatch):
+    """Элемент, названный планом, снятая (`reels.skip`) позиция — не важно,
+    блок это или компонент: ставить `hyperframes add` её всё равно не может,
+    и `needed_blocks` не должен звать установку для имени, которое сам же
+    каталог отказался предлагать."""
+    from reels_factory.hf_compose import needed_blocks
+    monkeypatch.setattr(
+        hf_compose, "_skipped_positions",
+        lambda: {"demo-skip-component": "их же проверка валит компонент"})
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["elements"] = [{"name": "demo-skip-component"}]
+    assert "demo-skip-component" not in needed_blocks(_board(scenes))
+
+
 # ---------- что не встанет в кадр, снимается до разбора пустых сцен ----------
 
 def _пара(filler: dict) -> dict:
@@ -1351,7 +1365,7 @@ def test_причина_негодности_накладки_считается
     """`settle_fillers` и сама сборка обязаны судить блок одинаково: разойдись
     они — сборка снимет плашку, которую проход посчитал стоящей, и сцена снова
     останется с пустым кадром."""
-    monkeypatch.setattr(hf_compose, "_skipped_blocks",
+    monkeypatch.setattr(hf_compose, "_skipped_positions",
                         lambda: {"lt-broken": "их блок ломает рендер"})
     monkeypatch.setattr(hf_compose, "_known_overlays",
                         lambda: frozenset({"lt-clean-bar", "lt-broken"}))
@@ -1383,7 +1397,7 @@ def каталог(run, monkeypatch):
 
     cards = catalog_cards(FIXTURE_CATALOG)
     monkeypatch.setattr(hf_compose, "_catalog_cards", lambda: cards)
-    monkeypatch.setattr(hf_compose, "_skipped_blocks",
+    monkeypatch.setattr(hf_compose, "_skipped_positions",
                         lambda: {"demo-skip": "их же проверка валит блок"})
     monkeypatch.setattr(hf_compose, "_texture_blocks", frozenset)
     registry = FIXTURE_CATALOG / "registry"
@@ -1894,7 +1908,7 @@ def test_приёму_без_слова_на_мишени_титра_отказ�
 
     cards = hf_catalog.catalog_cards(FIXTURE_CATALOG)
     monkeypatch.setattr(hf_catalog, "catalog_cards", lambda *a, **kw: cards)
-    monkeypatch.setattr(hf_catalog, "skipped_blocks", lambda *a, **kw: {})
+    monkeypatch.setattr(hf_catalog, "skipped_positions", lambda *a, **kw: {})
     scenes = _с_элементами({"name": "demo-decor", "target": "caption"})
     problems = elements_problems(json.loads(json.dumps(scenes)), WORDS)
     assert any("поле `word` элемента не называет" in one for one in problems), \
@@ -1914,7 +1928,7 @@ def test_приёму_со_словом_которого_нет_в_титре_с
 
     cards = hf_catalog.catalog_cards(FIXTURE_CATALOG)
     monkeypatch.setattr(hf_catalog, "catalog_cards", lambda *a, **kw: cards)
-    monkeypatch.setattr(hf_catalog, "skipped_blocks", lambda *a, **kw: {})
+    monkeypatch.setattr(hf_catalog, "skipped_positions", lambda *a, **kw: {})
     scenes = _с_элементами(
         {"name": "demo-decor", "target": "caption", "word": "деньги"})
     problems = elements_problems(json.loads(json.dumps(scenes)), WORDS)
@@ -1937,7 +1951,7 @@ def test_приёму_без_мишени_в_сцене_отказывают_д�
     cards = hf_catalog.catalog_cards(FIXTURE_CATALOG)
     monkeypatch.setattr(hf_catalog, "catalog_cards",
                         lambda *a, **kw: cards)
-    monkeypatch.setattr(hf_catalog, "skipped_blocks", lambda *a, **kw: {})
+    monkeypatch.setattr(hf_catalog, "skipped_positions", lambda *a, **kw: {})
     scenes = _с_элементами({"name": "demo-decor", "target": "presenter"},
                            presenter="none")
     problems = elements_problems(json.loads(json.dumps(scenes)))

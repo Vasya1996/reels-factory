@@ -546,10 +546,10 @@ def каталог(monkeypatch):
     """Гейты судят по фикстурному каталогу, а не по боевому."""
     from reels_factory import hf_catalog, hf_montage
 
-    cards, skipped = hf_catalog.catalog_cards, hf_catalog.skipped_blocks
+    cards, skipped = hf_catalog.catalog_cards, hf_catalog.skipped_positions
     monkeypatch.setattr(hf_catalog, "catalog_cards",
                         lambda *a, **k: cards(FIXTURE_CATALOG))
-    monkeypatch.setattr(hf_catalog, "skipped_blocks",
+    monkeypatch.setattr(hf_catalog, "skipped_positions",
                         lambda *a, **k: skipped(FIXTURE_CATALOG))
     monkeypatch.setattr(hf_montage, "_element_kinds",
                         lambda: {name: card.get("kind")
@@ -579,6 +579,16 @@ def test_неизвестное_имя_позиции_ловится_до_зак
 def test_позиция_с_причиной_отказа_планом_не_называется(каталог):
     problems = elements_problems(_элементы({"name": "demo-skip"}))
     assert len(problems) == 1 and "--strict" in problems[0]
+
+
+def test_компонент_с_причиной_отказа_планом_не_называется(каталог):
+    """Та же проверка, что выше, но для компонента — до правки 07.09.2026
+    (PR #90) `skipped_blocks` обходил только `blocks/`, `demo-skip-component`
+    не находился ни в `skipped`, ни в `cards`, и гейт отвечал ложным «такой
+    позиции в каталоге нет» вместо причины из карточки."""
+    problems = elements_problems(_элементы({"name": "demo-skip-component"}))
+    assert len(problems) == 1 and "--strict" in problems[0]
+    assert "в каталоге нет" not in problems[0]
 
 
 def test_чужая_переменная_и_чужой_тип_ловятся_по_карточке(каталог):
