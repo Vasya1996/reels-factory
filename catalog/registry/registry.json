@@ -284,6 +284,10 @@
       "type": "hyperframes:block"
     },
     {
+      "name": "v-camera-dolly-zoom",
+      "type": "hyperframes:block"
+    },
+    {
       "name": "ai-generation-canvas",
       "type": "hyperframes:component"
     },
