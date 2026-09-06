@@ -176,6 +176,35 @@
     },
     {
       "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
+      "name": "demo-plain-vertical",
+      "type": "hyperframes:block",
+      "title": "Demo Plain Vertical",
+      "description": "Same no-kind card as demo-plain, but a portrait canvas matching the frame",
+      "tags": [
+        "demo",
+        "overlay"
+      ],
+      "dimensions": {
+        "width": 1080,
+        "height": 1920
+      },
+      "duration": 4.0,
+      "files": [
+        {
+          "path": "demo-plain-vertical.html",
+          "target": "compositions/demo-plain-vertical.html",
+          "type": "hyperframes:composition"
+        }
+      ],
+      "reels": {
+        "backing": "none",
+        "text_slots": [
+          "line"
+        ]
+      }
+    },
+    {
+      "$schema": "https://hyperframes.heygen.com/schema/registry-item.json",
       "name": "demo-scene",
       "type": "hyperframes:block",
       "title": "Demo Scene",

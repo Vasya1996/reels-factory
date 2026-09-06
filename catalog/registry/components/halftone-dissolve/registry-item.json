@@ -160,6 +160,6 @@
         "default": "none"
       }
     },
-    "skip": "composition_file_too_large [lint] [data-composition-id]: This HTML composition file has 338 lines. Smaller sub-compositions are easier to read, iterate on, and diff.; content_overlap [layout] span.htd-tile-glyph: Two text blocks overlap and may render unreadable."
+    "skip": "Слоты `halftone-dissolve-a`, `halftone-dissolve-b` — её контракт ждёт содержимое `<template>`-ом ИЗ ХОСТОВОЙ страницы, а наша сборка ставит позицию сабкомпозицией (`_stage_overlay`) — контракт неисполним в принципе, не про находку конкретного прогона check'а. Сборка снимает позицию сама, до всякого рендера (`host_slots`, `build_composition`, `hf_compose.py:1953-1961`): в кадре иначе остался бы серый скелет-заглушка вместо содержимого. Прежние причины (`composition_file_too_large`, `content_overlap` на `span.htd-tile-glyph`) не проверялись настоящей сборкой — до них дело не доходит: отказ раньше, на стыковке контракта. Перепроверено настоящей сборкой на 0.8.27 06.09.2026 (work/overlay-band/halftone-dissolve)."
   }
 }
