@@ -9,7 +9,7 @@ import pytest
 from reels_factory import hf_compose
 from reels_factory.hf_compose import (
     build_composition, collect_intents, complete_storyboard, icon_intents,
-    presenter_timeline, settle_inserts,
+    markup_time, presenter_timeline, settle_inserts,
 )
 from reels_factory.hf_layout import VIDEO_RECTS
 from reels_factory.hf_sdk import sdk_session
@@ -1004,6 +1004,104 @@ def test_схема_закрывает_кадр_их_блоком(run):
     copy = (run / "public" / "compositions" / "mk-specs-list--s-02.html")
     text = copy.read_text(encoding="utf-8")
     assert "Object.assign(CONFIG," in text and "1080px" in text
+    # ни ведущей, ни вставки под схемой нет — фон держит код (aurora), и
+    # плашка читаемости тут ни к чему.
+    assert 'id="schema-box-s-02">' in html
+    assert 'id="schema-scrim-s-02"' not in html
+
+
+def test_схема_поверх_вставки_получает_плашку_читаемости(run):
+    """Job rb0907-philosophers, сцена s-07: `presenter: "none"`, но `insert`
+    назван и приехал — под схемой лежит реальный сток на весь кадр
+    (`INSERT_RECTS["none"]` в `hf_layout.py`), а не наш управляемый фон.
+    Их `contrast_aa_failure` замерил там 1.54:1, 2.9:1 и 1.97:1 у строк
+    «говори честно» / «не делай» / «не манипулируй» (fg вплоть до
+    rgb(233,222,213) на bg вплоть до rgb(207,175,160)) — их блок несёт свой
+    параметр `scrim`, но проверено локальным `hyperframes check` на самой
+    этой копии: полная сила их же градиента (`scrim: 1`) гасит только левый
+    край колонки (их же CSS — «rgba(0,0,0,.55) 0% … transparent 62%») и
+    оставляет `говори честно`/`не манипулируй` на 2.15–2.18:1 — блок, для
+    которого схема писалась, тут не тот. Плашку кладёт код: тот же таймированный
+    `.ovl-scrim`, что уже стоит под накладками без своей подложки — не ровный
+    `style` на постоянной коробке схемы (прежняя версия правки красила им весь
+    ролик целиком, а не только окно сцены — этот тест теперь проверяет ровно
+    то, чего не проверял тот отчёт: тайминг, а не просто наличие плашки)."""
+    _with_schema_block(run)
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = _shots("человек говорит на камеру",
+                                  "рука у экрана", kind="video")
+    scenes[1]["schema"] = {"form": "pairs", "why": "у пунктов свои значения",
+                           "rows": [{"label": "раз", "value": "первое"},
+                                    {"label": "два", "value": "второе"}]}
+    html, board = _build(run, scenes=scenes)
+    assert 'id="ins-s-02-0" class="ins clip"' in html
+    assert board["scenes"][1]["schemaShown"] is True
+    # Коробка схемы сама больше не несёт инлайновый фон — только маунт.
+    box = html[html.index('id="schema-box-s-02"'):][:200]
+    assert "style=" not in box.split(">", 1)[0]
+    # Плашка — отдельный таймированный элемент со своим окном, а не вечный
+    # фон: `class="clip"` + `data-start`/`data-duration`, как у скрима под
+    # накладкой (`timed_element_missing_clip_class` иначе роняет `check`).
+    scrim = html[html.index('id="schema-scrim-s-02"') - 40:][:220]
+    assert 'class="ovl-scrim clip"' in scrim
+    assert "data-start=" in scrim and "data-duration=" in scrim
+    # Окно скрима — окно сцены s-02 (3.033..6.0 с из SCENES), не весь ролик:
+    # `markup_time` квантует на сетку кадров, поэтому сравниваем через тот же
+    # помощник, а не литералом раскадровки.
+    start_attr = scrim.split('data-start="')[1].split('"')[0]
+    duration_attr = scrim.split('data-duration="')[1].split('"')[0]
+    assert float(start_attr) == pytest.approx(markup_time(3.033), abs=1e-3)
+    assert float(duration_attr) == pytest.approx(
+        markup_time(6.0) - markup_time(3.033), abs=1e-3)
+
+
+def _schema_scrim_scenes(count: int, span: float = 3.0):
+    """`count` схемных сцен подряд, у каждой настоящая вставка под схемой —
+    те же условия, что дают плашку в `test_схема_поверх_вставки_...`, просто
+    несколько раз подряд."""
+    scenes, resolved = [], {}
+    for index in range(count):
+        start = round(index * span, 3)
+        name = f"s-{index:02d}"
+        scenes.append(
+            {"id": name, "intent": "и", "startSec": start,
+             "endSec": round(start + span, 3), "presenter": "none",
+             "insert": _shots("переговоры", "бумаги"),
+             "schema": {"form": "pairs", "why": "у пунктов свои значения",
+                        "rows": [{"label": "раз", "value": "первое"},
+                                 {"label": "два", "value": "второе"}]}})
+        resolved.update(_found(name, ".media/images/a.jpg", ".media/images/b.jpg"))
+    return scenes, resolved
+
+
+def test_скримы_схемы_раскладываются_по_дорожкам(run):
+    """Скрим схемы — обычный `div` с `data-start`, не маунт (в отличие от
+    самой коробки схемы на `TRACK_SCHEMA`, которую их счётчик плотности не
+    видит вовсе): `timeline_track_too_dense` считает элементы на дорожке
+    КОЛИЧЕСТВОМ, не пересечением, и без ротации пятая схема с настоящей
+    вставкой подряд легла бы на ту же дорожку, что и первые четыре, — даже
+    при том, что сами схемные сцены друг друга по времени не перекрывают."""
+    _with_schema_block(run)
+    count = 5
+    scenes, resolved = _schema_scrim_scenes(count)
+    duration = round(count * 3.0, 3)
+    board = _board(json.loads(json.dumps(scenes)))
+    board["composition"]["durationSeconds"] = duration
+    board["videoTrack"]["endSec"] = duration
+    with sdk_session() as sdk:
+        build_composition(run, sdk, storyboard=board, clips=CLIPS,
+                          duration=duration, words=WORDS, resolved=resolved)
+    html = (run / "public" / "index.html").read_text(encoding="utf-8")
+    tracks = [html[html.index(f'id="schema-scrim-s-{index:02d}"'):][:220]
+              .split('data-track-index="')[1].split('"')[0]
+              for index in range(count)]
+    assert len(tracks) == count, "скрим встал не под каждой схемой с вставкой"
+    per_track = {track: tracks.count(track) for track in set(tracks)}
+    assert max(per_track.values()) <= 3, (
+        "дорожка схемного скрима держит больше трёх элементов — "
+        "их линтер зовёт это timeline_track_too_dense")
+    assert len(per_track) >= 2, "пять скримов легли на одну дорожку без ротации"
 
 
 def test_перечисление_получает_содержимое_штатным_каналом(run):
@@ -1213,6 +1311,83 @@ def test_схема_короче_своей_анимации_не_ставитс
     html, board = _build(run, scenes=scenes, resolved={})
     assert 'id="schema-s-02"' not in html
     assert "schemaShown" not in board["scenes"][1]
+
+
+#: Лицо ведущей из прогона `rb0907-philosophers` (`face.json` на сервере) и
+#: оно же, поднятое в верхнюю пятую часть клипа. Первое зоны под собой не
+#: оставляет, второе оставляет — на этой паре и держится вся правка.
+FACE_LOW = {"cx": 521, "cy": 696, "h": 269, "detected": True}
+FACE_HIGH = {"cx": 521, "cy": 300, "h": 269, "detected": True}
+
+
+def test_схема_при_наезде_встаёт_ниже_лица_и_выше_титра(run):
+    """Геометрию схемы считал `hf_schema.build`, который ни окна ведущей, ни
+    её лица не знает: пять форм центруются в полосе `0..980`, то есть ровно
+    там, где при `punch` голова. Теперь коробку ставит кадр — полосой между
+    низом лица и словами титра, ужимая содержимое в неё целиком.
+    """
+    from reels_factory.hf_compose import (CAPTION_BAND_SAFETY, CAPTION_BAND_TOP,
+                                          schema_zone)
+
+    _with_schema_block(run)
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "punch"
+    scenes[1]["insert"] = None
+    scenes[1]["schema"] = {"form": "pairs", "why": "у пунктов свои значения",
+                           "rows": [{"label": "раз", "value": "первое"},
+                                    {"label": "два", "value": "второе"}]}
+    html, board = _build(run, scenes=scenes, resolved={}, face=FACE_HIGH)
+
+    zone = schema_zone("punch", face=FACE_HIGH)
+    assert zone is not None and zone["scale"] < 1
+    tag = html[html.index('id="schema-s-02"'):][:600]
+    assert f'top:{zone["top"]}px' in tag
+    assert f'transform:scale({zone["scale"]})' in tag
+    assert "transform-origin:0 0" in tag
+    # Коробка кончается выше слов титра и начинается ниже лица.
+    assert zone["top"] + zone["height"] <= CAPTION_BAND_TOP - CAPTION_BAND_SAFETY
+    from reels_factory.hf_compose import crop_fractions
+    from reels_factory.hf_layout import VIDEO_RECTS, face_box, moved_face
+    box = face_box(moved_face(FACE_HIGH, VIDEO_RECTS["punch"],
+                              crop_fractions(FACE_HIGH)))
+    assert zone["top"] >= box["top"] + box["height"]
+    assert board["scenes"][1]["schemaShown"] is True
+
+
+def test_схема_без_полосы_под_лицом_снимается_на_сборке(run):
+    """То же лицо, что в прогоне: под ним до слов титра 120 px, а читаемой
+    схеме нужно 441. Сцена доезжает до сборки, когда положение ведущей после
+    гейта переписал код, — и тогда схему снимает кадр, а не гейт."""
+    _with_schema_block(run)
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "punch"
+    scenes[1]["insert"] = None
+    scenes[1]["schema"] = {"form": "pairs", "why": "у пунктов свои значения",
+                           "rows": [{"label": "раз", "value": "первое"},
+                                    {"label": "два", "value": "второе"}]}
+    html, board = _build(run, scenes=scenes, resolved={}, face=FACE_LOW)
+    assert 'id="schema-s-02"' not in html
+    assert "schemaShown" not in board["scenes"][1]
+
+
+def test_схема_без_ведущей_и_в_нижнем_уголке_стоит_как_прежде(run):
+    """Зона целая — разметка обязана остаться знак в знак прежней: ни
+    масштаба, ни сдвига. Это те положения, на которых схемы уже стоят в
+    прогонах rb0907 (`none`, `pip-br`, `pip-bl`)."""
+    for position in ("none", "pip-br", "pip-bl"):
+        folder = run / position
+        folder.mkdir(parents=True, exist_ok=True)
+        _with_schema_block(folder)
+        scenes = json.loads(json.dumps(SCENES))
+        scenes[1]["presenter"] = position
+        scenes[1]["insert"] = None
+        scenes[1]["schema"] = {"form": "pairs", "why": "у пунктов свои значения",
+                              "rows": [{"label": "раз", "value": "первое"},
+                                       {"label": "два", "value": "второе"}]}
+        html, _ = _build(folder, scenes=scenes, resolved={}, face=FACE_LOW)
+        tag = html[html.index('id="schema-s-02"'):][:600]
+        assert "position:absolute;left:0;top:0;" in tag, position
+        assert "transform" not in tag, position
 
 
 def test_схема_бренда_без_знака_не_рисуется(run):

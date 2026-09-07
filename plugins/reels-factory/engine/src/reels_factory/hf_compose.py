@@ -67,13 +67,13 @@ from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.hf_captions import caption_snippet, write_caption_data
 from reels_factory.hf_frame import DEFAULTS as FRAME_DEFAULTS
 from reels_factory.hf_layout import (
-    VIDEO_RECTS, avatar_gaps, effect_rect, icon_fits, in_avatar_gap,
-    insert_rect, quantize,
+    FULL_FRAME_PRESENTER, VIDEO_RECTS, avatar_gaps, effect_rect, icon_fits,
+    in_avatar_gap, insert_rect, quantize,
 )
 from reels_factory.hf_media import insert_problem
 from reels_factory.hf_montage import (
-    cut_into_plans, drop_schema, flash_moments, insert_of, refill_scene,
-    scene_elements, shot_queries,
+    PUSH_TO, cut_into_plans, drop_schema, flash_moments, insert_of,
+    refill_scene, scene_elements, shot_queries,
     shots_for, split_series, zoom_ladder,
 )
 from reels_factory.hf_schema import (
@@ -175,6 +175,23 @@ STITCH_LEAD = 0.9
 #: законна: их слой — обычный `div` с `data-start`, не маунт.
 TRACK_SCHEMA = 30
 
+#: Первая дорожка слоя читаемости под коробкой схемы, когда под ней лежит
+#: настоящая вставка (сток, непредсказуемый по цвету), а не наш управляемый
+#: фон (aurora). Тот же `.ovl-scrim`, что у накладок без своей подложки
+#: (`TRACK_SCRIM`), но своя полоса дорожек: скрим — обычный `div` с
+#: `data-start`, не маунт, и в отличие от самой коробки схемы (маунт,
+#: `TRACK_SCHEMA` без ротации — их счётчик плотности маунты пропускает) он
+#: ПОПАДАЕТ под `timeline_track_too_dense`, даже когда сами схемные сцены не
+#: перекрываются по времени: их линтер считает элементы на дорожке количеством,
+#: не пересечением (тот же довод, что у `TRACK_SCRIM` ниже). Полоса 20..28:
+#: ниже вставок (`TRACK_INSERT`=3) и схемы (30), свободна.
+TRACK_SCHEMA_SCRIM = 20
+
+#: Сколько дорожек схемной полосы резервировать под фактическое число схемных
+#: сцен с настоящей вставкой — считается один раз до цикла схемы, тем же
+#: приёмом и с тем же запасом, что у `scrim_tracks` накладок ниже.
+SCHEMA_SCRIMS_PER_TRACK = INSERTS_PER_TRACK
+
 #: Первая дорожка слоя читаемости под накладкой без своей подложки. Скрим —
 #: обычный `div` с `data-start`, а не маунт, поэтому счётчик плотности
 #: `timeline_track_too_dense` его считает, и четвёртый скрим на одной дорожке
@@ -244,6 +261,70 @@ def effect_zone(presenter: str) -> dict | None:
     """
     return effect_rect(presenter,
                        band_top=CAPTION_BAND_TOP - CAPTION_BAND_SAFETY)
+
+
+#: Во сколько раз схему можно ужать, оставив её читаемой. Порог — ДОЛЯ от
+#: собственного кегля, а не пиксель: пиксельный пол схему завернул бы и без
+#: всякого ужатия (у перечисления подпись и так `min(2.6cqw, …)` — 28 px в
+#: нашем кадре, `grid-card-assemble.html:376-379`), а вопрос стоит другой —
+#: насколько ниже СВОЕГО размера буквам можно опуститься.
+#:
+#: Долю берём не с потолка и не свою: ровно так ужимает слово титра его же
+#: движок — `var minSize = Math.floor(baseFontSize * 0.45)`
+#: (`assets/caption-highlight.html:134`), и ниже не идёт «rather than
+#: shrinking below legibility» (там же:135-137); при базовом кегле 80 px в
+#: нашем кадре (`:401`, `fontScale = min(W, H) / 1080 = 1`, `:276`) это его
+#: пол в 36 px. У них самих та же доля чуть строже — 42 из 78
+#: (`packages/core/src/text/fitTextFontSize.ts:27-28`). Схема сверстана на
+#: полосу `SAFE_BOTTOM`, значит её доля — доля этой полосы.
+SCHEMA_MIN_SCALE = 0.45
+
+
+def schema_zone(presenter: str, *, face: dict | None = None,
+                min_height: int | None = None) -> dict | None:
+    """Куда встаёт схема при этом положении ведущей и во сколько раз ужимается.
+
+    `{"top", "height", "scale"}` либо `None` — места нет, и схема в такую
+    сцену не встаёт.
+
+    До этой функции геометрию схемы считал один `hf_schema.build`, и он не
+    знал о ведущей ничего: ни её окна, ни лица. Пять форм центровались в
+    полосе `0..SAFE_BOTTOM` и ложились туда же, где при `punch` находится
+    лицо — прогон `rb0907-philosophers`, сцена `s-08`, карточка бренда на
+    лице ведущей. Знает об этом компоновщик: окно ведущей ставит он
+    (`_presenter_move`), наезд считает он же (`camera_plans`), лицо меряет
+    `face_detect`. Теперь он это и говорит — одной зоной, тем же
+    `hf_layout.effect_rect`, которым в кадр встаёт элемент-эффект.
+
+    `scale` — во сколько раз ужать коробку схемы, чтобы её содержимое (оно
+    сверстано на полосу `SCHEMA_SAFE_BOTTOM`) уместилось в зону. Единица —
+    зона целая, и разметка выходит знак в знак прежней: так стоят схемы при
+    `none` и при нижних уголках, где окно ведущей лежит ниже полосы титра и
+    со схемой не спорит вовсе.
+
+    Наезд входит в счёт: при полнокадровой ведущей камера растёт до
+    `PUSH_TO` вокруг точки лица (`zoom_origin` целится в неё же), то есть
+    голова к концу наезда крупнее ровно во столько же. Это не мелочь, а сам
+    дефект: на 27,65 с карточка `s-08` стояла НАД лицом и кадр читался, а на
+    28,43 с наезд поднял лицо в неё (`contact-sheet-3.jpg`, кадры 4 и 5).
+    Гейт обязан судить худший кадр сцены, а не первый.
+
+    `min_height` — пол зоны; по умолчанию читаемый (`SCHEMA_MIN_SCALE`).
+    Ноль спрашивает отказавший гейт, когда ему нужно назвать в тексте, СКОЛЬКО
+    места осталось: иначе он мерил бы полосу вторым счётом.
+    """
+    name = str(presenter or "none")
+    if face and name in FULL_FRAME_PRESENTER:
+        face = dict(face, h=float(face["h"]) * PUSH_TO)
+    if min_height is None:
+        min_height = round(SCHEMA_MIN_SCALE * SCHEMA_SAFE_BOTTOM)
+    rect = effect_rect(name, band_top=CAPTION_BAND_TOP - CAPTION_BAND_SAFETY,
+                       face=face, fit=crop_fractions(face),
+                       min_height=min_height)
+    if rect is None:
+        return None
+    return {"top": rect["top"], "height": rect["height"],
+            "scale": round(min(1.0, rect["height"] / SCHEMA_SAFE_BOTTOM), 4)}
 
 
 def _overlay_geometry(block: str, canvas: tuple) -> tuple[float, str]:
@@ -3143,11 +3224,36 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # Все схемы ролика лежат на одной дорожке: по времени они не пересекаются
     # (каждая занимает свою сцену целиком), а счёт плотности их линтера схему
     # не видит вовсе — маунт он пропускает (см. `TRACK_SCHEMA`).
+    #
+    # Плашка читаемости под коробкой — НЕ маунт (см. `TRACK_SCHEMA_SCRIM`), и
+    # её считает `timeline_track_too_dense` количеством, а не пересечением:
+    # сколько дорожек ей отвести, считаем здесь же, до цикла, тем же приёмом,
+    # что у `scrim_tracks` накладок ниже. Условие на `series.get` избыточно
+    # шире реального (сцена может ещё потерять схему по времени формы), но
+    # лишняя дорожка ничего не стоит — тот же довод, что у накладок.
+    schema_scrim_tracks = max(1, -(-sum(
+        1 for scene in scenes
+        if schema_plan(scene) and series.get(scene["id"]))
+        // SCHEMA_SCRIMS_PER_TRACK))
+    staged_schema_scrims = 0
     for scene in scenes:
         plan = schema_plan(scene)
         if not plan:
             continue
         start, end = _q(scene["startSec"]), _q(scene["endSec"])
+        # Где схеме стоять, решает не она сама, а кадр: окно ведущей, её лицо
+        # и полоса титра. Зоны нет — схему снимаем здесь же, как снимаем её
+        # по короткой сцене и по неподобравшемуся знаку: до сборки об этом
+        # спросил гейт (`hf_gates.schema_position_problems`), но положение
+        # ведущей после гейта переписывает код (`pick_position`,
+        # `show_ordered_avatar`), и последнее слово за кадром.
+        zone = schema_zone(scene.get("presenter"), face=face)
+        if zone is None:
+            print(f'{scene["id"]}: схема «{plan["form"]}» снята — ведущая '
+                  f'`{scene.get("presenter") or "none"}` не оставляет ей '
+                  "свободной полосы над титром")
+            drop_schema(scenes, scene)
+            continue
         content = dict(plan)
         if plan["form"] == "brand":
             files = [(resolved.get(schema_key(scene["id"], index)) or {}).get("file")
@@ -3266,6 +3372,82 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         # содержимое в тот же документ и узел маунта под собой меняет, а
         # твин GSAP держит ссылку на прежний. Обёртка — наша, её их рантайм
         # не трогает.
+        # Плашка читаемости — когда под схемой в этой же сцене лежит настоящая
+        # вставка (сток, непредсказуемый по цвету), а не наш управляемый фон
+        # (aurora выше или подложка `frame.md`). Корень каждой формы —
+        # `background: transparent` (комментарий у них самих — «overlays
+        # footage or mk-background»), а строки набраны схемой `dark`
+        # (`hf_schema.build`): по умолчанию это верный расчёт на тёмный aurora,
+        # но вставка кладёт под текст всё что угодно, вплоть до светлого кадра.
+        #
+        # Job rb0907-philosophers (прод, 07.09.2026), сцена s-07:
+        # `presenter: "none"`, вставка приехала (`ins-s-07-0/1`,
+        # `INSERT_RECTS["none"]` — на весь кадр), схема `pairs` легла поверх,
+        # и их `contrast_aa_failure` замерил 1.54:1 / 2.9:1 / 1.97:1 у
+        # «говори честно» / «не делай» / «не манипулируй» (fg вплоть до
+        # rgb(233,222,213) на bg вплоть до rgb(207,175,160)) — настоящая
+        # нечитаемость, не ложная находка.
+        #
+        # `mk-specs-list` несёт свой параметр `scrim` ровно под этот случай
+        # («0–1 left-edge dark scrim for readability over footage»), но
+        # проверено локальным `hyperframes check` на самой этой копии: их
+        # градиент (`rgba(0,0,0,.55) 0% … transparent 62%`) гаснет к правому
+        # краю колонки и на полной силе (`scrim: 1`) оставляет «говори честно»
+        # и «не манипулируй» на 2.15–2.18:1 — блок, для которого он писан,
+        # обычно уже теснее нашего `lineWidth`. У остальных четырёх форм
+        # (`mk-progress-stat`, `grid-card-assemble`, `hw-pipeline`,
+        # `mk-placeholder-grid`) такого параметра нет вовсе. Поэтому плашку
+        # кладёт код — единым слоем на все пять форм разом, а не их частичным
+        # градиентом одной формы.
+        #
+        # Этот слой — тот же `.ovl-scrim`, что уже стоит под накладками без
+        # своей подложки (см. выше, `_block_backing().get(...) == "none" and
+        # insert_of(scene)`), не второй самодельный: инлайновый ровный
+        # `rgba(0,0,0,.6)` на самой коробке схемы (прежняя версия правки)
+        # красил ЦЕЛУЮ КОРОБКУ `.ovl` весь ролик от t=0 до конца, а не только
+        # окно сцены s-07 — коробка несёт `id`, но не `class="clip"` и не
+        # `data-start`/`data-duration`, а комментарий двумя экранами ниже в
+        # ЭТОЙ ЖЕ функции (`_stage_overlay`, скрим накладки) объясняет ровно
+        # почему это ломает: видимость по времени рантайм держит атрибутом
+        # `data-start` (`syncTimedElementVisibility`,
+        # `packages/core/src/runtime/init.ts:1921-1923`), не классом и не
+        # инлайновым `style`. Подтверждено вживую: скан `seek()` по таймлайну
+        # собранной копии `rb0907-philosophers` отдавал тёмный фон на КАЖДОЙ
+        # из десяти проверенных точек 0..33.9 с из 34.0, включая t=1 с — за
+        # 22 секунды до s-07.
+        #
+        # Своя полоса дорожек `TRACK_SCHEMA_SCRIM`, не дорожка `TRACK_SCRIM`
+        # накладок: смешивать два независимых счётчика ротации на одной
+        # полосе — повод для `overlapping_clips_same_track`, который проще не
+        # допустить отдельной полосой, чем потом считать. Ротация внутри своей
+        # полосы — по той же причине, что у накладок: раз линтер считает
+        # дорожку количеством элементов, а не их пересечением, четвёртая
+        # схема с настоящей вставкой на одной дорожке дала бы предупреждение
+        # даже без наложения по времени.
+        if series.get(scene["id"]):
+            body.append(
+                f'    <div class="ovl-scrim clip"'
+                f' id="schema-scrim-{scene["id"]}"'
+                f' data-start="{at_start:.4f}"'
+                f' data-duration="{at_end - at_start:.4f}"'
+                f' data-track-index='
+                f'"{TRACK_SCHEMA_SCRIM + staged_schema_scrims % schema_scrim_tracks}"'
+                f'></div>')
+            staged_schema_scrims += 1
+        # Место коробки в кадре — от зоны, а не от нуля. Целая зона (`none` и
+        # нижние уголки) даёт прежние `left:0;top:0` знак в знак: масштаб
+        # ставится только там, где зона короче полосы схемы, и лишнего
+        # атрибута в разметке иначе не появляется. Ужимаем ТРАНСФОРМОМ, а не
+        # числами внутри блока: числа у пяти форм свои, а трансформ уносит с
+        # собой и кегли подписей — ровно ту читаемость, порог которой считает
+        # `SCHEMA_MIN_SCALE`. Точка отсчёта — левый верхний угол, поэтому
+        # `left` доводит ужатую коробку до середины кадра.
+        place = "left:0;top:0"
+        if zone["scale"] < 1:
+            place = (f'left:{round(OUT_W * (1 - zone["scale"]) / 2)}px;'
+                     f'top:{zone["top"]}px;'
+                     f'transform:scale({zone["scale"]});'
+                     f'transform-origin:0 0')
         body.append(
             f'    <div class="ovl" id="schema-box-{scene["id"]}">'
             f'<div id="schema-{scene["id"]}" class="clip"'
@@ -3275,7 +3457,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             f' data-duration="{markup_time(end) - markup_time(start):.4f}"'
             f' data-track-index="{TRACK_SCHEMA}"'
             f' data-width="{OUT_W}" data-height="{height}"'
-            f' style="position:absolute;left:0;top:0;'
+            f' style="position:absolute;{place};'
             f'width:{OUT_W}px;height:{height}px"{values}></div></div>')
         scene["schemaShown"] = True
 

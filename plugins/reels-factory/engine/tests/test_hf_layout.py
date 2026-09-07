@@ -5,7 +5,7 @@ from reels_factory.config import OUT_H, OUT_W
 from reels_factory.hf_layout import (
     ALLOWED_ZONES, EFFECT_MIN_HEIGHT, FACELESS_ZONES, FULL_FRAME_PRESENTER,
     PRESENTER_POSITIONS, VIDEO_RECTS, ZONE_RECTS, _overlap, effect_rect,
-    face_box, quantize, violations,
+    face_box, moved_face, quantize, violations,
 )
 
 #: Тот же верх полосы титра, каким его зовёт сборка (`hf_compose.
@@ -120,6 +120,22 @@ def test_зона_эффекта_не_задевает_ведущую_и_пол�
     # ширина и высота не ниже пола значка
     assert rect["width"] >= EFFECT_MIN_HEIGHT
     assert rect["height"] >= EFFECT_MIN_HEIGHT
+
+
+@pytest.mark.parametrize("presenter", sorted(FULL_FRAME_PRESENTER))
+def test_замер_лица_открывает_зону_под_полнокадровой_ведущей(presenter):
+    """Без замера полнокадровая ведущая не оставляет зоны вовсе — так и было
+    всегда, так остаётся для элемента-эффекта. С замером вопрос честнее:
+    закрыть её лицо нельзя, а полоса между лицом и словами титра свободна, и
+    её отдают схеме (`hf_compose.schema_zone`).
+    """
+    face = {"cx": 521, "cy": 300, "h": 269, "detected": True}
+    assert effect_rect(presenter, band_top=_BAND_TOP) is None
+    rect = effect_rect(presenter, band_top=_BAND_TOP, face=face, min_height=0)
+    box = face_box(moved_face(face, VIDEO_RECTS[presenter]))
+    assert rect["top"] >= box["top"] + box["height"]
+    assert rect["top"] + rect["height"] == _BAND_TOP
+    assert not _overlap(rect, box)
 
 
 def test_зона_эффекта_снимается_ниже_пола():
