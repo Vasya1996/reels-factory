@@ -235,7 +235,53 @@ def test_знак_бренда_один_ставится_одной_ячейко
 def test_форме_нужна_своя_длина():
     """Числа сняты с их таймлайнов: три узла въезжают по 1,2 с каждый."""
     assert min_seconds("steps", 3) > min_seconds("steps", 2)
-    assert min_seconds("metric", 1) == 2.6
+    assert min_seconds("metric", 1) == 3.1
+
+
+def test_метрика_успевает_замереть_до_угасания():
+    """Расследование rb0907-university, 07.09.2026: контактный лист (кадр на
+    середине сцены `s-21`, их же рецепт `midpoint`, `hf_render.py:822-828`)
+    показал «20 августа» вместо «23». Кадры, снятые прямо с уже
+    отрендеренного `reel.mp4`, доказали — это не дефект: «23» стоит
+    неподвижно с 67,57 с, за 0,36 с до угасания (67,93 с). Настоящий риск не
+    в этом числе, а в крупных: твин (`mk-progress-stat.html`) со старта 0,5 с
+    и длительностью 1,6 с достигает `CONFIG.value` РОВНО на 2,1 с — это
+    гарантия GSAP, не зависящая от величины. `Math.round` показывает верную
+    цифру раньше только когда допуск округления (±0,5) — заметная доля
+    значения: у «23» это 2 %, у «250 000 $» (их же пример карточки,
+    `hf_montage_skill.py:566-572`) — тысячные доли процента, и без запаса
+    цифра доедет до места не раньше 2,1 с. Старый пол 2,6 с = 0,5+1,6+0,5 не
+    оставлял между этим мигом и угасанием ни одной секунды, а допуск
+    `settle_schemas` (0,05 с) мог сдвинуть угасание раньше самой гарантии
+    GSAP. Тест читает тайминги из самого шаблона, а не дублирует их литералом
+    рядом: разойдись код с шаблоном, тест это поймает первым, а не рендер на
+    проде."""
+    from reels_factory.hf_catalog import CATALOG_DIR
+
+    html = (CATALOG_DIR / "registry" / "blocks" / "mk-progress-stat"
+            / "mk-progress-stat.html").read_text(encoding="utf-8")
+
+    count = re.search(
+        r"v:\s*CONFIG\.value,\s*duration:\s*([\d.]+).*?\n\s*\},\s*\n\s*"
+        r"([\d.]+),\s*\n\s*\);", html, re.S)
+    assert count, "твин счёта не найден — сверь регексп со свежим шаблоном"
+    count_duration, count_start = float(count.group(1)), float(count.group(2))
+
+    fade = re.search(r"duration:\s*[\d.]+,\s*ease:\s*\"power2\.in\"\s*\},\s*"
+                     r"DUR\s*-\s*([\d.]+)\);", html)
+    assert fade, "угасание не найдено — сверь регексп со свежим шаблоном"
+    fade_offset = float(fade.group(1))
+
+    count_end = count_start + count_duration
+    floor = min_seconds("metric", 1)
+    settle_tolerance = 0.05  # тот же допуск, что и в hf_montage.settle_schemas
+    worst_fade_start = (floor - settle_tolerance) - fade_offset
+    hold = worst_fade_start - count_end
+
+    assert hold >= 0.4, (
+        f"пол {floor} с оставляет счёту и угасанию встретиться с осадкой "
+        f"{hold:.4f} с (нужно ≥0,4) — угасание начнётся раньше, чем счёт "
+        "дойдёт до конца, и в кадре снова окажется не финальное число")
 
 
 def test_ни_одна_форма_не_заезжает_на_полосу_титра():
