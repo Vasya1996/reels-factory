@@ -2,7 +2,7 @@
 import pytest
 
 from reels_factory.hf_montage import (
-    MIN_STEP, PLAN_MAX, PLAN_MIN, PUSH_TO,
+    MIN_STEP, PLAN_MAX, PLAN_MIN, PUSH_TO, SCHEMA_SAFE_PRESENTER,
     check_shots, cut_into_plans, dedupe_neighbours, flash_moments,
     on_screen_seconds, pick_series, shots_for, show_ordered_avatar,
     split_series, zoom_ladder,
@@ -108,6 +108,33 @@ def test_оплаченная_ведущая_возвращается_в_кад�
     assert scenes[0]["presenter"] == "pip-tr"
     assert scenes[1]["presenter"] == "full"
     assert scenes[2]["presenter"] == "none"
+
+
+def test_оплаченная_ведущая_со_схемой_и_вставкой_не_топит_карточку():
+    """Та же сцена прод-инцидента 462a1c62: `presenter: "none"` на купленной
+    секунде, а сцену держат разом вставка и схема. `positions_for` обязана
+    спросить схему раньше вставки — иначе пересборка ставит `pip-tr` (первое
+    в списке вставки) поверх карточки, ровно тот дефект, который PR чинит
+    для явного плана агента, но для автоматического возврата ведущей."""
+    scene = _scene(0, 0.0, 9.0, "none", "рука")
+    scene["schema"] = {"form": "brand"}
+    scenes = [scene]
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 9.0}]
+    lifted = show_ordered_avatar(scenes, clips, 9.0)
+    assert lifted == ["s-00"]
+    assert scenes[0]["presenter"] in SCHEMA_SAFE_PRESENTER
+
+
+def test_соседи_со_схемой_и_вставкой_разводятся_нижним_уголком():
+    """`dedupe_neighbours` зовёт тот же `positions_for` — тот же дефект,
+    та же правка."""
+    left = _scene(0, 0.0, 3.0, "pip-br", "рука")
+    right = _scene(1, 3.0, 6.0, "pip-br", "рука")
+    right["schema"] = {"form": "brand"}
+    scenes = [left, right]
+    clips = [{"file": "a.mp4", "start": 0.0, "duration": 6.0}]
+    dedupe_neighbours(scenes, clips=clips, duration=6.0)
+    assert scenes[1]["presenter"] in SCHEMA_SAFE_PRESENTER
 
 
 def test_аватар_в_уголке_это_аватар_в_кадре():
