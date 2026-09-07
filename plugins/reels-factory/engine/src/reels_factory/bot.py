@@ -514,6 +514,22 @@ NO_RESUME_STAGES = frozenset({
 # спотыкается доставка.
 MAX_TG_VIDEO_BYTES = MAX_DELIVERY_BYTES
 
+# `send_video` с файлом получает от python-telegram-bot 22.8 write_timeout=20 с
+# (HTTPXRequest.do_request подменяет write_timeout на media_write_timeout,
+# только когда есть файлы: telegram/request/_httpxrequest.py:269) и
+# read_timeout=5 с как у любого другого метода — на медиа он не увеличивается.
+# Оба потолка ниже реальной доставки: rb0908-university (46 МБ) упал через 30 с
+# после рендера, rb0909-ai-employee (~20 МБ) — через 15 с, оба с одинаковым
+# `telegram.error.TimedOut("Timed out")` (jobs.sqlite3, прод). Здесь — тот же
+# приём `write_timeout=BIGGER_VALUE`, что рекомендует вики библиотеки
+# (github.com/python-telegram-bot/python-telegram-bot/wiki/Handling-network-errors)
+# для больших файлов; запас взят кратным к обеим упавшим доставкам, а не
+# только к `MAX_TG_VIDEO_BYTES`. `read` растёт отдельно от `write`: он не
+# зависит от размера файла вовсе, но без запаса на нём бот всё ещё обрывает
+# ожидание ответа Telegram об уже принятом и обработанном ролике.
+SEND_VIDEO_WRITE_TIMEOUT = 120.0
+SEND_VIDEO_READ_TIMEOUT = 60.0
+
 
 def render_scenario(sc: dict) -> str:
     """Сценарий человеку: заголовок, блоки по ролям, оценка длительности."""
@@ -4596,6 +4612,8 @@ async def _process_job(bot_api, job: BuildJob, build_fn=None) -> None:
                 reply_markup=_kb_done(),
                 width=OUT_W,
                 height=OUT_H,
+                write_timeout=SEND_VIDEO_WRITE_TIMEOUT,
+                read_timeout=SEND_VIDEO_READ_TIMEOUT,
             )
     except Exception as e:
         store.finish(
