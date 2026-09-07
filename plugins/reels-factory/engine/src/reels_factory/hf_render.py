@@ -1313,10 +1313,11 @@ def _keep_early_brief(rdir: Path) -> None:
     """Оставить на диске задание, по которому сделан ранний план.
 
     Сборка зовёт `write_brief` заново и переписывает и `BRIEF.md`, и свод правил
-    версией «аватар уже заказан» (`prepare` ниже), а решал агент `avatarNeeded`
-    по другой версии — по той, где ведущей ещё нет. Разбирать прогон по
-    переписанным файлам значит читать не то задание, поэтому ранняя версия
-    остаётся рядом отдельными именами.
+    версией «аватар уже заказан» (перед вызовом `plan_with_agent` в цикле
+    `assemble_hyperframes` ниже), а решал агент `avatarNeeded` по другой
+    версии — по той, где ведущей ещё нет. Разбирать прогон по переписанным
+    файлам значит читать не то задание, поэтому ранняя версия остаётся рядом
+    отдельными именами.
     """
     for source, name in EARLY_BRIEF_COPIES:
         path = rdir / source
@@ -1602,10 +1603,14 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         # Компонент субтитров тянется из их общего реестра по сети: делаем это
         # пока агент ещё не начал, чтобы сборка потом не ждала загрузку.
         hf_captions.stage(rdir)
-        write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
-                    duration=duration, clips=clips, phrases=phrases,
-                    wishes=wishes,
-                    attempt=0, max_attempts=MAX_COMPOSE_ATTEMPTS)
+        # Задание сюда не пишем: `prepare` заводит файлы кадра (клипы, звук,
+        # лицо), а не текст для агента. Кто зовёт агента, тот и пишет задание —
+        # ниже, прямо перед вызовом `plan_with_agent`, из тех же материалов.
+        # Иначе задание переживает материал: маркер `plan` может быть снят
+        # (продолжение, ручной сброс) без повторного `prepare`, и агент читает
+        # BRIEF.md, оставшийся от первой сборки, — так план вернулся без
+        # `frame` и без `elements` на `rb0907-ai-employee` (07.09.2026):
+        # BRIEF.md был от 25.08, до поля `frame` (a13be5b).
         (rdir / "phrases.json").write_text(
             json.dumps(phrases, ensure_ascii=False, indent=1), encoding="utf-8")
         (rdir / "clips.json").write_text(
@@ -1643,6 +1648,15 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                 for step in ("plan", "compose", "gates", "shots", "render",
                              "loudness"):
                     reset_step(rdir, step)
+
+            # Задание пишем прямо перед вызовом агента, а не заранее в
+            # `prepare`: `run_step` ниже вызовет `plan_with_agent` только если
+            # маркер `plan` снят — вот тогда задание и должно быть свежим, из
+            # ТЕКУЩЕГО кода и ТЕКУЩЕГО состояния папки (клипы, лицо,
+            # длительность, причина пересдачи, номер попытки). Если маркер
+            # цел, план читается с диска (см. `board is None` ниже) — задание
+            # тогда не переписываем вовсе, оно никому не нужно.
+            if not step_done(rdir, "plan"):
                 write_brief(rdir, scenario=timed_scenario,
                             face=load_face(rdir), duration=duration,
                             clips=saved_clips, retry_reason=reason,
