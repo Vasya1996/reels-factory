@@ -288,6 +288,62 @@ def test_привезённая_версия_с_подгонкой_кегля_н
     assert result.read_bytes() == hf_captions.VETTED.read_bytes()
 
 
+def test_уже_лежащая_в_staging_версия_без_подгонки_тоже_заменяется(
+        tmp_path, monkeypatch):
+    """07.09.2026, `rb0909-ai-employee`: папку задания скопировали с
+    августовского прогона вместе с `.hf-captions/`, и ранний возврат
+    (`if target.exists(): return target`) отдавал компонент без обеих правок
+    как есть — ни один маркер не проверялся, потому что проверка стояла
+    только для только что привезённого `npx add` файла. Здесь `target`
+    существует ДО вызова `install()`, `subprocess.run` заменён на функцию,
+    которая проваливает тест при вызове — `npx` не должен запускаться вовсе,
+    раз `target` уже на месте, — и всё равно должна вернуться `VETTED`."""
+    import subprocess
+
+    from reels_factory import hf_captions
+
+    def fail_run(cmd, **kwargs):
+        raise AssertionError("npx add не должен запускаться: target уже есть")
+
+    target = tmp_path / ".hf-captions" / hf_captions.COMPONENT_REL
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(f"<html><body>{hf_captions.DATA_HOOK}</body></html>",
+                      encoding="utf-8")
+
+    monkeypatch.setattr(hf_captions.subprocess, "run", fail_run)
+    result = hf_captions.install(tmp_path)
+    assert result == target
+    assert hf_captions.FIT_MARKER in result.read_text(encoding="utf-8")
+    assert result.read_bytes() == hf_captions.VETTED.read_bytes()
+
+
+def test_уже_лежащая_в_staging_версия_с_обеими_правками_остаётся(
+        tmp_path, monkeypatch):
+    """Обратный случай — компонент в staging уже несёт все три метки
+    (собран уже после PR #98/#102): `install()` возвращает его как есть, а не
+    подменяет проверенным файлом почём зря, и `npx` не запускает."""
+    import subprocess
+
+    from reels_factory import hf_captions
+
+    def fail_run(cmd, **kwargs):
+        raise AssertionError("npx add не должен запускаться: target уже есть")
+
+    vetted_text = hf_captions.VETTED.read_text(encoding="utf-8")
+    assert hf_captions.DATA_HOOK in vetted_text
+    assert hf_captions.FIT_MARKER in vetted_text
+    assert hf_captions.CONTRAST_MARKER in vetted_text
+
+    target = tmp_path / ".hf-captions" / hf_captions.COMPONENT_REL
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(vetted_text, encoding="utf-8")
+
+    monkeypatch.setattr(hf_captions.subprocess, "run", fail_run)
+    result = hf_captions.install(tmp_path)
+    assert result == target
+    assert result.read_text(encoding="utf-8") == vetted_text
+
+
 def test_движок_титра_уезжает_отдельным_файлом(tmp_path):
     """Их линтер считает строки index.html и за 300 даёт предупреждение
     `composition_file_too_large`; под `--strict` оно роняет сборку. В прогоне
