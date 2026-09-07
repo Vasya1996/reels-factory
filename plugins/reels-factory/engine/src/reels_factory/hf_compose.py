@@ -61,6 +61,7 @@ import json
 import math
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 from reels_factory.config import FPS, OUT_H, OUT_W
@@ -327,23 +328,93 @@ def schema_zone(presenter: str, *, face: dict | None = None,
             "scale": round(min(1.0, rect["height"] / SCHEMA_SAFE_BOTTOM), 4)}
 
 
-def _overlay_geometry(block: str, canvas: tuple) -> tuple[float, str]:
-    """Масштаб и место плашки в кадре по её канвасу.
+#: Их «portrait glass card» — плашка, которую их же скил talking-head-recut
+#: рисует для вертикального порта («portrait glass card, bottom band»,
+#: `references/layouts/overlay.html:38-43`): width 1032 из 1080, левое поле
+#: 24px (1032 + 2*24 = 1080). Берём эту долю целью для НАРИСОВАННОГО —
+#: landscape-плашка каталога должна занимать в кадре примерно ту же долю
+#: ширины, что и их собственная вертикальная карточка, а не долю, оставшуюся
+#: случайно от масштаба по канвасу (см. докстринг `_overlay_geometry`).
+OVERLAY_CONTENT_MARGIN = 24
+
+#: Пол масштаба, ниже которого плашка нечитаема. Порог не свой: то же число и
+#: то же основание, каким уже ужимается схема (`SCHEMA_MIN_SCALE`) и каким их
+#: собственный движок титра не даёт словам сжаться меньше 45% базового кегля
+#: (`caption-highlight.html:134-137`, цитата и разбор — см. `SCHEMA_MIN_SCALE`
+#: выше). Здесь база — родной размер самой плашки (scale=1), а не полоса
+#: схемы: `scale` ниже этого порога значит, что плашка ужалась больше чем в
+#: два раза от собственного кегля.
+OVERLAY_MIN_SCALE = SCHEMA_MIN_SCALE
+
+
+def _overlay_content_scale(canvas: tuple, band_height: float,
+                           content_width: float | None) -> float:
+    """Масштаб по ширине — либо по канвасу (как раньше), либо по нарисованному.
+
+    Канвас 1920x1080 не значит, что нарисованное занимает всю его ширину:
+    `lt-kicker-name` ставит кикер и имя блоком у левого края, и предыдущий
+    расчёт (масштаб по ширине ЦЕЛОГО канваса) держал их такими же мелкими,
+    какими они были бы, займи они всю ширину, — 70px кегль на 1080x1920 после
+    масштаба 0,5625 давал 39px, 2% высоты кадра (задание, дефект `chat-el.png`
+    соседний, `lt-kicker-name` — прогон rb0907-university, кадр 5). Зная
+    ширину нарисованного, масштаб считается от НЕЁ: сколько нужно, чтобы
+    нарисованное заняло целевую долю кадра (`OVERLAY_CONTENT_MARGIN`), а не
+    долю, оставшуюся случайно от пустых полей канваса.
+
+    `content_width` не всегда есть (измеряет `_measured_overlay_content` —
+    нужен браузер, а его может не быть на машине прогона): тогда — прежняя
+    арифметика, масштаб по ширине канваса целиком, и поведение не меняется ни
+    для одного из уже собранных прогонов.
+
+    Итоговый масштаб не бывает МЕНЬШЕ масштаба по канвасу: у плашки, чьё
+    нарисованное действительно занимает всю ширину (внутренний `max`
+    ничего не меняет — целевая доля кадра (`OUT_W - 2*margin`) для такой
+    плашки и так близка к масштабу по канвасу), это не меняет число вовсе.
+    """
+    scale = OUT_W / canvas[0]
+    if content_width:
+        target = OUT_W - 2 * OVERLAY_CONTENT_MARGIN
+        scale = max(scale, target / float(content_width))
+    if canvas[1] * scale > band_height:
+        scale = band_height / canvas[1]
+    return scale
+
+
+def _overlay_geometry(block: str, canvas: tuple, *,
+                      content_box: dict | None = None
+                      ) -> tuple[float, str] | None:
+    """Масштаб и место плашки в кадре по её канвасу и (если измерено) по её
+    нарисованному содержимому.
+
+    `None` — плашка нечитаема даже после подгонки под зону: снимается с
+    причиной, как снимается позиция каталога (`OVERLAY_MIN_SCALE`).
 
     Фактура кроет кадр целиком, плашка стоит полосой над титром. Обе приезжают
     любым канвасом, и различить их можно только по метке каталога — той же,
     которой помечены их собственные обработки кадра.
 
     Одна арифметика на все канвасы, а не landscape/portrait разными ветками:
-    сперва масштаб по ширине кадра, как у широкой плашки всегда. Если высота
-    при таком масштабе не умещается в зону над полосой титра — масштаб
-    уменьшается ещё, пока весь бокс не окажется выше неё; лишнее по ширине
-    уходит в поля по бокам поровну. У широкой плашки (1920x1080) высота после
-    масштаба по ширине и так меньше зоны — вторая поправка не срабатывает, и
-    число совпадает с прежним. У портретной (1080x1920) высота после масштаба
-    по ширине равна высоте кадра — без второй поправки отступа над полосой не
-    остаётся вовсе, и плашка ложится прямо на слова титра; вторая поправка
-    даёт ей ту же гарантию, что и широкой.
+    сперва масштаб по ширине кадра (или по нарисованному — `_overlay_content_
+    scale`), как у широкой плашки всегда. Если высота при таком масштабе не
+    умещается в зону над полосой титра — масштаб уменьшается ещё, пока весь
+    бокс не окажется выше неё; лишнее по ширине уходит в поля по бокам
+    поровну. У широкой плашки (1920x1080) высота после масштаба по ширине и
+    так меньше зоны — вторая поправка не срабатывает, и число совпадает с
+    прежним (без измерения нарисованного). У портретной (1080x1920) высота
+    после масштаба по ширине равна высоте кадра — без второй поправки отступа
+    над полосой не остаётся вовсе, и плашка ложится прямо на слова титра;
+    вторая поправка даёт ей ту же гарантию, что и широкой. Портретный канвас
+    (уже вертикальный, как у самого кадра) измеренным содержимым не правим —
+    он и так занимает свою ширину настоящей вёрсткой, а не пустым полем сбоку.
+
+    Позиция нарисованного содержимого сдвигает и `left`: центрировать ЦЕЛЫЙ
+    канвас, когда масштаб взят по нарисованному (а не по канвасу целиком),
+    значит для контента, стоящего не по центру своего канваса (тот же
+    `lt-kicker-name`, `left:130px` из 1920), унести его за край кадра — канвас
+    после увеличенного масштаба заметно шире кадра, и центр канваса уже не
+    там же, где контент. Вместо этого нарисованное ставится тем же полем
+    слева, что и цель масштаба (`OVERLAY_CONTENT_MARGIN`) — тем самым полем,
+    какое их собственная вертикальная карточка держит от края кадра.
 
     Одна арифметика на два места: по этому же правилу встаёт и позиция
     каталога, у которой вид в карточке не объявлен, — это сегодняшняя плашка,
@@ -353,12 +424,69 @@ def _overlay_geometry(block: str, canvas: tuple) -> tuple[float, str]:
         scale = OUT_H / canvas[1]
         return scale, f"left:{-round((canvas[0] * scale - OUT_W) / 2)}px;top:0"
     band_height = CAPTION_BAND_TOP - CAPTION_BAND_SAFETY
-    scale = OUT_W / canvas[0]
-    if canvas[1] * scale > band_height:
-        scale = band_height / canvas[1]
-    left = round((OUT_W - canvas[0] * scale) / 2)
+    landscape = canvas[0] > canvas[1]
+    content_width = (content_box or {}).get("width") if landscape else None
+    scale = _overlay_content_scale(canvas, band_height, content_width)
+    if scale < OVERLAY_MIN_SCALE:
+        return None
+    content_left = (content_box or {}).get("left") if landscape else None
+    if content_width and content_left is not None:
+        left = round(OVERLAY_CONTENT_MARGIN - float(content_left) * scale)
+    else:
+        left = round((OUT_W - canvas[0] * scale) / 2)
     top = _overlay_wide_top(canvas[1] * scale)
     return scale, f"left:{left}px;top:{top}px"
+
+
+#: Скрипт замера лежит рядом с движком, как и скрипт пробы (`hf_probe.
+#: PROBE_SCRIPT`); при editable-установке путь живой.
+_MEASURE_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / \
+    "measure_block_content.cjs"
+
+
+def _measured_content_box(path, canvas: tuple) -> dict | None:
+    """Ширина нарисованного внутри уже заполненной копии позиции, на её
+    родном канвасе — либо `None`, когда измерить нечем.
+
+    Браузер здесь необязателен: нет `node`, нет закреплённого Chrome (тесты,
+    чужая машина, сеть не подняла кэш `npx`) — измерение просто не состоялось,
+    и `_overlay_geometry` считает по канвасу целиком, как считал до этой
+    правки. Плашка не роняется тем, чего нет на машине сборки: измерение —
+    улучшение читаемости там, где оно доступно, а не новое обязательное звено
+    цепочки.
+    """
+    if canvas[0] <= canvas[1]:
+        return None  # портретный канвас не измеряем — см. _overlay_geometry
+    try:
+        from reels_factory.hf_probe import _node, chrome_path
+        from reels_factory.hyperframes_blocks import _HF_VERSION
+    except ImportError:
+        return None
+    if not _MEASURE_SCRIPT.exists():
+        return None
+    try:
+        node = _node()
+        chrome = chrome_path(_HF_VERSION)
+    except RuntimeError:
+        return None
+    if not chrome:
+        return None
+    try:
+        result = subprocess.run(
+            [node, str(_MEASURE_SCRIPT), "--file", str(path),
+             "--width", str(canvas[0]), "--height", str(canvas[1]),
+             "--chrome", chrome],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        box = json.loads((result.stdout or "").strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return None
+    return box if isinstance(box, dict) else None
 
 
 @functools.lru_cache(maxsize=1)
@@ -2705,7 +2833,17 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                   f"{min_card_seconds(native):g}")
             scene.pop("overlay", None)
             continue
-        scale, box = _overlay_geometry(str(overlay["block"]), canvas)
+        content_box = _measured_content_box(
+            Path(public) / "compositions" / f"{unique}.html", canvas)
+        geometry = _overlay_geometry(str(overlay["block"]), canvas,
+                                     content_box=content_box)
+        if geometry is None:
+            print(f'{scene["id"]}: накладка {overlay["block"]} снята — '
+                  f"даже подогнанная под зону над титром, она нечитаема "
+                  f"(масштаб ниже {OVERLAY_MIN_SCALE})")
+            scene.pop("overlay", None)
+            continue
+        scale, box = geometry
         # Накладке без своей подложки нужен слой читаемости: их проверка
         # контраста меряет пиксели под буквами, а `text-shadow` не
         # засчитывает — на светлом биролле белый текст проваливается. Градиент
@@ -3105,7 +3243,18 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                              ";top:0")
                     layer = "fx"
                 else:
-                    scale, place = _overlay_geometry(name, canvas)
+                    content_box = _measured_content_box(
+                        Path(public) / "compositions" / f"{unique}.html",
+                        canvas)
+                    geometry = _overlay_geometry(name, canvas,
+                                                 content_box=content_box)
+                    if geometry is None:
+                        drop_element(
+                            storyboard, scene, name,
+                            "даже подогнанная под зону над титром, позиция "
+                            f"нечитаема (масштаб ниже {OVERLAY_MIN_SCALE})")
+                        continue
+                    scale, place = geometry
                     layer = "ovl"
                 body.append(
                     f'    <div class="{layer}" style="{place}">'

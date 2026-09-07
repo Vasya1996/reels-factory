@@ -11,6 +11,20 @@
 
   #root only, container-type: size, one paused timeline registered under the
   literal "chat-message" key. Deterministic.
+
+  Sizing units are `cqw`, not `cqmin`. The primitive assumes a near-portrait
+  host (its sibling message-thread-reveal, a full block, declares
+  data-width="1080" data-height="1920" — width is always the smaller side
+  there, so cqmin and cqw were numerically identical). Mounted standalone as
+  a reels.kind: effect element, the host box is the frame's free zone above
+  the caption band, which can be much wider than it is tall (e.g. a "pip-tr"
+  presenter leaves a 1080x397 strip) — under a corner presenter the bubble
+  rendered near unreadable (~18px font, contact sheet rb0908-philosophers
+  scene s-02, 6.3s). cqmin tracks the shorter side (height there), cqw
+  always tracks width, which stays the frame width in both hosts — same look
+  where it already worked, fixed where it was crushed. cqw is never smaller
+  than cqmin for the same box, so this only ever grows content, never
+  shrinks it further.
 -->
 <html
   lang="en"
@@ -69,8 +83,8 @@
             position: relative;
             max-width: 78cqw;
             padding: 2cqh 5cqw;
-            border-radius: 6.4cqmin;
-            font-size: 4.6cqmin;
+            border-radius: 6.4cqw;
+            font-size: 4.6cqw;
             line-height: 1.35;
             color: #fff;
           }
@@ -83,52 +97,52 @@
           .cm-tail-recv::before {
             content: "";
             position: absolute;
-            left: -1.5cqmin;
+            left: -1.5cqw;
             bottom: 0;
-            width: 4cqmin;
-            height: 4cqmin;
+            width: 4cqw;
+            height: 4cqw;
             background: #242428;
-            border-bottom-right-radius: 3cqmin 2.8cqmin;
+            border-bottom-right-radius: 3cqw 2.8cqw;
           }
           .cm-tail-recv::after {
             content: "";
             position: absolute;
-            left: -4cqmin;
-            bottom: -0.3cqmin;
-            width: 3cqmin;
-            height: 4.6cqmin;
+            left: -4cqw;
+            bottom: -0.3cqw;
+            width: 3cqw;
+            height: 4.6cqw;
             background: #000;
-            border-bottom-right-radius: 2.4cqmin;
+            border-bottom-right-radius: 2.4cqw;
           }
           .cm-tail-sent::before {
             content: "";
             position: absolute;
-            right: -1.5cqmin;
+            right: -1.5cqw;
             bottom: 0;
-            width: 4cqmin;
-            height: 4cqmin;
+            width: 4cqw;
+            height: 4cqw;
             background: #0a80f8;
-            border-bottom-left-radius: 3cqmin 2.8cqmin;
+            border-bottom-left-radius: 3cqw 2.8cqw;
           }
           .cm-tail-sent::after {
             content: "";
             position: absolute;
-            right: -4cqmin;
-            bottom: -0.3cqmin;
-            width: 3cqmin;
-            height: 4.6cqmin;
+            right: -4cqw;
+            bottom: -0.3cqw;
+            width: 3cqw;
+            height: 4.6cqw;
             background: #000;
-            border-bottom-left-radius: 2.4cqmin;
+            border-bottom-left-radius: 2.4cqw;
           }
           .cm-delivered {
             color: #8e8e93;
-            font-size: 3.4cqmin;
+            font-size: 3.4cqw;
             margin-top: 1.2cqh;
             padding-right: 1cqw;
             text-align: right;
           }
           .cm-emoji {
-            font-size: 15cqmin;
+            font-size: 15cqw;
             line-height: 1.25;
             letter-spacing: 0.02em;
             color: #fff;
@@ -138,7 +152,7 @@
             display: inline-block;
             width: 66cqw;
             aspect-ratio: 4 / 3;
-            border-radius: 5cqmin;
+            border-radius: 5cqw;
             position: relative;
             background: linear-gradient(165deg, #0f3a2c 0%, #0a9c6b 78%, #3ce6ac 100%);
           }
@@ -147,8 +161,8 @@
             left: 50%;
             top: 50%;
             transform: translate(-50%, -50%);
-            width: 13cqmin;
-            height: 13cqmin;
+            width: 13cqw;
+            height: 13cqw;
             border-radius: 50%;
             background: rgba(253, 253, 253, 0.94);
           }
@@ -157,14 +171,14 @@
             position: absolute;
             left: 38%;
             top: 30%;
-            border-left: 4.4cqmin solid #0d0d0d;
-            border-top: 2.6cqmin solid transparent;
-            border-bottom: 2.6cqmin solid transparent;
+            border-left: 4.4cqw solid #0d0d0d;
+            border-top: 2.6cqw solid transparent;
+            border-bottom: 2.6cqw solid transparent;
           }
           .cm-card {
             display: inline-block;
             width: 70cqw;
-            border-radius: 5cqmin;
+            border-radius: 5cqw;
             overflow: hidden;
             text-align: left;
           }
@@ -188,19 +202,19 @@
           .cm-cardtitle {
             display: block;
             color: #fff;
-            font-size: 3.5cqmin;
+            font-size: 3.5cqw;
             font-weight: 600;
             line-height: 1.3;
           }
           .cm-carddomain {
             display: block;
             color: #8e8e93;
-            font-size: 3cqmin;
+            font-size: 3cqw;
             margin-top: 0.6cqh;
           }
           .cm-cardchev {
             color: #8e8e93;
-            font-size: 6cqmin;
+            font-size: 6cqw;
             padding-left: 1.4cqw;
           }
         </style>
