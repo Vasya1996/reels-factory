@@ -97,7 +97,8 @@ class _BotAPI:
         self.markups.append(reply_markup)
 
     async def send_video(self, chat_id, video, caption=None, reply_markup=None,
-                         width=None, height=None):
+                         width=None, height=None, write_timeout=None,
+                         read_timeout=None):
         self.videos.append({
             "chat_id": chat_id,
             "bytes": video.read(),
@@ -105,6 +106,8 @@ class _BotAPI:
             "reply_markup": reply_markup,
             "width": width,
             "height": height,
+            "write_timeout": write_timeout,
+            "read_timeout": read_timeout,
         })
 
     async def send_audio(self, chat_id, audio, caption=None, reply_markup=None,
@@ -2825,6 +2828,34 @@ def test_ролик_шлётся_с_явными_размерами_кадра(w
     assert (api.videos[-1]["width"], api.videos[-1]["height"]) == (bot.OUT_W, bot.OUT_H)
 
 
+def test_доставка_ролика_держит_увеличенный_таймаут_записи_и_чтения(
+    work, клиент
+):
+    """python-telegram-bot 22.8 на файлах подменяет write_timeout=5 с на
+    media_write_timeout=20 с (HTTPXRequest.do_request), а read_timeout
+    оставляет 5 с и на медиа. На проде это уронило две доставки подряд
+    (rb0908-university 46 МБ/30 с, rb0909-ai-employee ~20 МБ/15 с) одним и
+    тем же telegram.error.TimedOut("Timed out"). `_process_job` теперь
+    передаёт свой запас явно — тест ловит регресс, если кто-то уберёт
+    аргументы из вызова `send_video`."""
+    def fake_run_build(chat_id, workdir):
+        (workdir / "reel.mp4").write_bytes(b"x")
+        return {"ok": True, "mp4": str(workdir / "reel.mp4"), "qa_pass": True}
+
+    bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
+                         "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
+    _press("build:plain", _Msg())
+    api = _BotAPI()
+
+    asyncio.run(bot._process_job(api, _claim_job(), build_fn=fake_run_build))
+
+    assert api.videos
+    assert api.videos[-1]["write_timeout"] == bot.SEND_VIDEO_WRITE_TIMEOUT
+    assert api.videos[-1]["read_timeout"] == bot.SEND_VIDEO_READ_TIMEOUT
+    assert bot.SEND_VIDEO_WRITE_TIMEOUT > 20
+    assert bot.SEND_VIDEO_READ_TIMEOUT > 5
+
+
 def test_сценарий_пишется_в_job_workdir_с_uuid(work, клиент):
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
                          "photo": {"asset_id": "a1", "file": "ф.jpg"}, "voice_id": "voice-1"})
@@ -3102,7 +3133,8 @@ def test_отказ_telegram_принять_файл_сообщает_назва
 
     class _ОтказывающийАпи(_BotAPI):
         async def send_video(self, chat_id, video, caption=None,
-                             reply_markup=None, width=None, height=None):
+                             reply_markup=None, width=None, height=None,
+                             write_timeout=None, read_timeout=None):
             raise RuntimeError("Telegram отверг файл")
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
@@ -3385,7 +3417,8 @@ def test_алерт_при_отказе_telegram_принять_файл(work, �
 
     class _ОтказывающийАпи(_BotAPI):
         async def send_video(self, chat_id, video, caption=None,
-                             reply_markup=None, width=None, height=None):
+                             reply_markup=None, width=None, height=None,
+                             write_timeout=None, read_timeout=None):
             raise RuntimeError("Telegram отверг файл")
 
     bot.save_session(7, {"step": bot.READY, "scenario": SCENARIO,
