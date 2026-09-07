@@ -79,6 +79,7 @@
         line-height: 1;
         position: relative;
         padding: 6px 12px 8px;
+        white-space: nowrap;
         text-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
         transform-origin: 50% 58%;
         will-change: transform, filter;
@@ -129,18 +130,69 @@
 
         var _fitCanvas = document.createElement("canvas");
         var _fitCtx = _fitCanvas.getContext("2d");
-        function fitFontSize(text, baseFontSize, fontWeight, fontFamily, maxWidth) {
+
+        // `.hl-word` carries `letter-spacing: 0.02em` and `padding: 6px 12px
+        // 8px`, and `.hl-group` lays words out with `gap: 8px` — none of
+        // which `measureText` on a bare string sees. A group that "fit" by
+        // that bare measurement could still overflow `safeWidth` in the real
+        // DOM by exactly those amounts, and `#highlight { overflow: hidden }`
+        // then clips it — the frame this file exists to prevent
+        // (rb0907-ai-employee 32.3s "АВТОМАТИЗИРОВАТЬ", rb0907-university
+        // 45.1s "GPU-МОЩНОСТЯМ", both cut off at both edges). The constants
+        // below mirror those three CSS values; keep them in sync by hand if
+        // the rules above change.
+        var WORD_LETTER_SPACING_EM = 0.02; // .hl-word
+        var WORD_PAD_X = 12 + 12; // .hl-word padding: 6px 12px 8px (left+right)
+        var GROUP_GAP = 8; // .hl-group gap
+
+        // Chromium ships `CanvasRenderingContext2D.letterSpacing` since v99;
+        // puppeteer ^25 (packages/engine/package.json) bundles far newer, so
+        // the real per-character advance is available. Fall back to an
+        // approximation only if some future render host lacks it.
+        var _CANVAS_LETTER_SPACING = "letterSpacing" in _fitCtx;
+
+        function measureWordWidth(text, size, fontWeight, fontFamily) {
+          _fitCtx.font = fontWeight + " " + size + "px " + fontFamily;
+          var letterSpacingPx = size * WORD_LETTER_SPACING_EM;
+          if (_CANVAS_LETTER_SPACING) {
+            _fitCtx.letterSpacing = letterSpacingPx + "px";
+            return _fitCtx.measureText(text).width + WORD_PAD_X;
+          }
+          return _fitCtx.measureText(text).width + text.length * letterSpacingPx + WORD_PAD_X;
+        }
+
+        // `words` is the list of already-uppercased word strings a group (or
+        // a candidate group, while `hfMakeGroups` is still deciding how many
+        // words fit together) will render — one `.hl-word` box per word, all
+        // sharing one row.
+        function measureGroupWidth(words, size, fontWeight, fontFamily) {
+          var total = 0;
+          for (var i = 0; i < words.length; i++) {
+            if (i > 0) total += GROUP_GAP;
+            total += measureWordWidth(words[i], size, fontWeight, fontFamily);
+          }
+          return total;
+        }
+
+        function fitFontSize(words, baseFontSize, fontWeight, fontFamily, maxWidth) {
           var size = baseFontSize;
           var minSize = Math.floor(baseFontSize * 0.45);
-          // minSize is a hard floor returned unverified below — self-heal
-          // accepts residual overflow at the floor (clipped by the stage)
-          // rather than shrinking below legibility.
           while (size > minSize) {
-            _fitCtx.font = fontWeight + " " + size + "px " + fontFamily;
-            if (_fitCtx.measureText(text).width <= maxWidth) return size;
+            if (measureGroupWidth(words, size, fontWeight, fontFamily) <= maxWidth) return size;
             size -= 2;
           }
-          return minSize;
+          // `minSize` used to be returned here unverified, letting the
+          // longest word overflow past the floor and get clipped by
+          // `#highlight`'s `overflow: hidden`. A clipped word is worse than a
+          // small one, so keep shrinking past the floor — this only ever
+          // triggers on a pathological input, since normal caption words fit
+          // well above `minSize` at `safeWidth`.
+          var HARD_STOP = 8;
+          while (size > HARD_STOP) {
+            if (measureGroupWidth(words, size, fontWeight, fontFamily) <= maxWidth) return size;
+            size -= 2;
+          }
+          return HARD_STOP;
         }
 
         var HF_DEMO_DATA = {
@@ -348,14 +400,14 @@
           var raw = [];
           var current = [];
           function fits(ws) {
-            var text = ws
-              .map(function (w) {
-                return w.text.toUpperCase();
-              })
-              .join(" ");
-            _fitCtx.font = "800 " + fontPx + "px Montserrat";
-            // 1.6× headroom: fitFontSize can shrink to 45% of base
-            return _fitCtx.measureText(text).width <= safeWidth * 1.6;
+            var texts = ws.map(function (w) {
+              return w.text.toUpperCase();
+            });
+            // 1.6× headroom: fitFontSize can shrink to 45% of base. Same
+            // width function fitFontSize uses below, so this coarse grouping
+            // pass and the real per-group sizing never disagree about what
+            // "fits" means.
+            return measureGroupWidth(texts, fontPx, "800", "Montserrat") <= safeWidth * 1.6;
           }
           words.forEach(function (w, i) {
             var next = words[i + 1];
@@ -413,12 +465,10 @@
             grp.style.paddingLeft = Math.round(100 * layout.scaleX) + "px";
             grp.style.paddingRight = Math.round(100 * layout.scaleX) + "px";
 
-            var groupText = g.words
-              .map(function (w) {
-                return w.text.toUpperCase();
-              })
-              .join(" ");
-            var computedSize = fitFontSize(groupText, fontPx, "800", "Montserrat", safeWidth);
+            var groupWords = g.words.map(function (w) {
+              return w.text.toUpperCase();
+            });
+            var computedSize = fitFontSize(groupWords, fontPx, "800", "Montserrat", safeWidth);
 
             var ids = [];
             g.words.forEach(function (w) {

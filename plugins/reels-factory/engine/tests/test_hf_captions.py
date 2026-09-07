@@ -1,5 +1,6 @@
 """Субтитры — их компонентом caption-highlight, а не нашей вёрсткой."""
 import json
+from pathlib import Path
 
 from reels_factory.hf_sdk import sdk_session
 from reels_factory.hf_captions import (
@@ -207,12 +208,42 @@ def test_демо_вместо_движка_роняет_сборку(tmp_path):
 
 
 def test_проверенная_копия_компонента_лежит_рядом():
-    """Запасной путь `install`: если их версия перестала читать наши данные,
-    берётся эта копия — иначе титр молча покажет чужой текст."""
-    from reels_factory.hf_captions import DATA_HOOK, VETTED
+    """Запасной путь `install`: если их версия перестала читать наши данные
+    или несёт нашу правку кегля/переноса слова, берётся эта копия — иначе
+    титр молча покажет чужой текст или обрезанное слово."""
+    from reels_factory.hf_captions import DATA_HOOK, FIT_MARKER, VETTED
 
     assert VETTED.exists(), f"нет проверенной копии компонента: {VETTED}"
-    assert DATA_HOOK in VETTED.read_text(encoding="utf-8")
+    vetted_text = VETTED.read_text(encoding="utf-8")
+    assert DATA_HOOK in vetted_text
+    assert FIT_MARKER in vetted_text
+    assert "white-space: nowrap;" in vetted_text  # дефис внутри .hl-word не переносит строку
+
+
+def test_привезённая_версия_без_нашей_подгонки_заменяется_проверенной(
+        tmp_path, monkeypatch):
+    """`install()` не должен молча взять чужой файл без нашей правки кегля и
+    переноса слова: их `add` может привезти версию, где `FIT_MARKER` ещё нет
+    (обычный случай — правка живёт только в `VETTED`, см. шапку модуля).
+    Симулируем `npx hyperframes add`, чтобы не ходить в сеть: настоящий
+    `subprocess.run` заменён на функцию, кладущую в `target` файл, который
+    читает данные (`DATA_HOOK` есть), но нашей подгонки не несёт."""
+    import subprocess
+
+    from reels_factory import hf_captions
+
+    def fake_run(cmd, **kwargs):
+        target = Path(kwargs["cwd"]) / hf_captions.COMPONENT_REL
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            f"<html><body>{hf_captions.DATA_HOOK}</body></html>",
+            encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(hf_captions.subprocess, "run", fake_run)
+    result = hf_captions.install(tmp_path)
+    assert hf_captions.FIT_MARKER in result.read_text(encoding="utf-8")
+    assert result.read_bytes() == hf_captions.VETTED.read_bytes()
 
 
 def test_движок_титра_уезжает_отдельным_файлом(tmp_path):
