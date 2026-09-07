@@ -431,6 +431,28 @@ def _fit_label(text: str, limit: int) -> str:
 #: с запасом.
 _GLYPH_RATIO = 0.55
 
+#: Доля кегля от ширины коробки узла и доля высоты коробки от кегля — их же
+#: пропорции по умолчанию (`hw-pipeline.html:99-106`: `boxW: 320, boxH: 170,
+#: fontSize: 56`), а не наша выдумка. До этой правки `build()` брал коробку от
+#: ширины кадра, а кегль — литералом 46 в стороне: коробка росла, кегль нет,
+#: и узел «Убеждает» на прогоне `rb0908-philosophers` (сцена `s-03`,
+#: `pip-br`) читался пятипроцентной царапиной кадра. Кегль ниже читаемого пола
+#: HyperFrames для видео не идёт: «If you're writing a font-size under 24px in
+#: a video composition, justify it»
+#: (`hyperframes-ref/skills/hyperframes-creative/references/
+#: video-composition.md:47`).
+_NODE_FONT_RATIO = 56 / 320
+_NODE_BOXH_RATIO = 170 / 56
+_NODE_MIN_FONT = 24
+
+#: Внутренний отступ подписи от края коробки узла с обеих сторон вместе.
+#: `_GLYPH_RATIO` — средняя ширина буквы по алфавиту; жирное узкое сочетание
+#: («Выполняет» при кегле 60 в коробке 360, живой прогон правки) съедало
+#: запас в 31,5 px на сторону почти целиком и читалось прижатым к обводке.
+#: Запас взят вдвое шире прежнего (`+ 60` у старой формулы бокса, откуда
+#: считался предел по тексту) — проверено тем же кадром после правки.
+_NODE_TEXT_PADDING = 100
+
 
 #: Сколько знаков держит коробка узла у `hw-pipeline`. Ширина коробки падает с
 #: числом узлов (три коробки с зазорами занимают весь кадр), поэтому и предел
@@ -501,6 +523,36 @@ _ITEMS_SLOT = '<div class="gca-stage" data-slot="items" role="list"></div>'
 #: «ПУБЛИКАЦИЯ» отрисовалась как «ПУБЛИКАL»), а их же `check --strict` этого не
 #: видел — он меряет рамку элемента, а не текст внутри.
 _LABEL_RATIO = ("textW / (maxChars * 0.75)", "textW / (maxChars * 0.95)")
+
+#: Их кегли (46/40 px, `mk-specs-list.html:59,65`) сверстаны под landscape-
+#: канвас 1920x1080 и в нашей вертикали не растут ни от чего: подмена канваса
+#: (`port_block`) переписывает только буквальные 1920/1080, а других чисел не
+#: трогает. На реальном прогоне (`rb0908-philosophers`, сцена `s-05`, none)
+#: строка «да  объяснить честно» при кегле 46 занимала ~443 px из 840
+#: `lineWidth` — меньше половины безопасной ширины, и сам кегль (2,4 % высоты
+#: кадра) читался «мелким текстом». Растим кегль и разрыв между рядами одним
+#: множителем от РЕАЛЬНОГО текста строки (не от потолка
+#: `PAIRS_LABEL_CHARS`/`PAIRS_VALUE_CHARS` — то запас на редкий случай, а не
+#: типичная длина), значит самая длинная пара доходит до `lineWidth`, а не
+#: только до своей исходной доли. Потолок — их же канон читаемости для видео:
+#: «Headlines … 64-120px»
+#: (`hyperframes-ref/skills/hyperframes-creative/references/
+#: video-composition.md:39`) — при кегле 46 множитель 2,5 даёт 115 px, у
+#: верхней границы их «Headlines».
+_PAIRS_LABEL_FONT = 46
+_PAIRS_VALUE_FONT = 40
+_PAIRS_ROW_GAP = 56
+_PAIRS_TEXT_GAP = 18  # их `.mk-sl-text { gap: 18px }`, mk-specs-list.html:54
+_PAIRS_ROW_EXTRA = 24  # margin-top подчёркивания (22) + волосяная линия (2)
+_PAIRS_MAX_SCALE = 2.5
+
+#: Их скрипт меряет высоту ряда своим же кеглем 46 (при `line-height: 1`)
+#: плюс отступ подчёркивания и волосяную линию — и центрирует колонку по этой
+#: высоте (`mk-specs-list.html:185-189`, та же арифметика, что чинит
+#: `_SPECS_TOP` рядом). Кегль растёт вместе с текстом (`build()` ниже), и этот
+#: литерал обязан расти вместе с ним — иначе колонка отцентруется по СТАРОЙ,
+#: маленькой высоте ряда и разъедется с настоящей.
+_PAIRS_ROW_HEIGHT = "(46 + 22 + (CONFIG.underline ? 2 : 0))"
 
 
 def _metric_parts(value: str) -> tuple[int, str]:
@@ -736,29 +788,77 @@ def build(form: str, content: dict, *, duration: float, colors: dict,
                     "«свойство → значение», и половина пары оставляет в кадре "
                     "пустую линию")
             rows.append({"label": label, "value": value})
+        # Кегль растим множителем от САМОЙ ДЛИННОЙ реальной строки — так
+        # текст доходит до `lineWidth`, а не остаётся на исходной доле, какой
+        # бы ни была фактическая длина (см. `_PAIRS_LABEL_FONT` выше). Множитель
+        # держат двумя потолками разом: по ширине строки (не вылезти за
+        # `lineWidth`) и по высоте колонки (не вылезти за `SAFE_BOTTOM` — та
+        # же черта, что и `_SPECS_TOP` ниже), и общим потолком читаемости.
+        line_width = OUT_W - 240
+        widest = max(
+            (len(row["label"]) * _PAIRS_LABEL_FONT
+             + len(row["value"]) * _PAIRS_VALUE_FONT) * _GLYPH_RATIO
+            for row in rows)
+        scale_width = (line_width - _PAIRS_TEXT_GAP) / widest
+        rows_n = len(rows)
+        native_column = (rows_n * (_PAIRS_LABEL_FONT + _PAIRS_ROW_EXTRA)
+                         + (rows_n - 1) * _PAIRS_ROW_GAP)
+        scale_height = SAFE_BOTTOM / native_column
+        scale = max(1.0, min(scale_width, scale_height, _PAIRS_MAX_SCALE))
+        label_font = round(_PAIRS_LABEL_FONT * scale)
+        value_font = round(_PAIRS_VALUE_FONT * scale)
+        row_gap = round(_PAIRS_ROW_GAP * scale)
         config = {"scheme": "dark", "rows": rows, "underline": True,
-                  "lineWidth": OUT_W - 240, "scrim": 0,
-                  "x": 120, "rowGap": 56}
+                  "lineWidth": line_width, "scrim": 0,
+                  "x": 120, "rowGap": row_gap}
+        css += (f"\n      .mk-sl-label {{ font-size: {label_font}px; }}"
+                f"\n      .mk-sl-value {{ font-size: {value_font}px; }}")
         # Их блок центрирует колонку по всей высоте канваса, и после подмены
         # канваса три строки садились на 799…1121 — нижнее подчёркивание уже в
-        # полосе титра. Центрируем по безопасной высоте.
-        return block, config, css, (_SPECS_TOP,)
+        # полосе титра. Центрируем по безопасной высоте, а высоту ряда в их
+        # же формуле поднимаем до нашего нового кегля (`_PAIRS_ROW_HEIGHT`) —
+        # иначе центровка считала бы по кеглю 46, которого в кадре уже нет.
+        return block, config, css, (
+            _SPECS_TOP,
+            (_PAIRS_ROW_HEIGHT,
+             f"({label_font} + 22 + (CONFIG.underline ? 2 : 0))"))
 
     if form == "steps":
         nodes = list((content.get("nodes") or [])[:LIMITS["steps"]])
         limit = NODE_CHARS.get(len(nodes), 8)
         nodes = [_fit_label(node, limit) for node in nodes]
         count = max(1, len(nodes))
-        font = 46
-        longest = max((len(node) for node in nodes), default=8)
-        box = min(360, max(220, round(longest * font * _GLYPH_RATIO) + 60))
         gap = 70
-        while count * box + (count - 1) * gap > OUT_W - 80 and box > 180:
+        margin = 80
+        # Коробка — от ширины кадра, а не от текста: `count` узлов в ряд
+        # заполняют безопасную ширину целиком (пол 220 и потолок 360 держат
+        # её в их собственных пропорциях при малом/большом счёте). До этой
+        # правки коробка уже считалась от кадра, а кегль — нет: литерал 46 не
+        # рос вместе с коробкой, и узел читался в разы мельче их дизайна
+        # (`hw-pipeline.html:99-106`, коробка 320x170 при кегле 56).
+        box = min(360, max(220, (OUT_W - margin - (count - 1) * gap) // count))
+        longest = max((len(node) for node in nodes), default=8)
+        # Кегль — МЕНЬШИЙ из двух потолков: их же пропорция от коробки
+        # (`_NODE_FONT_RATIO`) и гарантия, что самая длинная подпись при этом
+        # кегле не вылезет из коробки (`_NODE_TEXT_PADDING` — запас на отступ
+        # с обеих сторон). Не ниже читаемого пола HyperFrames для видео
+        # (`_NODE_MIN_FONT`, 24 px).
+        font_by_box = round(box * _NODE_FONT_RATIO)
+        font_by_text = (int((box - _NODE_TEXT_PADDING) / (longest * _GLYPH_RATIO))
+                       if longest else font_by_box)
+        font = max(_NODE_MIN_FONT, min(font_by_box, font_by_text))
+        y = round(OUT_H * 0.42)
+        # Высота коробки — их же пропорция от кегля, урезанная безопасной
+        # чертой: расти вместе с кеглем без верхнего предела значило бы
+        # заехать на слова титра при малом счёте узлов (коробка шире —
+        # кегль и высота больше).
+        box_h = min(round(font * _NODE_BOXH_RATIO), SAFE_BOTTOM - y)
+        while count * box + (count - 1) * gap > OUT_W - margin and box > 180:
             box -= 20
         config = {
             "nodes": [{"label": node} for node in nodes],
-            "boxW": box, "boxH": 150, "gap": gap,
-            "y": round(OUT_H * 0.42), "fontSize": font,
+            "boxW": box, "boxH": box_h, "gap": gap,
+            "y": y, "fontSize": font,
         }
         return block, config, css, ()
 

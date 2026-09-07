@@ -452,3 +452,108 @@ def test_названное_планом_значение_полярности_�
                                    "options": ["ink", "paper", "accent"]}}}
     тёмный = {"bg": "#0b0b0c", "ink": "#ffffff", "accent": "#ff1745"}
     assert frame_variables(card, тёмный, {"tone": "accent"}) == {}
+
+
+# ---------- кегль pairs и steps растёт от кадра, а не остаётся литералом ----------
+#
+# Job rb0908-philosophers, 07.09.2026, сцены s-05 (`pairs`, presenter `none`)
+# и s-03 (`steps`, `pip-br`): их кегли (46/40 px у `mk-specs-list`, литерал 46
+# у `hw-pipeline`) сверстаны под landscape-канвас и не растут ни от чего —
+# подмена канваса в `port_block` переписывает только буквальные 1920/1080.
+# Строка «да  объяснить честно» при кегле 46 занимала ~443 px из 840
+# `lineWidth` (contact-sheet-2/3.jpg, tile-s05.png), а узел «Убеждает» на
+# `pip-br` читался пятипроцентной царапиной кадра (tile-s03.png).
+
+
+def test_кегль_pairs_растёт_от_реального_текста_а_не_от_потолка_символов():
+    """Множитель — от самой длинной РЕАЛЬНОЙ строки (job rb0908-philosophers,
+    s-05), а не от потолка `PAIRS_LABEL_CHARS`/`PAIRS_VALUE_CHARS` — тот
+    запас на редкий случай, не типичная длина. Реальная строка доходит до
+    `lineWidth`, а не остаётся на исходной доле."""
+    from reels_factory.hf_schema import _PAIRS_ROW_HEIGHT
+
+    _, config, css, patches = build(
+        "pairs", {"rows": [{"label": "да", "value": "объяснить честно"},
+                           {"label": "нет", "value": "давить на человека"}]},
+        duration=4.3, colors={})
+    assert "font-size: 80px" in css  # .mk-sl-label, было 46
+    assert "font-size: 70px" in css  # .mk-sl-value, было 40
+    assert config["rowGap"] == 98  # растёт тем же множителем, не литерал 56
+    # Их скрипт центрирует колонку своим же кеглем (46 + отступ подчёркивания
+    # + волосяная линия) — литерал обязан расти вместе с текстом, иначе
+    # колонка отцентруется по СТАРОЙ, маленькой высоте ряда.
+    assert (dict(patches)[_PAIRS_ROW_HEIGHT]
+            == "(80 + 22 + (CONFIG.underline ? 2 : 0))")
+
+
+def test_кегль_pairs_не_ниже_их_исходного_даже_на_потолке_символов():
+    """Множитель floor на 1.0 (`max(1.0, ...)`): хуже их дизайна (46/40 px)
+    кегль не становится, даже когда реальный текст близок к пределу
+    символов и от `lineWidth` расти уже некуда."""
+    _, _, css, _ = build(
+        "pairs", {"rows": [{"label": "с" * 22, "value": "з" * 26},
+                           {"label": "б" * 22, "value": "к" * 26}]},
+        duration=4.3, colors={})
+    assert "font-size: 46px" in css
+    assert "font-size: 40px" in css
+
+
+def test_кегль_pairs_на_потолке_символов_не_ниже_и_не_выше_их_исходного():
+    """На потолке `PAIRS_LABEL_CHARS`/`PAIRS_VALUE_CHARS` разом текст уже при
+    ИХ родном кегле (46/40) шире `lineWidth` — это не наша правка внесла
+    (`scale_width` считает то же самое отношение и без неё), а свойство
+    самого потолка символов: он держит запас на редкий случай, а не гарантию,
+    что пара с обоими полями до предела влезет в одну строку без переноса.
+    Наш `scale` в этом случае остаётся на 1.0 (не хуже их дизайна) и не
+    раздувает то, что и так не помещалось."""
+    from reels_factory.hf_schema import PAIRS_LABEL_CHARS, PAIRS_VALUE_CHARS
+
+    _, _, css, _ = build(
+        "pairs", {"rows": [{"label": "с" * PAIRS_LABEL_CHARS,
+                            "value": "з" * PAIRS_VALUE_CHARS}]},
+        duration=4.3, colors={})
+    assert "font-size: 46px" in css
+    assert "font-size: 40px" in css
+
+
+def test_кегль_steps_растёт_вместе_с_коробкой():
+    """Коробка уже считалась от ширины кадра, кегль — нет (литерал 46): узел
+    читался мельче их же дизайна (`hw-pipeline.html:99-106` — коробка 320x170
+    держит кегль 56). Кегль и высота коробки теперь — их же доля от новой,
+    заполняющей кадр коробки."""
+    _, config, _, _ = build("steps", {"nodes": ["раз", "два"]},
+                            duration=5.0, colors={})
+    assert config["boxW"] == 360  # заполняет безопасную ширину для двух узлов
+    assert config["fontSize"] > 46
+    assert config["boxH"] > 150
+
+
+def test_кегль_steps_не_вылезает_за_коробку_на_потолке_символов():
+    """На потолке символов (`NODE_CHARS`) кегль обязан ужаться под гарантию
+    текста, а не остаться на потолке их пропорции от коробки — иначе подпись
+    срежет края (живой прогон правки: «Выполняет» при первой прикидке отступа
+    читалось прижатым к обводке узла)."""
+    from reels_factory.hf_schema import (
+        _GLYPH_RATIO, _NODE_TEXT_PADDING, NODE_CHARS,
+    )
+
+    long_word = "б" * NODE_CHARS[2]
+    _, config, _, _ = build("steps", {"nodes": [long_word, long_word]},
+                            duration=5.0, colors={})
+    text_width = len(long_word) * config["fontSize"] * _GLYPH_RATIO
+    assert text_width + _NODE_TEXT_PADDING <= config["boxW"]
+
+
+def test_кегль_steps_не_ниже_читаемого_пола():
+    """HyperFrames про видео прямым текстом: «If you're writing a font-size
+    under 24px in a video composition, justify it»
+    (`hyperframes-ref/skills/hyperframes-creative/references/
+    video-composition.md:47`). Три узла с максимумом символов — самый тесный
+    случай формы `steps`."""
+    from reels_factory.hf_schema import NODE_CHARS, _NODE_MIN_FONT
+
+    long_word = "б" * NODE_CHARS[3]
+    _, config, _, _ = build(
+        "steps", {"nodes": [long_word, long_word, long_word]},
+        duration=6.0, colors={})
+    assert config["fontSize"] >= _NODE_MIN_FONT
