@@ -67,13 +67,13 @@ from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.hf_captions import caption_snippet, write_caption_data
 from reels_factory.hf_frame import DEFAULTS as FRAME_DEFAULTS
 from reels_factory.hf_layout import (
-    VIDEO_RECTS, avatar_gaps, effect_rect, icon_fits, in_avatar_gap,
-    insert_rect, quantize,
+    FULL_FRAME_PRESENTER, VIDEO_RECTS, avatar_gaps, effect_rect, icon_fits,
+    in_avatar_gap, insert_rect, quantize,
 )
 from reels_factory.hf_media import insert_problem
 from reels_factory.hf_montage import (
-    cut_into_plans, drop_schema, flash_moments, insert_of, refill_scene,
-    scene_elements, shot_queries,
+    PUSH_TO, cut_into_plans, drop_schema, flash_moments, insert_of,
+    refill_scene, scene_elements, shot_queries,
     shots_for, split_series, zoom_ladder,
 )
 from reels_factory.hf_schema import (
@@ -244,6 +244,70 @@ def effect_zone(presenter: str) -> dict | None:
     """
     return effect_rect(presenter,
                        band_top=CAPTION_BAND_TOP - CAPTION_BAND_SAFETY)
+
+
+#: Во сколько раз схему можно ужать, оставив её читаемой. Порог — ДОЛЯ от
+#: собственного кегля, а не пиксель: пиксельный пол схему завернул бы и без
+#: всякого ужатия (у перечисления подпись и так `min(2.6cqw, …)` — 28 px в
+#: нашем кадре, `grid-card-assemble.html:376-379`), а вопрос стоит другой —
+#: насколько ниже СВОЕГО размера буквам можно опуститься.
+#:
+#: Долю берём не с потолка и не свою: ровно так ужимает слово титра его же
+#: движок — `var minSize = Math.floor(baseFontSize * 0.45)`
+#: (`assets/caption-highlight.html:134`), и ниже не идёт «rather than
+#: shrinking below legibility» (там же:135-137); при базовом кегле 80 px в
+#: нашем кадре (`:401`, `fontScale = min(W, H) / 1080 = 1`, `:276`) это его
+#: пол в 36 px. У них самих та же доля чуть строже — 42 из 78
+#: (`packages/core/src/text/fitTextFontSize.ts:27-28`). Схема сверстана на
+#: полосу `SAFE_BOTTOM`, значит её доля — доля этой полосы.
+SCHEMA_MIN_SCALE = 0.45
+
+
+def schema_zone(presenter: str, *, face: dict | None = None,
+                min_height: int | None = None) -> dict | None:
+    """Куда встаёт схема при этом положении ведущей и во сколько раз ужимается.
+
+    `{"top", "height", "scale"}` либо `None` — места нет, и схема в такую
+    сцену не встаёт.
+
+    До этой функции геометрию схемы считал один `hf_schema.build`, и он не
+    знал о ведущей ничего: ни её окна, ни лица. Пять форм центровались в
+    полосе `0..SAFE_BOTTOM` и ложились туда же, где при `punch` находится
+    лицо — прогон `rb0907-philosophers`, сцена `s-08`, карточка бренда на
+    лице ведущей. Знает об этом компоновщик: окно ведущей ставит он
+    (`_presenter_move`), наезд считает он же (`camera_plans`), лицо меряет
+    `face_detect`. Теперь он это и говорит — одной зоной, тем же
+    `hf_layout.effect_rect`, которым в кадр встаёт элемент-эффект.
+
+    `scale` — во сколько раз ужать коробку схемы, чтобы её содержимое (оно
+    сверстано на полосу `SCHEMA_SAFE_BOTTOM`) уместилось в зону. Единица —
+    зона целая, и разметка выходит знак в знак прежней: так стоят схемы при
+    `none` и при нижних уголках, где окно ведущей лежит ниже полосы титра и
+    со схемой не спорит вовсе.
+
+    Наезд входит в счёт: при полнокадровой ведущей камера растёт до
+    `PUSH_TO` вокруг точки лица (`zoom_origin` целится в неё же), то есть
+    голова к концу наезда крупнее ровно во столько же. Это не мелочь, а сам
+    дефект: на 27,65 с карточка `s-08` стояла НАД лицом и кадр читался, а на
+    28,43 с наезд поднял лицо в неё (`contact-sheet-3.jpg`, кадры 4 и 5).
+    Гейт обязан судить худший кадр сцены, а не первый.
+
+    `min_height` — пол зоны; по умолчанию читаемый (`SCHEMA_MIN_SCALE`).
+    Ноль спрашивает отказавший гейт, когда ему нужно назвать в тексте, СКОЛЬКО
+    места осталось: иначе он мерил бы полосу вторым счётом.
+    """
+    name = str(presenter or "none")
+    if face and name in FULL_FRAME_PRESENTER:
+        face = dict(face, h=float(face["h"]) * PUSH_TO)
+    if min_height is None:
+        min_height = round(SCHEMA_MIN_SCALE * SCHEMA_SAFE_BOTTOM)
+    rect = effect_rect(name, band_top=CAPTION_BAND_TOP - CAPTION_BAND_SAFETY,
+                       face=face, fit=crop_fractions(face),
+                       min_height=min_height)
+    if rect is None:
+        return None
+    return {"top": rect["top"], "height": rect["height"],
+            "scale": round(min(1.0, rect["height"] / SCHEMA_SAFE_BOTTOM), 4)}
 
 
 def _overlay_geometry(block: str, canvas: tuple) -> tuple[float, str]:
@@ -3148,6 +3212,19 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         if not plan:
             continue
         start, end = _q(scene["startSec"]), _q(scene["endSec"])
+        # Где схеме стоять, решает не она сама, а кадр: окно ведущей, её лицо
+        # и полоса титра. Зоны нет — схему снимаем здесь же, как снимаем её
+        # по короткой сцене и по неподобравшемуся знаку: до сборки об этом
+        # спросил гейт (`hf_gates.schema_position_problems`), но положение
+        # ведущей после гейта переписывает код (`pick_position`,
+        # `show_ordered_avatar`), и последнее слово за кадром.
+        zone = schema_zone(scene.get("presenter"), face=face)
+        if zone is None:
+            print(f'{scene["id"]}: схема «{plan["form"]}» снята — ведущая '
+                  f'`{scene.get("presenter") or "none"}` не оставляет ей '
+                  "свободной полосы над титром")
+            drop_schema(scenes, scene)
+            continue
         content = dict(plan)
         if plan["form"] == "brand":
             files = [(resolved.get(schema_key(scene["id"], index)) or {}).get("file")
@@ -3266,6 +3343,20 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         # содержимое в тот же документ и узел маунта под собой меняет, а
         # твин GSAP держит ссылку на прежний. Обёртка — наша, её их рантайм
         # не трогает.
+        # Место коробки в кадре — от зоны, а не от нуля. Целая зона (`none` и
+        # нижние уголки) даёт прежние `left:0;top:0` знак в знак: масштаб
+        # ставится только там, где зона короче полосы схемы, и лишнего
+        # атрибута в разметке иначе не появляется. Ужимаем ТРАНСФОРМОМ, а не
+        # числами внутри блока: числа у пяти форм свои, а трансформ уносит с
+        # собой и кегли подписей — ровно ту читаемость, порог которой считает
+        # `SCHEMA_MIN_SCALE`. Точка отсчёта — левый верхний угол, поэтому
+        # `left` доводит ужатую коробку до середины кадра.
+        place = "left:0;top:0"
+        if zone["scale"] < 1:
+            place = (f'left:{round(OUT_W * (1 - zone["scale"]) / 2)}px;'
+                     f'top:{zone["top"]}px;'
+                     f'transform:scale({zone["scale"]});'
+                     f'transform-origin:0 0')
         body.append(
             f'    <div class="ovl" id="schema-box-{scene["id"]}">'
             f'<div id="schema-{scene["id"]}" class="clip"'
@@ -3275,7 +3366,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             f' data-duration="{markup_time(end) - markup_time(start):.4f}"'
             f' data-track-index="{TRACK_SCHEMA}"'
             f' data-width="{OUT_W}" data-height="{height}"'
-            f' style="position:absolute;left:0;top:0;'
+            f' style="position:absolute;{place};'
             f'width:{OUT_W}px;height:{height}px"{values}></div></div>')
         scene["schemaShown"] = True
 

@@ -40,7 +40,7 @@ from reels_factory.hf_fonts import inject_fonts
 from reels_factory.hf_frame import read_frame
 from reels_factory.hf_gates import (
     check_media, check_placeholders, check_storyboard, elements_delivered,
-    frame_filled_problems, plan_elements_gate,
+    frame_filled_problems, plan_elements_gate, schema_position_problems,
 )
 from reels_factory.hf_layout import FULL_FRAME_PRESENTER, quantize
 from reels_factory.hf_media import resolve_all
@@ -1229,8 +1229,16 @@ def _early_plan_gates(scenes: list[dict], duration: float,
     # `_sample_plan` в hf_brief.py). Судим тем же кодом, а не своей копией:
     # разойтись двум местам иначе нечем.
     #
-    # Про схему гейт не спрашивает отдельно — `frame_filled_problems` считает
-    # `schema_scene` наравне со вставкой.
+    # Про пустоту кадра гейт не спрашивает у схемы отдельно —
+    # `frame_filled_problems` считает `schema_scene` наравне со вставкой. Про
+    # МЕСТО схемы в кадре — спрашивает: геометрию схемы считал один
+    # `hf_schema.build`, который ни окна ведущей, ни её лица не знает, и
+    # боевой прогон `rb0907-philosophers` (сцена `s-08`, `presenter: "punch"`
+    # + `schema.form: "brand"`) отдал карточку бренда на лицо ведущей.
+    # Спрашиваем ту же зону, которой схему ставит сборка
+    # (`hf_compose.schema_zone`), — здесь без лица: `face.json` появляется
+    # вместе с клипами, то есть уже после HeyGen.
+    schema_positions = schema_position_problems(scenes)
     # Имя позиции каталога сверяется до заказа по той же причине: их
     # `hyperframes add` неизвестное имя не ставит и роняет попытку сборки, а
     # ставит он блоки уже после того, как ведущую сняли и оплатили. Тот же
@@ -1243,8 +1251,19 @@ def _early_plan_gates(scenes: list[dict], duration: float,
     # Оба изъяна складывает один код — `plan_elements_gate` (hf_gates.py), а
     # не своя копия здесь: тот же вызов зовёт и цикл пересдачи
     # `assemble_hyperframes` для плана, вернувшегося уже после заказа
-    # ведущей, — разойтись двум местам иначе нечем.
+    # ведущей, — разойтись двум местам иначе нечем. Третий изъян — схема без
+    # полосы под ведущей (`schema_position_problems`, выше) — в тот же вызов
+    # не входит: он один спрашивает лицо, а лица до заказа ещё нет (`face=None`
+    # здесь). Складываем оба вердикта под тем же именем гейта `D36_elements` —
+    # агент видит один пункт сверки и один отказ, а не два гейта с похожими
+    # именами.
     result.update(plan_elements_gate(scenes, words))
+    if schema_positions:
+        verdict = result["D36_elements"]
+        already = verdict[len("FAIL: "):] if verdict.startswith("FAIL") else ""
+        result["D36_elements"] = "FAIL: " + (already + " " if already else "") + (
+            "схеме не остаётся полосы кадра: ведущая занимает то же место, и "
+            "одна закроет другую: " + "; ".join(schema_positions))
 
     empty = frame_filled_problems(scenes)
     result["D35_frame_filled"] = "PASS" if not empty else (
@@ -1871,7 +1890,12 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             # и тогда сцена уже переписана на ведущую во весь кадр.
             board = json.loads(
                 (rdir / "storyboard.json").read_text(encoding="utf-8"))
-            result = check_storyboard(board, clips=saved_clips, duration=duration)
+            # Лицо сюда идёт затем же, зачем оно идёт в пробу ниже: D11
+            # спрашивает у кадра, осталась ли схеме полоса вне лица, а до
+            # заказа этого замера ещё не было (`_early_plan_gates` судит с
+            # `face=None`).
+            result = check_storyboard(board, clips=saved_clips,
+                                      duration=duration, face=load_face(rdir))
             # …а «что просил агент» знает только его собственный ответ:
             # раскадровку сборка переписывает под собранный кадр и снятую
             # позицию каталога из неё вычищает. Поэтому `D36_elements` после

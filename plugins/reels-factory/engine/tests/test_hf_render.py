@@ -3136,3 +3136,58 @@ def test_решение_про_кадр_судят_по_закрытому_сп�
     assert ("`catalog_checked`" in вердикт
             and board["scenes"][5]["id"] in вердикт), (
         "строка вместо списка рассмотренных позиций прошла")
+
+
+def test_схема_под_ведущей_во_весь_кадр_ловится_до_заказа():
+    """rb0907-philosophers, сцена `s-08`: `presenter: "punch"` +
+    `schema.form: "brand"` — карточка бренда легла по центру верхней половины
+    кадра, на лицо ведущей, и заказ уже был оплачен. Ни один ранний гейт
+    этого не ловил: `hf_schema.build` презентера не читает, а
+    `frame_filled_problems` (D35) схемную сцену пропускает — «схема закрывает
+    кадр наравне со вставкой». `D36_elements` теперь спрашивает у кадра
+    зону (`hf_compose.schema_zone`) — ту же, которой сборка ставит коробку
+    схемы; до заказа лица ещё нет, и полнокадровой ведущей обещать нечем.
+    """
+    from reels_factory import hf_render
+    from reels_factory.avatar_islands import avatar_islands_settings
+    from reels_factory.hf_phrases import lay_out_scenes, phrase_timeline
+
+    board = json.loads(json.dumps(FIT))
+    assert board["scenes"][0]["presenter"] == "punch", "фикстура сменилась"
+    board["scenes"][0]["schema"] = {
+        "form": "brand", "why": "назван бренд", "brands": ["acme"]}
+    phrases = phrase_timeline(EARLY_TIMED, EARLY_WORDS)
+    scenes = lay_out_scenes(board["scenes"], phrases, duration=EARLY_TOTAL)
+    вердикт = hf_render._early_plan_gates(
+        scenes, EARLY_TOTAL, phrases,
+        avatar_islands_settings({}))["D36_elements"]
+
+    assert вердикт.startswith("FAIL"), вердикт
+    assert "441 px" in вердикт and "punch" in вердикт
+    assert scenes[0]["id"] in вердикт
+
+
+def test_схема_со_вставкой_без_ведущей_не_затронута():
+    """Зеркало предыдущего теста и защита от перебора: rb0907-philosophers,
+    сцена `s-07` — `presenter: "none"` + `insert` + `schema.form: "pairs"` —
+    легла в кадр верно (кадр держит вставка, схема стоит над ней во весь
+    рост, лица в кадре нет вовсе). Правка про схему под ведущей не должна
+    трогать сцену, где ведущей в кадре нет: без окна ведущей зона схемы —
+    вся полоса над титром, и масштаб у неё единица.
+    """
+    from reels_factory import hf_render
+    from reels_factory.avatar_islands import avatar_islands_settings
+    from reels_factory.hf_phrases import lay_out_scenes, phrase_timeline
+
+    board = json.loads(json.dumps(FIT))
+    assert board["scenes"][2]["presenter"] == "none", "фикстура сменилась"
+    assert board["scenes"][2]["insert"], "фикстура сменилась"
+    board["scenes"][2]["schema"] = {
+        "form": "pairs", "why": "характеристики пунктов",
+        "rows": [{"label": "делай", "value": "говори честно"}]}
+    phrases = phrase_timeline(EARLY_TIMED, EARLY_WORDS)
+    scenes = lay_out_scenes(board["scenes"], phrases, duration=EARLY_TOTAL)
+    гейты = hf_render._early_plan_gates(
+        scenes, EARLY_TOTAL, phrases, avatar_islands_settings({}))
+
+    assert гейты["D36_elements"] == "PASS", гейты["D36_elements"]
