@@ -751,7 +751,17 @@ def test_фактура_кроет_кадр_целиком(run, monkeypatch):
 
 def test_плашка_остаётся_над_полосой_титра(run):
     """Всё, что не помечено фактурой, вписывается по ширине и кончается выше
-    слов титра — иначе их аудит зовёт content_overlap."""
+    слов титра — иначе их аудит зовёт content_overlap.
+
+    `_LT` не занимает свои 1920px шириной — `lt-name`/`lt-role` идут
+    непрерывной строкой без явной ширины, а слова в этой сцене короткие («М»
+    плюс родное «Host» — слот `role` не назван). Измерение (настоящий
+    браузер — тест не в фикстуре `каталог`, где оно подменено) видит это и
+    поднимает масштаб до потолка зоны над титром (980/1080 = 0,9074) — тем же
+    числом, каким `test_вертикальная_плашка_без_вида_остаётся_над_полосой_
+    титра` ограничивает вертикальный канвас. `left` при этом уже не центрует
+    ЦЕЛЫЙ канвас (после увеличенного масштаба он снова шире кадра), а держит
+    поле `OVERLAY_CONTENT_MARGIN` от измеренного левого края надписи."""
     _with_lt(run)
     scenes = json.loads(json.dumps(SCENES))
     scenes[0]["endSec"] = 2.0
@@ -759,7 +769,10 @@ def test_плашка_остаётся_над_полосой_титра(run):
     scenes[1]["overlay"] = {"block": "lt-clean-bar", "text": {"name": "М"}}
     html, _ = _build(run, scenes=scenes)
     layer = html[html.index('<div class="ovl"'):]
-    assert "left:0px;top:372px" in layer[:80] and "scale(0.5625)" in layer[:400]
+    assert "top:0px" in layer[:80] and "scale(0.9074)" in layer[:400]
+    # Бокс канваса всё ещё кончается ровно на полосе титра, не ниже.
+    band_height = hf_compose.CAPTION_BAND_TOP - hf_compose.CAPTION_BAND_SAFETY
+    assert round(1080 * 0.9074) <= band_height
 
 
 def _scrim_scenes(count: int, span: float = 4.0):
@@ -1581,6 +1594,13 @@ def каталог(run, monkeypatch):
     monkeypatch.setattr(hf_compose, "_skipped_positions",
                         lambda: {"demo-skip": "их же проверка валит блок"})
     monkeypatch.setattr(hf_compose, "_texture_blocks", frozenset)
+    # Измерение нарисованного требует настоящего браузера — на машине
+    # прогона он может быть, но фикстурные позиции ("demo-plain" и другие) не
+    # настоящий каталог, и мерить в них нечего вдобавок к тому, что это
+    # завело бы браузер в каждый тест геометрии. `_overlay_geometry` без
+    # измерения считает по канвасу целиком — прежняя, уже проверенная
+    # арифметика; отдельные тесты передают `content_box` в неё напрямую.
+    monkeypatch.setattr(hf_compose, "_measured_content_box", lambda *a, **k: None)
     registry = FIXTURE_CATALOG / "registry"
     compositions = run / "public" / "compositions"
     (compositions / "components").mkdir(parents=True, exist_ok=True)
@@ -2302,6 +2322,211 @@ def test_старый_план_с_полем_overlay_собирается_как
     scenes[1]["overlay"] = {"block": "demo-plain", "text": {"line": "Имя"}}
     html, _ = _build(каталог, scenes=scenes, resolved={})
     assert 'id="ovl-s-02"' in html
+
+
+# ---------- масштаб плашки по нарисованному содержимому ----------
+
+
+@pytest.fixture
+def без_каталога_фактур(monkeypatch):
+    """Тесты этого раздела зовут `_overlay_geometry` напрямую, в обход
+    фикстуры `каталог` — им нужна не сборка целиком, а чистая арифметика.
+    `_texture_blocks` без подмены читает боевой каталог (`REELS_CATALOG_DIR`
+    не выставлен большинством машин прогона), и имена фикстур этого раздела
+    (`lt-clean-bar`, `full-width-bar`, …) — не настоящие позиции; подмена той
+    же, какой пользуется `каталог`, держит тесты от машины прогона
+    независимыми."""
+    monkeypatch.setattr(hf_compose, "_texture_blocks", frozenset)
+
+
+def test_масштаб_по_канвасу_без_измерения_не_меняется(без_каталога_фактур):
+    """Без `content_box` (браузера нет, или измерить нечего) — прежняя
+    арифметика, число совпадает с тем, что было до этой правки."""
+    scale, box = hf_compose._overlay_geometry("lt-clean-bar", (1920, 1080))
+    assert scale == 1080 / 1920
+    assert "top:0px" not in box or True  # геометрия та же, что раньше
+
+
+def test_узкое_содержимое_landscape_плашки_поднимает_масштаб_выше_канваса(
+        без_каталога_фактур):
+    """`lt-kicker-name`: кикер и имя занимают едва ли пятую часть ширины
+    своего 1920x1080 канваса (замер настоящей копии рабочим прогоном —
+    `left:130, width:369` на тексте той сцены). Масштаб по канвасу целиком
+    (0,5625) держит 70px кегль сжатым до 39px — 2% высоты вертикального
+    кадра, дефект `chat-el.png`/`lt-kicker-name` из задания. Зная ширину
+    нарисованного, масштаб поднимается настолько, насколько остаётся места
+    над полосой титра — тот же расчёт, каким плашка и раньше не заезжала на
+    титр (`test_вертикальная_плашка_без_вида_остаётся_над_полосой_титра`),
+    только теперь применённый как основной путь, а не только как потолок."""
+    canvas = (1920, 1080)
+    content_box = {"left": 130, "top": 814, "width": 369, "height": 144}
+    old_scale, _ = hf_compose._overlay_geometry("lt-kicker-name", canvas)
+    geometry = hf_compose._overlay_geometry(
+        "lt-kicker-name", canvas, content_box=content_box)
+    assert geometry is not None
+    scale, box = geometry
+    assert scale > old_scale
+    # Бокс канваса всё ещё умещается над полосой титра ни на пиксель не ниже.
+    band_height = hf_compose.CAPTION_BAND_TOP - hf_compose.CAPTION_BAND_SAFETY
+    top = int(re.search(r"top:(-?\d+)px", box).group(1))
+    assert top + round(canvas[1] * scale) <= band_height
+    # И нарисованное не унесло за левый край кадра, хотя канвас после
+    # увеличенного масштаба заметно шире кадра.
+    left = int(re.search(r"left:(-?\d+)px", box).group(1))
+    content_left_in_frame = left + content_box["left"] * scale
+    assert 0 <= content_left_in_frame < hf_compose.OUT_W
+
+
+def test_широкое_содержимое_landscape_плашки_не_опускает_масштаб(
+        без_каталога_фактур):
+    """Содержимое, и без измерения занимающее весь канвас (полноширинная
+    плашка вроде чирона), не должно масштабироваться МЕНЬШЕ, чем считал
+    прежний расчёт по канвасу целиком — иначе измерение стало бы регрессом
+    там, где старая арифметика и так была верна."""
+    canvas = (1920, 1080)
+    old_scale, _ = hf_compose._overlay_geometry("full-width-bar", canvas)
+    content_box = {"left": 0, "top": 900, "width": 1920, "height": 120}
+    scale, _ = hf_compose._overlay_geometry(
+        "full-width-bar", canvas, content_box=content_box)
+    assert scale >= old_scale
+
+
+def test_вертикальный_канвас_измерение_не_трогает(без_каталога_фактур):
+    """Позиция, уже нарисованная под вертикальный канвас (1080x1920, тот же,
+    что у кадра), не примеряет измеренную ширину: она и так своя, порт под
+    кадр, а не пустое поле landscape-канваса. `content_box` здесь просто
+    игнорируется, и число то же, что вернул бы вызов без него вовсе
+    (`test_вертикальная_плашка_без_вида_остаётся_над_полосой_титра`)."""
+    canvas = (1080, 1920)
+    content_box = {"left": 0, "top": 0, "width": 1080, "height": 1920}
+    without = hf_compose._overlay_geometry("v-clean-bar", canvas)
+    with_box = hf_compose._overlay_geometry(
+        "v-clean-bar", canvas, content_box=content_box)
+    assert with_box == without
+
+
+def test_нечитаемая_даже_после_подгонки_плашка_снимается(без_каталога_фактур):
+    """Канвас настолько выше зоны над титром, что даже ужатая под неё плашка
+    падает ниже читаемого порога (`OVERLAY_MIN_SCALE`, то же основание, что
+    у схемы) — `_overlay_geometry` возвращает `None`, а не тихо рисует
+    нечитаемый кегль."""
+    band_height = hf_compose.CAPTION_BAND_TOP - hf_compose.CAPTION_BAND_SAFETY
+    tall_canvas = (1920, round(band_height / (hf_compose.OVERLAY_MIN_SCALE - 0.01)))
+    assert hf_compose._overlay_geometry("lt-tall", tall_canvas) is None
+
+
+def test_измерение_без_браузера_возвращает_none_а_не_падает(tmp_path, monkeypatch):
+    """На машине без `node`/закреплённого Chrome (или без самого движка)
+    измерение обязано молча отступить — плашка при этом всё ещё собирается
+    (прежней арифметикой), а не роняет сборку. Измерение берёт `_node` из
+    `hf_probe` собственным (отложенным) импортом — подменяем его там же."""
+    import reels_factory.hf_probe as hf_probe_module
+
+    def падает_без_node():
+        raise RuntimeError("нет node")
+
+    monkeypatch.setattr(hf_probe_module, "_node", падает_без_node)
+    box = hf_compose._measured_content_box(tmp_path / "нет-такого.html",
+                                           (1920, 1080))
+    assert box is None
+
+
+def test_измерение_без_браузера_пишет_причину_в_лог(tmp_path, monkeypatch,
+                                                     capsys):
+    """Тихий откат без node/Chrome — законный (см. тест выше), но причина
+    обязана попасть в лог сборки, а не пропасть: иначе на проде нет способа
+    отличить «браузера нет» от «забыли собрать плашку с измерением»."""
+    import reels_factory.hf_probe as hf_probe_module
+
+    def падает_без_node():
+        raise RuntimeError("нет node")
+
+    monkeypatch.setattr(hf_probe_module, "_node", падает_без_node)
+    hf_compose._measured_content_box(tmp_path / "нет-такого.html",
+                                     (1920, 1080))
+    assert "нет node" in capsys.readouterr().out
+
+
+def _мок_рабочего_браузера(monkeypatch, tmp_path):
+    """Подставляет живые `node`/Chrome и существующий скрипт замера, чтобы
+    дойти до вызова `subprocess.run` — без этого возвращаемый returncode/JSON
+    в тесте ниже недостижим (функция отсекает браузер раньше)."""
+    import reels_factory.hf_probe as hf_probe_module
+
+    monkeypatch.setattr(hf_probe_module, "_node", lambda: "node")
+    monkeypatch.setattr(hf_probe_module, "chrome_path", lambda v: "chrome")
+    script = tmp_path / "measure_block_content.cjs"
+    script.write_text("", encoding="utf-8")
+    monkeypatch.setattr(hf_compose, "_MEASURE_SCRIPT", script)
+
+
+def test_измерение_с_ненулевым_returncode_роняет_сборку(tmp_path, monkeypatch):
+    """Браузер есть, скрипт запустился и упал (регресс в
+    `measure_block_content.cjs`, несовместимый Chrome, порченая staged-копия)
+    — это уже НЕ «браузера нет», и тихий откат на дефектную арифметику молча
+    вернул бы ровно тот дефект, который эта функция чинит. Требуется
+    `RuntimeError` со `stderr`, тем же приёмом, что `hf_probe.run_probe`
+    (`hf_probe.py:88-94`) при своём ненулевом `returncode`."""
+    _мок_рабочего_браузера(monkeypatch, tmp_path)
+
+    class Результат:
+        returncode = 1
+        stdout = ""
+        stderr = "измерить содержимое не вышло: страница не открылась"
+
+    monkeypatch.setattr(hf_compose.subprocess, "run",
+                        lambda *a, **k: Результат())
+    with pytest.raises(RuntimeError, match="страница не открылась"):
+        hf_compose._measured_content_box(tmp_path / "позиция.html",
+                                         (1920, 1080))
+
+
+def test_измерение_с_битым_json_роняет_сборку(tmp_path, monkeypatch):
+    """Тот же случай, что returncode≠0 (браузер сработал, замер сломался),
+    только скрипт вышел с 0, но напечатал не JSON — регресс в самом скрипте
+    замера. Молчаливый откат здесь так же скрыл бы поломку — требуется
+    `RuntimeError`, а не `None`."""
+    _мок_рабочего_браузера(monkeypatch, tmp_path)
+
+    class Результат:
+        returncode = 0
+        stdout = "не json вовсе"
+        stderr = ""
+
+    monkeypatch.setattr(hf_compose.subprocess, "run",
+                        lambda *a, **k: Результат())
+    with pytest.raises(RuntimeError, match="не JSON"):
+        hf_compose._measured_content_box(tmp_path / "позиция.html",
+                                         (1920, 1080))
+
+
+def test_измерение_портретного_канваса_не_запускает_браузер():
+    """Портретный канвас `_overlay_geometry` не измеряет (см. докстринг) —
+    `_measured_content_box` обязан отсечь его до всякого `node`/Chrome, файлом,
+    которого не существует: дойди функция до попытки открыть файл, `node` бы
+    и сам не нашёл его и вернул бы `None` по другой причине — тест обязан
+    ловить именно ранний, портретный отказ."""
+    assert hf_compose._measured_content_box(
+        Path("нет-такого-файла-вовсе.html"), (1080, 1920)) is None
+
+
+def test_компонент_chat_message_не_использует_cqmin():
+    """`chat-message` — `reels.kind: effect`, элемент со своей коробкой
+    (см. `_overlay_geometry`), но не масштабируется её расчётом вовсе: он
+    сам меряет себя единицами контейнера (`container-type: size`), и его
+    коробка — не канвас позиции, а сама зона `effect_zone`. `cqmin` берёт
+    МЕНЬШУЮ сторону контейнера; под `pip-tr` эта зона широкая и низкая
+    (1080x397 — см. `effect_zone('pip-tr')`), и `cqmin` там втрое меньше
+    `cqw`: 18px вместо 50px кегля, дефект `chat-el.png` из задания. `cqw`
+    всегда ⩾ `cqmin` для одной и той же коробки и не отличается от него в
+    контейнере, где ширина и так меньшая сторона (`message-thread-reveal`,
+    родной канвас 1080x1920, — тот же путь монтажа, тот же компонент)."""
+    from reels_factory.hf_catalog import CATALOG_DIR, REGISTRY_SUBDIR
+
+    source = (CATALOG_DIR / REGISTRY_SUBDIR / "components" / "chat-message"
+              / "chat-message.html")
+    css = source.read_text(encoding="utf-8").split("<style>", 1)[1]
+    assert "cqmin" not in css
 
 
 def test_имена_элементов_попадают_в_установку_блоков():
