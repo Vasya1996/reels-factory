@@ -3,7 +3,29 @@ import subprocess
 
 import pytest
 
-from reels_factory.hf_rhythm import SCD_THRESHOLD, SCENE_THRESHOLD, scene_changes
+from reels_factory.hf_rhythm import (SCD_THRESHOLD, SCENE_THRESHOLD,
+                                      _merge_channels, scene_changes)
+
+
+def test_merge_срез_пойманный_обоими_каналами_считается_один_раз():
+    # 5,05 с — тот же физический срез, что и 5,0 с у scene-канала (в зазоре
+    # 0,2 с): scd не должен задвоить его в списке смен.
+    assert _merge_channels([5.0], [5.05], gap=0.2) == [5.0]
+
+
+def test_merge_находка_scdet_вне_зазора_добавляется():
+    # 10,0 с дальше 0,2 с от единственной находки scene-канала — это другой
+    # срез, `scene_score` его прозевал (тёмный кадр), scd обязан добавить.
+    assert _merge_channels([5.0], [10.0], gap=0.2) == [5.0, 10.0]
+
+
+def test_merge_граница_зазора():
+    # ровно на границе (0,2 с от 0,0) — ещё не «дальше зазора», один срез.
+    # (база 0,0 — чтобы вычитание не давало паразитную погрешность плавающей
+    # точки на самой границе: 5.2 - 5.0 != 0.2 ровно из-за неё)
+    assert _merge_channels([0.0], [0.2], gap=0.2) == [0.0]
+    # чуть дальше границы — уже отдельный срез.
+    assert _merge_channels([0.0], [0.201], gap=0.2) == [0.0, 0.201]
 
 _PTS = re.compile(r"pts_time:([0-9.]+)")
 _SCENE = re.compile(r"lavfi\.scene_score=([0-9.]+)")
