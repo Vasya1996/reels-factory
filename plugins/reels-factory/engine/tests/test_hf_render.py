@@ -2038,6 +2038,139 @@ def test_нехватку_вставок_на_последней_попытке_
     assert Path(res["mp4"]).exists()
 
 
+def test_план_без_кадра_на_пересдаче_не_идёт_в_компоновку(tmp_path,
+                                                           monkeypatch):
+    """`D36_elements` до заказа ведущей требует у каждой сцены поле `frame` —
+    чем держится кадр и что сцена сделала с каталогом (`plan_elements_gate`,
+    hf_gates.py). Тот же вопрос обязан звучать и на пересдаче ПОСЛЕ заказа:
+    аватар уже куплен, но план всё ещё пишет агент, и молчание про кадр —
+    та же дыра, только позже. Раньше её тут никто не спрашивал: `check_shots`
+    и `check_inserts` про `frame` не знают, а `check_storyboard` после сборки
+    судит уже СОБРАННЫЙ кадр, а не то, назвал ли план что-то вообще. На проде
+    07.09.2026 (`rb0907-ai-employee`, `rb0907-university`) план так и доехал
+    до сборки без единого `frame`, а `gates.json` показал `D36_elements: PASS`.
+    """
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [])
+
+    молчит = json.loads(json.dumps(GOOD))
+    молчит["scenes"][2].pop("frame")
+    очередь = [молчит, GOOD]
+    задания = []
+
+    def агент(rdir, *, runner=None):
+        rdir = Path(rdir)
+        задания.append((rdir / "BRIEF.md").read_text(encoding="utf-8"))
+        board = json.loads(json.dumps(очередь.pop(0)))
+        for name in ("storyboard.json", "plan.json"):
+            (rdir / name).write_text(json.dumps(board), encoding="utf-8")
+        return board
+
+    monkeypatch.setattr(hf_render, "plan_with_agent", агент)
+
+    res = hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert len(задания) == 2, "план без `frame` пересдачи не вызвал"
+    причина = _причина(задания[1])
+    assert "D36_elements" in причина
+    assert "`frame`" in причина, "причина не называет поля"
+    assert молчит["scenes"][2]["id"] in причина
+    # второй план принят: сборка состоялась, гейт зелёный по-настоящему
+    assert Path(res["mp4"]).exists()
+    assert res["gates"].get("D36_elements") == "PASS"
+
+
+def test_план_без_кадра_после_заказа_ведущей_тоже_даёт_отказ(tmp_path,
+                                                             monkeypatch):
+    """Тот же вопрос — на возобновлении островного пути: маркер раннего плана
+    (`EARLY_PLAN_STEP`) стоит, ведущая уже куплена, а компоновку спрашивают
+    заново по прошлому отказу (как в
+    `test_продолжение_на_островах_спрашивает_агента_по_купленным_клипам`).
+    Заморозка заказа (`frozen_plan_gates`) смягчает FAIL только у гейтов
+    РАННЕГО плана при возобновлении `plan_before_avatar` — на цикл пересдачи
+    `assemble_hyperframes` она не распространяется, и молчание про `frame`
+    здесь обязано остаться отказом, а не пройти тем же путём смягчённым."""
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [])
+    (tmp_path / "plan.json").write_text(json.dumps(GOOD), encoding="utf-8")
+    (tmp_path / ".hf-plan.done").write_text("ok", encoding="utf-8")
+    (tmp_path / f".hf-{hf_render.EARLY_PLAN_STEP}.done").write_text(
+        "ok", encoding="utf-8")
+    hf_render.save_retry_reason(
+        tmp_path, "D18_change_rate: FAIL: картинка меняется реже раза в 2,5 "
+                  "секунды")
+
+    молчит = json.loads(json.dumps(GOOD))
+    молчит["scenes"][2].pop("frame")
+    очередь = [молчит, GOOD]
+    задания = []
+
+    def агент(rdir, *, runner=None):
+        rdir = Path(rdir)
+        задания.append((rdir / "BRIEF.md").read_text(encoding="utf-8"))
+        board = json.loads(json.dumps(очередь.pop(0)))
+        for name in ("storyboard.json", "plan.json"):
+            (rdir / name).write_text(json.dumps(board), encoding="utf-8")
+        return board
+
+    monkeypatch.setattr(hf_render, "plan_with_agent", агент)
+
+    res = hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert len(задания) == 2, (
+        "план без `frame` после заказа ведущей пересдачи не вызвал")
+    причина = _причина(задания[1])
+    assert "D36_elements" in причина
+    assert молчит["scenes"][2]["id"] in причина
+    assert "## Где ведущей нет" in задания[1], (
+        "задание пересдачи ушло не в режиме «аватар заказан» — а он уже "
+        "куплен, и агент решал бы заново, где ведущая нужна")
+    assert Path(res["mp4"]).exists()
+    assert res["gates"].get("D36_elements") == "PASS"
+
+
+def test_провал_план_проверки_не_перекрывается_доставкой(tmp_path,
+                                                          monkeypatch):
+    """Решение 05: на последней попытке compose красный гейт больше не роняет
+    сборку — ролик доезжает до заказчика с изъяном, записанным честно.
+    `elements_delivered` после сборки судит только то, что из ЗАЯВЛЕННЫХ
+    планом позиций доехало до кадра — на плане без единой позиции ей и
+    заявлять нечего, и она отдаёт PASS. Тот же ключ `D36_elements` уже занят
+    вердиктом `plan_elements_gate` — планом, который ни разу не назвал `frame`,
+    — и этот FAIL не имеет права потеряться под более мягким PASS, записанным
+    по тому же имени позже."""
+    from reels_factory import hf_render
+
+    молчит = json.loads(json.dumps(GOOD))
+    for scene in молчит["scenes"]:
+        scene.pop("frame", None)
+    # Обе попытки одинаково молчат про кадр: агент решение не поменял, и
+    # вторая (последняя) попытка едет в компоновку как есть (решение 05).
+    _fakes(monkeypatch, tmp_path,
+          [молчит, json.loads(json.dumps(молчит))])
+
+    res = hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert Path(res["mp4"]).exists(), (
+        "решение 05: ролик доезжает до заказчика даже с красным гейтом")
+    assert res["gates"]["D36_elements"].startswith("FAIL"), (
+        "план не назвал `frame` ни одной сцене — `elements_delivered` не "
+        "вправе перекрыть это своим PASS'ом под тем же ключом")
+    assert "`frame`" in res["gates"]["D36_elements"]
+    gates_on_disk = json.loads(
+        (tmp_path / "gates.json").read_text(encoding="utf-8"))
+    assert gates_on_disk["D36_elements"].startswith("FAIL"), (
+        "на диске лежит перекрытый вердикт — разбор прогона его не увидит")
+
+
 def test_окно_с_материалом_снимает_сайт_или_маршрут(tmp_path, monkeypatch):
     """prepare вызывает capture_site/screen_route для окон с полем material
     и кладёт результат в public/media — агенту искать материал не надо."""
