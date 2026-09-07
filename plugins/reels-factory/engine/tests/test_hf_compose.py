@@ -1313,6 +1313,83 @@ def test_схема_короче_своей_анимации_не_ставитс
     assert "schemaShown" not in board["scenes"][1]
 
 
+#: Лицо ведущей из прогона `rb0907-philosophers` (`face.json` на сервере) и
+#: оно же, поднятое в верхнюю пятую часть клипа. Первое зоны под собой не
+#: оставляет, второе оставляет — на этой паре и держится вся правка.
+FACE_LOW = {"cx": 521, "cy": 696, "h": 269, "detected": True}
+FACE_HIGH = {"cx": 521, "cy": 300, "h": 269, "detected": True}
+
+
+def test_схема_при_наезде_встаёт_ниже_лица_и_выше_титра(run):
+    """Геометрию схемы считал `hf_schema.build`, который ни окна ведущей, ни
+    её лица не знает: пять форм центруются в полосе `0..980`, то есть ровно
+    там, где при `punch` голова. Теперь коробку ставит кадр — полосой между
+    низом лица и словами титра, ужимая содержимое в неё целиком.
+    """
+    from reels_factory.hf_compose import (CAPTION_BAND_SAFETY, CAPTION_BAND_TOP,
+                                          schema_zone)
+
+    _with_schema_block(run)
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "punch"
+    scenes[1]["insert"] = None
+    scenes[1]["schema"] = {"form": "pairs", "why": "у пунктов свои значения",
+                           "rows": [{"label": "раз", "value": "первое"},
+                                    {"label": "два", "value": "второе"}]}
+    html, board = _build(run, scenes=scenes, resolved={}, face=FACE_HIGH)
+
+    zone = schema_zone("punch", face=FACE_HIGH)
+    assert zone is not None and zone["scale"] < 1
+    tag = html[html.index('id="schema-s-02"'):][:600]
+    assert f'top:{zone["top"]}px' in tag
+    assert f'transform:scale({zone["scale"]})' in tag
+    assert "transform-origin:0 0" in tag
+    # Коробка кончается выше слов титра и начинается ниже лица.
+    assert zone["top"] + zone["height"] <= CAPTION_BAND_TOP - CAPTION_BAND_SAFETY
+    from reels_factory.hf_compose import crop_fractions
+    from reels_factory.hf_layout import VIDEO_RECTS, face_box, moved_face
+    box = face_box(moved_face(FACE_HIGH, VIDEO_RECTS["punch"],
+                              crop_fractions(FACE_HIGH)))
+    assert zone["top"] >= box["top"] + box["height"]
+    assert board["scenes"][1]["schemaShown"] is True
+
+
+def test_схема_без_полосы_под_лицом_снимается_на_сборке(run):
+    """То же лицо, что в прогоне: под ним до слов титра 120 px, а читаемой
+    схеме нужно 441. Сцена доезжает до сборки, когда положение ведущей после
+    гейта переписал код, — и тогда схему снимает кадр, а не гейт."""
+    _with_schema_block(run)
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "punch"
+    scenes[1]["insert"] = None
+    scenes[1]["schema"] = {"form": "pairs", "why": "у пунктов свои значения",
+                           "rows": [{"label": "раз", "value": "первое"},
+                                    {"label": "два", "value": "второе"}]}
+    html, board = _build(run, scenes=scenes, resolved={}, face=FACE_LOW)
+    assert 'id="schema-s-02"' not in html
+    assert "schemaShown" not in board["scenes"][1]
+
+
+def test_схема_без_ведущей_и_в_нижнем_уголке_стоит_как_прежде(run):
+    """Зона целая — разметка обязана остаться знак в знак прежней: ни
+    масштаба, ни сдвига. Это те положения, на которых схемы уже стоят в
+    прогонах rb0907 (`none`, `pip-br`, `pip-bl`)."""
+    for position in ("none", "pip-br", "pip-bl"):
+        folder = run / position
+        folder.mkdir(parents=True, exist_ok=True)
+        _with_schema_block(folder)
+        scenes = json.loads(json.dumps(SCENES))
+        scenes[1]["presenter"] = position
+        scenes[1]["insert"] = None
+        scenes[1]["schema"] = {"form": "pairs", "why": "у пунктов свои значения",
+                              "rows": [{"label": "раз", "value": "первое"},
+                                       {"label": "два", "value": "второе"}]}
+        html, _ = _build(folder, scenes=scenes, resolved={}, face=FACE_LOW)
+        tag = html[html.index('id="schema-s-02"'):][:600]
+        assert "position:absolute;left:0;top:0;" in tag, position
+        assert "transform" not in tag, position
+
+
 def test_схема_бренда_без_знака_не_рисуется(run):
     _with_schema_block(run, form="brand")
     scenes = json.loads(json.dumps(SCENES))

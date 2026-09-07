@@ -17,6 +17,8 @@ talking-head-recut (таблица composition layouts, колонка portrait)
 """
 from __future__ import annotations
 
+import math
+
 from reels_factory.config import FPS, OUT_H, OUT_W
 
 #: Окно ведущей. Числа — их таблица раскладок, колонка portrait, строка
@@ -97,35 +99,61 @@ ICON_RECT = {"left": (OUT_W - 380) // 2, "top": 400, "width": 380,
 EFFECT_MIN_HEIGHT = ICON_RECT["height"]
 
 
-def effect_rect(presenter: str, *, band_top: int) -> dict | None:
-    """Свободный прямоугольник кадра под элемент каталога вида `effect`.
+def effect_rect(presenter: str, *, band_top: int, face: dict | None = None,
+                fit: tuple[float, float] = (0.5, 0.5),
+                min_height: int = EFFECT_MIN_HEIGHT) -> dict | None:
+    """Свободный прямоугольник кадра над полосой титра. `None` — места нет.
 
-    `None` — свободного места нет, и элемент снимается.
-
-    Зону считает код, а не агент: она выводится из двух вещей, которых в плане
-    нет, — из окна ведущей (`VIDEO_RECTS`, положение агент называет, пиксели
-    наши) и из верха полосы титра (`band_top`, ниже него идут слова субтитров).
-    Арифметика та же, что кладёт вставку и схему: вставка занимает то, что
-    осталось от ведущей (`INSERT_RECTS`), схема кончается выше полосы титра
-    (`hf_schema.SAFE_BOTTOM`). Эффект держит оба ограничения разом.
+    Одна арифметика на двоих: по ней встаёт элемент каталога вида `effect` и
+    по ней же встаёт схема (`hf_compose.effect_zone` и `hf_compose.
+    schema_zone` — две двери в эту функцию, а не два расчёта). Зону считает
+    код, а не агент: она выводится из трёх вещей, которых в плане нет, — из
+    окна ведущей (`VIDEO_RECTS`, положение агент называет, пиксели наши), из
+    лица в этом окне (`face.json`) и из верха полосы титра (`band_top`, ниже
+    него идут слова субтитров).
 
     Берётся ЦЕЛЫЙ прямоугольник — тот из двух (над окном ведущей и под ним),
-    что выше. Резать зону на части незачем: элемент — это одна сабкомпозиция с
-    одной коробкой, и половинки ей всё равно не отдать.
+    что выше. Резать зону на части незачем: и элемент, и схема — это одна
+    коробка, и половинки ей всё равно не отдать.
+
+    `face` меняет вопрос там, где окно ведущей — весь кадр (`full`, `punch`,
+    `overlay`). Без замера ответ один: она кроет кадр целиком, свободного
+    прямоугольника нет — так отвечали и отвечают элементу-эффекту, который
+    лица не спрашивает. С замером вопрос сужается до честного: закрыть ведущую
+    целиком нельзя, закрыть ЛИЦО нельзя тем более, а полоса между её лицом и
+    словами титра — свободна. Её и отдаём: `top` — низ коробки лица
+    (`face_box` от `moved_face`, тот же счёт, каким D8 судит текст на лице),
+    низ — `band_top`.
+
+    Полоса берётся именно НИЖЕ лица, а не выше, хотя выше её обычно больше.
+    Причина в том, что коробка лица меньше головы: `face_box` — это ±0.6
+    высоты головы вокруг её центра (`FACE_MARGIN`), а сама голова идёт
+    примерно от `cy - h` до `cy + h`, и над коробкой лежат лоб и волосы.
+    Снизу же полосу подпирает `band_top`, до которого схеме и так нельзя.
+
+    `min_height` — пол зоны. У эффекта он свой (`EFFECT_MIN_HEIGHT`, коробка
+    значка), у схемы свой (читаемость, `hf_compose.SCHEMA_MIN_SCALE`): полом
+    отличаются два ответа, а не два расчёта.
     """
     free = {"left": 0, "top": 0, "width": OUT_W, "height": int(band_top)}
     name = str(presenter or "none")
     if name in FULL_FRAME_PRESENTER:
-        return None
-    rect = VIDEO_RECTS.get(name) if name != "none" else None
-    if rect is not None and _overlap(free, rect):
-        above = {"left": 0, "top": 0, "width": OUT_W,
-                 "height": max(0, int(rect["top"]))}
-        under_top = int(rect["top"]) + int(rect["height"])
-        under = {"left": 0, "top": under_top, "width": OUT_W,
-                 "height": max(0, int(band_top) - under_top)}
-        free = above if above["height"] >= under["height"] else under
-    if free["height"] < EFFECT_MIN_HEIGHT:
+        box = face_box(moved_face(face, VIDEO_RECTS.get(name), fit))
+        if box is None:
+            return None
+        under_top = max(0, math.ceil(box["top"] + box["height"]))
+        free = {"left": 0, "top": under_top, "width": OUT_W,
+                "height": max(0, int(band_top) - under_top)}
+    else:
+        rect = VIDEO_RECTS.get(name) if name != "none" else None
+        if rect is not None and _overlap(free, rect):
+            above = {"left": 0, "top": 0, "width": OUT_W,
+                     "height": max(0, int(rect["top"]))}
+            under_top = int(rect["top"]) + int(rect["height"])
+            under = {"left": 0, "top": under_top, "width": OUT_W,
+                     "height": max(0, int(band_top) - under_top)}
+            free = above if above["height"] >= under["height"] else under
+    if free["height"] < min_height:
         return None
     return free
 

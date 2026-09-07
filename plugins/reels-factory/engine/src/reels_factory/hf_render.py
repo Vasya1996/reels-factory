@@ -40,7 +40,7 @@ from reels_factory.hf_fonts import inject_fonts
 from reels_factory.hf_frame import read_frame
 from reels_factory.hf_gates import (
     check_media, check_placeholders, check_storyboard, elements_delivered,
-    elements_problems, frame_choice_problems, frame_filled_problems,
+    frame_filled_problems, plan_elements_gate, schema_position_problems,
 )
 from reels_factory.hf_layout import FULL_FRAME_PRESENTER, quantize
 from reels_factory.hf_media import resolve_all
@@ -1248,36 +1248,41 @@ def _early_plan_gates(scenes: list[dict], duration: float,
     # `_sample_plan` в hf_brief.py). Судим тем же кодом, а не своей копией:
     # разойтись двум местам иначе нечем.
     #
-    # Про схему гейт не спрашивает отдельно — `frame_filled_problems` считает
-    # `schema_scene` наравне со вставкой.
+    # Про пустоту кадра гейт не спрашивает у схемы отдельно —
+    # `frame_filled_problems` считает `schema_scene` наравне со вставкой. Про
+    # МЕСТО схемы в кадре — спрашивает: геометрию схемы считал один
+    # `hf_schema.build`, который ни окна ведущей, ни её лица не знает, и
+    # боевой прогон `rb0907-philosophers` (сцена `s-08`, `presenter: "punch"`
+    # + `schema.form: "brand"`) отдал карточку бренда на лицо ведущей.
+    # Спрашиваем ту же зону, которой схему ставит сборка
+    # (`hf_compose.schema_zone`), — здесь без лица: `face.json` появляется
+    # вместе с клипами, то есть уже после HeyGen.
+    schema_positions = schema_position_problems(scenes)
     # Имя позиции каталога сверяется до заказа по той же причине: их
     # `hyperframes add` неизвестное имя не ставит и роняет попытку сборки, а
     # ставит он блоки уже после того, как ведущую сняли и оплатили. Тот же
     # список сверяет D11 после сборки, и считает его тот же код —
-    # `elements_problems`.
-    named = elements_problems(scenes, words)
-    # Второе, что судит тот же гейт до оплаты, — сказано ли у сцены, чем
-    # держится её кадр и что она сделала с каталогом (`frame`). Это покрытие:
-    # число позиций в ролике гейт не меряет и порога на него не заводит.
-    # Причина в одном месте — `frame_choice_problems`.
-    silent_frame = frame_choice_problems(scenes)
-    trouble = []
-    if silent_frame:
-        trouble.append(
-            "поле `frame` стоит у каждой сцены: чем держится её кадр "
-            "(`holder`), какие позиции каталога ты рассмотрел "
-            "(`catalog_checked`) и почему взял или не взял (`catalog_reason`). "
-            "Без него не отличить сцену, которой каталог не подошёл, от сцены, "
-            "по которой ты каталог не смотрел: " + "; ".join(silent_frame))
-    if named:
-        trouble.append(
-            "позицию каталога код ставит их же `hyperframes add`, и "
-            "неизвестное имя он не ставит вовсе — сборка встанет уже с "
-            "оплаченной ведущей. Имена, слоты и переменные позиций "
-            "перечислены в `catalog.index.md` рядом с заданием: "
-            + "; ".join(named))
-    result["D36_elements"] = "PASS" if not trouble else "FAIL: " + " ".join(
-        trouble)
+    # `elements_problems`. Второе, что судит тот же гейт до оплаты, — сказано
+    # ли у сцены, чем держится её кадр и что она сделала с каталогом (`frame`,
+    # `frame_choice_problems`). Это покрытие: число позиций в ролике гейт не
+    # меряет и порога на него не заводит.
+    #
+    # Оба изъяна складывает один код — `plan_elements_gate` (hf_gates.py), а
+    # не своя копия здесь: тот же вызов зовёт и цикл пересдачи
+    # `assemble_hyperframes` для плана, вернувшегося уже после заказа
+    # ведущей, — разойтись двум местам иначе нечем. Третий изъян — схема без
+    # полосы под ведущей (`schema_position_problems`, выше) — в тот же вызов
+    # не входит: он один спрашивает лицо, а лица до заказа ещё нет (`face=None`
+    # здесь). Складываем оба вердикта под тем же именем гейта `D36_elements` —
+    # агент видит один пункт сверки и один отказ, а не два гейта с похожими
+    # именами.
+    result.update(plan_elements_gate(scenes, words))
+    if schema_positions:
+        verdict = result["D36_elements"]
+        already = verdict[len("FAIL: "):] if verdict.startswith("FAIL") else ""
+        result["D36_elements"] = "FAIL: " + (already + " " if already else "") + (
+            "схеме не остаётся полосы кадра: ведущая занимает то же место, и "
+            "одна закроет другую: " + "; ".join(schema_positions))
 
     empty = frame_filled_problems(scenes)
     result["D35_frame_filled"] = "PASS" if not empty else (
@@ -1321,7 +1326,9 @@ def frozen_plan_gates(gates: dict) -> dict:
     «продолжить» до успеха не доводит никогда. Боевой случай — задание
     f6e14bfcfe3f40afa875abf2ea8a174f после 4b031f0: `D34_inserts` завернул
     ранний план из длинных сцен, при том что в готовом ролике `D15` насчитал
-    десять вставок в кадре, а `D18` — 35 смен картинки.
+    десять вставок в кадре, а `D18` — 37 смен картинки (число текущее,
+    `hf_rhythm.scene_changes`, `PR #94`; до второго канала `scdet` то же
+    видео давало 35).
 
     Поэтому на пересборке вердикт остаётся в отчёте (иначе о промахе плана не
     узнает никто), но качество ролика больше не решает. Гейты готового файла на
@@ -1346,10 +1353,11 @@ def _keep_early_brief(rdir: Path) -> None:
     """Оставить на диске задание, по которому сделан ранний план.
 
     Сборка зовёт `write_brief` заново и переписывает и `BRIEF.md`, и свод правил
-    версией «аватар уже заказан» (`prepare` ниже), а решал агент `avatarNeeded`
-    по другой версии — по той, где ведущей ещё нет. Разбирать прогон по
-    переписанным файлам значит читать не то задание, поэтому ранняя версия
-    остаётся рядом отдельными именами.
+    версией «аватар уже заказан» (перед вызовом `plan_with_agent` в цикле
+    `assemble_hyperframes` ниже), а решал агент `avatarNeeded` по другой
+    версии — по той, где ведущей ещё нет. Разбирать прогон по переписанным
+    файлам значит читать не то задание, поэтому ранняя версия остаётся рядом
+    отдельными именами.
     """
     for source, name in EARLY_BRIEF_COPIES:
         path = rdir / source
@@ -1635,10 +1643,14 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         # Компонент субтитров тянется из их общего реестра по сети: делаем это
         # пока агент ещё не начал, чтобы сборка потом не ждала загрузку.
         hf_captions.stage(rdir)
-        write_brief(rdir, scenario=timed_scenario, face=load_face(rdir),
-                    duration=duration, clips=clips, phrases=phrases,
-                    wishes=wishes,
-                    attempt=0, max_attempts=MAX_COMPOSE_ATTEMPTS)
+        # Задание сюда не пишем: `prepare` заводит файлы кадра (клипы, звук,
+        # лицо), а не текст для агента. Кто зовёт агента, тот и пишет задание —
+        # ниже, прямо перед вызовом `plan_with_agent`, из тех же материалов.
+        # Иначе задание переживает материал: маркер `plan` может быть снят
+        # (продолжение, ручной сброс) без повторного `prepare`, и агент читает
+        # BRIEF.md, оставшийся от первой сборки, — так план вернулся без
+        # `frame` и без `elements` на `rb0907-ai-employee` (07.09.2026):
+        # BRIEF.md был от 25.08, до поля `frame` (a13be5b).
         (rdir / "phrases.json").write_text(
             json.dumps(phrases, ensure_ascii=False, indent=1), encoding="utf-8")
         (rdir / "clips.json").write_text(
@@ -1676,6 +1688,15 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                 for step in ("plan", "compose", "gates", "shots", "render",
                              "loudness"):
                     reset_step(rdir, step)
+
+            # Задание пишем прямо перед вызовом агента, а не заранее в
+            # `prepare`: `run_step` ниже вызовет `plan_with_agent` только если
+            # маркер `plan` снят — вот тогда задание и должно быть свежим, из
+            # ТЕКУЩЕГО кода и ТЕКУЩЕГО состояния папки (клипы, лицо,
+            # длительность, причина пересдачи, номер попытки). Если маркер
+            # цел, план читается с диска (см. `board is None` ниже) — задание
+            # тогда не переписываем вовсе, оно никому не нужно.
+            if not step_done(rdir, "plan"):
                 write_brief(rdir, scenario=timed_scenario,
                             face=load_face(rdir), duration=duration,
                             clips=saved_clips, retry_reason=reason,
@@ -1704,6 +1725,31 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                 if attempt == MAX_COMPOSE_ATTEMPTS - 1:
                     raise RuntimeError("план не лёг на озвучку — " + reason)
                 continue
+            # Пересдача после заказа спрашивает план заново, и план обязан
+            # по-прежнему называть, чем держится кадр каждой сцены, и не
+            # спорить с каталогом — то же самое судит `_early_plan_gates` до
+            # заказа, тем же кодом (`plan_elements_gate`, hf_gates.py). Без
+            # этого вызова план, вернувшийся пустым по `frame`/`elements`,
+            # проходил пересдачу зелёным: `check_shots`/`check_inserts`
+            # молчат про эти поля, `check_storyboard` ниже судит уже
+            # СОБРАННЫЙ кадр, а не то, назвал ли план что-то вообще. Так и
+            # вышло на проде 07.09.2026 (`rb0907-ai-employee`,
+            # `rb0907-university`): `D36_elements: PASS`, а в сценах ни
+            # `frame`, ни `elements`.
+            plan_gate = plan_elements_gate(board["scenes"], words)
+            if plan_gate["D36_elements"].startswith("FAIL"):
+                # Имя гейта впереди — тем же способом, каким собирают причину
+                # ниже (`"; ".join(failed)` из `f"{key}: {value}"`):
+                # `fresh_retry_reason` опознаёт гейт по этому имени и снимет
+                # причину сам, если гейт уйдёт из кода, а агент в задании
+                # увидит то же имя, что стоит в пункте сверки (`hf_brief.py`).
+                reason = f"D36_elements: {plan_gate['D36_elements']}"
+                if attempt != MAX_COMPOSE_ATTEMPTS - 1:
+                    continue
+                # Последняя попытка: ведущая уже куплена, повторного плана не
+                # будет (решение 05). Вердикт остаётся в `plan_gate` — ниже,
+                # после сборки, он не даст `elements_delivered` затереть его
+                # PASS'ом под тем же ключом `D36_elements`.
             board = complete_storyboard(board, clips=saved_clips,
                                         duration=duration)
             # Отбор серий — ДО подбора медиа: искать и судить кандидатов на
@@ -1863,7 +1909,12 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             # и тогда сцена уже переписана на ведущую во весь кадр.
             board = json.loads(
                 (rdir / "storyboard.json").read_text(encoding="utf-8"))
-            result = check_storyboard(board, clips=saved_clips, duration=duration)
+            # Лицо сюда идёт затем же, зачем оно идёт в пробу ниже: D11
+            # спрашивает у кадра, осталась ли схеме полоса вне лица, а до
+            # заказа этого замера ещё не было (`_early_plan_gates` судит с
+            # `face=None`).
+            result = check_storyboard(board, clips=saved_clips,
+                                      duration=duration, face=load_face(rdir))
             # …а «что просил агент» знает только его собственный ответ:
             # раскадровку сборка переписывает под собранный кадр и снятую
             # позицию каталога из неё вычищает. Поэтому `D36_elements` после
@@ -1873,6 +1924,15 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             result.update(elements_delivered(
                 json.loads((rdir / "plan.json").read_text(encoding="utf-8")),
                 board))
+            # Тот же ключ `D36_elements` уже посчитан ДО компоновки —
+            # `plan_gate` выше, по плану, каким его вернул агент. На
+            # последней попытке (решение 05) FAIL оттуда обязан остаться,
+            # даже если `elements_delivered` только что записала под тем же
+            # именем PASS или WARN: она сравнивает план с собранным кадром и
+            # не видит изъяна, который нашёл `plan_gate`, — сцену, молчащую
+            # про `frame`, или спор с каталогом.
+            if plan_gate["D36_elements"].startswith("FAIL"):
+                result["D36_elements"] = plan_gate["D36_elements"]
             result.update(check_media(rdir))
             result.update(check_placeholders(rdir))
             # Композиция, которая не открывается, — это тоже провал сборки, а не
