@@ -3266,8 +3266,42 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
         # содержимое в тот же документ и узел маунта под собой меняет, а
         # твин GSAP держит ссылку на прежний. Обёртка — наша, её их рантайм
         # не трогает.
+        # Плашка читаемости — когда под схемой в этой же сцене лежит настоящая
+        # вставка (сток, непредсказуемый по цвету), а не наш управляемый фон
+        # (aurora выше или подложка `frame.md`). Корень каждой формы —
+        # `background: transparent` (комментарий у них самих — «overlays
+        # footage or mk-background»), а строки набраны схемой `dark`
+        # (`hf_schema.build`): по умолчанию это верный расчёт на тёмный aurora,
+        # но вставка кладёт под текст всё что угодно, вплоть до светлого кадра.
+        #
+        # Job rb0907-philosophers (прод, 07.09.2026), сцена s-07:
+        # `presenter: "none"`, вставка приехала (`ins-s-07-0/1`,
+        # `INSERT_RECTS["none"]` — на весь кадр), схема `pairs` легла поверх,
+        # и их `contrast_aa_failure` замерил 1.54:1 / 2.9:1 / 1.97:1 у
+        # «говори честно» / «не делай» / «не манипулируй» (fg вплоть до
+        # rgb(233,222,213) на bg вплоть до rgb(207,175,160)) — настоящая
+        # нечитаемость, не ложная находка.
+        #
+        # `mk-specs-list` несёт свой параметр `scrim` ровно под этот случай
+        # («0–1 left-edge dark scrim for readability over footage»), но
+        # проверено локальным `hyperframes check` на самой этой копии: их
+        # градиент (`rgba(0,0,0,.55) 0% … transparent 62%`) гаснет к правому
+        # краю колонки и на полной силе (`scrim: 1`) оставляет «говори честно»
+        # и «не манипулируй» на 2.15–2.18:1 — блок, для которого он писан,
+        # обычно уже теснее нашего `lineWidth`. У остальных четырёх форм
+        # (`mk-progress-stat`, `grid-card-assemble`, `hw-pipeline`,
+        # `mk-placeholder-grid`) такого параметра нет вовсе. Поэтому плашку
+        # кладёт код — ровным фоном на всю коробку схемы, а не их частичным
+        # градиентом: единое место для всех пяти форм разом. Тот же локальный
+        # `hyperframes check` на копии job'а с этой правкой (`rgba(0,0,0,.6)`
+        # вместо их градиента) отдал `contrast.warningCount: 0` — все три
+        # находки сцены s-07 закрыты, не только те две, что не брал `scrim:1`.
+        # `.ovl` уже несёт свою геометрию во весь кадр (right:0; width:100%;
+        # height:100%) — инлайн трогает только фон, не переопределяя её.
+        backing = (' style="background:rgba(0,0,0,.6)"'
+                   if series.get(scene["id"]) else "")
         body.append(
-            f'    <div class="ovl" id="schema-box-{scene["id"]}">'
+            f'    <div class="ovl" id="schema-box-{scene["id"]}"{backing}>'
             f'<div id="schema-{scene["id"]}" class="clip"'
             f' data-composition-id="{unique}-host"'
             f' data-composition-src="compositions/{unique}.html"'

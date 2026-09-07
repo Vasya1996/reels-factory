@@ -1004,6 +1004,38 @@ def test_схема_закрывает_кадр_их_блоком(run):
     copy = (run / "public" / "compositions" / "mk-specs-list--s-02.html")
     text = copy.read_text(encoding="utf-8")
     assert "Object.assign(CONFIG," in text and "1080px" in text
+    # ни ведущей, ни вставки под схемой нет — фон держит код (aurora), и
+    # плашка читаемости тут ни к чему.
+    assert 'id="schema-box-s-02">' in html
+    assert "background:rgba(0,0,0" not in html[html.index('id="schema-s-02"'):][:400]
+
+
+def test_схема_поверх_вставки_получает_плашку_читаемости(run):
+    """Job rb0907-philosophers, сцена s-07: `presenter: "none"`, но `insert`
+    назван и приехал — под схемой лежит реальный сток на весь кадр
+    (`INSERT_RECTS["none"]` в `hf_layout.py`), а не наш управляемый фон.
+    Их `contrast_aa_failure` замерил там 1.54:1, 2.9:1 и 1.97:1 у строк
+    «говори честно» / «не делай» / «не манипулируй» (fg вплоть до
+    rgb(233,222,213) на bg вплоть до rgb(207,175,160)) — их блок несёт свой
+    параметр `scrim`, но проверено локальным `hyperframes check` на самой
+    этой копии: полная сила их же градиента (`scrim: 1`) гасит только левый
+    край колонки (их же CSS — «rgba(0,0,0,.55) 0% … transparent 62%») и
+    оставляет `говори честно`/`не манипулируй` на 2.15–2.18:1 — блок, для
+    которого схема писалась, тут не тот. Плашку кладёт код: ровный
+    полупрозрачный фон на всю коробку схемы, а не их частичный градиент."""
+    _with_schema_block(run)
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = _shots("человек говорит на камеру",
+                                  "рука у экрана", kind="video")
+    scenes[1]["schema"] = {"form": "pairs", "why": "у пунктов свои значения",
+                           "rows": [{"label": "раз", "value": "первое"},
+                                    {"label": "два", "value": "второе"}]}
+    html, board = _build(run, scenes=scenes)
+    assert 'id="ins-s-02-0" class="ins clip"' in html
+    assert board["scenes"][1]["schemaShown"] is True
+    box = html[html.index('id="schema-box-s-02"'):]
+    assert "background:rgba(0,0,0,.6)" in box[:200]
 
 
 def test_перечисление_получает_содержимое_штатным_каналом(run):

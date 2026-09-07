@@ -1753,7 +1753,9 @@ def test_находка_другого_кода_по_прежнему_валит
 
 def test_смешанные_находки_валят_check_из_за_другого_кода(tmp_path):
     """Ложное правило рядом с настоящей находкой не спасает сборку — падает
-    из-за находки, которая не входит в `CHECK_IGNORED_CODES`."""
+    из-за находки, которая не входит в `CHECK_IGNORED_CODES`. Текст вердикта
+    при этом не называет ложное правило — оно ни на что не влияет, и
+    называть его в списке причин было бы неправдой."""
     report = _check_report(_IGNORED_FINDING, _OTHER_FINDING)
     assert _check_ok(report) is False
 
@@ -1762,6 +1764,7 @@ def test_смешанные_находки_валят_check_из_за_друго
     verdict = _check_verdict(log)
     assert verdict.startswith("FAIL")
     assert "composition_file_too_large" in verdict
+    assert "composition_self_attribute_selector" not in verdict
 
 
 def test_ложное_правило_названо_по_имени_и_только_оно(tmp_path):
@@ -1784,6 +1787,34 @@ def test_находка_studio_missing_editable_id_одна_не_валит_chec
     log = tmp_path / "check.json"
     log.write_text(json.dumps({"ok": False, **report}), encoding="utf-8")
     assert _check_verdict(log) == "PASS"
+
+
+_CONTRAST_FINDING = {"code": "contrast_aa_failure", "severity": "warning",
+                     "message": "Contrast is 1.54:1; WCAG AA requires 3:1."}
+
+
+def test_studio_missing_editable_id_не_упоминается_рядом_с_настоящим_провалом(
+        tmp_path):
+    """Job rb0907-philosophers, 07.09.2026: `check.json` нёс находку
+    `studio_missing_editable_id` про `focus-swap--s-05.html` (их шаблон
+    `<div class="fs-clip">` без `id` — `registry/components/focus-swap/
+    focus-swap.html:181` что у них, что в нашей копии, ни установка, ни наш
+    код тут ни при чём) рядом с тремя настоящими `contrast_aa_failure` у
+    `mk-specs-list--s-07.html`. `_check_ok` уже не считал studio-находку
+    причиной провала, но `_check_verdict` вставлял её текст первой строкой
+    FAIL — читалось так, будто отказ из-за неё тоже. Секция здесь — `lint`,
+    как и в их отчёте."""
+    report = {"strict": True, "lint": {"findings": [_STUDIO_ID_FINDING]},
+              "runtime": {"findings": []}, "layout": {"findings": []},
+              "motion": {"findings": []},
+              "contrast": {"findings": [_CONTRAST_FINDING]}}
+    log = tmp_path / "check.json"
+    log.write_text(json.dumps({"ok": False, **report}), encoding="utf-8")
+    verdict = _check_verdict(log)
+    assert verdict.startswith("FAIL")
+    assert "contrast_aa_failure" in verdict
+    assert "studio_missing_editable_id" not in verdict
+    assert "fs-clip" not in verdict
 
 
 def _kf_report(*tweens):
