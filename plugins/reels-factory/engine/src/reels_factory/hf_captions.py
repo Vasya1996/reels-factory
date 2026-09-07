@@ -46,6 +46,19 @@ CSS-правило, а их реестр отдаёт файл из ветки `
 тем же путём, каким уже подстраховались от подмены движка демкой
 (`DATA_HOOK`). Так правка доезжает в сборку всегда: либо в живой версии уже
 есть наше исправление, либо сборка берёт файл, где оно точно есть.
+
+Третья правка тем же путём (`CONTRAST_MARKER`) — цвет букв слова, ПОКА оно
+на плашке подсветки. `--hf-caption-primary` красит слово всегда, а плашка
+`--hf-caption-accent` встаёт под него лишь на время подсветки: их компонент
+не сверяет эти два цвета друг с другом, и на светлом акценте (бирюза, жёлтый)
+буквы того же белого `primary` падают ниже их порога контраста 3:1 для
+крупного текста — их же гейт ловит это только ПОСЛЕ сборки
+(`rb0908-ai-employee`, `contrast_aa_failure` четыре раза). Что показать на
+плашке взамен, решает `hf_frame.highlight_ink` ДО того, как эти данные сюда
+попадут (`write_caption_data`, brand.highlightInk); правка этого файла — не
+сам расчёт, а место, где брать этот цвет и на какое ровно время его
+подставлять (`hfBuild`, timing тех же тегов `.hl-word-bg`, что уже красят
+плашку), — то, что их контракт компонента не предусматривает вовсе.
 """
 from __future__ import annotations
 
@@ -98,6 +111,14 @@ DATA_HOOK = "__HF_CAPTION__"
 #: через `DATA_HOOK`.
 FIT_MARKER = "WORD_LETTER_SPACING_EM"
 
+#: Та же метка, тем же способом (см. `FIT_MARKER` выше), для второй правки —
+#: цвет букв слова на плашке подсветки выбирается по контрасту с акцентом
+#: (`hf_frame.highlight_ink`), а не всегда равен `--hf-caption-primary`:
+#: светлый акцент (бирюза, жёлтый) топил белые буквы ниже их порога 3:1
+#: (`rb0908-ai-employee`, `contrast_aa_failure`). Имя переменной из `VETTED` —
+#: своё, придуманное для этой правки, совпасть ему неоткуда.
+CONTRAST_MARKER = "HF_HIGHLIGHT_INK"
+
 #: Проверенная копия компонента. Реестр они отдают из ветки `main`
 #: (`packages/cli/src/registry/remote.ts:26-27`), кеш живёт сутки — то есть
 #: компонент меняется под нами без предупреждения. 11.08.2026 `add` привёз
@@ -116,9 +137,11 @@ def install(rdir) -> Path:
     реестре. Без конфига CLI берёт реестр по умолчанию.
 
     Если привезённая версия не читает наши данные ИЛИ не несёт нашей подгонки
-    кегля/переноса слова (`FIT_MARKER`), берём проверенную копию: молча
-    показать вместо реплик диктора их демо-текст или обрезанное слово — оба
-    хуже, чем взять файл, который мы сами проверили.
+    кегля/переноса слова (`FIT_MARKER`) ИЛИ нашей подгонки цвета букв под
+    контраст (`CONTRAST_MARKER`), берём проверенную копию: молча показать
+    вместо реплик диктора их демо-текст, обрезанное слово или буквы ниже их
+    порога контраста — все три хуже, чем взять файл, который мы сами
+    проверили.
     """
     rdir = Path(rdir)
     staging = rdir / ".hf-captions"
@@ -137,14 +160,18 @@ def install(rdir) -> Path:
     fetched = target.read_text(encoding="utf-8")
     missing_data_hook = DATA_HOOK not in fetched
     missing_fit_patch = FIT_MARKER not in fetched
-    if missing_data_hook or missing_fit_patch:
+    missing_contrast_patch = CONTRAST_MARKER not in fetched
+    if missing_data_hook or missing_fit_patch or missing_contrast_patch:
         if not VETTED.exists():
+            missing = (DATA_HOOK if missing_data_hook
+                      else FIT_MARKER if missing_fit_patch else CONTRAST_MARKER)
             raise RuntimeError(
-                f"их {COMPONENT} без {DATA_HOOK if missing_data_hook else FIT_MARKER}, "
-                f"а проверенной копии нет в {VETTED} — титр показал бы их "
-                "демо-текст или обрезанное слово")
+                f"их {COMPONENT} без {missing}, а проверенной копии нет в "
+                f"{VETTED} — титр показал бы их демо-текст, обрезанное "
+                "слово или буквы ниже порога контраста")
         reason = (f"не читает {DATA_HOOK}" if missing_data_hook
-                  else "без нашей подгонки кегля/переноса слова")
+                  else "без нашей подгонки кегля/переноса слова"
+                  if missing_fit_patch else "без нашей подгонки цвета букв под контраст")
         print(f"компонент {COMPONENT} из их реестра {reason} — "
               "беру проверенную копию движка")
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -357,8 +384,11 @@ def write_caption_data(public, *, words: list[dict], duration: float,
     }
     # Цвета титра — контракт компонента: brand.primaryColor уходит в
     # --hf-caption-primary (цвет слова), brand.accentColor — в плашку
-    # активного слова (caption-highlight.html:91, 260-270). Других цветовых
-    # полей у компонента нет. Значения приходят из frame.md.
+    # активного слова (caption-highlight.html:91, 260-270). Их контракт этими
+    # двумя и исчерпан. brand.highlightInk — третье поле, НАШЕ: буквы слова,
+    # ПОКА под ним стоит плашка (`hf_frame.highlight_ink`, вызывающий код в
+    # `hf_compose.build_composition`) — их компонент этого не умел, светлый
+    # акцент топил белые буквы ниже порога 3:1. Значения приходят из frame.md.
     if brand:
         payload["brand"] = brand
     target = Path(public) / "caption-data.json"

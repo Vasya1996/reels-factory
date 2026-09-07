@@ -1274,6 +1274,46 @@ def test_фон_схемы_красится_нашей_палитрой_а_не_
     assert "var(--ad-base) 100%" in vignette[:300]
 
 
+def test_подсветка_титра_подгоняется_под_акцент_из_frame_md(run, monkeypatch):
+    """Светлый акцент (мятный/бирюзовый) топит белые буквы плашки ниже их
+    порога контраста 3:1 — `build_composition` обязан посчитать
+    `highlightInk` через `hf_frame.highlight_ink` и положить его третьим
+    полем бренда (`rb0908-ai-employee`, прод 07.09.2026, `contrast_aa_failure`
+    ×4 на accent #5ee0c0 / ink #f5f7fb)."""
+    captured = {}
+
+    def capture(public, **kw):
+        captured.update(kw)
+        return public / "caption-data.json"
+
+    monkeypatch.setattr(hf_compose, "write_caption_data", capture)
+    theme = {"colors": {"bg": "#0b0f1a", "ink": "#f5f7fb", "accent": "#5ee0c0"}}
+    board = _board(json.loads(json.dumps(SCENES)))
+    with sdk_session() as sdk:
+        build_composition(run, sdk, storyboard=board, clips=CLIPS,
+                          duration=6.0, words=WORDS, resolved=FOUND, theme=theme)
+    assert captured["brand"] == {"primaryColor": "#f5f7fb", "accentColor": "#5ee0c0",
+                                 "highlightInk": "#0b0f1a"}
+
+
+def test_подсветка_насыщенным_акцентом_не_трогает_ink(run, monkeypatch):
+    """Насыщенный тёмный акцент (как в прежних роликах) держит их порог
+    контраста сам — буквы остаются `ink`, замена не нужна и не происходит."""
+    captured = {}
+
+    def capture(public, **kw):
+        captured.update(kw)
+        return public / "caption-data.json"
+
+    monkeypatch.setattr(hf_compose, "write_caption_data", capture)
+    theme = {"colors": {"bg": "#0b0b0c", "ink": "#ffffff", "accent": "#ff1745"}}
+    board = _board(json.loads(json.dumps(SCENES)))
+    with sdk_session() as sdk:
+        build_composition(run, sdk, storyboard=board, clips=CLIPS,
+                          duration=6.0, words=WORDS, resolved=FOUND, theme=theme)
+    assert captured["brand"]["highlightInk"] == "#ffffff"
+
+
 def test_все_схемы_ролика_лежат_на_одной_дорожке(run):
     """Ротации у схем нет и не нужно: их счётчик плотности пропускает маунты
     первой же строкой цикла — `if (isCompositionRootOrMount(tag.raw))

@@ -81,6 +81,58 @@ def dark_frame(theme: dict | None) -> bool:
     return luminance(colors.get("bg") or DEFAULTS["colors"]["bg"]) <= DARK_BG_MAX
 
 
+def contrast_ratio(first: str, second: str) -> float:
+    """Отношение контраста между двумя цветами по WCAG — тем же расчётом,
+    которым их аудит контраста судит текст (`(L₁+0,05)/(L₂+0,05)`,
+    `packages/cli/src/commands/contrast-bg.ts:34-40`)."""
+    lum_first, lum_second = luminance(first), luminance(second)
+    lighter, darker = max(lum_first, lum_second), min(lum_first, lum_second)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+#: Их порог AA для крупного текста (`contrast-bg.ts:43-45`,
+#: `contrast-audit.browser.js:452`: `large ? ratio >= 3 : ratio >= 4.5`).
+#: Титр рисует 80px/вес 800 (`caption-highlight.html:73-74`) — их же правило
+#: «крупного» текста — `fontSize>=24 || (fontSize>=19 && fontWeight>=700)»
+#: (`contrast-audit.browser.js:231`) берёт этот случай с большим запасом.
+REQUIRED_CONTRAST_LARGE = 3.0
+
+
+def highlight_ink(ink: str, accent: str, dark: str) -> str:
+    """Цвет букв слова на плашке подсветки титра — не цвет `ink` вообще.
+
+    `ink` красит текст титра постоянно (`--hf-caption-primary`,
+    `caption-highlight.html:76`), а плашка `accent` встаёт под слово лишь на
+    время подсветки (`--hf-caption-accent`, `caption-highlight.html:92-93`).
+    Пока агент выбирал акцент из тёмных/насыщенных тонов (красный, синий,
+    оранжевый), `ink` — обычно белый — держал их же порог 3:1 сам собой; на
+    светлом акценте (бирюза, жёлтый, салатовый) тот же белый на плашке падает
+    ниже порога, и это выясняется только их проверкой после сборки
+    (`rb0908-ai-employee`, `contrast_aa_failure` 2,6–2,9:1 у `rgb(245,247,251)`
+    на `rgb(70,166,141)`).
+
+    Правило: `ink` остаётся, если сам держит 3:1 против `accent` — акцент
+    агента не трогаем, меняем только буквы. Не держит — берём `dark`
+    (обычно `colors["bg"]`, тёмная база темы, а не выдуманный чёрный): акцент,
+    из-за которого светлый `ink` не прошёл, по построению заметно светлее
+    тёмной базы палитры, так что `dark` против него почти всегда проходит
+    (проверено для `rb0908-ai-employee` — bg #0b0f1a против accent
+    rgb(70,166,141) даёт 6,47:1). Патологию — когда даже
+    `dark` не держит — их же формула гарантирует прошедшим один из полюсов
+    чёрный/белый: контраст с фоном любой яркости у чёрного или у белого не
+    ниже 4,58:1 в худшей точке (яркость фона 0,179, `contrast-bg.ts:47-74`,
+    `suggestCompliantForegroundColor`), поэтому крайний случай берёт более
+    контрастный из них, а не гадает.
+    """
+    if contrast_ratio(ink, accent) >= REQUIRED_CONTRAST_LARGE:
+        return ink
+    if contrast_ratio(dark, accent) >= REQUIRED_CONTRAST_LARGE:
+        return dark
+    return ("#000000"
+            if contrast_ratio("#000000", accent) >= contrast_ratio("#ffffff", accent)
+            else "#ffffff")
+
+
 def read_frame(rdir) -> dict:
     """Тема ролика из `frame.md`. Нет файла или он бит — дефолты.
 
