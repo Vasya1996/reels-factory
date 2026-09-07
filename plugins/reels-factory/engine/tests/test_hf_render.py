@@ -1554,6 +1554,91 @@ def test_сборка_подхватывает_ранний_план_и_не_з�
     assert res["gates"]["D11_schema"] == "PASS"
 
 
+def test_план_с_диска_не_переписывает_задание(tmp_path, monkeypatch):
+    """Когда маркер `plan` цел, `run_step` не зовёт `plan_with_agent` вовсе —
+    план читается с диска (`board is None` ниже читает `plan.json`). Агента
+    не спрашивают, значит и задание ему писать незачем: `write_brief` внутри
+    цикла обязан молчать, а не переписывать `BRIEF.md`, который никто не
+    откроет. Тот же сторож, что и в
+    `test_сборка_подхватывает_ранний_план_и_не_зовёт_агента_заново` (очередь
+    агента пуста — любой вызов уронит прогон), плюс проверка самого файла
+    задания.
+    """
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [])
+    (tmp_path / "plan.json").write_text(json.dumps(GOOD), encoding="utf-8")
+    (tmp_path / ".hf-plan.done").write_text("ok", encoding="utf-8")
+    заглушка = "заглушка: план уже на диске, задание никто не прочитает"
+    (tmp_path / "BRIEF.md").write_text(заглушка, encoding="utf-8")
+
+    hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert (tmp_path / "BRIEF.md").read_text(encoding="utf-8") == заглушка, (
+        "план читается с диска, а задание всё равно переписано")
+
+
+def test_план_без_причины_пересдачи_всё_равно_получает_свежее_задание(
+        tmp_path, monkeypatch):
+    """Дефект `rb0907-ai-employee` (07.09.2026): маркер `.hf-plan.done` можно
+    снять и БЕЗ причины отказа (`retry_reason.txt` пуст) — продолжением или
+    ручным сбросом, не только провалом гейта. До этой правки свежее задание
+    писал только раздел «`if reason is not None`»: при пустой причине
+    `write_brief` внутри цикла не срабатывал вовсе, и агент, которого всё
+    равно позовут (маркер снят), получал версию, оставшуюся от `prepare()`, —
+    какой бы старой она к тому моменту ни была. BRIEF.md в проде был от
+    25.08, до поля `frame` (a13be5b), и план вернулся без `frame` и без
+    `elements`.
+
+    Задание теперь пишет тот же вызов, что зовёт агента, — прямо перед
+    `run_step(rdir, "plan", ...)`, независимо от того, есть ли причина
+    пересдачи.
+    """
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [GOOD])
+    hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+    assert hf_render.last_retry_reason(tmp_path) is None, (
+        "сценарий проверяет путь БЕЗ причины пересдачи")
+
+    # Портим задание на диске старой версией без слова про кадр сцены — как
+    # будто между `prepare` и повторным ходом прошли недели.
+    заглушка = "заглушка: старое задание без слова про кадр сцены"
+    (tmp_path / "BRIEF.md").write_text(заглушка, encoding="utf-8")
+    # Маркер `.hf-plan.done` снят без причины — ровно так, как в отчёте по
+    # прогону. Монтажные маркеры снимаем вместе с ним: план изменится, и
+    # сборке есть что переделать по-настоящему (иначе тест ничего не
+    # запускает — `compose` вернул бы файл прошлого плана как есть).
+    for step in ("plan",) + hf_render.MONTAGE_STEPS:
+        hf_render.reset_step(tmp_path, step)
+
+    задания = []
+
+    def агент(rdir, *, runner=None):
+        rdir = Path(rdir)
+        задания.append((rdir / "BRIEF.md").read_text(encoding="utf-8"))
+        board = json.loads(json.dumps(GOOD))
+        for name in ("storyboard.json", "plan.json"):
+            (rdir / name).write_text(json.dumps(board), encoding="utf-8")
+        return board
+
+    monkeypatch.setattr(hf_render, "plan_with_agent", агент)
+
+    hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert задания, "маркер снят, а агента не позвали — тест ничего не проверил"
+    assert заглушка not in задания[0], (
+        "агент получил задание, оставшееся от `prepare`, а не свежее")
+    assert "`frame`" in задания[0], (
+        "свежее задание обязано называть поле `frame` каждой сцены")
+
+
 def test_сборка_проходит_все_шаги(tmp_path, monkeypatch):
     from reels_factory import hf_render
 
@@ -2753,6 +2838,12 @@ def test_протухшая_причина_не_гоняет_агента_на_�
     """То же самое целиком: сборка на папке с протухшей причиной обязана
     оставить маркер `plan` и не звать агента вовсе.
 
+    Задание при этом молчит так же, как маркер: агента не зовут — план
+    читается с диска, — и переписывать `BRIEF.md` ради него некому. Раньше
+    файл всё равно создавал `prepare()` (версией без раздела пересдачи), и
+    тест проверял только пустоту этого раздела; с тех пор задание пишет
+    исключительно вызов, который зовёт агента, и файла не остаётся вовсе.
+
     Обратный случай — свежая причина зовёт агента заново — держит
     `test_продолжение_на_островах_спрашивает_агента_по_купленным_клипам`.
     """
@@ -2775,9 +2866,9 @@ def test_протухшая_причина_не_гоняет_агента_на_�
     assert звали == [], (
         "агента позвали чинить снятый гейт — прогон стоит денег, а чинить "
         "нечего")
-    assert "## Этот план не прошёл проверку" not in (
-        tmp_path / "BRIEF.md").read_text(encoding="utf-8"), (
-        "в задание уехал раздел пересдачи по гейту, которого нет")
+    assert not (tmp_path / "BRIEF.md").exists(), (
+        "план читается с диска, а задание всё равно написано — переписывать "
+        "его для агента, которого не позвали, незачем")
 
 
 #: Ставки счёта — только чтобы работа моделей вообще получила цену.
