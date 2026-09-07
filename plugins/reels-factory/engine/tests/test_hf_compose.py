@@ -991,6 +991,12 @@ def _with_schema_block(run, form="pairs"):
         f' data-duration="8" data-width="1920" data-height="1080"></div>'
         f'<script>(function(){{ var CONFIG = {{ rows: [] }};'
         f' var DUR = 8;'
+        # Их список меряет высоту ряда своим же кеглем (46 + отступ
+        # подчёркивания + волосяная линия) — по этой строке перенос
+        # поднимает высоту ряда вместе с выросшим кеглем (`hf_schema.
+        # _PAIRS_ROW_HEIGHT`).
+        f' var colH = CONFIG.rows.length * (46 + 22'
+        f' + (CONFIG.underline ? 2 : 0));'
         # Их список центрирует колонку по высоте канваса — по этой строке
         # перенос сажает её в безопасную высоту, выше полосы титра.
         f' col.style.top = Math.round((1080 - colH) / 2) + "px";'
