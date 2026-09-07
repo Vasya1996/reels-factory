@@ -453,23 +453,36 @@ def _measured_content_box(path, canvas: tuple) -> dict | None:
     и `_overlay_geometry` считает по канвасу целиком, как считал до этой
     правки. Плашка не роняется тем, чего нет на машине сборки: измерение —
     улучшение читаемости там, где оно доступно, а не новое обязательное звено
-    цепочки.
+    цепочки — но причина отступления идёт в лог, а не пропадает молча.
+
+    Если же браузер есть, но само измерение сломалось (ненулевой
+    `returncode` скрипта, битый JSON в его выводе) — это уже не «браузера
+    нет», а регресс в `measure_block_content.cjs`/Chrome/копии позиции.
+    Тихий откат на дефектную (без измерения) арифметику здесь вернул бы
+    ровно тот дефект, который эта функция чинит, без следа в логе — поэтому
+    дальше не `return None`, а `RuntimeError` со `stderr`, тем же приёмом,
+    что `hf_probe.run_probe` при своём ненулевом `returncode`.
     """
     if canvas[0] <= canvas[1]:
         return None  # портретный канвас не измеряем — см. _overlay_geometry
     try:
         from reels_factory.hf_probe import _node, chrome_path
         from reels_factory.hyperframes_blocks import _HF_VERSION
-    except ImportError:
+    except ImportError as exc:
+        print(f"{path}: замер содержимого пропущен — нет движка ({exc})")
         return None
     if not _MEASURE_SCRIPT.exists():
+        print(f"{path}: замер содержимого пропущен — "
+              f"нет скрипта {_MEASURE_SCRIPT}")
         return None
     try:
         node = _node()
         chrome = chrome_path(_HF_VERSION)
-    except RuntimeError:
+    except RuntimeError as exc:
+        print(f"{path}: замер содержимого пропущен — {exc}")
         return None
     if not chrome:
+        print(f"{path}: замер содержимого пропущен — Chrome не закреплён")
         return None
     try:
         result = subprocess.run(
@@ -478,14 +491,20 @@ def _measured_content_box(path, canvas: tuple) -> dict | None:
              "--chrome", chrome],
             capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=30)
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"{path}: замер содержимого пропущен — {exc}")
         return None
     if result.returncode != 0:
-        return None
+        raise RuntimeError(
+            "замер содержимого не состоялся: "
+            f"{(result.stderr or result.stdout or '').strip()[:800]}")
     try:
         box = json.loads((result.stdout or "").strip().splitlines()[-1])
-    except (ValueError, IndexError):
-        return None
+    except (ValueError, IndexError) as exc:
+        raise RuntimeError(
+            "замер содержимого вернул не JSON "
+            f"({exc}): {(result.stdout or '').strip()[:400]!r}, "
+            f"stderr: {(result.stderr or '').strip()[:400]!r}")
     return box if isinstance(box, dict) else None
 
 

@@ -2431,6 +2431,75 @@ def test_измерение_без_браузера_возвращает_none_а
     assert box is None
 
 
+def test_измерение_без_браузера_пишет_причину_в_лог(tmp_path, monkeypatch,
+                                                     capsys):
+    """Тихий откат без node/Chrome — законный (см. тест выше), но причина
+    обязана попасть в лог сборки, а не пропасть: иначе на проде нет способа
+    отличить «браузера нет» от «забыли собрать плашку с измерением»."""
+    import reels_factory.hf_probe as hf_probe_module
+
+    def падает_без_node():
+        raise RuntimeError("нет node")
+
+    monkeypatch.setattr(hf_probe_module, "_node", падает_без_node)
+    hf_compose._measured_content_box(tmp_path / "нет-такого.html",
+                                     (1920, 1080))
+    assert "нет node" in capsys.readouterr().out
+
+
+def _мок_рабочего_браузера(monkeypatch, tmp_path):
+    """Подставляет живые `node`/Chrome и существующий скрипт замера, чтобы
+    дойти до вызова `subprocess.run` — без этого возвращаемый returncode/JSON
+    в тесте ниже недостижим (функция отсекает браузер раньше)."""
+    import reels_factory.hf_probe as hf_probe_module
+
+    monkeypatch.setattr(hf_probe_module, "_node", lambda: "node")
+    monkeypatch.setattr(hf_probe_module, "chrome_path", lambda v: "chrome")
+    script = tmp_path / "measure_block_content.cjs"
+    script.write_text("", encoding="utf-8")
+    monkeypatch.setattr(hf_compose, "_MEASURE_SCRIPT", script)
+
+
+def test_измерение_с_ненулевым_returncode_роняет_сборку(tmp_path, monkeypatch):
+    """Браузер есть, скрипт запустился и упал (регресс в
+    `measure_block_content.cjs`, несовместимый Chrome, порченая staged-копия)
+    — это уже НЕ «браузера нет», и тихий откат на дефектную арифметику молча
+    вернул бы ровно тот дефект, который эта функция чинит. Требуется
+    `RuntimeError` со `stderr`, тем же приёмом, что `hf_probe.run_probe`
+    (`hf_probe.py:88-94`) при своём ненулевом `returncode`."""
+    _мок_рабочего_браузера(monkeypatch, tmp_path)
+
+    class Результат:
+        returncode = 1
+        stdout = ""
+        stderr = "измерить содержимое не вышло: страница не открылась"
+
+    monkeypatch.setattr(hf_compose.subprocess, "run",
+                        lambda *a, **k: Результат())
+    with pytest.raises(RuntimeError, match="страница не открылась"):
+        hf_compose._measured_content_box(tmp_path / "позиция.html",
+                                         (1920, 1080))
+
+
+def test_измерение_с_битым_json_роняет_сборку(tmp_path, monkeypatch):
+    """Тот же случай, что returncode≠0 (браузер сработал, замер сломался),
+    только скрипт вышел с 0, но напечатал не JSON — регресс в самом скрипте
+    замера. Молчаливый откат здесь так же скрыл бы поломку — требуется
+    `RuntimeError`, а не `None`."""
+    _мок_рабочего_браузера(monkeypatch, tmp_path)
+
+    class Результат:
+        returncode = 0
+        stdout = "не json вовсе"
+        stderr = ""
+
+    monkeypatch.setattr(hf_compose.subprocess, "run",
+                        lambda *a, **k: Результат())
+    with pytest.raises(RuntimeError, match="не JSON"):
+        hf_compose._measured_content_box(tmp_path / "позиция.html",
+                                         (1920, 1080))
+
+
 def test_измерение_портретного_канваса_не_запускает_браузер():
     """Портретный канвас `_overlay_geometry` не измеряет (см. докстринг) —
     `_measured_content_box` обязан отсечь его до всякого `node`/Chrome, файлом,
