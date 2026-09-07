@@ -9,7 +9,7 @@ import pytest
 from reels_factory import hf_compose
 from reels_factory.hf_compose import (
     build_composition, collect_intents, complete_storyboard, icon_intents,
-    presenter_timeline, settle_inserts,
+    markup_time, presenter_timeline, settle_inserts,
 )
 from reels_factory.hf_layout import VIDEO_RECTS
 from reels_factory.hf_sdk import sdk_session
@@ -1007,7 +1007,7 @@ def test_схема_закрывает_кадр_их_блоком(run):
     # ни ведущей, ни вставки под схемой нет — фон держит код (aurora), и
     # плашка читаемости тут ни к чему.
     assert 'id="schema-box-s-02">' in html
-    assert "background:rgba(0,0,0" not in html[html.index('id="schema-s-02"'):][:400]
+    assert 'id="schema-scrim-s-02"' not in html
 
 
 def test_схема_поверх_вставки_получает_плашку_читаемости(run):
@@ -1021,8 +1021,11 @@ def test_схема_поверх_вставки_получает_плашку_ч
     этой копии: полная сила их же градиента (`scrim: 1`) гасит только левый
     край колонки (их же CSS — «rgba(0,0,0,.55) 0% … transparent 62%») и
     оставляет `говори честно`/`не манипулируй` на 2.15–2.18:1 — блок, для
-    которого схема писалась, тут не тот. Плашку кладёт код: ровный
-    полупрозрачный фон на всю коробку схемы, а не их частичный градиент."""
+    которого схема писалась, тут не тот. Плашку кладёт код: тот же таймированный
+    `.ovl-scrim`, что уже стоит под накладками без своей подложки — не ровный
+    `style` на постоянной коробке схемы (прежняя версия правки красила им весь
+    ролик целиком, а не только окно сцены — этот тест теперь проверяет ровно
+    то, чего не проверял тот отчёт: тайминг, а не просто наличие плашки)."""
     _with_schema_block(run)
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["presenter"] = "none"
@@ -1034,8 +1037,71 @@ def test_схема_поверх_вставки_получает_плашку_ч
     html, board = _build(run, scenes=scenes)
     assert 'id="ins-s-02-0" class="ins clip"' in html
     assert board["scenes"][1]["schemaShown"] is True
-    box = html[html.index('id="schema-box-s-02"'):]
-    assert "background:rgba(0,0,0,.6)" in box[:200]
+    # Коробка схемы сама больше не несёт инлайновый фон — только маунт.
+    box = html[html.index('id="schema-box-s-02"'):][:200]
+    assert "style=" not in box.split(">", 1)[0]
+    # Плашка — отдельный таймированный элемент со своим окном, а не вечный
+    # фон: `class="clip"` + `data-start`/`data-duration`, как у скрима под
+    # накладкой (`timed_element_missing_clip_class` иначе роняет `check`).
+    scrim = html[html.index('id="schema-scrim-s-02"') - 40:][:220]
+    assert 'class="ovl-scrim clip"' in scrim
+    assert "data-start=" in scrim and "data-duration=" in scrim
+    # Окно скрима — окно сцены s-02 (3.033..6.0 с из SCENES), не весь ролик:
+    # `markup_time` квантует на сетку кадров, поэтому сравниваем через тот же
+    # помощник, а не литералом раскадровки.
+    start_attr = scrim.split('data-start="')[1].split('"')[0]
+    duration_attr = scrim.split('data-duration="')[1].split('"')[0]
+    assert float(start_attr) == pytest.approx(markup_time(3.033), abs=1e-3)
+    assert float(duration_attr) == pytest.approx(
+        markup_time(6.0) - markup_time(3.033), abs=1e-3)
+
+
+def _schema_scrim_scenes(count: int, span: float = 3.0):
+    """`count` схемных сцен подряд, у каждой настоящая вставка под схемой —
+    те же условия, что дают плашку в `test_схема_поверх_вставки_...`, просто
+    несколько раз подряд."""
+    scenes, resolved = [], {}
+    for index in range(count):
+        start = round(index * span, 3)
+        name = f"s-{index:02d}"
+        scenes.append(
+            {"id": name, "intent": "и", "startSec": start,
+             "endSec": round(start + span, 3), "presenter": "none",
+             "insert": _shots("переговоры", "бумаги"),
+             "schema": {"form": "pairs", "why": "у пунктов свои значения",
+                        "rows": [{"label": "раз", "value": "первое"},
+                                 {"label": "два", "value": "второе"}]}})
+        resolved.update(_found(name, ".media/images/a.jpg", ".media/images/b.jpg"))
+    return scenes, resolved
+
+
+def test_скримы_схемы_раскладываются_по_дорожкам(run):
+    """Скрим схемы — обычный `div` с `data-start`, не маунт (в отличие от
+    самой коробки схемы на `TRACK_SCHEMA`, которую их счётчик плотности не
+    видит вовсе): `timeline_track_too_dense` считает элементы на дорожке
+    КОЛИЧЕСТВОМ, не пересечением, и без ротации пятая схема с настоящей
+    вставкой подряд легла бы на ту же дорожку, что и первые четыре, — даже
+    при том, что сами схемные сцены друг друга по времени не перекрывают."""
+    _with_schema_block(run)
+    count = 5
+    scenes, resolved = _schema_scrim_scenes(count)
+    duration = round(count * 3.0, 3)
+    board = _board(json.loads(json.dumps(scenes)))
+    board["composition"]["durationSeconds"] = duration
+    board["videoTrack"]["endSec"] = duration
+    with sdk_session() as sdk:
+        build_composition(run, sdk, storyboard=board, clips=CLIPS,
+                          duration=duration, words=WORDS, resolved=resolved)
+    html = (run / "public" / "index.html").read_text(encoding="utf-8")
+    tracks = [html[html.index(f'id="schema-scrim-s-{index:02d}"'):][:220]
+              .split('data-track-index="')[1].split('"')[0]
+              for index in range(count)]
+    assert len(tracks) == count, "скрим встал не под каждой схемой с вставкой"
+    per_track = {track: tracks.count(track) for track in set(tracks)}
+    assert max(per_track.values()) <= 3, (
+        "дорожка схемного скрима держит больше трёх элементов — "
+        "их линтер зовёт это timeline_track_too_dense")
+    assert len(per_track) >= 2, "пять скримов легли на одну дорожку без ротации"
 
 
 def test_перечисление_получает_содержимое_штатным_каналом(run):
