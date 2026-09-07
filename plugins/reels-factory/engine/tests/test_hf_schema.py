@@ -557,3 +557,42 @@ def test_кегль_steps_не_ниже_читаемого_пола():
         "steps", {"nodes": [long_word, long_word, long_word]},
         duration=6.0, colors={})
     assert config["fontSize"] >= _NODE_MIN_FONT
+
+
+def test_кегль_steps_считается_от_коробки_после_её_сужения(monkeypatch):
+    """При нынешних `LIMITS["steps"]=3`, `gap=70`, `margin=80` цикл
+    `while count * box + (count-1) * gap > OUT_W - margin` никогда не
+    срабатывает (ревью PR #100, `hf_schema.py:846-856`) — формула деления уже
+    вписывает 2-3 узла в ширину кадра. Но `font`/`boxH` считались от `box` ДО
+    этого цикла: молчаливый дефект просыпается ровно тогда, когда `box`
+    зажат нижним полом 220px при большем счёте узлов, чем сегодняшний потолок
+    разрешает. Поднимаем `LIMITS["steps"]` до 5, чтобы цикл сработал по-
+    настоящему, и проверяем, что кегль и высота коробки — от ИТОГОВОГО,
+    уже суженного `boxW`, а не от 220px, с которых цикл стартовал."""
+    from reels_factory.hf_schema import (
+        LIMITS, _GLYPH_RATIO, _NODE_BOXH_RATIO, _NODE_FONT_RATIO,
+        _NODE_MIN_FONT, _NODE_TEXT_PADDING,
+    )
+
+    nodes = ["раз", "два", "три", "штырь", "пять"]
+    monkeypatch.setitem(LIMITS, "steps", 5)
+    _, config, _, _ = build("steps", {"nodes": nodes}, duration=7.0, colors={})
+
+    def _font_for(box: int) -> int:
+        longest = max(len(node) for node in nodes)
+        font_by_box = round(box * _NODE_FONT_RATIO)
+        font_by_text = int((box - _NODE_TEXT_PADDING) / (longest * _GLYPH_RATIO))
+        return max(_NODE_MIN_FONT, min(font_by_box, font_by_text))
+
+    # Пол 220px подняли бы box, если бы не цикл сужения — тест это и ловит:
+    # итоговый boxW обязан быть МЕНЬШЕ пола, то есть цикл действительно сузил
+    # коробку, а не остался мёртвым кодом, как при нынешних LIMITS.
+    box = config["boxW"]
+    assert box < 220
+    # Кегль — от ИТОГОВОГО, уже суженного box, а не от 220px, с которых
+    # цикл стартовал (регрессия порядка расчёта дала бы `_font_for(220)`).
+    assert config["fontSize"] == _font_for(box)
+    assert config["fontSize"] != _font_for(220)
+    # Высота коробки — их же пропорция от ИТОГОВОГО кегля, той же ловушке
+    # порядка подвержена симметрично.
+    assert config["boxH"] == round(config["fontSize"] * _NODE_BOXH_RATIO)

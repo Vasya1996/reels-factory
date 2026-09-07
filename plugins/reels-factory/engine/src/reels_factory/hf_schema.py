@@ -537,7 +537,7 @@ _LABEL_RATIO = ("textW / (maxChars * 0.75)", "textW / (maxChars * 0.95)")
 #: только до своей исходной доли. Потолок — их же канон читаемости для видео:
 #: «Headlines … 64-120px»
 #: (`hyperframes-ref/skills/hyperframes-creative/references/
-#: video-composition.md:39`) — при кегле 46 множитель 2,5 даёт 115 px, у
+#: video-composition.md:40`) — при кегле 46 множитель 2,5 даёт 115 px, у
 #: верхней границы их «Headlines».
 _PAIRS_LABEL_FONT = 46
 _PAIRS_VALUE_FONT = 40
@@ -837,6 +837,14 @@ def build(form: str, content: dict, *, duration: float, colors: dict,
         # рос вместе с коробкой, и узел читался в разы мельче их дизайна
         # (`hw-pipeline.html:99-106`, коробка 320x170 при кегле 56).
         box = min(360, max(220, (OUT_W - margin - (count - 1) * gap) // count))
+        # Досужка box'а — ДО кегля и высоты коробки: иначе при более тесных
+        # `LIMITS`/`gap`/`margin`, чем сегодняшние, цикл сузил бы `box` уже
+        # ПОСЛЕ того, как кегль и высота были бы подобраны под старое, большее
+        # значение — подпись вылезла бы за новый, узкий край коробки без
+        # единого упавшего теста (при нынешних константах цикл не срабатывает
+        # ни разу — держит это мёртвым тест `test_hf_schema.py`).
+        while count * box + (count - 1) * gap > OUT_W - margin and box > 180:
+            box -= 20
         longest = max((len(node) for node in nodes), default=8)
         # Кегль — МЕНЬШИЙ из двух потолков: их же пропорция от коробки
         # (`_NODE_FONT_RATIO`) и гарантия, что самая длинная подпись при этом
@@ -853,8 +861,6 @@ def build(form: str, content: dict, *, duration: float, colors: dict,
         # заехать на слова титра при малом счёте узлов (коробка шире —
         # кегль и высота больше).
         box_h = min(round(font * _NODE_BOXH_RATIO), SAFE_BOTTOM - y)
-        while count * box + (count - 1) * gap > OUT_W - margin and box > 180:
-            box -= 20
         config = {
             "nodes": [{"label": node} for node in nodes],
             "boxW": box, "boxH": box_h, "gap": gap,
