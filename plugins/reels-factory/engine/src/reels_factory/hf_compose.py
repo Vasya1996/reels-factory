@@ -66,7 +66,7 @@ from pathlib import Path
 
 from reels_factory.config import FPS, OUT_H, OUT_W
 from reels_factory.hf_captions import caption_snippet, write_caption_data
-from reels_factory.hf_frame import DEFAULTS as FRAME_DEFAULTS
+from reels_factory.hf_frame import DEFAULTS as FRAME_DEFAULTS, highlight_ink
 from reels_factory.hf_layout import (
     FULL_FRAME_PRESENTER, VIDEO_RECTS, avatar_gaps, effect_rect, icon_fits,
     in_avatar_gap, insert_rect, quantize,
@@ -3777,9 +3777,18 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # сцена была непрозрачным блоком со своим текстом. Теперь текста в кадре
     # нет ни у вставки, ни у ведущей, а в эталонных рилсах «текста в кадре нет
     # ни секунды без».
+    #
+    # `highlightInk` — отдельный от `primaryColor` цвет: буквы слова, пока под
+    # ним стоит плашка `accentColor` (`hf_captions.py`, `--hf-caption-
+    # highlight-ink`). Светлый акцент (бирюза, жёлтый) с обычным светлым
+    # `ink` даёт контраст ниже их порога 3:1 — их же проверка ловит это уже
+    # после сборки (`rb0908-ai-employee`, `contrast_aa_failure`). Акцент
+    # агента не трогаем, меняем только эти буквы (`hf_frame.highlight_ink`).
     write_caption_data(public, words=words, duration=duration,
                        brand={"primaryColor": colors["ink"],
-                              "accentColor": colors["accent"]})
+                              "accentColor": colors["accent"],
+                              "highlightInk": highlight_ink(
+                                  colors["ink"], colors["accent"], colors["bg"])})
     body.append(caption_snippet(sdk, public, track_index=TRACK_CAPTION,
                                 duration=duration))
     # Приёмы-декораторы — последними в теле: их скрипты обходят

@@ -148,6 +148,20 @@ def test_данные_в_их_контракте(tmp_path):
     assert len(data["segments"]) == 3
 
 
+def test_бренд_с_цветом_подсветки_доезжает_в_данные(tmp_path):
+    """`highlightInk` — наше третье поле контракта, не их (`primaryColor`/
+    `accentColor`): `write_caption_data` кладёт бренд как есть, а решение,
+    каким его считать, остаётся у вызывающего (`hf_compose.build_composition`
+    через `hf_frame.highlight_ink`)."""
+    write_caption_data(_public(tmp_path), words=WORDS, duration=10.0,
+                       brand={"primaryColor": "#f5f7fb",
+                              "accentColor": "#5ee0c0",
+                              "highlightInk": "#0b0f1a"})
+    data = json.loads((tmp_path / "caption-data.json").read_text(encoding="utf-8"))
+    assert data["brand"] == {"primaryColor": "#f5f7fb", "accentColor": "#5ee0c0",
+                             "highlightInk": "#0b0f1a"}
+
+
 def test_сниппет_без_внешних_ссылок(tmp_path):
     public = _public(tmp_path)
     write_caption_data(public, words=WORDS, duration=10.0)
@@ -208,15 +222,19 @@ def test_демо_вместо_движка_роняет_сборку(tmp_path):
 
 
 def test_проверенная_копия_компонента_лежит_рядом():
-    """Запасной путь `install`: если их версия перестала читать наши данные
-    или несёт нашу правку кегля/переноса слова, берётся эта копия — иначе
-    титр молча покажет чужой текст или обрезанное слово."""
-    from reels_factory.hf_captions import DATA_HOOK, FIT_MARKER, VETTED
+    """Запасной путь `install`: если их версия перестала читать наши данные,
+    несёт нашу правку кегля/переноса слова или подгонки цвета под контраст,
+    берётся эта копия — иначе титр молча покажет чужой текст, обрезанное
+    слово или буквы ниже порога контраста."""
+    from reels_factory.hf_captions import (
+        CONTRAST_MARKER, DATA_HOOK, FIT_MARKER, VETTED,
+    )
 
     assert VETTED.exists(), f"нет проверенной копии компонента: {VETTED}"
     vetted_text = VETTED.read_text(encoding="utf-8")
     assert DATA_HOOK in vetted_text
     assert FIT_MARKER in vetted_text
+    assert CONTRAST_MARKER in vetted_text
     assert "white-space: nowrap;" in vetted_text  # дефис внутри .hl-word не переносит строку
 
 
@@ -243,6 +261,30 @@ def test_привезённая_версия_без_нашей_подгонки_
     monkeypatch.setattr(hf_captions.subprocess, "run", fake_run)
     result = hf_captions.install(tmp_path)
     assert hf_captions.FIT_MARKER in result.read_text(encoding="utf-8")
+    assert result.read_bytes() == hf_captions.VETTED.read_bytes()
+
+
+def test_привезённая_версия_с_подгонкой_кегля_но_без_контраста_тоже_заменяется(
+        tmp_path, monkeypatch):
+    """Метки независимы: версия может нести старую правку кегля/переноса
+    (`FIT_MARKER`) и всё ещё не знать про подгонку цвета под контраст
+    (`CONTRAST_MARKER`, добавлена позже) — тогда `install()` обязан заменить
+    файл на `VETTED`, а не остановиться на первой найденной метке."""
+    import subprocess
+
+    from reels_factory import hf_captions
+
+    def fake_run(cmd, **kwargs):
+        target = Path(kwargs["cwd"]) / hf_captions.COMPONENT_REL
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            f"<html><body>{hf_captions.DATA_HOOK} {hf_captions.FIT_MARKER}"
+            "</body></html>", encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(hf_captions.subprocess, "run", fake_run)
+    result = hf_captions.install(tmp_path)
+    assert hf_captions.CONTRAST_MARKER in result.read_text(encoding="utf-8")
     assert result.read_bytes() == hf_captions.VETTED.read_bytes()
 
 

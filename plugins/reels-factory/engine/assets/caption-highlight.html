@@ -126,6 +126,18 @@
         var HF_ROOT_ID = "highlight";
         var HF_GROUP_SELECTOR = ".hl-group";
 
+        // Marker that this copy carries the word-on-plaque contrast fix
+        // below (hf_captions.py's `install()` looks for this exact
+        // identifier — same mechanism as WORD_LETTER_SPACING_EM/FIT_MARKER
+        // above it in that file's docstring). A name we invented for this
+        // fix has nowhere else to collide from. Populated by
+        // hfApplyStageConfig from brand.highlightInk/brand.primaryColor —
+        // the caller (hf_frame.highlight_ink) already decided the word's
+        // on-plaque color against `--hf-caption-accent`; this file only
+        // applies it for the word's highlighted span, not for its idle time.
+        var HF_HIGHLIGHT_INK = "";
+        var HF_CAPTION_PRIMARY = "";
+
         window.__timelines = window.__timelines || {};
 
         var _fitCanvas = document.createElement("canvas");
@@ -320,6 +332,21 @@
           } else {
             root.style.removeProperty("--hf-caption-accent");
           }
+          // `--hf-caption-primary`'s resolved value, and the caller's
+          // (hf_frame.highlight_ink) pre-decided on-plaque replacement for
+          // it — both plain hex, not `var(...)`, so hfBuild's GSAP tweens
+          // below can animate straight to/from them without a computed-style
+          // read. Empty means "no override" (older data / no brand at all):
+          // the word's color never changes while highlighted, same as before
+          // this fix.
+          HF_CAPTION_PRIMARY =
+            typeof brand.primaryColor === "string" && brand.primaryColor
+              ? brand.primaryColor
+              : "#ffffff";
+          HF_HIGHLIGHT_INK =
+            typeof brand.highlightInk === "string" && brand.highlightInk
+              ? brand.highlightInk
+              : "";
           return {
             W: W,
             H: H,
@@ -511,6 +538,30 @@
                 { filter: "brightness(1)", duration: 0.16, ease: "power2.out" },
                 w.start + 0.08,
               );
+              // `.hl-word`'s CSS color (--hf-caption-primary) never changes:
+              // it's the RIGHT color the rest of the time this word sits over
+              // whatever's behind the frame, not over its own plaque. Only
+              // while `bgEl` is actually opaque (this word's highlighted
+              // span) does the letter need `HF_HIGHLIGHT_INK` instead — same
+              // start/duration/ease as the plaque's own fade above and
+              // below, so the swap tracks the plaque's opacity rather than
+              // outrunning it into a mid-fade mismatch. Skipped whenever the
+              // caller found the CSS color already compliant (`hf_frame.
+              // highlight_ink` returned it unchanged) — no visible change,
+              // no tween to pay for.
+              if (HF_HIGHLIGHT_INK && HF_HIGHLIGHT_INK !== HF_CAPTION_PRIMARY) {
+                var textEl = wordEl.querySelector(".hl-word-text");
+                tl.to(
+                  textEl,
+                  { color: HF_HIGHLIGHT_INK, duration: 0.15, ease: "power2.out" },
+                  w.start,
+                );
+                tl.to(
+                  textEl,
+                  { color: HF_CAPTION_PRIMARY, duration: 0.1, ease: "power2.in" },
+                  w.end,
+                );
+              }
               tl.to(bgEl, { opacity: 0, scaleX: 1.02, duration: 0.1, ease: "power2.in" }, w.end);
               tl.set(bgEl, { scaleX: 0 }, w.end + 0.1);
             });
