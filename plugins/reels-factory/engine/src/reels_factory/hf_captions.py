@@ -129,6 +129,43 @@ CONTRAST_MARKER = "HF_HIGHLIGHT_INK"
 VETTED = Path(__file__).resolve().parents[2] / "assets" / f"{COMPONENT}.html"
 
 
+def _vet(target: Path) -> None:
+    """Свести проверку маркеров и подмену на `VETTED` в одно место.
+
+    07.09.2026, прод, задание `rb0909-ai-employee`: папка задания была
+    скопирована с августовского прогона вместе с `.hf-captions/`, и `install()`
+    брал уже лежащий там `target` ранним возвратом (`if target.exists(): return
+    target`) — без единой проверки `DATA_HOOK`/`FIT_MARKER`/`CONTRAST_MARKER`.
+    Компонент внутри был тем, с чем собралось августовское задание, до
+    PR #98/#102 с обеими правками, и «АВТОМАТИЗИРОВАТЬ» снова обрезало. Тот же
+    путь — у «продолжить» в боте, когда конфиг переиспользует папку прежнего
+    прогона. Правило одно («доверять компоненту только с нашими маркерами»,
+    см. докстринг `install()`), и место, где оно проверяется, должно быть одно
+    — независимо от того, лежал `target` в staging уже или его только что
+    привёз `npx add`.
+    """
+    fetched = target.read_text(encoding="utf-8")
+    missing_data_hook = DATA_HOOK not in fetched
+    missing_fit_patch = FIT_MARKER not in fetched
+    missing_contrast_patch = CONTRAST_MARKER not in fetched
+    if not (missing_data_hook or missing_fit_patch or missing_contrast_patch):
+        return
+    if not VETTED.exists():
+        missing = (DATA_HOOK if missing_data_hook
+                  else FIT_MARKER if missing_fit_patch else CONTRAST_MARKER)
+        raise RuntimeError(
+            f"их {COMPONENT} без {missing}, а проверенной копии нет в "
+            f"{VETTED} — титр показал бы их демо-текст, обрезанное "
+            "слово или буквы ниже порога контраста")
+    reason = (f"не читает {DATA_HOOK}" if missing_data_hook
+              else "без нашей подгонки кегля/переноса слова"
+              if missing_fit_patch else "без нашей подгонки цвета букв под контраст")
+    print(f"компонент {COMPONENT} из их реестра {reason} — "
+          "беру проверенную копию движка")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(VETTED, target)
+
+
 def install(rdir) -> Path:
     """Поставить компонент их же командой из их общего реестра.
 
@@ -136,17 +173,22 @@ def install(rdir) -> Path:
     указывает на наш каталог блоков, а компонент субтитров живёт в общем
     реестре. Без конфига CLI берёт реестр по умолчанию.
 
-    Если привезённая версия не читает наши данные ИЛИ не несёт нашей подгонки
+    Если версия в `target` не читает наши данные ИЛИ не несёт нашей подгонки
     кегля/переноса слова (`FIT_MARKER`) ИЛИ нашей подгонки цвета букв под
     контраст (`CONTRAST_MARKER`), берём проверенную копию: молча показать
     вместо реплик диктора их демо-текст, обрезанное слово или буквы ниже их
     порога контраста — все три хуже, чем взять файл, который мы сами
-    проверили.
+    проверили. Проверка (`_vet`) стоит и на файле, уже лежащем в staging
+    (ранний возврат — папка прогона переиспользована, `.hf-captions/` доехала
+    из прежнего задания), и на только что привезённом `npx add`: до
+    07.09.2026 её ставили только для второго случая, и старая заготовка папки
+    молча провозила устаревший компонент мимо обеих правок (см. `_vet`).
     """
     rdir = Path(rdir)
     staging = rdir / ".hf-captions"
     target = staging / COMPONENT_REL
     if target.exists():
+        _vet(target)
         return target
     staging.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(
@@ -157,25 +199,7 @@ def install(rdir) -> Path:
         raise RuntimeError(
             f"компонент субтитров {COMPONENT} не поставился "
             f"({result.returncode}): {(result.stderr or result.stdout)[:400]}")
-    fetched = target.read_text(encoding="utf-8")
-    missing_data_hook = DATA_HOOK not in fetched
-    missing_fit_patch = FIT_MARKER not in fetched
-    missing_contrast_patch = CONTRAST_MARKER not in fetched
-    if missing_data_hook or missing_fit_patch or missing_contrast_patch:
-        if not VETTED.exists():
-            missing = (DATA_HOOK if missing_data_hook
-                      else FIT_MARKER if missing_fit_patch else CONTRAST_MARKER)
-            raise RuntimeError(
-                f"их {COMPONENT} без {missing}, а проверенной копии нет в "
-                f"{VETTED} — титр показал бы их демо-текст, обрезанное "
-                "слово или буквы ниже порога контраста")
-        reason = (f"не читает {DATA_HOOK}" if missing_data_hook
-                  else "без нашей подгонки кегля/переноса слова"
-                  if missing_fit_patch else "без нашей подгонки цвета букв под контраст")
-        print(f"компонент {COMPONENT} из их реестра {reason} — "
-              "беру проверенную копию движка")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(VETTED, target)
+    _vet(target)
     return target
 
 
