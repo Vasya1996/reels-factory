@@ -1554,6 +1554,91 @@ def test_сборка_подхватывает_ранний_план_и_не_з�
     assert res["gates"]["D11_schema"] == "PASS"
 
 
+def test_план_с_диска_не_переписывает_задание(tmp_path, monkeypatch):
+    """Когда маркер `plan` цел, `run_step` не зовёт `plan_with_agent` вовсе —
+    план читается с диска (`board is None` ниже читает `plan.json`). Агента
+    не спрашивают, значит и задание ему писать незачем: `write_brief` внутри
+    цикла обязан молчать, а не переписывать `BRIEF.md`, который никто не
+    откроет. Тот же сторож, что и в
+    `test_сборка_подхватывает_ранний_план_и_не_зовёт_агента_заново` (очередь
+    агента пуста — любой вызов уронит прогон), плюс проверка самого файла
+    задания.
+    """
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [])
+    (tmp_path / "plan.json").write_text(json.dumps(GOOD), encoding="utf-8")
+    (tmp_path / ".hf-plan.done").write_text("ok", encoding="utf-8")
+    заглушка = "заглушка: план уже на диске, задание никто не прочитает"
+    (tmp_path / "BRIEF.md").write_text(заглушка, encoding="utf-8")
+
+    hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert (tmp_path / "BRIEF.md").read_text(encoding="utf-8") == заглушка, (
+        "план читается с диска, а задание всё равно переписано")
+
+
+def test_план_без_причины_пересдачи_всё_равно_получает_свежее_задание(
+        tmp_path, monkeypatch):
+    """Дефект `rb0907-ai-employee` (07.09.2026): маркер `.hf-plan.done` можно
+    снять и БЕЗ причины отказа (`retry_reason.txt` пуст) — продолжением или
+    ручным сбросом, не только провалом гейта. До этой правки свежее задание
+    писал только раздел «`if reason is not None`»: при пустой причине
+    `write_brief` внутри цикла не срабатывал вовсе, и агент, которого всё
+    равно позовут (маркер снят), получал версию, оставшуюся от `prepare()`, —
+    какой бы старой она к тому моменту ни была. BRIEF.md в проде был от
+    25.08, до поля `frame` (a13be5b), и план вернулся без `frame` и без
+    `elements`.
+
+    Задание теперь пишет тот же вызов, что зовёт агента, — прямо перед
+    `run_step(rdir, "plan", ...)`, независимо от того, есть ли причина
+    пересдачи.
+    """
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [GOOD])
+    hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+    assert hf_render.last_retry_reason(tmp_path) is None, (
+        "сценарий проверяет путь БЕЗ причины пересдачи")
+
+    # Портим задание на диске старой версией без слова про кадр сцены — как
+    # будто между `prepare` и повторным ходом прошли недели.
+    заглушка = "заглушка: старое задание без слова про кадр сцены"
+    (tmp_path / "BRIEF.md").write_text(заглушка, encoding="utf-8")
+    # Маркер `.hf-plan.done` снят без причины — ровно так, как в отчёте по
+    # прогону. Монтажные маркеры снимаем вместе с ним: план изменится, и
+    # сборке есть что переделать по-настоящему (иначе тест ничего не
+    # запускает — `compose` вернул бы файл прошлого плана как есть).
+    for step in ("plan",) + hf_render.MONTAGE_STEPS:
+        hf_render.reset_step(tmp_path, step)
+
+    задания = []
+
+    def агент(rdir, *, runner=None):
+        rdir = Path(rdir)
+        задания.append((rdir / "BRIEF.md").read_text(encoding="utf-8"))
+        board = json.loads(json.dumps(GOOD))
+        for name in ("storyboard.json", "plan.json"):
+            (rdir / name).write_text(json.dumps(board), encoding="utf-8")
+        return board
+
+    monkeypatch.setattr(hf_render, "plan_with_agent", агент)
+
+    hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert задания, "маркер снят, а агента не позвали — тест ничего не проверил"
+    assert заглушка not in задания[0], (
+        "агент получил задание, оставшееся от `prepare`, а не свежее")
+    assert "`frame`" in задания[0], (
+        "свежее задание обязано называть поле `frame` каждой сцены")
+
+
 def test_сборка_проходит_все_шаги(tmp_path, monkeypatch):
     from reels_factory import hf_render
 
@@ -2036,6 +2121,139 @@ def test_нехватку_вставок_на_последней_попытке_
         master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
 
     assert Path(res["mp4"]).exists()
+
+
+def test_план_без_кадра_на_пересдаче_не_идёт_в_компоновку(tmp_path,
+                                                           monkeypatch):
+    """`D36_elements` до заказа ведущей требует у каждой сцены поле `frame` —
+    чем держится кадр и что сцена сделала с каталогом (`plan_elements_gate`,
+    hf_gates.py). Тот же вопрос обязан звучать и на пересдаче ПОСЛЕ заказа:
+    аватар уже куплен, но план всё ещё пишет агент, и молчание про кадр —
+    та же дыра, только позже. Раньше её тут никто не спрашивал: `check_shots`
+    и `check_inserts` про `frame` не знают, а `check_storyboard` после сборки
+    судит уже СОБРАННЫЙ кадр, а не то, назвал ли план что-то вообще. На проде
+    07.09.2026 (`rb0907-ai-employee`, `rb0907-university`) план так и доехал
+    до сборки без единого `frame`, а `gates.json` показал `D36_elements: PASS`.
+    """
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [])
+
+    молчит = json.loads(json.dumps(GOOD))
+    молчит["scenes"][2].pop("frame")
+    очередь = [молчит, GOOD]
+    задания = []
+
+    def агент(rdir, *, runner=None):
+        rdir = Path(rdir)
+        задания.append((rdir / "BRIEF.md").read_text(encoding="utf-8"))
+        board = json.loads(json.dumps(очередь.pop(0)))
+        for name in ("storyboard.json", "plan.json"):
+            (rdir / name).write_text(json.dumps(board), encoding="utf-8")
+        return board
+
+    monkeypatch.setattr(hf_render, "plan_with_agent", агент)
+
+    res = hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert len(задания) == 2, "план без `frame` пересдачи не вызвал"
+    причина = _причина(задания[1])
+    assert "D36_elements" in причина
+    assert "`frame`" in причина, "причина не называет поля"
+    assert молчит["scenes"][2]["id"] in причина
+    # второй план принят: сборка состоялась, гейт зелёный по-настоящему
+    assert Path(res["mp4"]).exists()
+    assert res["gates"].get("D36_elements") == "PASS"
+
+
+def test_план_без_кадра_после_заказа_ведущей_тоже_даёт_отказ(tmp_path,
+                                                             monkeypatch):
+    """Тот же вопрос — на возобновлении островного пути: маркер раннего плана
+    (`EARLY_PLAN_STEP`) стоит, ведущая уже куплена, а компоновку спрашивают
+    заново по прошлому отказу (как в
+    `test_продолжение_на_островах_спрашивает_агента_по_купленным_клипам`).
+    Заморозка заказа (`frozen_plan_gates`) смягчает FAIL только у гейтов
+    РАННЕГО плана при возобновлении `plan_before_avatar` — на цикл пересдачи
+    `assemble_hyperframes` она не распространяется, и молчание про `frame`
+    здесь обязано остаться отказом, а не пройти тем же путём смягчённым."""
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [])
+    (tmp_path / "plan.json").write_text(json.dumps(GOOD), encoding="utf-8")
+    (tmp_path / ".hf-plan.done").write_text("ok", encoding="utf-8")
+    (tmp_path / f".hf-{hf_render.EARLY_PLAN_STEP}.done").write_text(
+        "ok", encoding="utf-8")
+    hf_render.save_retry_reason(
+        tmp_path, "D18_change_rate: FAIL: картинка меняется реже раза в 2,5 "
+                  "секунды")
+
+    молчит = json.loads(json.dumps(GOOD))
+    молчит["scenes"][2].pop("frame")
+    очередь = [молчит, GOOD]
+    задания = []
+
+    def агент(rdir, *, runner=None):
+        rdir = Path(rdir)
+        задания.append((rdir / "BRIEF.md").read_text(encoding="utf-8"))
+        board = json.loads(json.dumps(очередь.pop(0)))
+        for name in ("storyboard.json", "plan.json"):
+            (rdir / name).write_text(json.dumps(board), encoding="utf-8")
+        return board
+
+    monkeypatch.setattr(hf_render, "plan_with_agent", агент)
+
+    res = hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert len(задания) == 2, (
+        "план без `frame` после заказа ведущей пересдачи не вызвал")
+    причина = _причина(задания[1])
+    assert "D36_elements" in причина
+    assert молчит["scenes"][2]["id"] in причина
+    assert "## Где ведущей нет" in задания[1], (
+        "задание пересдачи ушло не в режиме «аватар заказан» — а он уже "
+        "куплен, и агент решал бы заново, где ведущая нужна")
+    assert Path(res["mp4"]).exists()
+    assert res["gates"].get("D36_elements") == "PASS"
+
+
+def test_провал_план_проверки_не_перекрывается_доставкой(tmp_path,
+                                                          monkeypatch):
+    """Решение 05: на последней попытке compose красный гейт больше не роняет
+    сборку — ролик доезжает до заказчика с изъяном, записанным честно.
+    `elements_delivered` после сборки судит только то, что из ЗАЯВЛЕННЫХ
+    планом позиций доехало до кадра — на плане без единой позиции ей и
+    заявлять нечего, и она отдаёт PASS. Тот же ключ `D36_elements` уже занят
+    вердиктом `plan_elements_gate` — планом, который ни разу не назвал `frame`,
+    — и этот FAIL не имеет права потеряться под более мягким PASS, записанным
+    по тому же имени позже."""
+    from reels_factory import hf_render
+
+    молчит = json.loads(json.dumps(GOOD))
+    for scene in молчит["scenes"]:
+        scene.pop("frame", None)
+    # Обе попытки одинаково молчат про кадр: агент решение не поменял, и
+    # вторая (последняя) попытка едет в компоновку как есть (решение 05).
+    _fakes(monkeypatch, tmp_path,
+          [молчит, json.loads(json.dumps(молчит))])
+
+    res = hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert Path(res["mp4"]).exists(), (
+        "решение 05: ролик доезжает до заказчика даже с красным гейтом")
+    assert res["gates"]["D36_elements"].startswith("FAIL"), (
+        "план не назвал `frame` ни одной сцене — `elements_delivered` не "
+        "вправе перекрыть это своим PASS'ом под тем же ключом")
+    assert "`frame`" in res["gates"]["D36_elements"]
+    gates_on_disk = json.loads(
+        (tmp_path / "gates.json").read_text(encoding="utf-8"))
+    assert gates_on_disk["D36_elements"].startswith("FAIL"), (
+        "на диске лежит перекрытый вердикт — разбор прогона его не увидит")
 
 
 def test_окно_с_материалом_снимает_сайт_или_маршрут(tmp_path, monkeypatch):
@@ -2620,6 +2838,12 @@ def test_протухшая_причина_не_гоняет_агента_на_�
     """То же самое целиком: сборка на папке с протухшей причиной обязана
     оставить маркер `plan` и не звать агента вовсе.
 
+    Задание при этом молчит так же, как маркер: агента не зовут — план
+    читается с диска, — и переписывать `BRIEF.md` ради него некому. Раньше
+    файл всё равно создавал `prepare()` (версией без раздела пересдачи), и
+    тест проверял только пустоту этого раздела; с тех пор задание пишет
+    исключительно вызов, который зовёт агента, и файла не остаётся вовсе.
+
     Обратный случай — свежая причина зовёт агента заново — держит
     `test_продолжение_на_островах_спрашивает_агента_по_купленным_клипам`.
     """
@@ -2642,9 +2866,9 @@ def test_протухшая_причина_не_гоняет_агента_на_�
     assert звали == [], (
         "агента позвали чинить снятый гейт — прогон стоит денег, а чинить "
         "нечего")
-    assert "## Этот план не прошёл проверку" not in (
-        tmp_path / "BRIEF.md").read_text(encoding="utf-8"), (
-        "в задание уехал раздел пересдачи по гейту, которого нет")
+    assert not (tmp_path / "BRIEF.md").exists(), (
+        "план читается с диска, а задание всё равно написано — переписывать "
+        "его для агента, которого не позвали, незачем")
 
 
 #: Ставки счёта — только чтобы работа моделей вообще получила цену.
@@ -2912,3 +3136,58 @@ def test_решение_про_кадр_судят_по_закрытому_сп�
     assert ("`catalog_checked`" in вердикт
             and board["scenes"][5]["id"] in вердикт), (
         "строка вместо списка рассмотренных позиций прошла")
+
+
+def test_схема_под_ведущей_во_весь_кадр_ловится_до_заказа():
+    """rb0907-philosophers, сцена `s-08`: `presenter: "punch"` +
+    `schema.form: "brand"` — карточка бренда легла по центру верхней половины
+    кадра, на лицо ведущей, и заказ уже был оплачен. Ни один ранний гейт
+    этого не ловил: `hf_schema.build` презентера не читает, а
+    `frame_filled_problems` (D35) схемную сцену пропускает — «схема закрывает
+    кадр наравне со вставкой». `D36_elements` теперь спрашивает у кадра
+    зону (`hf_compose.schema_zone`) — ту же, которой сборка ставит коробку
+    схемы; до заказа лица ещё нет, и полнокадровой ведущей обещать нечем.
+    """
+    from reels_factory import hf_render
+    from reels_factory.avatar_islands import avatar_islands_settings
+    from reels_factory.hf_phrases import lay_out_scenes, phrase_timeline
+
+    board = json.loads(json.dumps(FIT))
+    assert board["scenes"][0]["presenter"] == "punch", "фикстура сменилась"
+    board["scenes"][0]["schema"] = {
+        "form": "brand", "why": "назван бренд", "brands": ["acme"]}
+    phrases = phrase_timeline(EARLY_TIMED, EARLY_WORDS)
+    scenes = lay_out_scenes(board["scenes"], phrases, duration=EARLY_TOTAL)
+    вердикт = hf_render._early_plan_gates(
+        scenes, EARLY_TOTAL, phrases,
+        avatar_islands_settings({}))["D36_elements"]
+
+    assert вердикт.startswith("FAIL"), вердикт
+    assert "441 px" in вердикт and "punch" in вердикт
+    assert scenes[0]["id"] in вердикт
+
+
+def test_схема_со_вставкой_без_ведущей_не_затронута():
+    """Зеркало предыдущего теста и защита от перебора: rb0907-philosophers,
+    сцена `s-07` — `presenter: "none"` + `insert` + `schema.form: "pairs"` —
+    легла в кадр верно (кадр держит вставка, схема стоит над ней во весь
+    рост, лица в кадре нет вовсе). Правка про схему под ведущей не должна
+    трогать сцену, где ведущей в кадре нет: без окна ведущей зона схемы —
+    вся полоса над титром, и масштаб у неё единица.
+    """
+    from reels_factory import hf_render
+    from reels_factory.avatar_islands import avatar_islands_settings
+    from reels_factory.hf_phrases import lay_out_scenes, phrase_timeline
+
+    board = json.loads(json.dumps(FIT))
+    assert board["scenes"][2]["presenter"] == "none", "фикстура сменилась"
+    assert board["scenes"][2]["insert"], "фикстура сменилась"
+    board["scenes"][2]["schema"] = {
+        "form": "pairs", "why": "характеристики пунктов",
+        "rows": [{"label": "делай", "value": "говори честно"}]}
+    phrases = phrase_timeline(EARLY_TIMED, EARLY_WORDS)
+    scenes = lay_out_scenes(board["scenes"], phrases, duration=EARLY_TOTAL)
+    гейты = hf_render._early_plan_gates(
+        scenes, EARLY_TOTAL, phrases, avatar_islands_settings({}))
+
+    assert гейты["D36_elements"] == "PASS", гейты["D36_elements"]

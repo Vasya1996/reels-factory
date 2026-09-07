@@ -299,8 +299,8 @@ def _final_rule(avatar_ordered: bool) -> str:
             "зрителя в последней сцене, где оно есть.")
 
 
-def _body(*, positions: str, no_effect_zone: str, covers_backdrop: str,
-          form_floors: str,
+def _body(*, positions: str, no_effect_zone: str, schema_positions: str,
+          covers_backdrop: str, form_floors: str,
           icon_names: str, series_min: float, series_max: float,
           face_gap: float,
           max_static: float, min_scene: float, avatar_ordered: bool,
@@ -366,12 +366,15 @@ def _body(*, positions: str, no_effect_zone: str, covers_backdrop: str,
 
 1. Сцена без вставки и без схемы — `full` или `punch`: ведущая закрывает
    кадр сама.
-2. Сцена со схемой и без вставки — нижний уголок, `pip-br` или `pip-bl`:
-   схема занимает верхнюю треть кадра, другого положения код для такой сцены
-   не примет.
+2. Сцена со схемой — {schema_positions}, и неважно, есть ли в ней вставка.
+   Схеме нужна полоса кадра выше слов титра и вне лица ведущей; целой эта
+   полоса остаётся только при этих положениях — их окошко лежит ниже слов
+   титра и со схемой не спорит. `full` и `punch` кроют кадр целиком, `stack`
+   и верхние уголки срезают полосу так, что подписи схемы в остатке уже не
+   прочесть: такой план возвращается на пересдачу (`D36_elements`), а если
+   положение сменил уже код после заказа, схему снимает сборка.
 3. Сцена со вставкой — любой уголок (`pip-*`) или `stack` (ведущая сверху,
-   вставка снизу); схема в той же сцене держит то же правило нижнего уголка,
-   что и в пункте 2.
+   вставка снизу); со схемой в той же сцене работает пункт 2, он сильнее.
 4. `pip-*` уместнее, когда диктор обращается к зрителю: говорит «я», «мы»,
    «ты», «смотри» или задаёт вопрос.
 5. `stack` — когда вставка показывает предмет, который диктор называет в этих
@@ -893,6 +896,7 @@ class="hf-inline-highlight"») — значит, из фразы этой сце
 
 
 def write_montage_skill(rdir, *, positions: str, no_effect_zone: str,
+                        schema_positions: str,
                         covers_backdrop: str, form_floors: str,
                         icon_names: str, series_min: float, series_max: float,
                         face_gap: float, max_static: float, min_scene: float,
@@ -929,6 +933,7 @@ def write_montage_skill(rdir, *, positions: str, no_effect_zone: str,
     path.write_text(
         f"---\nname: {SKILL_NAME}\ndescription: {DESCRIPTION}\n---\n\n"
         + _body(positions=positions, no_effect_zone=no_effect_zone,
+                schema_positions=schema_positions,
                 covers_backdrop=covers_backdrop, form_floors=form_floors,
                 icon_names=icon_names, series_min=series_min,
                 series_max=series_max, face_gap=face_gap,
