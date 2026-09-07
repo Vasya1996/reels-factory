@@ -76,7 +76,8 @@ POSITIONS = [
      "названная в этой же сцене"),
     ("pip-tl", "в окошке слева сверху", "то же"),
     ("pip-br", "в окошке справа снизу", "то же; со схемой годятся только "
-     "нижние уголки — схема стоит в верхней трети кадра"),
+     "нижние уголки — их окошко лежит ниже слов титра, и схеме остаётся "
+     "весь кадр над ними"),
     ("pip-bl", "в окошке слева снизу", "то же"),
     ("stack", "в верхней части кадра", "вставка занимает нижнюю"),
     ("none", "её в кадре нет", "кадр занимает вставка либо фирменный фон"),
@@ -93,6 +94,20 @@ def _no_effect_zone() -> str:
     """
     return ", ".join(f"`{name}`" for name, _, _ in POSITIONS
                      if effect_zone(name) is None)
+
+
+def _schema_positions() -> str:
+    """Положения ведущей, при которых схема встаёт во весь свой рост.
+
+    Тем же счётом, что и `_no_effect_zone` выше, и по той же причине: список
+    считает `hf_montage.schema_safe_presenter` из зоны, которой сборка ставит
+    коробку схемы (`hf_compose.schema_zone`). Переписать его сюда литералом
+    значит завести второе правило, которое разойдётся с кадром при первой же
+    правке прямоугольников.
+    """
+    from reels_factory.hf_montage import schema_safe_presenter
+
+    return " или ".join(f"`{name}`" for name in schema_safe_presenter())
 
 
 def _covers_backdrop() -> str:
@@ -1350,6 +1365,7 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     # число сцен ещё не назвал, а меньший план `min_scenes` уже запрещает.
     write_montage_skill(rdir, positions=_positions_block(),
                         no_effect_zone=_no_effect_zone(),
+                        schema_positions=_schema_positions(),
                         covers_backdrop=_covers_backdrop(),
                         form_floors=form_floors, icon_names=icon_names,
                         series_min=SERIES_MIN, series_max=SERIES_MAX,

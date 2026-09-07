@@ -1232,14 +1232,13 @@ def _early_plan_gates(scenes: list[dict], duration: float,
     #
     # Про пустоту кадра гейт не спрашивает у схемы отдельно —
     # `frame_filled_problems` считает `schema_scene` наравне со вставкой. Про
-    # СПОР схемы с ведущей — спрашивает: до работы D36 схема не была сверена
-    # ни с одним положением ведущей ни в одном гейте (`hf_schema.build`
-    # презентера не читает вовсе), и боевой прогон `rb0907-philosophers`
-    # (сцена `s-08`, `presenter: "punch"` + `schema.form: "brand"`) отдал
-    # карточку бренда на лицо ведущей. Список безопасных положений уже
-    # существовал — `hf_montage.positions_for` — но его спрашивал только
-    # `pick_position` при пересборке, а решение агента до заказа не сверял
-    # никто.
+    # МЕСТО схемы в кадре — спрашивает: геометрию схемы считал один
+    # `hf_schema.build`, который ни окна ведущей, ни её лица не знает, и
+    # боевой прогон `rb0907-philosophers` (сцена `s-08`, `presenter: "punch"`
+    # + `schema.form: "brand"`) отдал карточку бренда на лицо ведущей.
+    # Спрашиваем ту же зону, которой схему ставит сборка
+    # (`hf_compose.schema_zone`), — здесь без лица: `face.json` появляется
+    # вместе с клипами, то есть уже после HeyGen.
     schema_positions = schema_position_problems(scenes)
     # Имя позиции каталога сверяется до заказа по той же причине: их
     # `hyperframes add` неизвестное имя не ставит и роняет попытку сборки, а
@@ -1269,9 +1268,8 @@ def _early_plan_gates(scenes: list[dict], duration: float,
             + "; ".join(named))
     if schema_positions:
         trouble.append(
-            "схема встаёт в верхнюю треть кадра, и ведущая, занявшая то же "
-            "место, закроет её собой (или схема закроет лицо): "
-            + "; ".join(schema_positions))
+            "схеме не остаётся полосы кадра: ведущая занимает то же место, и "
+            "одна закроет другую: " + "; ".join(schema_positions))
     result["D36_elements"] = "PASS" if not trouble else "FAIL: " + " ".join(
         trouble)
 
@@ -1859,7 +1857,12 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
             # и тогда сцена уже переписана на ведущую во весь кадр.
             board = json.loads(
                 (rdir / "storyboard.json").read_text(encoding="utf-8"))
-            result = check_storyboard(board, clips=saved_clips, duration=duration)
+            # Лицо сюда идёт затем же, зачем оно идёт в пробу ниже: D11
+            # спрашивает у кадра, осталась ли схеме полоса вне лица, а до
+            # заказа этого замера ещё не было (`_early_plan_gates` судит с
+            # `face=None`).
+            result = check_storyboard(board, clips=saved_clips,
+                                      duration=duration, face=load_face(rdir))
             # …а «что просил агент» знает только его собственный ответ:
             # раскадровку сборка переписывает под собранный кадр и снятую
             # позицию каталога из неё вычищает. Поэтому `D36_elements` после

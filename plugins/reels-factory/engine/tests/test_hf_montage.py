@@ -2,7 +2,7 @@
 import pytest
 
 from reels_factory.hf_montage import (
-    MIN_STEP, PLAN_MAX, PLAN_MIN, PUSH_TO, SCHEMA_SAFE_PRESENTER,
+    MIN_STEP, PLAN_MAX, PLAN_MIN, PUSH_TO, schema_safe_presenter,
     check_shots, cut_into_plans, dedupe_neighbours, flash_moments,
     on_screen_seconds, pick_series, shots_for, show_ordered_avatar,
     split_series, zoom_ladder,
@@ -122,7 +122,7 @@ def test_оплаченная_ведущая_со_схемой_и_вставко
     clips = [{"file": "a.mp4", "start": 0.0, "duration": 9.0}]
     lifted = show_ordered_avatar(scenes, clips, 9.0)
     assert lifted == ["s-00"]
-    assert scenes[0]["presenter"] in SCHEMA_SAFE_PRESENTER
+    assert scenes[0]["presenter"] in schema_safe_presenter()
 
 
 def test_соседи_со_схемой_и_вставкой_разводятся_нижним_уголком():
@@ -134,7 +134,7 @@ def test_соседи_со_схемой_и_вставкой_разводятся
     scenes = [left, right]
     clips = [{"file": "a.mp4", "start": 0.0, "duration": 6.0}]
     dedupe_neighbours(scenes, clips=clips, duration=6.0)
-    assert scenes[1]["presenter"] in SCHEMA_SAFE_PRESENTER
+    assert scenes[1]["presenter"] in schema_safe_presenter()
 
 
 def test_аватар_в_уголке_это_аватар_в_кадре():

@@ -696,21 +696,29 @@ def test_подложка_под_полнокадровой_ведущей_ло�
                                            presenter=position)) == [], position
 
 
-def test_схема_под_полнокадровой_ведущей_ловится_до_заказа():
+#: Лицо из прогона `rb0907-philosophers` (`face.json` на сервере) — им и
+#: судим: у высокого лица зона под ним другая, и оба случая нужны.
+FACE_LOW = {"cx": 521, "cy": 696, "h": 269, "detected": True}
+#: То же лицо, поднятое в верхнюю пятую часть клипа. Такое кадрирование зону
+#: под собой открывает — и тогда схема при `punch` законна.
+FACE_HIGH = {"cx": 521, "cy": 300, "h": 269, "detected": True}
+
+
+def test_схеме_под_полнокадровой_ведущей_не_остаётся_полосы():
     """rb0907-philosophers, сцена `s-08`: `presenter: "punch"` +
     `schema.form: "brand"` — карточка бренда легла по центру верхней половины
-    кадра, на лицо ведущей. Ни один гейт этого не ловил: `hf_schema.build`
-    презентера не читает, а `frame_filled_problems` (D20/D25) схемную сцену
-    пропускает вовсе. Каталог тут не нужен — вопрос не про позицию каталога,
-    а про поле `schema`, и `_scene` его не трогает.
+    кадра, на лицо ведущей. Гейт спрашивает не список положений, а геометрию:
+    осталась ли схеме полоса выше слов титра и вне лица
+    (`hf_compose.schema_zone`). До заказа лица ещё нет, и полнокадровой
+    ведущей обещать нечем; с замером ответ считается по нему.
     """
     schema = {"form": "brand", "why": "назван бренд", "brands": ["acme"]}
     for position in FULL_FRAME_PRESENTER | {"stack", "pip-tr", "pip-tl"}:
         problems = schema_position_problems(
             [_scene(8, 24.0, 27.0, presenter=position, schema=schema)])
         assert len(problems) == 1, position
-        assert "верхн" in problems[0] and position in problems[0]
-    # Нижние уголки не спорят со схемой — она стоит в верхней трети.
+        assert "441 px" in problems[0] and position in problems[0]
+    # Нижние уголки схеме не мешают: их окно лежит ниже полосы титра.
     for position in ("pip-br", "pip-bl"):
         assert schema_position_problems(
             [_scene(8, 24.0, 27.0, presenter=position, schema=schema)]) == [], position
@@ -725,6 +733,19 @@ def test_схема_под_полнокадровой_ведущей_ловит�
     # Сцена без схемы этим гейтом не спрашивается вовсе — любое положение
     # ведущей законно.
     assert schema_position_problems([_scene(1, 0.0, 3.0, presenter="punch")]) == []
+
+
+def test_схема_при_наезде_судится_по_замеренному_лицу():
+    """После сборки лицо уже замерено, и вопрос перестаёт быть про список
+    положений: у лица прогона `rb0907-philosophers` под ним остаётся 120 px и
+    схема отклоняется, у поднятого — 480 px, и та же сцена с тем же `punch`
+    проходит. Это и есть та геометрия, которой у `hf_schema.build` не было.
+    """
+    schema = {"form": "brand", "why": "назван бренд", "brands": ["acme"]}
+    scene = [_scene(8, 24.0, 27.0, presenter="punch", schema=schema)]
+    low = schema_position_problems(scene, FACE_LOW)
+    assert len(low) == 1 and "120 px" in low[0]
+    assert schema_position_problems(scene, FACE_HIGH) == []
 
 
 def test_позиция_со_слотом_под_файл_без_вставки_ловится_до_заказа(каталог):

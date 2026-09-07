@@ -23,9 +23,8 @@ from reels_factory.hf_layout import (
     in_avatar_gap,
 )
 from reels_factory.hf_montage import (
-    FRAME_KINDS, SCHEMA_SAFE_PRESENTER, SERIES_SHOTS, filling_element,
-    frame_filler, insert_of, same_look, scene_look, schema_scene,
-    shot_queries,
+    FRAME_KINDS, SERIES_SHOTS, filling_element, frame_filler, insert_of,
+    same_look, scene_look, schema_scene, shot_queries,
 )
 from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 
@@ -600,48 +599,63 @@ def elements_delivered(plan: dict, storyboard: dict) -> dict:
                             + "; ".join(lost)}
 
 
-def schema_position_problems(scenes: list[dict]) -> list[str]:
-    """Положение ведущей не спорит со схемой, которую несёт сцена.
+def schema_position_problems(scenes: list[dict],
+                             face: dict | None = None) -> list[str]:
+    """Схеме есть куда встать при том положении ведущей, что назвал план.
 
-    Схема встаёт в верхнюю треть кадра тем же правом, каким `effect` встаёт в
-    свою свободную зону (`hf_layout.effect_rect`) — но, в отличие от него, до
-    сих пор не была сверена ни с одним положением ведущей ни в одном гейте:
-    `hf_schema.build` презентера не читает вовсе, а `frame_filled_problems`
-    (D20/D25) схемную сцену пропускает — «схема закрывает кадр наравне со
-    вставкой». Прогон `rb0907-philosophers`, сцена `s-08`
-    (`presenter: "punch"` + `schema.form: "brand"`), лёг ровно так: карточка
-    бренда легла по центру верхней половины кадра — на лицо ведущей.
+    Вопрос здесь один и геометрический: «зона есть или нет». Считает её тот
+    же `hf_compose.schema_zone`, которым сборка ставит коробку схемы, — своего
+    списка положений у гейта нет и быть не может, иначе список и кадр
+    разойдутся при первой же правке прямоугольников.
 
-    `none` изъят из проверки нарочно: без окна ведущей схеме спорить не с
-    чем, и это законно даже со вставкой в той же сцене (`s-07` того же
-    ролика — `presenter: "none"` + `insert` + `schema.form: "pairs"` — кадр
-    держит вставка, а `hf_montage.positions_for` для сцены со вставкой отдаёт
-    список кандидатов НА ПОЗИЦИЮ ВЕДУЩЕЙ, а не список положений, которые не
-    спорят со схемой, и `none` в нём нет ни для одной сцены — по конструкции,
-    не по нашему случаю). Список безопасных положений при этом ЕСТЬ — тот же
-    `hf_montage.SCHEMA_SAFE_PRESENTER`, каким `positions_for` отвечает, когда
-    сцену держит сама схема. До сих пор его спрашивал только `pick_position`
-    при пересборке; сюда он зовётся тем же кодом — до заказа ведущей
-    (`D36_elements`, hf_render.py) и после сборки (`D11_schema` здесь), —
-    чтобы агент узнавал об отказе один раз, а не после того, как ведущая уже
-    оплачена.
+    Что зону закрывает: окно ведущей (`hf_layout.VIDEO_RECTS`), её лицо
+    (`face.json`) и полоса титра. Прогон `rb0907-philosophers`, сцена `s-08`
+    (`presenter: "punch"` + `schema.form: "brand"`) лёг ровно потому, что
+    геометрию схемы считал один `hf_schema.build`, который ни о ведущей, ни о
+    лице не знает: карточка бренда центровалась в полосе `0..980` и попала на
+    лицо.
+
+    `face` есть не всегда, и это не небрежность вызывающего, а порядок
+    прогона: `face.json` пишет `prepare` вместе с клипами
+    (`hf_render.py:1628`), то есть уже после HeyGen, а ранний гейт судит план
+    ДО заказа (`write_brief(..., face=None)`, hf_render.py:1497). Без замера
+    полнокадровая ведущая закрывает кадр целиком, и обещать схеме полосу
+    нечем — `schema_zone` отвечает `None`, и план отклоняется до денег. После
+    сборки (`D11_schema`) замер уже есть, и та же функция отвечает по нему:
+    сцена, где лицо стоит достаточно высоко, схему сохраняет — ужатой в
+    полосу под лицом.
     """
+    from reels_factory.hf_compose import SCHEMA_MIN_SCALE, schema_zone
+    from reels_factory.hf_montage import schema_safe_presenter
+    from reels_factory.hf_schema import SAFE_BOTTOM
+
     problems = []
+    need = round(SCHEMA_MIN_SCALE * SAFE_BOTTOM)
     for scene in scenes:
         if not schema_scene(scene):
             continue
         position = str(scene.get("presenter") or "none")
-        if position == "none" or position in SCHEMA_SAFE_PRESENTER:
+        if schema_zone(position, face=face) is not None:
             continue
-        corners = "/".join(f"`{name}`" for name in SCHEMA_SAFE_PRESENTER)
+        # Зоны нет по одной из двух причин, и агенту важна разница: при
+        # уголке или половине полоса есть, просто короткая, а при
+        # полнокадровой ведущей до заказа обещать нечего вовсе — лицо ещё не
+        # измерено. Полосу меряем той же функцией с нулевым полом, а не
+        # вторым счётом.
+        free = schema_zone(position, face=face, min_height=0)
+        room = (f'ей остаётся {free["height"]} px' if free else
+                "ведущая кроет кадр целиком, а где в нём окажется её лицо, "
+                "до заказа неизвестно")
+        corners = "/".join(f"`{name}`" for name in schema_safe_presenter())
         problems.append(
-            f'{scene.get("id", "?")}: схема встаёт в верхнюю треть кадра, а '
-            f"ведущая {position!r} занимает то же место — одна закроет "
-            f"другую. Дай сцене уголок {corners}, либо сними схему")
+            f'{scene.get("id", "?")}: схеме нужна полоса кадра выше слов '
+            f"титра и вне лица ведущей — не меньше {need} px, иначе подписи "
+            f"в ней уже не прочесть. При `{position}` {room}. Дай сцене "
+            f"уголок {corners}, либо сними схему")
     return problems
 
 
-def _schema_problems(storyboard: dict) -> list[str]:
+def _schema_problems(storyboard: dict, face: dict | None = None) -> list[str]:
     """Расхождения с их схемой v3 (SKILL.md:130-165, 610-616).
 
     Схема их, но список сцен у нас называется `scenes`, а не `cards`: карточкой
@@ -688,7 +702,7 @@ def _schema_problems(storyboard: dict) -> list[str]:
         for field in ("schema", "fallback"):
             problems += _form_problems(scene_id, field, scene.get(field))
         problems += elements_problems([scene])
-        problems += schema_position_problems([scene])
+        problems += schema_position_problems([scene], face)
         icon = scene.get("icon")
         if icon is not None and (
                 not isinstance(icon, dict)
@@ -903,10 +917,12 @@ def frame_filled_problems(scenes: list[dict]) -> list[str]:
     problems = []
     for scene in scenes:
         position = str(scene.get("presenter") or "full")
-        # Схема закрывает кадр наравне со вставкой: она стоит в верхней трети,
-        # и нижний уголок ведущей с ней не спорит. Считается и запланированная,
-        # а не только отрисованная: гейт судит и до сборки — а схему, которая в
-        # кадр не встала, `drop_schema` снимает вместе с уголком.
+        # Схема закрывает кадр наравне со вставкой: она занимает полосу над
+        # титром, и нижний уголок ведущей лежит ниже неё
+        # (`hf_compose.schema_zone` при таком положении отдаёт полосу целой).
+        # Считается и запланированная, а не только отрисованная: гейт судит и
+        # до сборки — а схему, которая в кадр не встала, `drop_schema` снимает
+        # вместе с уголком.
         #
         # Спрашиваем `schema_scene`, а не флаг `needsSchema`: флаг — это
         # просьба кода нарисовать запасную схему, и без пригодного `fallback`
@@ -965,7 +981,8 @@ def _empty_frame_problems(scenes: list[dict]) -> list[str]:
 
 
 def check_storyboard(storyboard: dict, *, clips: list[dict] | None = None,
-                     duration: float = 0.0) -> dict:
+                     duration: float = 0.0,
+                     face: dict | None = None) -> dict:
     """Гейты раскадровки. PASS либо FAIL с перечислением сцен."""
     scenes = storyboard.get("scenes") or []
 
@@ -988,7 +1005,7 @@ def check_storyboard(storyboard: dict, *, clips: list[dict] | None = None,
     #   `settle_inserts` переводит сцену без вставки на полнокадровую ведущую.
     #
     # D10 (зона карточки из списка пяти) снят раньше: зон в слоёном кадре нет.
-    result = {"D11_schema": gate(_schema_problems(storyboard)),
+    result = {"D11_schema": gate(_schema_problems(storyboard, face)),
               "D12_faceless_cover": gate(
                   _faceless_problems(scenes, clips or [], duration)),
               "D21_scene_contrast": gate(_sameness_problems(scenes)),
