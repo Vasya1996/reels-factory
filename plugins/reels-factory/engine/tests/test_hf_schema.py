@@ -238,6 +238,117 @@ def test_форме_нужна_своя_длина():
     assert min_seconds("metric", 1) == 2.6
 
 
+#: Тот же регексп на твин счёта, что и в проваленном первом расследовании —
+#: применяем его и к сырому шаблону, и к патчу, который `build()` в него
+#: вписывает: разойдись любой из двух с другим, тест ловит это первым.
+_COUNT_TWEEN_RE = re.compile(
+    r"v:\s*CONFIG\.value,\s*duration:\s*([\d.]+).*?\n\s*\},\s*\n\s*"
+    r"([\d.]+),\s*\n\s*\);", re.S)
+
+
+def _count_tween(text):
+    match = _COUNT_TWEEN_RE.search(text)
+    assert match, "твин счёта не найден — сверь регексп со свежим текстом"
+    return float(match.group(1)), float(match.group(2))  # duration, start
+
+
+def _fade_offset(html):
+    fade = re.search(r"duration:\s*[\d.]+,\s*ease:\s*\"power2\.in\"\s*\},\s*"
+                     r"DUR\s*-\s*([\d.]+)\);", html)
+    assert fade, "угасание не найдено — сверь регексп со свежим шаблоном"
+    return float(fade.group(1))
+
+
+def test_счёт_величины_читает_базовые_числа_из_их_шаблона():
+    """Их твин считает `CONFIG.value` со стартом 0,5 с и длительностью 1,6 с
+    (`mk-progress-stat.html:161-172`), не зная длины сцены — это и была
+    причина дефекта rb0907-university (сцена `s-21`, 07.09.2026): твин
+    кончается РОВНО на 2,1 с (гарантия GSAP) при ЛЮБОЙ длине сцены, и старый
+    пол `metric` (2,6 с) не оставлял между этим мигом и угасанием
+    (`DUR - 0,5`) ни одной секунды. Первая правка подняла пол числом (3,1 с)
+    — лечила симптом, не причину, и не различала дату (ей отсчёт не нужен
+    вовсе) и количество. Правка ниже масштабирует старт и длительность самого
+    твина под длину сцены (`_count_timing`), и пол вернулся к 2,6 с. Этот тест
+    читает базовые числа прямо из их шаблона, а не дублирует их литералом:
+    разойдись шаблон с кодом, тест поймает это первым, а не рендер на проде."""
+    from reels_factory.hf_catalog import CATALOG_DIR
+    from reels_factory.hf_schema import _COUNT_DURATION_BASE, _COUNT_START_BASE
+
+    html = (CATALOG_DIR / "registry" / "blocks" / "mk-progress-stat"
+            / "mk-progress-stat.html").read_text(encoding="utf-8")
+    count_duration, count_start = _count_tween(html)
+    assert count_duration == _COUNT_DURATION_BASE
+    assert count_start == _COUNT_START_BASE
+
+
+@pytest.mark.parametrize("duration", [2.6, 6.0])
+def test_счёт_количества_укладывается_в_долю_сцены_и_держится_до_угасания(duration):
+    """Для пола формы (2,6 с) и заметно более длинной сцены (6 с) счёт обязан
+    закончиться не позже 40 % длины сцены и оставить хотя бы 0,4 с до
+    угасания — тем же приёмом масштабирования, что у их `count-up`
+    (`root.dataset.duration`, `count-up.html:222-232`), но без масштабирования
+    ВВЕРХ: на 6 с твин остаётся тем же, что и в их шаблоне (2,1 с < 40% от 6),
+    длинная сцена просто держит готовое число дольше, а не считает его
+    дольше."""
+    from reels_factory.hf_catalog import CATALOG_DIR
+
+    html = (CATALOG_DIR / "registry" / "blocks" / "mk-progress-stat"
+            / "mk-progress-stat.html").read_text(encoding="utf-8")
+    fade_offset = _fade_offset(html)
+
+    _, _, _, patches = build("metric", {"value": "250000", "label": "выручка"},
+                             duration=duration, colors={})
+    needle, replacement = patches[0]
+    count_duration, count_start = _count_tween(replacement)
+    count_end = count_start + count_duration
+
+    assert count_end <= 0.4 * duration + 1e-3
+
+    settle_tolerance = 0.05  # тот же допуск, что и в hf_montage.settle_schemas
+    fade_start = (duration - settle_tolerance) - fade_offset
+    hold = fade_start - count_end
+    assert hold >= 0.4, (
+        f"при {duration} с счёт кончается на {count_end:.4f}, угасание "
+        f"начинается на {fade_start:.4f} — запас {hold:.4f} с меньше 0,4")
+
+
+def test_дата_в_metric_встаёт_сразу_без_счёта():
+    """rb0907-university, сцена `s-21`, 07.09.2026: `value: "23 августа"`.
+    Дата отвечает «когда», а не «сколько» — отсчитывать от нуля к ней нечего
+    (в кадре стояло «18 августа» на 67,0 с, «23» держалось долю секунды до
+    угасания), и полосы `value/max` у неё тоже нет — «стольких» не бывает."""
+    _, config, css, patches = build(
+        "metric", {"value": "23 августа", "label": "дедлайн приёма заявок"},
+        duration=2.6, colors={})
+    assert config["value"] == 23 and config["suffix"] == " августа"
+    assert "#mk-ps-track { display: none; }" in css
+    needle, replacement = patches[0]
+    assert ("num.textContent = Math.round(CONFIG.value) + CONFIG.suffix;"
+            in replacement)
+    assert "tl.to(" not in replacement
+
+
+@pytest.mark.parametrize("value", ["2026 год", "2020 года", "10:30", "10–20",
+                                    "12 (протокол № 88)"])
+def test_остальные_даты_и_номера_тоже_не_считаются(value):
+    """Месяц в любом падеже, «год/года», время, диапазон, «№» — тот же
+    признак «когда/который», что и у «23 августа»."""
+    _, _, css, patches = build("metric", {"value": value, "label": "х"},
+                               duration=2.6, colors={})
+    assert "#mk-ps-track { display: none; }" in css
+    needle, replacement = patches[0]
+    assert "tl.to(" not in replacement
+
+
+@pytest.mark.parametrize("value", ["100%", "8 из 10", "250 000 ₽", "87%"])
+def test_количества_считаются(value):
+    """Количество отвечает «сколько» — отсчёт для него честен и остаётся."""
+    _, _, _, patches = build("metric", {"value": value, "label": "х"},
+                             duration=2.6, colors={})
+    needle, replacement = patches[0]
+    assert "tl.to(" in replacement
+
+
 def test_ни_одна_форма_не_заезжает_на_полосу_титра():
     """Ниже 980 идут слова титра. Их проверка перекрытия ловит это через раз
     (на `brand` не поймала вовсе — белая плашка легла на первую строку), значит
