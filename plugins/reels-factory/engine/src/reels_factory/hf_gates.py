@@ -23,8 +23,9 @@ from reels_factory.hf_layout import (
     in_avatar_gap,
 )
 from reels_factory.hf_montage import (
-    FRAME_KINDS, SERIES_SHOTS, filling_element, frame_filler, insert_of,
-    same_look, scene_look, schema_scene, shot_queries,
+    FRAME_KINDS, SCHEMA_SAFE_PRESENTER, SERIES_SHOTS, filling_element,
+    frame_filler, insert_of, same_look, scene_look, schema_scene,
+    shot_queries,
 )
 from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 
@@ -599,6 +600,47 @@ def elements_delivered(plan: dict, storyboard: dict) -> dict:
                             + "; ".join(lost)}
 
 
+def schema_position_problems(scenes: list[dict]) -> list[str]:
+    """Положение ведущей не спорит со схемой, которую несёт сцена.
+
+    Схема встаёт в верхнюю треть кадра тем же правом, каким `effect` встаёт в
+    свою свободную зону (`hf_layout.effect_rect`) — но, в отличие от него, до
+    сих пор не была сверена ни с одним положением ведущей ни в одном гейте:
+    `hf_schema.build` презентера не читает вовсе, а `frame_filled_problems`
+    (D20/D25) схемную сцену пропускает — «схема закрывает кадр наравне со
+    вставкой». Прогон `rb0907-philosophers`, сцена `s-08`
+    (`presenter: "punch"` + `schema.form: "brand"`), лёг ровно так: карточка
+    бренда легла по центру верхней половины кадра — на лицо ведущей.
+
+    `none` изъят из проверки нарочно: без окна ведущей схеме спорить не с
+    чем, и это законно даже со вставкой в той же сцене (`s-07` того же
+    ролика — `presenter: "none"` + `insert` + `schema.form: "pairs"` — кадр
+    держит вставка, а `hf_montage.positions_for` для сцены со вставкой отдаёт
+    список кандидатов НА ПОЗИЦИЮ ВЕДУЩЕЙ, а не список положений, которые не
+    спорят со схемой, и `none` в нём нет ни для одной сцены — по конструкции,
+    не по нашему случаю). Список безопасных положений при этом ЕСТЬ — тот же
+    `hf_montage.SCHEMA_SAFE_PRESENTER`, каким `positions_for` отвечает, когда
+    сцену держит сама схема. До сих пор его спрашивал только `pick_position`
+    при пересборке; сюда он зовётся тем же кодом — до заказа ведущей
+    (`D36_elements`, hf_render.py) и после сборки (`D11_schema` здесь), —
+    чтобы агент узнавал об отказе один раз, а не после того, как ведущая уже
+    оплачена.
+    """
+    problems = []
+    for scene in scenes:
+        if not schema_scene(scene):
+            continue
+        position = str(scene.get("presenter") or "none")
+        if position == "none" or position in SCHEMA_SAFE_PRESENTER:
+            continue
+        corners = "/".join(f"`{name}`" for name in SCHEMA_SAFE_PRESENTER)
+        problems.append(
+            f'{scene.get("id", "?")}: схема встаёт в верхнюю треть кадра, а '
+            f"ведущая {position!r} занимает то же место — одна закроет "
+            f"другую. Дай сцене уголок {corners}, либо сними схему")
+    return problems
+
+
 def _schema_problems(storyboard: dict) -> list[str]:
     """Расхождения с их схемой v3 (SKILL.md:130-165, 610-616).
 
@@ -646,6 +688,7 @@ def _schema_problems(storyboard: dict) -> list[str]:
         for field in ("schema", "fallback"):
             problems += _form_problems(scene_id, field, scene.get(field))
         problems += elements_problems([scene])
+        problems += schema_position_problems([scene])
         icon = scene.get("icon")
         if icon is not None and (
                 not isinstance(icon, dict)

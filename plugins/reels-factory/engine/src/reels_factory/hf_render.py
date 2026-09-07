@@ -41,6 +41,7 @@ from reels_factory.hf_frame import read_frame
 from reels_factory.hf_gates import (
     check_media, check_placeholders, check_storyboard, elements_delivered,
     elements_problems, frame_choice_problems, frame_filled_problems,
+    schema_position_problems,
 )
 from reels_factory.hf_layout import FULL_FRAME_PRESENTER, quantize
 from reels_factory.hf_media import resolve_all
@@ -1229,8 +1230,17 @@ def _early_plan_gates(scenes: list[dict], duration: float,
     # `_sample_plan` в hf_brief.py). Судим тем же кодом, а не своей копией:
     # разойтись двум местам иначе нечем.
     #
-    # Про схему гейт не спрашивает отдельно — `frame_filled_problems` считает
-    # `schema_scene` наравне со вставкой.
+    # Про пустоту кадра гейт не спрашивает у схемы отдельно —
+    # `frame_filled_problems` считает `schema_scene` наравне со вставкой. Про
+    # СПОР схемы с ведущей — спрашивает: до работы D36 схема не была сверена
+    # ни с одним положением ведущей ни в одном гейте (`hf_schema.build`
+    # презентера не читает вовсе), и боевой прогон `rb0907-philosophers`
+    # (сцена `s-08`, `presenter: "punch"` + `schema.form: "brand"`) отдал
+    # карточку бренда на лицо ведущей. Список безопасных положений уже
+    # существовал — `hf_montage.positions_for` — но его спрашивал только
+    # `pick_position` при пересборке, а решение агента до заказа не сверял
+    # никто.
+    schema_positions = schema_position_problems(scenes)
     # Имя позиции каталога сверяется до заказа по той же причине: их
     # `hyperframes add` неизвестное имя не ставит и роняет попытку сборки, а
     # ставит он блоки уже после того, как ведущую сняли и оплатили. Тот же
@@ -1257,6 +1267,11 @@ def _early_plan_gates(scenes: list[dict], duration: float,
             "оплаченной ведущей. Имена, слоты и переменные позиций "
             "перечислены в `catalog.index.md` рядом с заданием: "
             + "; ".join(named))
+    if schema_positions:
+        trouble.append(
+            "схема встаёт в верхнюю треть кадра, и ведущая, занявшая то же "
+            "место, закроет её собой (или схема закроет лицо): "
+            + "; ".join(schema_positions))
     result["D36_elements"] = "PASS" if not trouble else "FAIL: " + " ".join(
         trouble)
 

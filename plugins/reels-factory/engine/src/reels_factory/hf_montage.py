@@ -455,6 +455,15 @@ def frame_filler(scene: dict) -> str:
     return ""
 
 
+#: Положения ведущей, с которыми схема не спорит за верхнюю треть кадра. Со
+#: вставкой в той же сцене или без неё — правило одно: схема встаёт в ту же
+#: зону, что и `stack`/верхние уголки, и делит кадр только с нижними.
+#: `positions_for` ниже отдаёт этот список первым, когда сцена держится не
+#: вставкой, а собственно схемой; гейт `hf_gates.schema_position_problems`
+#: сверяет по нему то, что уже назвал агент, — до заказа ведущей.
+SCHEMA_SAFE_PRESENTER = ("pip-br", "pip-bl")
+
+
 def positions_for(scene: dict) -> tuple[str, ...]:
     """Положения ведущей, при которых кадр этой сцены остаётся закрытым.
 
@@ -479,7 +488,7 @@ def positions_for(scene: dict) -> tuple[str, ...]:
     if insert_of(scene):
         return ("pip-tr", "pip-tl", "stack", "pip-br", "pip-bl")
     if schema_scene(scene):
-        return ("pip-br", "pip-bl")
+        return SCHEMA_SAFE_PRESENTER
     if filling_element(scene):
         corners = ("pip-br", "pip-bl", "pip-tr", "pip-tl")
         own = str(scene.get("presenter") or "none")

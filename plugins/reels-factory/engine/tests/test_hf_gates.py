@@ -6,6 +6,7 @@ from pathlib import Path
 from reels_factory.hf_gates import (
     check_frame_filled, check_media, check_placeholders, check_storyboard,
     elements_problems, frame_filled_problems, min_scenes,
+    schema_position_problems,
 )
 from reels_factory.hf_layout import FULL_FRAME_PRESENTER, quantize
 
@@ -693,6 +694,37 @@ def test_подложка_под_полнокадровой_ведущей_ло�
     for position in ("pip-tr", "pip-br", "stack", "none"):
         assert elements_problems(_элементы({"name": "demo-scene"},
                                            presenter=position)) == [], position
+
+
+def test_схема_под_полнокадровой_ведущей_ловится_до_заказа():
+    """rb0907-philosophers, сцена `s-08`: `presenter: "punch"` +
+    `schema.form: "brand"` — карточка бренда легла по центру верхней половины
+    кадра, на лицо ведущей. Ни один гейт этого не ловил: `hf_schema.build`
+    презентера не читает, а `frame_filled_problems` (D20/D25) схемную сцену
+    пропускает вовсе. Каталог тут не нужен — вопрос не про позицию каталога,
+    а про поле `schema`, и `_scene` его не трогает.
+    """
+    schema = {"form": "brand", "why": "назван бренд", "brands": ["acme"]}
+    for position in FULL_FRAME_PRESENTER | {"stack", "pip-tr", "pip-tl"}:
+        problems = schema_position_problems(
+            [_scene(8, 24.0, 27.0, presenter=position, schema=schema)])
+        assert len(problems) == 1, position
+        assert "верхн" in problems[0] and position in problems[0]
+    # Нижние уголки не спорят со схемой — она стоит в верхней трети.
+    for position in ("pip-br", "pip-bl"):
+        assert schema_position_problems(
+            [_scene(8, 24.0, 27.0, presenter=position, schema=schema)]) == [], position
+    # `none` — без окна ведущей спорить со схемой нечему, даже со вставкой в
+    # той же сцене (rb0907-philosophers, s-07: presenter `none` + insert +
+    # schema `pairs` — кадр держит вставка, и это законно).
+    assert schema_position_problems(
+        [_scene(7, 20.0, 24.0, presenter="none", insert=_photo("человек"),
+                schema={"form": "pairs", "why": "характеристики",
+                        "rows": [{"label": "делай", "value": "честно"}]})]
+    ) == []
+    # Сцена без схемы этим гейтом не спрашивается вовсе — любое положение
+    # ведущей законно.
+    assert schema_position_problems([_scene(1, 0.0, 3.0, presenter="punch")]) == []
 
 
 def test_позиция_со_слотом_под_файл_без_вставки_ловится_до_заказа(каталог):
