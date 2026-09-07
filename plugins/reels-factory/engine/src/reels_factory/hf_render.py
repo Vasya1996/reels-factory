@@ -679,6 +679,23 @@ def _check_findings(log: Path, *, severities=("error", "warning")) -> list[str]:
     Формат отчёта — `CheckReport` (packages/cli/src/utils/checkTypes.ts:260-282):
     на верхнем уровне никаких `errors`/`issues`, находки лежат в `findings`
     каждой из пяти секций.
+
+    Коды `CHECK_IGNORED_CODES` отфильтрованы тем же списком, что и в
+    `_check_ok` — иначе список расходится с вердиктом: ролик
+    `rb0907-philosophers` (07.09.2026) провалил D0_check тремя находками
+    `contrast_aa_failure` (`mk-specs-list--s-07.html`, схема `pairs` над
+    вставкой), но текст FAIL перед этой правкой начинался с
+    `studio_missing_editable_id` (`focus-swap--s-05.html`, находка их
+    незаполненного `<div class="fs-clip">` — их же шаблон
+    `registry/components/focus-swap/focus-swap.html:181` без `id`, идентичный
+    нашей копии `catalog/registry/components/focus-swap/focus-swap.html:181`,
+    а не порча при установке). `_check_ok` этот код уже не считает виновником
+    (игнор-лист заведён 9420536), но `_check_findings` собирала текст находок
+    без того же фильтра — то есть сообщение врало о причине провала первой же
+    строкой. Правки геометрии тут не нужно: адресата у правила нет ни у нас,
+    ни в их коде (докстрока `CHECK_IGNORED_CODES`), а патчить их же вендорную
+    копию ради находки, которая ни на что не влияет, добавило бы код без
+    причины.
     """
     if not log.exists():
         return []
@@ -692,6 +709,8 @@ def _check_findings(log: Path, *, severities=("error", "warning")) -> list[str]:
         for item in section.get("findings") or []:
             if not isinstance(item, dict):
                 found.append(str(item))
+                continue
+            if item.get("code") in CHECK_IGNORED_CODES:
                 continue
             if item.get("severity") not in severities:
                 continue
