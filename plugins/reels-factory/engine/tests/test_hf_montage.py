@@ -852,6 +852,7 @@ def test_соседки_нет_и_пустая_сцена_остаётся_ге�
                "insert": None, "phrases": [0, 3]}]
     dedupe_neighbours(scenes, clips=[], duration=9.0)
     assert len(scenes) == 1
+    assert frame_filler(scenes[0]) == ""
 
 
 # ---------- режиссура ----------

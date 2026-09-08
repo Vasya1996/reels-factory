@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reels_factory.hf_montage import SERIES_MAX, SERIES_MIN
+from reels_factory.hf_montage import RHYTHMS, SERIES_MAX, SERIES_MIN
 
 SKILL_NAME = "reels-montage"
 
@@ -491,7 +491,7 @@ types for the whole video and repeat them» (`TRANSITION-REGISTRY.md:154`) —
 - Сцена с ведущей живёт не короче {seconds(min_scene)}. У сцены со вставкой,
   схемой или плашкой свой пол — он старше этого; у сцены без ведущей пол
   {seconds(min_fullscreen)} (правило ниже).
-- Ни одна сцена не длиннее {seconds(max_static)}.
+- Ни одна сцена не длиннее потолка своего паттерна — числа в таблице раздела «Режиссура» ({seconds(RHYTHMS["steady"]["holdMax"])} у `calm`/`steady`, {seconds(RHYTHMS["punchy"]["holdMax"])} у `punchy`, по рампе у `build`).
 {_blind_floor_rule(avatar_ordered, min_fullscreen)}
 {_face_absence_rule(avatar_ordered, max_face_absence)}
 - Меняй картинку между соседними сценами — положение ведущей либо вставку.
