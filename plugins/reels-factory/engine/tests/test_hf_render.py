@@ -84,6 +84,7 @@ def _fakes(monkeypatch, tmp_path, storyboards):
                                            "D14_presenter_moves": "PASS",
                                            "D15_inserts_visible": "PASS",
                                            "D17_service_text": "PASS"})
+    monkeypatch.setattr(hf_render.hf_captions, "install", lambda rdir: rdir)
     monkeypatch.setattr(hf_render.hf_captions, "stage", lambda rdir: rdir)
     monkeypatch.setattr(hf_render, "collect_intents", lambda board: [])
     monkeypatch.setattr(hf_render, "settle_inserts",
@@ -1661,6 +1662,85 @@ def test_сборка_проходит_все_шаги(tmp_path, monkeypatch):
     assert Path(res["mp4"]).exists()
     # каталог прописан до того, как агента позвали
     assert (tmp_path / "hyperframes.json").exists()
+
+
+def test_prepare_греет_hf_captions_install_а_не_кладёт_в_public(tmp_path,
+                                                                monkeypatch):
+    """`prepare` больше не копирует компонент субтитров в `public/` —
+    только греет `.hf-captions/` через `install` (сеть и `_vet`). Копию в
+    композицию кладёт `compose` (следующий тест), иначе правка `VETTED` не
+    доезжает ни до одного уже подготовленного job: маркер `.hf-prepare.done`
+    не снимается ни на продолжении, ни на пересборке."""
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [GOOD])
+    calls = []
+
+    def fake_install(rdir):
+        calls.append(("install", hf_render.step_done(rdir, "prepare")))
+        return Path(rdir)
+
+    def fake_stage(rdir):
+        calls.append(("stage", hf_render.step_done(rdir, "prepare")))
+        return Path(rdir)
+
+    monkeypatch.setattr(hf_render.hf_captions, "install", fake_install)
+    monkeypatch.setattr(hf_render.hf_captions, "stage", fake_stage)
+
+    hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    имена = [call[0] for call in calls]
+    assert "install" in имена, "prepare обязан звать hf_captions.install"
+    assert "stage" in имена, "compose обязан звать hf_captions.stage"
+    install_at_prepare_marker = next(
+        готов for имя, готов in calls if имя == "install")
+    stage_at_prepare_marker = next(
+        готов for имя, готов in calls if имя == "stage")
+    assert install_at_prepare_marker is False, (
+        "install позван изнутри prepare — маркер .hf-prepare.done ещё не "
+        "успел появиться")
+    assert stage_at_prepare_marker is True, (
+        "stage позван изнутри compose, уже после того как prepare "
+        "отметился маркером .hf-prepare.done")
+
+
+def test_пересборка_кладёт_компонент_субтитров_заново(tmp_path, monkeypatch):
+    """Рестарт без `prepare` (маркер `.hf-prepare.done` цел — ровно так
+    выглядит пересборка и продолжение job) обязан всё равно обновить
+    `public/compositions/components/caption-highlight.html`: иначе правка
+    `VETTED` не доезжает ни до одного уже подготовленного job — на прогоне
+    08.09.2026 (`rb0908-university`) composed `captions.js` вышел без
+    единого `fonts.load`, хотя исправление уже стояло в коде."""
+    from reels_factory import hf_render
+
+    _fakes(monkeypatch, tmp_path, [GOOD, GOOD])
+    stage_calls = []
+
+    def fake_stage(rdir):
+        stage_calls.append(rdir)
+        return Path(rdir)
+
+    monkeypatch.setattr(hf_render.hf_captions, "stage", fake_stage)
+
+    hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+    assert len(stage_calls) == 1
+    assert hf_render.step_done(tmp_path, "prepare") is True
+
+    # Пересборка: prepare остаётся выполненным, снимается только compose —
+    # ровно так её снимает продолжение/пересборка уже подготовленного job
+    # (см. test_повторный_prepare_не_снимает_материал_заново выше).
+    hf_render.reset_step(tmp_path, "compose")
+    hf_render.assemble_hyperframes(
+        tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
+        master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
+
+    assert len(stage_calls) == 2, (
+        "compose обязан класть свежий компонент субтитров в public/ на "
+        "каждом заходе, даже когда .hf-prepare.done цел")
 
 
 def test_расход_агента_доезжает_до_итога_сборки(tmp_path, monkeypatch):

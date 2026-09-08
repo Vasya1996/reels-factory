@@ -1648,8 +1648,15 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
         media = _media_from_plan(edit_plan, public) + _prepare_material(
             edit_plan, public, rdir)
         # Компонент субтитров тянется из их общего реестра по сети: делаем это
-        # пока агент ещё не начал, чтобы сборка потом не ждала загрузку.
-        hf_captions.stage(rdir)
+        # пока агент ещё не начал, чтобы сборка потом не ждала загрузку. Копию
+        # в `public/` кладёт не `prepare` — `install` только греет `.hf-captions/`
+        # (сеть и `_vet` разом), а копирует в композицию `compose` при каждом
+        # заходе: `prepare` не переигрывается на пересборке и продолжении
+        # (маркер `.hf-prepare.done` не снимается), и правка `VETTED` иначе не
+        # доезжала ни до одного уже подготовленного job — прогон 08.09.2026
+        # (`rb0908-university`) собрал `captions.js` без единого `fonts.load`
+        # при исправленном `VETTED` в коде.
+        hf_captions.install(rdir)
         # Задание сюда не пишем: `prepare` заводит файлы кадра (клипы, звук,
         # лицо), а не текст для агента. Кто зовёт агента, тот и пишет задание —
         # ниже, прямо перед вызовом `plan_with_agent`, из тех же материалов.
@@ -1804,6 +1811,14 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
 
             def compose() -> dict:
                 clear_generated(public)
+                # Компонент субтитров переносим в композицию здесь, а не в
+                # `prepare`: та ставит файлы один раз на job, а копию в
+                # `public/` обязан видеть каждый заход `compose` — рестарт
+                # без пересборки `prepare` иначе собирал бы кадр со старой
+                # копией компонента (`.hf-prepare.done` цел на продолжении и
+                # пересборке). `install` внутри `stage` сеть уже не трогает —
+                # она отработала в `prepare`, здесь только byte-copy.
+                hf_captions.stage(rdir)
                 # Накладки ставит их же `add` из нашего каталога — сервер
                 # реестра поднят на всё время сборки.
                 for block in needed_blocks(board):

@@ -4175,8 +4175,11 @@ def clear_generated(public: Path) -> None:
     блока, которого в плане не было вовсе. Нужные блоки сборка ставит заново
     сама, это секунды.
 
-    Компоненты (`compositions/components/`) не трогаем: субтитры ставятся один
-    раз на прогон и от плана не зависят.
+    Компоненты (`compositions/components/`) не трогаем: `glob("*.html")` не
+    заходит в подпапку, и удалять оттуда нечего — а титр в ней и не нужно
+    чистить, `hf_captions.stage` перезаписывает его на каждом `compose`
+    (вызов стоит прямо здесь же, в `hf_render.compose`, следом за этой
+    функцией).
     """
     compositions = public / "compositions"
     if not compositions.exists():
