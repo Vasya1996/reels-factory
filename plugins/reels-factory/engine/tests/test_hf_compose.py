@@ -1084,7 +1084,7 @@ def test_количество_в_metric_по_прежнему_встаёт_mk_pr
     assert "tl.to(" in copy  # твин счёта на месте — величина растёт
 
 
-def test_дата_в_metric_встаёт_number_pop_in(run):
+def test_дата_в_metric_встаёт_number_pop_in(run, monkeypatch):
     """rb0908-university: дата — не количество, и отсчитывать ей нечего.
     Компонент, у которого для неё есть слот (`number-pop-in`, снят с
     `reels.skip` в этой же правке), встаёт паста-примитивом в тот же слот
@@ -1092,6 +1092,12 @@ def test_дата_в_metric_встаёт_number_pop_in(run):
     саб-композиции `mk-progress-stat` (`hf_schema._is_dateline` +
     `date_variables`, схемная ветка `hf_compose`)."""
     _install_number_pop_in(run)
+    # Замер нарисованного (масштаб до канона счётчика) требует настоящего
+    # браузера — та же причина, что у `_measured_content_box` в фикстуре
+    # `каталог`: заводить его в этом тесте нечем и незачем, отдельный тест
+    # ниже (`test_дата_масштабируется_до_канона_числа`) проверяет саму
+    # арифметику с подменённым измерением.
+    monkeypatch.setattr(hf_compose, "_measured_paste_box", lambda *a, **k: None)
     html, board = _build(run, scenes=_metric_scene("20 августа"), resolved={})
     assert board["scenes"][1]["schemaShown"] is True
     # Паста-примитив: своей саб-композиции нет вовсе, и файла `mk-progress-
@@ -1119,6 +1125,41 @@ def test_дата_в_metric_встаёт_number_pop_in(run):
         encoding="utf-8")
     assert "hf-transition-number-pop-in" in code
     assert "const startTime = 3.0333;" in code
+
+
+def test_дата_масштабируется_до_канона_числа(run, monkeypatch):
+    """rb0908-university, 08.09.2026 00:51 UTC: с компонентом установленным
+    вручную дата вставала на родном кегле `number-pop-in` (76px) — около
+    60px измеренным прямоугольником — там, где `mk-progress-stat` в той же
+    зоне рисует число канона в 190px (`SCHEMA_METRIC_NUMBER_HEIGHT`). Замер
+    нарисованного (здесь — подменённый, реальный браузер не заводим) обязан
+    поднять число трансформом на внутреннем слое до той же зоны, какой
+    ужался бы сам счётчик."""
+    _install_number_pop_in(run)
+    monkeypatch.setattr(hf_compose, "_measured_paste_box",
+                        lambda *a, **k: {"left": 0, "top": 0,
+                                         "width": 240, "height": 60})
+    html, board = _build(run, scenes=_metric_scene("20 августа"), resolved={})
+    assert board["scenes"][1]["schemaShown"] is True
+    zone = hf_compose.schema_zone("none")
+    expected = round(hf_compose.SCHEMA_METRIC_NUMBER_HEIGHT * zone["scale"]
+                     / 60, 4)
+    box = html[html.index('id="schema-s-02"'):]
+    match = re.search(r"transform:scale\(([\d.]+)\)", box)
+    assert match, "паста без трансформа — измерение не применилось"
+    assert float(match.group(1)) == expected
+
+
+def test_дата_без_измерения_остаётся_на_родном_кегле(run, monkeypatch):
+    """Браузера нет (нет `node`, не закреплён Chrome) — то же отступление,
+    что у `_measured_content_box`: паста собирается как раньше, безо всякого
+    трансформа, а не роняет сборку и не выдумывает масштаб."""
+    _install_number_pop_in(run)
+    monkeypatch.setattr(hf_compose, "_measured_paste_box", lambda *a, **k: None)
+    html, board = _build(run, scenes=_metric_scene("20 августа"), resolved={})
+    assert board["scenes"][1]["schemaShown"] is True
+    box = html[html.index('id="schema-s-02"'):][:2000]
+    assert "transform:scale" not in box
 
 
 def test_схема_поверх_вставки_получает_плашку_читаемости(run):
@@ -1620,6 +1661,30 @@ def test_позиция_со_skip_в_установку_не_попадает(mo
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["elements"] = [{"name": "demo-skip-component"}]
     assert "demo-skip-component" not in needed_blocks(_board(scenes))
+
+
+def test_дата_в_metric_ставит_number_pop_in_в_установку_блоков():
+    """rb0908-university, 08.09.2026 00:51 UTC: дата формы `metric` не
+    собирается блоком `FORMS['metric']` (`mk-progress-stat`) — её монтирует
+    компонент каталога `number-pop-in` (схемная ветка `hf_compose`,
+    `_is_dateline` + `date_variables`), а без него в списке `hyperframes add`
+    паста падает `[Errno 2] No such file …/number-pop-in.html` на любом
+    плане, ни разу не назвавшем компонент элементом сцены — ни один из пяти
+    боевых планов не называет."""
+    from reels_factory.hf_compose import needed_blocks
+    blocks = needed_blocks(_board(_metric_scene("20 августа")))
+    assert "number-pop-in" in blocks
+    assert "mk-progress-stat" not in blocks
+
+
+def test_количество_в_metric_не_ставит_number_pop_in_в_установку_блоков():
+    """Регресс-стража к маршрутизации: количество — не дата
+    (`hf_schema._is_dateline`), и установку по-прежнему получает
+    `mk-progress-stat`, а не паста-примитив, которому тут нечего делать."""
+    from reels_factory.hf_compose import needed_blocks
+    blocks = needed_blocks(_board(_metric_scene("87 %")))
+    assert "mk-progress-stat" in blocks
+    assert "number-pop-in" not in blocks
 
 
 # ---------- что не встанет в кадр, снимается до разбора пустых сцен ----------
