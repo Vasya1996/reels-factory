@@ -1162,6 +1162,75 @@ def test_дата_без_измерения_остаётся_на_родном_�
     assert "transform:scale" not in box
 
 
+def test_paste_box_scale_по_ширине_зоны_с_потолком_по_высоте():
+    """`_paste_box_scale` — тот же приём, что `_overlay_geometry`: сперва
+    масштаб по ширине зоны, а если высота при таком масштабе не умещается —
+    масштаб падает до потолка высоты. Числа подобраны так, чтобы в одном
+    тесте был виден и случай, где потолок не понадобился, и случай, где он
+    сработал."""
+    rect = {"left": 0, "top": 583, "width": 300, "height": 100}
+    # По ширине: 300/150 = 2.0; высота при этом 40*2 = 80 <= 100 — потолок
+    # не трогает число.
+    assert hf_compose._paste_box_scale(
+        {"width": 150, "height": 40}, rect) == 2.0
+    # По ширине была бы 300/100 = 3.0, но высота 40*3 = 120 > 100 — масштаб
+    # падает до потолка 100/40 = 2.5.
+    assert hf_compose._paste_box_scale(
+        {"width": 100, "height": 40}, rect) == 2.5
+    # Измерить нечем — масштаб единица, паста остаётся на родном кегле (тот
+    # же контракт отступления, что у `_run_measure_script`).
+    assert hf_compose._paste_box_scale(None, rect) == 1.0
+    assert hf_compose._paste_box_scale({"width": 0, "height": 0}, rect) == 1.0
+
+
+def test_paste_scale_wrap_оборачивает_только_если_масштаб_не_единица():
+    """Разметка обёртки — одна на схемный маршрут и на цикл элементов сцены:
+    масштаб 1.0 значит паста осталась на родном кегле, и оборачивать её не в
+    что — лишний слой без трансформа менял бы только разметку, не кадр."""
+    assert hf_compose._paste_scale_wrap("<div>x</div>", 1.0) == "<div>x</div>"
+    assert (hf_compose._paste_scale_wrap("<div>x</div>", 2.5)
+           == '<div style="transform:scale(2.5)"><div>x</div></div>')
+
+
+def test_paste_эффект_в_цикле_элементов_масштабируется_до_зоны(run, monkeypatch):
+    """rb0908-university, сцена s-18 (08.09.2026): агент назвал `number-pop-
+    in` элементом сцены на `pip-tr` (вставка почти во весь кадр), и число
+    садилось флекс-центром на родном кегле (~40px измеренным прямоугольником
+    на контакт-листе, 67,15 с) — втрое мельче того же числа на схемном
+    маршруте. Замер (здесь — подменённый, реальный браузер не заводим) обязан
+    поднять число тем же приёмом, что уже поднимает его схемный маршрут
+    (`_paste_box_scale`), до свободной зоны кадра при этом положении ведущей
+    (`effect_zone`), а не оставлять на родном кегле."""
+    _install_number_pop_in(run)
+    drawn = {"left": 0, "top": 0, "width": 240, "height": 60}
+    monkeypatch.setattr(hf_compose, "_measured_paste_box", lambda *a, **k: drawn)
+    html, board = _build(run, scenes=_с_элементами(
+        {"name": "number-pop-in",
+         "variables": {"value": "23", "unit": "августа"}}), resolved={})
+    assert board["scenes"][1]["elements"][0]["name"] == "number-pop-in"
+    rect = hf_compose.effect_zone("pip-tr")
+    expected = hf_compose._paste_box_scale(drawn, rect)
+    assert expected != 1.0, "зона и измерение подобраны так, чтобы масштаб менялся"
+    frame = html[html.index('id="el-s-02-0"'):][:2000]
+    match = re.search(r"transform:scale\(([\d.]+)\)", frame)
+    assert match, "паста-эффект без трансформа — измерение не применилось"
+    assert float(match.group(1)) == expected
+
+
+def test_paste_эффект_без_измерения_остаётся_на_родном_кегле(run, monkeypatch):
+    """Тот же контракт отступления, что у схемного маршрута: браузера нет —
+    паста-эффект в цикле элементов остаётся без трансформа, как до этой
+    правки, а не роняет сборку и не выдумывает масштаб."""
+    _install_number_pop_in(run)
+    monkeypatch.setattr(hf_compose, "_measured_paste_box", lambda *a, **k: None)
+    html, board = _build(run, scenes=_с_элементами(
+        {"name": "number-pop-in",
+         "variables": {"value": "23", "unit": "августа"}}), resolved={})
+    assert board["scenes"][1]["elements"][0]["name"] == "number-pop-in"
+    frame = html[html.index('id="el-s-02-0"'):][:2000]
+    assert "transform:scale" not in frame
+
+
 def test_схема_поверх_вставки_получает_плашку_читаемости(run):
     """Job rb0907-philosophers, сцена s-07: `presenter: "none"`, но `insert`
     назван и приехал — под схемой лежит реальный сток на весь кадр
