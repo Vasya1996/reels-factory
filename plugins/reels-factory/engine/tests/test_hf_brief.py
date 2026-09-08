@@ -14,9 +14,10 @@ from reels_factory.avatar_islands import DEFAULTS as ISLAND_DEFAULTS
 from reels_factory.editplan import MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S
 from reels_factory.hf_brief import FONTS, write_brief
 from reels_factory.hf_gates import min_scenes as _min_scenes
-from reels_factory.hf_montage import SERIES_MAX, SERIES_MIN, face_gap, inserts_wanted
+from reels_factory.hf_montage import (
+    RHYTHMS, SERIES_MAX, SERIES_MIN, face_gap, inserts_wanted,
+)
 from reels_factory.hf_phrases import MIN_SCENE
-from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 from reels_factory.hf_schema import LIMITS, MINIMUM, min_seconds
 # Написание секунд одно на оба текста, и тесты обязаны искать ровно его:
 # «29,05 с» печатается как «29 с», и поиск по `f"{x:.1f}"` находил бы пустоту.
@@ -3201,8 +3202,14 @@ def test_числа_задания_совпадают_с_числами_кода
 
     assert f"не короче {_секунды(MIN_SCENE)}" in skill, (
         f"{name}: пол обычной сцены не сходится с MIN_SCENE")
-    assert f"не длиннее {_секунды(MAX_STATIC_SPAN)}" in skill, (
-        f"{name}: потолок сцены не сходится с MAX_STATIC_SPAN")
+    потолки = (
+        f"числа в таблице раздела «Режиссура» "
+        f"({_секунды(RHYTHMS['steady']['holdMax'])} у `calm`/`steady`, "
+        f"{_секунды(RHYTHMS['punchy']['holdMax'])} у `punchy`, "
+        "по рампе у `build`)"
+    )
+    assert потолки in skill, (
+        f"{name}: потолок сцены по паттерну не сходится с RHYTHMS")
     assert _секунды(MIN_FULLSCREEN_S) in skill, (
         f"{name}: пол сцены без ведущей не сходится с MIN_FULLSCREEN_S")
 
