@@ -357,11 +357,16 @@ def test_уже_лежащая_в_staging_версия_без_подгонки_�
     assert result.read_bytes() == hf_captions.VETTED.read_bytes()
 
 
-def test_уже_лежащая_в_staging_версия_с_обеими_правками_остаётся(
+def test_три_метки_есть_но_байты_не_vetted_всё_равно_заменяются(
         tmp_path, monkeypatch):
-    """Обратный случай — компонент в staging уже несёт все три метки
-    (собран уже после PR #98/#102): `install()` возвращает его как есть, а не
-    подменяет проверенным файлом почём зря, и `npx` не запускает."""
+    """08.09.2026, прод, задание `rb0908-university`: `.hf-captions/` несла
+    компонент от 31.08 — до PR #105 с прогревом кириллического начертания
+    перед подгонкой кегля. Все три метки (`DATA_HOOK`/`FIT_MARKER`/
+    `CONTRAST_MARKER`) уже были внутри этого старого файла, старый
+    маркерный `_vet` принимал его как свой ранним возвратом, и
+    «ИССЛЕДОВАТЕЛЯМИ» обрезало по краям кадра. Критерий теперь — совпадение
+    байтов с `VETTED`, а не список меток: файл с тремя метками, но чужим
+    телом, обязан замениться."""
     import subprocess
 
     from reels_factory import hf_captions
@@ -369,19 +374,50 @@ def test_уже_лежащая_в_staging_версия_с_обеими_прав�
     def fail_run(cmd, **kwargs):
         raise AssertionError("npx add не должен запускаться: target уже есть")
 
-    vetted_text = hf_captions.VETTED.read_text(encoding="utf-8")
-    assert hf_captions.DATA_HOOK in vetted_text
-    assert hf_captions.FIT_MARKER in vetted_text
-    assert hf_captions.CONTRAST_MARKER in vetted_text
+    stale_with_all_markers = (
+        "<html><body>"
+        f"{hf_captions.DATA_HOOK} {hf_captions.FIT_MARKER} "
+        f"{hf_captions.CONTRAST_MARKER}"
+        "</body></html>"
+    )
+    assert stale_with_all_markers != hf_captions.VETTED.read_text(encoding="utf-8")
 
     target = tmp_path / ".hf-captions" / hf_captions.COMPONENT_REL
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(vetted_text, encoding="utf-8")
+    target.write_text(stale_with_all_markers, encoding="utf-8")
 
     monkeypatch.setattr(hf_captions.subprocess, "run", fail_run)
     result = hf_captions.install(tmp_path)
     assert result == target
-    assert result.read_text(encoding="utf-8") == vetted_text
+    assert result.read_bytes() == hf_captions.VETTED.read_bytes()
+
+
+def test_уже_лежащая_в_staging_версия_идентичная_vetted_не_перезаписывается(
+        tmp_path, monkeypatch):
+    """Совпадающие с `VETTED` байты не должны трогать файл: не только
+    содержимое остаётся тем же, но и `_vet` не должен переписывать файл,
+    когда сверять уже нечего — иначе каждый прогон бил бы по диску и по
+    mtime staging-копии без всякой причины."""
+    import shutil
+    import subprocess
+    import time
+
+    from reels_factory import hf_captions
+
+    def fail_run(cmd, **kwargs):
+        raise AssertionError("npx add не должен запускаться: target уже есть")
+
+    target = tmp_path / ".hf-captions" / hf_captions.COMPONENT_REL
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(hf_captions.VETTED, target)
+    before_mtime = target.stat().st_mtime_ns
+    time.sleep(0.01)
+
+    monkeypatch.setattr(hf_captions.subprocess, "run", fail_run)
+    result = hf_captions.install(tmp_path)
+    assert result == target
+    assert target.stat().st_mtime_ns == before_mtime
+    assert result.read_bytes() == hf_captions.VETTED.read_bytes()
 
 
 def test_движок_титра_уезжает_отдельным_файлом(tmp_path):
