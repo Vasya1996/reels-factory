@@ -17,3 +17,9 @@ node_modules/
 
 # Ассеты онбординга бота коммитятся несмотря на *.mp4
 !plugins/reels-factory/engine/assets/demo_example.mp4
+
+.claude/settings.local.json
+.claude/worktrees/
+.worktrees/
+.claude/hooks/.npm-latest
+.claude/skills/social/
