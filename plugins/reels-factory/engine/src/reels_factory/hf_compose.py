@@ -62,6 +62,7 @@ import math
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from reels_factory.config import FPS, OUT_H, OUT_W
@@ -79,6 +80,8 @@ from reels_factory.hf_montage import (
 )
 from reels_factory.hf_schema import (
     FORMS, SAFE_BOTTOM as SCHEMA_SAFE_BOTTOM, build as schema_build,
+    date_variables as schema_date_variables,
+    _is_dateline as schema_is_dateline,
     is_elastic as schema_is_elastic, min_seconds as schema_min_seconds,
     frame_variables, overlay_css, palette_css, port_block,
 )
@@ -280,6 +283,17 @@ def effect_zone(presenter: str) -> dict | None:
 #: полосу `SAFE_BOTTOM`, значит её доля — доля этой полосы.
 SCHEMA_MIN_SCALE = 0.45
 
+#: Высота, которую в полной зоне схемы рисует ЧИСЛО их же счётчика —
+#: `mk-progress-stat`: `font-size: 190px` при `line-height: 1`
+#: (реестр, `mk-progress-stat.html:40`; тот же канон уже назван прозой у
+#: `hf_schema.build`, `hf_schema.py:742`). Дата/номер формы `metric` встаёт
+#: не этим блоком, а компонентом `number-pop-in` — на его родном кегле
+#: (76px, `number-pop-in.html:52`) число рисуется заметно мельче, около
+#: 60px измеренным прямоугольником (прогон rb0908-university, сцена
+#: метрики-даты, 08.09.2026, 00:51 UTC), и без подгонки до этого канона
+#: дата в той же зоне читается втрое мельче числа, которое она заменяет.
+SCHEMA_METRIC_NUMBER_HEIGHT = 190
+
 
 def schema_zone(presenter: str, *, face: dict | None = None,
                 min_height: int | None = None) -> dict | None:
@@ -444,14 +458,19 @@ _MEASURE_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / \
     "measure_block_content.cjs"
 
 
-def _measured_content_box(path, canvas: tuple) -> dict | None:
-    """Ширина нарисованного внутри уже заполненной копии позиции, на её
-    родном канвасе — либо `None`, когда измерить нечем.
+def _run_measure_script(path, width: int, height: int, *,
+                        at: float | None = None) -> dict | None:
+    """Общий скелет замера: браузер, скрипт (`measure_block_content.cjs`) и
+    контракт отступления — один на обоих вызывающих
+    (`_measured_content_box` меряет файл каталога на его канвасе,
+    `_measured_paste_box` — временный файл паста-примитива на его же
+    кегле). Различаются только сам файл, размер вьюпорта и (у пасты) момент
+    кадра `--at`, а браузер либо есть, либо нет одинаково для обоих.
 
     Браузер здесь необязателен: нет `node`, нет закреплённого Chrome (тесты,
     чужая машина, сеть не подняла кэш `npx`) — измерение просто не состоялось,
-    и `_overlay_geometry` считает по канвасу целиком, как считал до этой
-    правки. Плашка не роняется тем, чего нет на машине сборки: измерение —
+    и вызывающий считает без него, как считал до появления измерения.
+    Плашка (или дата) не роняется тем, чего нет на машине сборки: измерение —
     улучшение читаемости там, где оно доступно, а не новое обязательное звено
     цепочки — но причина отступления идёт в лог, а не пропадает молча.
 
@@ -463,8 +482,6 @@ def _measured_content_box(path, canvas: tuple) -> dict | None:
     дальше не `return None`, а `RuntimeError` со `stderr`, тем же приёмом,
     что `hf_probe.run_probe` при своём ненулевом `returncode`.
     """
-    if canvas[0] <= canvas[1]:
-        return None  # портретный канвас не измеряем — см. _overlay_geometry
     try:
         from reels_factory.hf_probe import _node, chrome_path
         from reels_factory.hyperframes_blocks import _HF_VERSION
@@ -484,12 +501,14 @@ def _measured_content_box(path, canvas: tuple) -> dict | None:
     if not chrome:
         print(f"{path}: замер содержимого пропущен — Chrome не закреплён")
         return None
+    args = [node, str(_MEASURE_SCRIPT), "--file", str(path),
+            "--width", str(width), "--height", str(height),
+            "--chrome", chrome]
+    if at is not None:
+        args += ["--at", str(at)]
     try:
         result = subprocess.run(
-            [node, str(_MEASURE_SCRIPT), "--file", str(path),
-             "--width", str(canvas[0]), "--height", str(canvas[1]),
-             "--chrome", chrome],
-            capture_output=True, text=True, encoding="utf-8",
+            args, capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=30)
     except (OSError, subprocess.TimeoutExpired) as exc:
         print(f"{path}: замер содержимого пропущен — {exc}")
@@ -506,6 +525,41 @@ def _measured_content_box(path, canvas: tuple) -> dict | None:
             f"({exc}): {(result.stdout or '').strip()[:400]!r}, "
             f"stderr: {(result.stderr or '').strip()[:400]!r}")
     return box if isinstance(box, dict) else None
+
+
+def _measured_content_box(path, canvas: tuple) -> dict | None:
+    """Ширина нарисованного внутри уже заполненной копии позиции, на её
+    родном канвасе — либо `None`, когда измерить нечем (см. докстринг
+    `_run_measure_script` — общий контракт отступления).
+    """
+    if canvas[0] <= canvas[1]:
+        return None  # портретный канвас не измеряем — см. _overlay_geometry
+    return _run_measure_script(path, canvas[0], canvas[1])
+
+
+def _measured_paste_box(html: str, width: int, height: int,
+                        *, unique: str) -> dict | None:
+    """Нарисованный прямоугольник паста-примитива на его РОДНОМ кегле, до
+    всякого масштаба — либо `None`, когда измерить нечем (тот же контракт
+    отступления, что у `_measured_content_box` — см. `_run_measure_script`).
+
+    `_overlay_geometry` этот случай не берёт: её арифметика
+    (`_overlay_content_scale`) ужимает по ШИРИНЕ канваса позиции, а у
+    паста-примитива канваса нет вовсе — только собственный, ничем не
+    заданный кегль. Здесь обратная задача: не ужать широкое до кадра, а
+    поднять мелкое до канона схемы (`SCHEMA_METRIC_NUMBER_HEIGHT`) — так что
+    это отдельная функция, а не ветка внутри той.
+
+    Паста не пишет себе копию на диск (`paste_effect` отдаёт строку, не
+    файл) — файл для замера собираем сами, во временном каталоге, и он не
+    переживает эту функцию: `measure_block_content.cjs` открывает его
+    `file://` синхронно, и после `subprocess.run` файл уже не нужен.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / f"{unique}.html"
+        path.write_text(f"<!doctype html><html><body>{html}</body></html>",
+                        encoding="utf-8")
+        return _run_measure_script(path, width, height, at=0)
 
 
 @functools.lru_cache(maxsize=1)
@@ -2192,6 +2246,19 @@ def needed_blocks(storyboard: dict) -> list[str]:
         for field in ("schema", "fallback"):
             plan = scene.get(field)
             form = plan.get("form") if isinstance(plan, dict) else None
+            # Дата/номер формы `metric` не собирается блоком `FORMS["metric"]`
+            # вовсе (см. схемную ветку `metric`+`_is_dateline` ниже) — их
+            # монтирует компонент каталога `number-pop-in`, и установку ему
+            # нужно звать тем же условием, каким сборка выбирает ветку: план,
+            # никогда не назвавший `number-pop-in` элементом, иначе не ставит
+            # его в реестр вовсе, и паста падает `[Errno 2] No such file:
+            # public/compositions/components/number-pop-in.html` (прогон
+            # rb0908-university, 08.09.2026 00:51 UTC).
+            if (form == "metric"
+                    and schema_is_dateline((plan or {}).get("value"))):
+                if "number-pop-in" not in found:
+                    found.append("number-pop-in")
+                continue
             block = FORMS.get(form)
             if block and block not in found:
                 found.append(block)
@@ -3431,8 +3498,20 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 print(f'{scene["id"]}: схема бренда снята — знак не подобрался')
                 drop_schema(scenes, scene)
                 continue
-        block, config, css, patches = schema_build(
-            plan["form"], content, duration=end - start, colors=colors)
+        # Дата, номер и время формы `metric` — не количество: считать нечего,
+        # и код ставит их компонентом каталога `number-pop-in` вместо счётчика
+        # `mk-progress-stat`, которому в такой сцене не от чего отсчитывать
+        # (`hf_schema._is_dateline`, разбор причины — `hf_schema.py:83`).
+        # Тот же слот схемы (зона, aurora, скрим ниже), но паста-примитив
+        # вместо саб-композиции этого блока: `number-pop-in` несёт
+        # `reels.mount: paste` и монтируется той же функцией, что монтирует
+        # любую позицию-эффект без мишени в цикле элементов сцены выше
+        # (`paste_effect`), а не `_stage_overlay`.
+        dateline = (plan["form"] == "metric"
+                   and schema_is_dateline(content.get("value")))
+        if not dateline:
+            block, config, css, patches = schema_build(
+                plan["form"], content, duration=end - start, colors=colors)
         need = schema_min_seconds(plan["form"],
                                   len(content.get("files")
                                       or content.get("items")
@@ -3443,26 +3522,75 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                   f"{end - start:.1f} с, а форме нужно {need:.1f}")
             drop_schema(scenes, scene)
             continue
-        elastic = schema_is_elastic(block)
-        # Упругий блок раскладывается по коробке, а не по числам внутри себя:
-        # во весь кадр он ставил третью карточку прямо под слова титра (их
-        # `content_overlap` на `div.gca-label`, замер 1260..1292 при пороге
-        # 980). Коробку обрезаем по той же черте, что держат остальные формы, —
-        # и обрезаем её НА КОРНЕ БЛОКА: их загрузчик читает `data-height`
-        # оттуда и ею же переписывает высоту хоста
-        # (`compositionLoader.ts:516-524`), поэтому обрезанный хост сам по себе
-        # распрямлялся обратно во весь кадр.
-        height = SCHEMA_SAFE_BOTTOM if elastic else OUT_H
-        unique, _, _ = _stage_overlay(
-            public, block, scene["id"], sdk=None,
-            port={"duration": end - start, "css": css, "patches": patches,
-                  "elastic": elastic, "height": height,
-                  "config": {} if elastic else config})
-        # У упругого блока содержимое идёт штатным каналом на хост, а не
-        # довеском к литералу: он читает `getVariables()`.
-        values = (" data-variable-values='"
-                  + json.dumps(config, ensure_ascii=False).replace("'", "&#39;")
-                  + "'") if elastic else ""
+        if dateline:
+            # Переменные позиции: полярность букв решает кадр
+            # (`frame_variables` — на нашем тёмном фоне это `tone: paper`),
+            # значение и хвост при цифрах — `hf_schema.date_variables`
+            # (тем же разбором, что уже режет счётчик на число и суффикс).
+            card = _catalog_cards().get("number-pop-in") or {}
+            variables = {**frame_variables(card, colors, None),
+                        **schema_date_variables(content.get("value"))}
+            unique = f'number-pop-in--{scene["id"]}'
+            try:
+                paste_html, lines, _ = paste_effect(
+                    sdk, public, "number-pop-in", unique=unique,
+                    variables=variables)
+            except RuntimeError as error:
+                print(f'{scene["id"]}: схема «metric» снята — '
+                      f"`number-pop-in` не встал: {error}")
+                drop_schema(scenes, scene)
+                continue
+            decor_code += paste_recipe_block(lines, start)
+            # Паста-примитив саморазмерен (кнопка, число), а не «эластичен»
+            # под любую коробку, как саб-композиции пяти форм схемы — тот же
+            # довод, что у `paste_html` в цикле элементов сцены выше. Своей
+            # высоты СХЕМЫ он не знает, поэтому коробка здесь — не
+            # `SCHEMA_SAFE_BOTTOM`/`OUT_H` с трансформом до масштаба зоны, а
+            # сама зона: число просто центруется в её полосе.
+            elastic = False
+            height = zone["height"]
+            values = ""
+            # Родной кегль числа (76px, `number-pop-in.html:52`) рисует его
+            # заметно мельче канона, который в той же зоне держал бы счётчик
+            # (`SCHEMA_METRIC_NUMBER_HEIGHT`, зона уже ужата до
+            # `zone["scale"]` — тот же множитель, каким счётчик ужался бы
+            # здесь же в ветке `else` ниже). Измеряем нарисованное на его
+            # собственном кегле (`_measured_paste_box` — `_overlay_geometry`
+            # тут не подходит: у пасты нет канваса, только кегль, и задача
+            # обратная её масштабу по ширине — не ужать широкое, а поднять
+            # мелкое). Измерить нечем (нет браузера) — паста остаётся на
+            # родном кегле, как и до этой правки: улучшение читаемости там,
+            # где оно доступно, не новое обязательное звено (см. докстринг
+            # `_run_measure_script`).
+            paste_scale = 1.0
+            drawn = _measured_paste_box(paste_html, OUT_W, OUT_H,
+                                        unique=unique)
+            drawn_height = float((drawn or {}).get("height") or 0)
+            if drawn_height > 0:
+                paste_scale = round(
+                    SCHEMA_METRIC_NUMBER_HEIGHT * zone["scale"]
+                    / drawn_height, 4)
+        else:
+            elastic = schema_is_elastic(block)
+            # Упругий блок раскладывается по коробке, а не по числам внутри себя:
+            # во весь кадр он ставил третью карточку прямо под слова титра (их
+            # `content_overlap` на `div.gca-label`, замер 1260..1292 при пороге
+            # 980). Коробку обрезаем по той же черте, что держат остальные формы, —
+            # и обрезаем её НА КОРНЕ БЛОКА: их загрузчик читает `data-height`
+            # оттуда и ею же переписывает высоту хоста
+            # (`compositionLoader.ts:516-524`), поэтому обрезанный хост сам по себе
+            # распрямлялся обратно во весь кадр.
+            height = SCHEMA_SAFE_BOTTOM if elastic else OUT_H
+            unique, _, _ = _stage_overlay(
+                public, block, scene["id"], sdk=None,
+                port={"duration": end - start, "css": css, "patches": patches,
+                      "elastic": elastic, "height": height,
+                      "config": {} if elastic else config})
+            # У упругого блока содержимое идёт штатным каналом на хост, а не
+            # довеском к литералу: он читает `getVariables()`.
+            values = (" data-variable-values='"
+                      + json.dumps(config, ensure_ascii=False).replace("'", "&#39;")
+                      + "'") if elastic else ""
         # ── живой фон под схемой ─────────────────────────────────────────
         # Корень схемы прозрачен у всех пяти блоков, а на схемной сцене под ним
         # нет ни ведущей, ни вставки: в кадре оставался ровный цвет из
@@ -3602,31 +3730,59 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 f'"{TRACK_SCHEMA_SCRIM + staged_schema_scrims % schema_scrim_tracks}"'
                 f'></div>')
             staged_schema_scrims += 1
-        # Место коробки в кадре — от зоны, а не от нуля. Целая зона (`none` и
-        # нижние уголки) даёт прежние `left:0;top:0` знак в знак: масштаб
-        # ставится только там, где зона короче полосы схемы, и лишнего
-        # атрибута в разметке иначе не появляется. Ужимаем ТРАНСФОРМОМ, а не
-        # числами внутри блока: числа у пяти форм свои, а трансформ уносит с
-        # собой и кегли подписей — ровно ту читаемость, порог которой считает
-        # `SCHEMA_MIN_SCALE`. Точка отсчёта — левый верхний угол, поэтому
-        # `left` доводит ужатую коробку до середины кадра.
-        place = "left:0;top:0"
-        if zone["scale"] < 1:
-            place = (f'left:{round(OUT_W * (1 - zone["scale"]) / 2)}px;'
-                     f'top:{zone["top"]}px;'
-                     f'transform:scale({zone["scale"]});'
-                     f'transform-origin:0 0')
-        body.append(
-            f'    <div class="ovl" id="schema-box-{scene["id"]}">'
-            f'<div id="schema-{scene["id"]}" class="clip"'
-            f' data-composition-id="{unique}-host"'
-            f' data-composition-src="compositions/{unique}.html"'
-            f' data-start="{markup_time(start):.4f}"'
-            f' data-duration="{markup_time(end) - markup_time(start):.4f}"'
-            f' data-track-index="{TRACK_SCHEMA}"'
-            f' data-width="{OUT_W}" data-height="{height}"'
-            f' style="position:absolute;{place};'
-            f'width:{OUT_W}px;height:{height}px"{values}></div></div>')
+        if dateline:
+            # Паста-примитив без предрисованной коробки: коробка — сама зона
+            # (`height` выше), число просто центруется в этой полосе флексом,
+            # тем же приёмом, что и `paste_html` элемента-эффекта без мишени
+            # в цикле сцены выше. Но ужать/поднять содержимое до канона
+            # (`paste_scale`, посчитан выше — `SCHEMA_METRIC_NUMBER_HEIGHT`)
+            # флекс сам не умеет — трансформ ставим на СВОЙ внутренний слой,
+            # а не на коробку целиком, чтобы центрирование флексом мерило
+            # исходный (нескейленный) размер, и трансформ от центра не унёс
+            # число мимо середины полосы. Внешний `.ovl#schema-box-{id}` —
+            # тот же id без изменений: приём поверх схемы (`where: "schema"`,
+            # `paste_target_selector`) целится в него же, живой ли это блок
+            # или паста-примитив.
+            pasted = (f'<div style="transform:scale({paste_scale})">'
+                     f'{paste_html}</div>'
+                     if paste_scale != 1.0 else paste_html)
+            body.append(
+                f'    <div class="ovl" id="schema-box-{scene["id"]}">'
+                f'<div id="schema-{scene["id"]}" class="clip"'
+                f' data-start="{markup_time(start):.4f}"'
+                f' data-duration="{markup_time(end) - markup_time(start):.4f}"'
+                f' data-track-index="{TRACK_SCHEMA}"'
+                f' style="position:absolute;left:0;top:{zone["top"]}px;'
+                f'width:{OUT_W}px;height:{height}px;display:flex;'
+                f'align-items:center;justify-content:center">'
+                f'{pasted}</div></div>')
+        else:
+            # Место коробки в кадре — от зоны, а не от нуля. Целая зона
+            # (`none` и нижние уголки) даёт прежние `left:0;top:0` знак в
+            # знак: масштаб ставится только там, где зона короче полосы
+            # схемы, и лишнего атрибута в разметке иначе не появляется.
+            # Ужимаем ТРАНСФОРМОМ, а не числами внутри блока: числа у пяти
+            # форм свои, а трансформ уносит с собой и кегли подписей — ровно
+            # ту читаемость, порог которой считает `SCHEMA_MIN_SCALE`. Точка
+            # отсчёта — левый верхний угол, поэтому `left` доводит ужатую
+            # коробку до середины кадра.
+            place = "left:0;top:0"
+            if zone["scale"] < 1:
+                place = (f'left:{round(OUT_W * (1 - zone["scale"]) / 2)}px;'
+                         f'top:{zone["top"]}px;'
+                         f'transform:scale({zone["scale"]});'
+                         f'transform-origin:0 0')
+            body.append(
+                f'    <div class="ovl" id="schema-box-{scene["id"]}">'
+                f'<div id="schema-{scene["id"]}" class="clip"'
+                f' data-composition-id="{unique}-host"'
+                f' data-composition-src="compositions/{unique}.html"'
+                f' data-start="{markup_time(start):.4f}"'
+                f' data-duration="{markup_time(end) - markup_time(start):.4f}"'
+                f' data-track-index="{TRACK_SCHEMA}"'
+                f' data-width="{OUT_W}" data-height="{height}"'
+                f' style="position:absolute;{place};'
+                f'width:{OUT_W}px;height:{height}px"{values}></div></div>')
         scene["schemaShown"] = True
 
     # ── ведущая ───────────────────────────────────────────────────────────
