@@ -1159,7 +1159,7 @@ def test_дата_в_metric_встаёт_number_pop_in(run, monkeypatch):
     shadow = box[:box.index("hf-transition-number-pop-in") + 4000]
     assert 'window.__hyperframes.getVariables = function () { return' in shadow
     assert '"value": "20"' in shadow
-    assert '"unit": "августа"' in shadow
+    assert '"unit": " августа"' in shadow
     # Полярность букв решает кадр — на тёмном фоне это `tone: paper`.
     assert '"tone": "paper"' in shadow
     # Живой фон (aurora) остаётся под датой — тот же слот схемы, тот же код.
@@ -1222,7 +1222,7 @@ def test_дата_элемента_на_pip_делится_на_цифры_и_с
     box = html[html.index('id="el-s-02-0"'):]
     shadow = box[:box.index("getVariables") + 4000]
     assert '"value": "23"' in shadow, shadow
-    assert '"unit": "августа"' in shadow, shadow
+    assert '"unit": " августа"' in shadow, shadow
     assert '"lift": "standard"' in shadow
     assert '"tone": "accent"' in shadow
     # Демо-умолчание карточки («k») не пролезло следом за датой.

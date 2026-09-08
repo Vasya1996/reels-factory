@@ -354,8 +354,18 @@ def test_date_variables_режет_значение_на_число_и_хвос�
     переменными (`value`, `unit`), а не одной строкой, как счётчик
     (`_metric_parts`, тот же разбор — только суффикс едет не приклеенным к
     числу, а отдельным полем)."""
-    assert date_variables("20 августа") == {"value": "20", "unit": "августа"}
-    assert date_variables("2026 год") == {"value": "2026", "unit": "год"}
+    assert date_variables("20 августа") == {"value": "20", "unit": " августа"}
+    assert date_variables("2026 год") == {"value": "2026", "unit": " год"}
+
+
+def test_date_variables_хвост_словом_несёт_пробел_символом_нет():
+    """Компонент кладёт `value` и `unit` в `inline-flex` с `gap: 2px`
+    (`number-pop-in.html`), рассчитанным на символьный хвост вплотную к
+    цифре («k») — хвосту-слову тот же `gap` пробела не даёт, значит его
+    несёт сам `unit`. Год без хвоста и суффикс-символ остаются без пробела —
+    для «k»/«%» его и не было в тексте плана."""
+    assert date_variables("2026") == {"value": "2026", "unit": ""}
+    assert date_variables("87%") == {"value": "87", "unit": "%"}
 
 
 @pytest.mark.parametrize("value", ["100%", "8 из 10", "250 000 ₽", "87%"])
