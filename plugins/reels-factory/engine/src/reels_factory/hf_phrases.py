@@ -158,7 +158,9 @@ def lay_out_scenes(scenes: list[dict], phrases: list[dict], *,
     2. Сцены идут подряд и покрывают все фразы: дырка означает чёрный кадр.
     3. Сцена не короче MIN_SCENE: не хватило — двигаем границу вправо, за счёт
        следующей. Начало сцены не трогаем: оно сидит на произносимом слове.
-    4. Сцена не длиннее восьми секунд — это D19, и он же предел здесь.
+    4. Сцена не длиннее потолка сцены без смены картинки — из паттерна ритма
+       ролика (`hf_montage.RHYTHMS[...]["holdMax"]`, сегодняшние восемь
+       секунд у `steady` и там же, где план без `direction`).
     5. Округление к сетке кадров последним действием.
     """
     duration = quantize(duration)
@@ -207,11 +209,16 @@ def lay_out_scenes(scenes: list[dict], phrases: list[dict], *,
         scene = item["scene"]
         scene["startSec"] = quantize(item["start"])
         scene["endSec"] = quantize(item["end"])
-        if scene["endSec"] - scene["startSec"] > MAX_STATIC_SPAN + 0.001:
+        # Потолок — из паттерна ритма ролика (`hf_montage.direct`, вызван
+        # перед раскладкой и пишет `scene["rhythm"]["holdMax"]`); сцена без
+        # него (план без `direction`, старые прогоны) меряется сегодняшним
+        # `MAX_STATIC_SPAN` — тем же числом, что несёт паттерн `steady`.
+        ceiling = (scene.get("rhythm") or {}).get("holdMax", MAX_STATIC_SPAN)
+        if scene["endSec"] - scene["startSec"] > ceiling + 0.001:
             raise RuntimeError(
                 f'{scene.get("id", "?")}: сцена идёт '
                 f'{scene["endSec"] - scene["startSec"]:.1f} с, предел '
-                f"{MAX_STATIC_SPAN:g} с — картинка застынет. Разрежь её на две")
+                f"{ceiling:g} с — картинка застынет. Разрежь её на две")
         scene.pop("phrases", None)
     return [item["scene"] for item in placed]
 

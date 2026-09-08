@@ -45,7 +45,7 @@ from reels_factory.hf_gates import (
 from reels_factory.hf_layout import FULL_FRAME_PRESENTER, quantize
 from reels_factory.hf_media import resolve_all
 from reels_factory.hf_montage import (
-    check_inserts, check_shots, dedupe_neighbours, drop_series,
+    check_inserts, check_shots, dedupe_neighbours, direct, drop_series,
     inserts_shortfall, inserts_wanted,
     merge_adjacent_series, ordered_gaps, pick_position, pick_series,
     settle_schemas,
@@ -56,7 +56,6 @@ from reels_factory.hf_phrases import (
     lay_out_scenes, phrase_timeline, speech_between,
 )
 from reels_factory.hf_probe import probe_gates
-from reels_factory.hf_rhythm import rhythm_gates
 from reels_factory.hf_sdk import sdk_session
 from reels_factory.hf_zoom import read_camera, zoom_gates
 from reels_factory.hyperframes_blocks import _HF_VERSION
@@ -1331,9 +1330,12 @@ def frozen_plan_gates(gates: dict) -> dict:
     видео давало 35).
 
     Поэтому на пересборке вердикт остаётся в отчёте (иначе о промахе плана не
-    узнает никто), но качество ролика больше не решает. Гейты готового файла на
-    его месте не пустуют: вставки в кадре судит `D15_inserts_visible`, ритм —
-    `D18_change_rate`, и эти двое меряют то, что пересборка ещё меняет.
+    узнает никто), но качество ролика больше не решает. Гейт готового файла на
+    его месте не пустует: вставки в кадре судит `D15_inserts_visible` — он
+    меряет то, что пересборка ещё меняет. Ритм такого дублёра больше не
+    держит: его потолок гарантирует раскладка ДО заказа (`direct()` +
+    `lay_out_scenes`), а не замер после рендера — переписать его пересборкой
+    уже нечем, как и было с этим же планом до неё.
 
     На ПЕРВОЙ сборке ничего не меняется: там гейты считает
     `plan_before_avatar`, и их провал по-прежнему возвращает агенту пересдачу
@@ -1485,6 +1487,10 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
         early = rdir / EARLY_PLAN_FILE
         source = early if early.exists() else rdir / "plan.json"
         board = json.loads(source.read_text(encoding="utf-8"))
+        # Решение о ритме — в числа по сцене, до раскладки: потолок сцены,
+        # который она проверяет, у каждой сцены свой (паттерн из
+        # `direction.rhythm`, план без него — `steady`).
+        direct(board)
         scenes = lay_out_scenes(board.get("scenes") or [], phrases,
                                 duration=duration)
         # Заказ считаем и здесь. Пропустить его на пересборке значит навсегда
@@ -1533,6 +1539,7 @@ def plan_before_avatar(rdir, timed_scenario: dict, *, alignment_words: list,
             # не лёг на озвучку, он поправит сам — это причина пересдачи, а не
             # авария. Но без сцен заказывать нечего, поэтому на последней
             # попытке это уже отказ.
+            direct(board)
             try:
                 scenes = lay_out_scenes(board.get("scenes") or [], phrases,
                                         duration=duration)
@@ -1717,6 +1724,7 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
                     (rdir / "plan.json").read_text(encoding="utf-8"))
             # Секунды считаем здесь: агент назвал только фразы. Не сошлось —
             # это причина пересборки, а не авария: план он поправит сам.
+            direct(board)
             try:
                 board["scenes"] = lay_out_scenes(
                     board.get("scenes") or [], phrases, duration=duration)
@@ -2065,11 +2073,15 @@ def assemble_hyperframes(rdir, timed_scenario: dict, *, edit_plan: dict,
     final = Path(out_mp4) if out_mp4 else rdir / "reel.mp4"
     run_step(rdir, "loudness", lambda: _normalize_loudness(raw, final))
 
-    # Ритм меряем по готовому файлу: планка эталонов — про то, что видит
-    # зритель, а раскадровка о смене картинки врать умеет.
+    # Ритм после рендера больше не меряем: его потолок (сцена без смены
+    # картинки не длиннее `holdMax` паттерна) гарантирует раскладка ДО
+    # заказа (`hf_montage.direct` + `hf_phrases.lay_out_scenes`) — план
+    # длиннее предела туда просто не попадает, и мерить готовый файл, чтобы
+    # поймать то же самое постфактум, а починить уже нечем (ведущая куплена),
+    # незачем. `hf_rhythm.scene_changes` остаётся измерительным инструментом
+    # (замеры в докстринге модуля, тесты `test_hf_rhythm.py`), а не гейтом.
     if gate_result is None:
         gate_result = json.loads((rdir / "gates.json").read_text(encoding="utf-8"))
-    gate_result.update(rhythm_gates(final))
     # Наезды и вспышки меряются числами по готовому файлу, а не глазами: на
     # стоп-кадре наклон говорящей к камере читается как наезд, которого в
     # файле нет (грабля Юли, стоила двух сданных версий с мёртвым зумом).
