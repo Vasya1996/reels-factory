@@ -3146,6 +3146,23 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 mirror_key = number_mirror_variable(card)
                 if mirror_key:
                     named.setdefault(mirror_key, str(int(round(value))))
+            # Дата/номер в кадре — две строковые переменные одним значением
+            # плана: цифры в `value`, слово при них в `unit`
+            # (`number-pop-in`). Агент называет и то и другое одной строкой
+            # («23 августа») в `value`, а без своего `unit` там встаёт демо-
+            # умолчание карточки («k») — «23 августак» в кадре
+            # (rb0908-university, элемент `number-pop-in` на `pip-tr`). Тот
+            # же разбор, что уже режет дату на схемном маршруте
+            # (`hf_schema.date_variables` — там же обоснование), здесь
+            # делит одну строку агента на обе переменные позиции. Признак —
+            # свои же строковые переменные `value`+`unit` карточки, не имя
+            # позиции: другая карточка с тем же контрактом получит тот же
+            # разбор без правки этого места.
+            variable_rules = card.get("variables") or {}
+            if (variable_rules.get("value", {}).get("type") == "string"
+                    and variable_rules.get("unit", {}).get("type") == "string"
+                    and "value" in named and "unit" not in named):
+                named.update(schema_date_variables(named["value"]))
             # Слоты позиции под файл: кадр биролла этой же сцены ложится ВНУТРЬ
             # них. Подавать нечего — позиция снимается с причиной вслух: пустой
             # макет (телефон без экрана, панель «Before» без картинки) хуже

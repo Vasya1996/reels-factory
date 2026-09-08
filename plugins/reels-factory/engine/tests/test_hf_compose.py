@@ -1162,6 +1162,57 @@ def test_дата_без_измерения_остаётся_на_родном_�
     assert "transform:scale" not in box
 
 
+def test_дата_элемента_на_pip_делится_на_цифры_и_слово(run, monkeypatch):
+    """rb0908-university, 2026-09-08: элемент `number-pop-in` на `pip-tr`
+    (не схема `metric`) получил от агента всю дату одной строкой в `value`
+    и без `unit` — демо-умолчание карточки («k») село следом: «23 августак»
+    в кадре. Тот же разбор, что уже режет дату на схемном маршруте
+    (`hf_schema.date_variables`), обязан сработать и здесь — признак не имя
+    позиции, а её собственные строковые `value`+`unit`."""
+    _install_number_pop_in(run)
+    monkeypatch.setattr(hf_compose, "_measured_paste_box", lambda *a, **k: None)
+    html, _ = _build(run, scenes=_с_элементами(
+        {"name": "number-pop-in",
+         "variables": {"value": "23 августа", "lift": "standard",
+                       "tone": "accent"}}), resolved={})
+    box = html[html.index('id="el-s-02-0"'):]
+    shadow = box[:box.index("getVariables") + 4000]
+    assert '"value": "23"' in shadow, shadow
+    assert '"unit": "августа"' in shadow, shadow
+    assert '"lift": "standard"' in shadow
+    assert '"tone": "accent"' in shadow
+    # Демо-умолчание карточки («k») не пролезло следом за датой.
+    assert '"unit": "k"' not in shadow
+
+
+def test_дата_элемента_без_хвоста_даёт_пустой_unit(run, monkeypatch):
+    """Число без слова при нём («2026») — тоже дата, и хвоста у неё нет: код
+    обязан отдать пустую строку, а не оставить демо-умолчание карточки."""
+    _install_number_pop_in(run)
+    monkeypatch.setattr(hf_compose, "_measured_paste_box", lambda *a, **k: None)
+    html, _ = _build(run, scenes=_с_элементами(
+        {"name": "number-pop-in", "variables": {"value": "2026"}}),
+        resolved={})
+    box = html[html.index('id="el-s-02-0"'):]
+    shadow = box[:box.index("getVariables") + 4000]
+    assert '"value": "2026"' in shadow, shadow
+    assert '"unit": ""' in shadow, shadow
+
+
+def test_названный_agentом_unit_не_переписывается(run, monkeypatch):
+    """Агент, назвавший оба поля сам, сильнее разбора: код делит строку
+    только когда `unit` от него не пришёл вовсе."""
+    _install_number_pop_in(run)
+    monkeypatch.setattr(hf_compose, "_measured_paste_box", lambda *a, **k: None)
+    html, _ = _build(run, scenes=_с_элементами(
+        {"name": "number-pop-in",
+         "variables": {"value": "23", "unit": "августа"}}), resolved={})
+    box = html[html.index('id="el-s-02-0"'):]
+    shadow = box[:box.index("getVariables") + 4000]
+    assert '"value": "23"' in shadow, shadow
+    assert '"unit": "августа"' in shadow, shadow
+
+
 def test_paste_box_scale_по_канону_высоты_с_потолком_по_ширине():
     """`_paste_box_scale` поднимает нарисованное до канона схемного числа
     ПО ВЫСОТЕ (`SCHEMA_METRIC_NUMBER_HEIGHT`, домноженный на `rect["scale"]`
