@@ -2,7 +2,7 @@
 model: sonnet
 name: claude-code-librarian
 description: Reference specialist for Claude Code itself. Answers what the tool actually supports right now — settings, permissions, hooks, skills, subagents, output styles, memory, headless runs, the Agent SDK, plugins, MCP — as page URLs with verbatim quotes from the official docs. Use proactively before writing or debugging anything that shapes the agent's own behaviour, and whenever a claim about what Claude Code can or cannot do would otherwise come from memory.
-tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
+tools: Read, Grep, Glob, Bash, WebFetch, WebSearch, SendMessage
 disallowedTools: Agent
 skills:
   - claude-code-config

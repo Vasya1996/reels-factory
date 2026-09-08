@@ -1,7 +1,10 @@
 ---
 name: prod-rebuild
-description: Rebuild a finished job through the real bot queue, for free, on a frozen avatar order — a copy of a job re-runs the whole montage pipeline without buying the presenter again. Only trigger this by explicit name (/prod-rebuild); it is not for "just check if this works", which is `/snapshot-check`.
+description: Rebuild a finished job through the real bot queue on a frozen avatar order — without buying the presenter again; costs one `claude -p` session — a copy of a job re-runs the whole montage pipeline without buying the presenter again. Only trigger this by explicit name (/prod-rebuild); it is not for "just check if this works", which is `/snapshot-check`.
 disable-model-invocation: true
+context: fork
+agent: judge
+background: false
 ---
 
 # Prod-rebuild
@@ -61,7 +64,7 @@ All of this runs over SSH on `root@134.209.80.75`, working directory
    p = "job.input.json"
    d = json.load(open(p, encoding="utf-8"))
    d["job_id"] = "<new>"
-   d["user_id"] = 823757031  # default test chat; ask Vasya before using another
+   d["user_id"] = 823757031  # default test chat; any other id is passed in by the main session in the invocation
    json.dump(d, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
    ```
 
@@ -100,10 +103,10 @@ All of this runs over SSH on `root@134.209.80.75`, working directory
 
 8. **Fetch the result.**
    ```
-   scp root@134.209.80.75:/root/reels-workspace/work/jobs/<new>/snapshots/contact-sheet-*.jpg .
-   scp root@134.209.80.75:/root/reels-workspace/work/jobs/<new>/reel.mp4 .
-   scp root@134.209.80.75:/root/reels-workspace/work/jobs/<new>/plan.json .
-   scp root@134.209.80.75:/root/reels-workspace/work/jobs/<new>/gates.json .
+   scp root@134.209.80.75:/root/reels-workspace/work/jobs/<new>/snapshots/contact-sheet-*.jpg work/<new>/
+   scp root@134.209.80.75:/root/reels-workspace/work/jobs/<new>/reel.mp4 work/<new>/
+   scp root@134.209.80.75:/root/reels-workspace/work/jobs/<new>/plan.json work/<new>/
+   scp root@134.209.80.75:/root/reels-workspace/work/jobs/<new>/gates.json work/<new>/
    ```
    Then judge it — see `/judge-reel` for what to look at in the plan, the gates, and
    the frames rather than trusting a green gate file alone.

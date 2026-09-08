@@ -1,6 +1,8 @@
 ---
 name: judge-reel
 description: Judge a built reel by looking at its actual frames, not by trusting a green gates.json. Use whenever a job has just finished (from `/prod-rebuild` or a real user build) and needs acceptance — "a reel was built, judge it by frames, not gates", "check this build", "is this reel good".
+context: fork
+agent: judge
 ---
 
 # Judge-reel
@@ -12,10 +14,10 @@ was first found by looking, not by a gate. Judging a reel means looking at it.
 ## 1. Fetch the artefacts
 
 ```
-scp root@134.209.80.75:/root/reels-workspace/work/jobs/<job>/plan.json .
-scp root@134.209.80.75:/root/reels-workspace/work/jobs/<job>/gates.json .
-scp root@134.209.80.75:/root/reels-workspace/work/jobs/<job>/snapshots/contact-sheet-*.jpg .
-scp root@134.209.80.75:/root/reels-workspace/work/jobs/<job>/reel.mp4 .
+scp root@134.209.80.75:/root/reels-workspace/work/jobs/<job>/plan.json work/<job>/
+scp root@134.209.80.75:/root/reels-workspace/work/jobs/<job>/gates.json work/<job>/
+scp root@134.209.80.75:/root/reels-workspace/work/jobs/<job>/snapshots/contact-sheet-*.jpg work/<job>/
+scp root@134.209.80.75:/root/reels-workspace/work/jobs/<job>/reel.mp4 work/<job>/
 ```
 
 ## 2. Print the plan summary

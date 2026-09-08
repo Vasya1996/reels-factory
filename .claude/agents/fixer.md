@@ -26,9 +26,9 @@ brief needs to change.
 
 ## Workspace
 
-1. `git fetch`, then work in a worktree at `.worktrees/<branch>` off `origin/main`
-   (never a sibling directory outside this clone — it would read as a separate
-   project).
+1. `git fetch`, then work in a worktree at `.worktrees/<branch-slug>` (the branch
+   `feat/vasya-x` lives in `.worktrees/feat-vasya-x`) off `origin/main` — never a
+   sibling directory outside this clone: it would read as a separate project.
 2. `npm ci` in `plugins/reels-factory/engine` inside the worktree before running
    anything that touches the SDK bridge.
 3. Make the change plus its test in the same commit, exactly as the Razbor section's
@@ -36,17 +36,21 @@ brief needs to change.
 
 ## Tests
 
-Run the full suite once, at the end, not after every edit:
+Run the full suite once, at the end, not after every edit. The suite takes 9–15
+minutes and the Bash tool's ceiling is 10 minutes, so the run is detached and the
+call only polls:
 
 ```
 PYTHONPATH="$(pwd)/src" nohup python -m pytest -q -m "not slow" -p no:cacheprovider > out.txt 2>&1 &
-for i in $(seq 1 15); do grep -q "passed\|failed" out.txt && break; sleep 60; done
+for i in $(seq 1 9); do grep -q "passed\|failed" out.txt && break; sleep 60; done
 tail -3 out.txt
 ```
 
-If `out.txt` stops growing for 5 minutes, restart the run with the sandbox disabled.
-Never commit `out.txt` or any `out*.txt` — they are scratch, not evidence; the
-evidence you report is the `tail -3` output itself.
+Pass `timeout: 600000` on that Bash call every time; without it the tool cuts the
+call at 2 minutes. If `tail -3` shows no `passed|failed` line yet, run a second call
+that only polls the same `out.txt` — the suite keeps running under `nohup`, it is
+never restarted. Never commit `out.txt` or any `out*.txt`; the evidence you report
+is the `tail -3` line itself.
 
 ## Commit and PR
 
@@ -64,6 +68,17 @@ evidence you report is the `tail -3` output itself.
   Read-only inspection is fine: `scp` a finished job out, or stage a scratch copy
   under `/tmp` on that server the way `/snapshot-check` describes.
 
+## Before you stop
+
+Work through every item of the Razbor `Proof` step before you write "cannot
+reproduce" or "does not match": a partial result with the remaining items listed is
+a valid report, an early "cannot reproduce" is not — the main session decides on the
+remainder, not you.
+
+If your run ends without a PR, remove your worktree (`git worktree remove
+.worktrees/<branch-slug>`); after a merge the main session removes it, because you
+are no longer running by then.
+
 ## Report
 
 - `file:line` of each change.
@@ -72,3 +87,6 @@ evidence you report is the `tail -3` output itself.
 - A "what did not match the design" section — even if empty, say so explicitly,
   because a silently-omitted section reads as "everything matched" when it might
   mean "I didn't check."
+- The PR description and the snapshot-check reference carry `job_id` and paths
+  only — no user script text, no user frames: user material stays out of PRs and
+  chats.

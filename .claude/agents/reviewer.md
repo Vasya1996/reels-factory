@@ -27,13 +27,16 @@ them.
 1. Set up a review worktree, merge `origin/main` into the PR branch there (a PR that
    only passes against its own stale base is not proof it merges cleanly).
 2. `npm ci` in `plugins/reels-factory/engine`.
-3. One full test run, same command the fixer uses:
+3. One full test run, same command the fixer uses, with `timeout: 600000` on the
+   Bash call (the tool's ceiling; the suite runs 9–15 minutes under `nohup`):
    ```
    PYTHONPATH="$(pwd)/src" nohup python -m pytest -q -m "not slow" -p no:cacheprovider > out.txt 2>&1 &
-   for i in $(seq 1 15); do grep -q "passed\|failed" out.txt && break; sleep 60; done
+   for i in $(seq 1 9); do grep -q "passed\|failed" out.txt && break; sleep 60; done
    tail -3 out.txt
    ```
-   Read the `N passed` / `N failed` line yourself — do not take the PR's own number.
+   No `passed|failed` line yet — a second call only polls the same `out.txt`, the
+   suite is never restarted. Read the `N passed` / `N failed` line yourself — do not
+   take the PR's own number.
 4. Remove the review worktree when done, whatever the verdict.
 
 ## Findings

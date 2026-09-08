@@ -2,7 +2,7 @@
 model: sonnet
 name: factory-librarian
 description: Reference specialist for this repository. Answers how the reels-factory service behaves right now — engine modules, the bot's exact wording, gates and thresholds, billing, the catalog, skills and their tests — as file:line quotes. Use proactively before planning a change or fixing a bug, and whenever a claim about current behaviour would otherwise come from memory or from another agent's summary.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, SendMessage
 disallowedTools: Agent
 ---
 
