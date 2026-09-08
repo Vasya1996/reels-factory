@@ -2399,9 +2399,17 @@ def _zoom_timeline(plans: list[dict]) -> list[str]:
         # Позиция ступени — время на шкале: `markup_time`, а не `_q`.
         at = markup_time(plan["start"])
         if plan["kind"] == "push":
+            # `ramp` мерян в сырых секундах плана (`zoom_ladder`), а стоит
+            # твин на полу этажной сетки: на коротком плане сырой наезд
+            # уезжает за `floor(plan["end"])` и накрывает следующий твин
+            # (гейт `D37_keyframes`, прогон rb0908-university, 27.574/27.567).
+            # Длительность печатаем парно и подрезаем её же сеткой плана —
+            # так `at + duration` не может перегнать границу плана.
+            grid_duration = markup_time(plan["end"]) - markup_time(plan["start"])
+            duration = min(float(plan["ramp"]), grid_duration)
             lines.append(
                 f'tl.fromTo({target}, {{ scale: {plan["scale_from"]} }}, '
-                f'{{ scale: {plan["scale_to"]}, duration: {plan["ramp"]}, '
+                f'{{ scale: {plan["scale_to"]}, duration: {duration:.4f}, '
                 f'ease: "power2.out" }}, {at});')
         else:
             lines.append(
