@@ -40,6 +40,13 @@ def _board(scenes, **over):
                        "endSec": DURATION,
                        "bounds": {"x": 0, "y": 0, "width": 1080, "height": 1920}},
         "subtitles": {"enabled": True},
+        # Решение о ритме — обязательное поле контракта (`_schema_problems`);
+        # по умолчанию `steady`, чтобы фикстуры этого файла судили то, ради
+        # чего они написаны, а не спотыкались о новое поле. Тест на отказ по
+        # `direction` убирает или портит его сам, через `over`.
+        "direction": {"world": "контора, где всё горит, и облегчение, "
+                               "когда рутину забирает ассистент",
+                      "rhythm": "steady"},
         "scenes": scenes,
     }
     board.update(over)
@@ -132,6 +139,33 @@ def test_шапку_раскадровки_гейт_больше_не_прове
                             duration=DURATION)["D11_schema"] == "PASS"
 
 
+# ---------- режиссура ----------
+
+def test_план_без_direction_валится():
+    """Решение о ритме — обязательное поле контракта, не молчаливый дефолт:
+    план без `direction` вовсе — это незаполненное поле, а не осознанный
+    выбор `steady` (см. коммент у `_schema_problems`)."""
+    verdict = _check(_plausible_scenes(), direction=None)["D11_schema"]
+    assert verdict.startswith("FAIL")
+    assert "direction" in verdict
+
+
+def test_direction_с_пустым_world_валится():
+    verdict = _check(_plausible_scenes(),
+                     direction={"world": "  ", "rhythm": "steady"}
+                     )["D11_schema"]
+    assert verdict.startswith("FAIL")
+    assert "world" in verdict
+
+
+def test_direction_с_неизвестным_rhythm_валится():
+    verdict = _check(_plausible_scenes(),
+                     direction={"world": "контора", "rhythm": "staccato"}
+                     )["D11_schema"]
+    assert verdict.startswith("FAIL")
+    assert "rhythm" in verdict
+
+
 # ---------- плотность ----------
 
 @pytest.mark.parametrize("duration,expected", [
@@ -145,6 +179,14 @@ def test_пол_сцен_только_против_дыр(duration, expected):
     дают ещё переход, смена положения ведущей и наезд, поэтому планку D18
     числом сцен не назначаем."""
     assert min_scenes(duration) == expected
+
+
+def test_пол_сцен_растёт_с_паттерном():
+    """Умолчание — `steady`, тот же потолок восемь секунд, что и раньше;
+    `punchy` держит потолок вдвое ниже (пять секунд), и пол сцен растёт
+    ровно во столько же раз."""
+    assert min_scenes(60) == 8
+    assert min_scenes(60, "punchy") == 12
 
 
 def test_снятые_гейты_не_возвращаются():

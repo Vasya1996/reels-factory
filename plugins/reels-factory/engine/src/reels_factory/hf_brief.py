@@ -33,8 +33,8 @@ from reels_factory.hf_compose import effect_zone
 from reels_factory.hf_gates import min_scenes
 from reels_factory.hf_layout import FULL_FRAME_PRESENTER
 from reels_factory.hf_montage import (
-    FRAME_HOLDERS, SERIES_MAX, SERIES_MIN, face_gap, frame_filler,
-    inserts_wanted, survives_series,
+    FRAME_HOLDERS, RHYTHM_NAMES, RHYTHMS, SERIES_MAX, SERIES_MIN, face_gap,
+    frame_filler, inserts_wanted, survives_series,
 )
 from reels_factory.hf_montage_skill import number, seconds, write_montage_skill
 from reels_factory.hf_phrases import MIN_SCENE, faceless_phrases
@@ -746,7 +746,11 @@ def _sample_plan(phrases: list[dict], faceless: set[int], *,
     if len(scenes) > 1:
         scenes[-1]["beat"] = "climax"
     body = json.dumps(
-        {"brollContext": {
+        {"direction": {
+            "world": "контора, где всё горит, и облегчение, когда рутину "
+                     "забирает ассистент",
+            "rhythm": "steady"},
+         "brollContext": {
             "domain": "sales and client communication in small business",
             "anti": "factories, robots, programming code, casino"},
          "scenes": scenes},
@@ -994,6 +998,40 @@ def _budget_example(phrases: list[dict], *, duration: float, target: float,
     return f"\n\n<example>\n{weak}{strong}\n</example>"
 
 
+def _direction_table() -> str:
+    """Таблица паттернов ритма — из `hf_montage.RHYTHMS`, не переписанная сюда
+    литералом: разойдись они, задание учило бы числам, которых код не считает.
+
+    `build` не строка `RHYTHMS` (это рампа, а не набор чисел, см.
+    `hf_montage.direct`), поэтому его числа в таблице — края рампы, взятые из
+    строк `calm` и `punchy` тут же, а не второй набор литералов.
+    """
+    header = ("| паттерн | потолок сцены | вилка плана | наезд | вспышек | "
+              "hook | point | turn | climax | outro |")
+    sep = "|---|---|---|---|---|---|---|---|---|---|"
+    rows = [header, sep]
+    for name in ("calm", "steady", "punchy"):
+        pattern = RHYTHMS[name]
+        transitions = pattern["transitions"]
+        rows.append(
+            f'| `{name}` | {seconds(pattern["holdMax"])} | '
+            f'{number(pattern["planMin"])}–{seconds(pattern["planMax"])} | '
+            f'раз в {pattern["pushEvery"]} | {pattern["flashMax"]} | '
+            + " | ".join(f'`{transitions[beat]}`' for beat in
+                        ("hook", "point", "turn", "climax", "outro"))
+            + " |")
+    calm, punchy = RHYTHMS["calm"], RHYTHMS["punchy"]
+    rows.append(
+        f'| `build` | {seconds(calm["holdMax"])}→{seconds(punchy["holdMax"])} '
+        f'до кульминации, потом снова {seconds(calm["holdMax"])} | '
+        f'{number(calm["planMin"])}–{seconds(calm["planMax"])}→'
+        f'{number(punchy["planMin"])}–{seconds(punchy["planMax"])} | '
+        f'{calm["pushEvery"]}→{punchy["pushEvery"]} | {punchy["flashMax"]} | '
+        + " | ".join("`punchy` до кульминации, `calm` после" for _ in range(5))
+        + " |")
+    return "\n".join(rows)
+
+
 def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
                 clips: list[dict] | None = None, language: str = "ru",
                 retry_reason: str | None = None,
@@ -1156,8 +1194,9 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
             "`avatarNeeded: false`, каждая длиной от "
             f"{seconds(MIN_FULLSCREEN_S)} до {seconds(_BLIND_ROOF)}. Потолок "
             f"{seconds(_BLIND_ROOF)} — это предел куска без смены картинки "
-            "(`D19_static_span`), поэтому вилка сцен начинается там, где "
-            "этого потолка хватает на все отданные секунды."
+            "(потолок сцены без смены картинки — из паттерна), поэтому "
+            "вилка сцен начинается там, где этого потолка хватает на все "
+            "отданные секунды."
             + floor_note
             + " Реши это разом, до того как распишешь сцены: сколько кусков "
             "ролика идут без лица и где они стоят — одно решение на весь "
@@ -1317,6 +1356,14 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     low = min_scenes(duration)
     if phrases:
         low = max(1, min(low, len(phrases)))
+    # Пол шага про сцены — по паттерну: `calm`/`steady`/`build` держат потолок
+    # сцены восемь секунд (тот же, что и `low` выше — паттерн ещё не выбран),
+    # `punchy` — пять, и порог у него выше. Агент решает `rhythm` раньше
+    # сцен (`direction_step`), но задание пишется ДО этого решения, поэтому
+    # называет оба пола сразу, а не гадает, какой из них подставить.
+    low_punchy = min_scenes(duration, "punchy")
+    if phrases:
+        low_punchy = max(1, min(low_punchy, len(phrases)))
     # Доля ведущей, выше которой план заворачивает `D29_avatar_budget`. Образец
     # держится под ней: он сильнее правила, стоящего рядом, и образец с
     # ведущей на трёх сценах из четырёх учил ровно тому плану, из-за которого
@@ -1373,6 +1420,7 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
                         max_static=MAX_STATIC_SPAN, min_scene=MIN_SCENE,
                         inserts_low=inserts_wanted(list(range(low))),
                         expected_scenes=low, char_limits=char_limits,
+                        direction_table=_direction_table(),
                         avatar_ordered=avatar_ordered,
                         min_fullscreen=MIN_FULLSCREEN_S,
                         max_face_absence=MAX_FACE_ABSENCE_S)
@@ -1433,7 +1481,9 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
   всего.
 - **Файл вставки** — по твоему запросу его ищет сток, а выбирает отдельный
   судья; твоя работа — точный запрос.
-- **Субтитры** — титр печатает озвучку слово в слово и в ту же секунду."""
+- **Субтитры** — титр печатает озвучку слово в слово и в ту же секунду.
+- **Ритм в числах** — длину сцены без движения, сетку планов, класс перехода
+  и наезды код считает из твоего паттерна; сам ты называешь паттерн и бит."""
 
     # Главная ошибка — отдельным блоком и в начале, как у них: «## Core rule …
     # **The single most common failure is paraphrasing the article in order —
@@ -1468,9 +1518,20 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
     skill_step = ("1. Прочитай свод правил `.claude/skills/reels-montage/"
                   "SKILL.md` — там монтажные\n   правила: положения ведущей, "
                   "вставки, формы схем, ритм.")
+    # Отдельным шагом и раньше сцен, а не оговоркой внутри шага про сцены:
+    # ритм — одно решение на весь ролик (свод правил, «Режиссура»), и код
+    # превращает его в числа по каждой сцене ДО того, как секунды вообще
+    # посчитаны (`hf_montage.direct`, вызван перед раскладкой). Решить его
+    # после того, как сцены уже расписаны, поздно нечем — раскладка мерит
+    # сцену потолком паттерна, а не наоборот.
+    direction_step = (
+        "Сначала одно решение на весь ролик — `direction`: `world` (где "
+        "зритель и что\n   переживает, одна-две строки) и `rhythm` "
+        "(паттерн из свода правил, раздел\n   «Режиссура»). Потом сцены.")
     scenes_step = (f"Разбей фразы озвучки на сцены встык, без пропусков. Сцен "
-                   f"не меньше {low}:\n   столько нужно, чтобы ролик такой "
-                   "длины не встал одним куском.")
+                   f"не меньше {low} при `calm`/`steady`/`build`, не меньше "
+                   f"{low_punchy} при `punchy`:\n   столько нужно, чтобы "
+                   "ролик такой длины не встал одним куском.")
     # Шаг про кадр отсылает к средствам, а не переписывает их: пять средств и
     # правила выбора живут в своде правил одной редакцией. Прежде задание
     # звало позицию каталога внутри шага про запас — и агент читал её крайним
@@ -1518,28 +1579,30 @@ def write_brief(rdir, *, scenario: dict, face: dict | None, duration: float,
                     "спасёт (`D36_elements`).")
     if avatar_ordered:
         steps_block = f"""{skill_step}
-2. {scenes_step}
-3. Каждой сцене назначь положение ведущей и {frame_step}
-4. {backup_step}
-5. {catalog_step}
-6. Оформление опиши в `frame.md` — как сказано ниже.
-7. Сверь план по списку «Сверка перед сдачей» в конце задания и почини
+2. {direction_step}
+3. {scenes_step}
+4. Каждой сцене назначь положение ведущей и {frame_step}
+5. {backup_step}
+6. {catalog_step}
+7. Оформление опиши в `frame.md` — как сказано ниже.
+8. Сверь план по списку «Сверка перед сдачей» в конце задания и почини
    расхождения.
-8. Верни два файла в этой папке, рядом с `BRIEF.md`."""
+9. Верни два файла в этой папке, рядом с `BRIEF.md`."""
     else:
         steps_block = f"""{skill_step}
-2. Реши разом, какие куски ролика идут без ведущей и сколько их: по бюджету ниже
+2. {direction_step}
+3. Реши разом, какие куски ролика идут без ведущей и сколько их: по бюджету ниже
    вставке и схеме уходит не меньше {seconds(give_least)}, а лучше {seconds(give)}.
-3. {scenes_step}
-4. Каждой сцене поставь `avatarNeeded`, положение ведущей и {frame_step}
-5. Сложи бюджет: длительности фраз всех сцен с `avatarNeeded: true`. Вышло выше
+4. {scenes_step}
+5. Каждой сцене поставь `avatarNeeded`, положение ведущей и {frame_step}
+6. Сложи бюджет: длительности фраз всех сцен с `avatarNeeded: true`. Вышло выше
    {seconds(hard_target)} — переставь решения, пока не уложится.
-6. {backup_step}
-7. {catalog_step}
-8. Оформление опиши в `frame.md` — как сказано ниже.
-9. Сверь план по списку «Сверка перед сдачей» в конце задания и почини
+7. {backup_step}
+8. {catalog_step}
+9. Оформление опиши в `frame.md` — как сказано ниже.
+10. Сверь план по списку «Сверка перед сдачей» в конце задания и почини
    расхождения.
-10. Верни два файла в этой папке, рядом с `BRIEF.md`."""
+11. Верни два файла в этой папке, рядом с `BRIEF.md`."""
 
     # Сверка перед сдачей вместо прежнего «Итога» из одной фразы. Приём взят
     # дважды. У них: «## Self-check before finishing (you do NOT run the CLI) …
@@ -1727,6 +1790,13 @@ colors:
 {sample_plan}
 ```
 </example>
+
+`direction` — одно решение на весь ролик, полем плана, не сцены: `world`
+(одна-две строки, где зритель и что переживает) и `rhythm` — паттерн из свода
+правил, раздел «Режиссура» (`calm`, `steady`, `punchy` или `build`). Поле
+стоит первым и решается раньше сцен: код превращает паттерн в числа по каждой
+сцене до того, как секунды вообще посчитаны, а без него план возвращается на
+пересдачу.
 
 `phrases` — два числа: номер первой и номер последней фразы сцены (есть фразы
 `0`–{last_phrase}). Сцена из одной фразы пишется как

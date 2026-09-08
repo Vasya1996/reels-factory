@@ -2,11 +2,12 @@
 import pytest
 
 from reels_factory.hf_montage import (
-    MIN_STEP, PLAN_MAX, PLAN_MIN, PUSH_TO, schema_safe_presenter,
-    check_shots, cut_into_plans, dedupe_neighbours, flash_moments,
-    on_screen_seconds, pick_series, shots_for, show_ordered_avatar,
-    split_series, zoom_ladder,
+    FLASH_MAX, MIN_STEP, PLAN_MAX, PLAN_MIN, PUSH_EVERY, PUSH_TO, RHYTHMS,
+    schema_safe_presenter, check_shots, cut_into_plans, dedupe_neighbours,
+    direct, flash_moments, on_screen_seconds, pick_series, shots_for,
+    show_ordered_avatar, split_series, zoom_ladder,
 )
+from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 
 CLIPS = [{"file": "a.mp4", "start": 0.0, "duration": 30.0}]
 
@@ -851,4 +852,80 @@ def test_соседки_нет_и_пустая_сцена_остаётся_ге�
                "insert": None, "phrases": [0, 3]}]
     dedupe_neighbours(scenes, clips=[], duration=9.0)
     assert len(scenes) == 1
-    assert frame_filler(scenes[0]) == ""
+
+
+# ---------- режиссура ----------
+
+def _rhythm_scenes():
+    """Шесть сцен, биты по стандартной пятёрке, кульминация не первая и не
+    последняя — на ней рампа `build` обязана развернуться назад к `calm`."""
+    beats = ["hook", "point", "point", "turn", "climax", "outro"]
+    return [{"id": f"s-{index:02d}", "beat": beat}
+            for index, beat in enumerate(beats)]
+
+
+def test_direct_steady_воспроизводит_сегодняшние_константы():
+    """`steady` — не отдельная строка чисел, а сегодняшние константы без
+    изменений: план с явным `rhythm: "steady"` компонуется ровно как план,
+    который этого поля не называл вовсе (см. следующий тест)."""
+    board = {"direction": {"world": "цех, где всё горит", "rhythm": "steady"},
+             "scenes": _rhythm_scenes()}
+    direct(board)
+    for scene in board["scenes"]:
+        r = scene["rhythm"]
+        assert r["holdMax"] == MAX_STATIC_SPAN
+        assert r["planMin"] == PLAN_MIN
+        assert r["planMax"] == PLAN_MAX
+        assert r["pushEvery"] == PUSH_EVERY
+    assert board["rhythm"] == {"flashMax": FLASH_MAX, "pattern": "steady"}
+
+
+def test_direct_punchy_режет_потолок_и_бьёт_жёстким_переходом():
+    board = {"direction": {"world": "цех, где всё горит", "rhythm": "punchy"},
+             "scenes": _rhythm_scenes()}
+    direct(board)
+    assert all(scene["rhythm"]["holdMax"] == 5.0 for scene in board["scenes"])
+    точка = next(s for s in board["scenes"] if s["beat"] == "point")
+    assert точка["rhythm"]["transition"] == "hard-cut"
+
+
+def test_direct_calm_смягчает_переход_и_гасит_вспышки():
+    board = {"direction": {"world": "цех, где всё горит", "rhythm": "calm"},
+             "scenes": _rhythm_scenes()}
+    direct(board)
+    точка = next(s for s in board["scenes"] if s["beat"] == "point")
+    assert точка["rhythm"]["transition"] == "blur-crossfade"
+    assert board["rhythm"]["flashMax"] == 0
+
+
+def test_direct_build_едет_рампой_к_кульминации_и_гасит_после():
+    """Рампа — по доле ИНДЕКСА сцены до кульминации (`direct` вызван до
+    раскладки, секунд у сцен ещё нет), не монотонная арифметика агента:
+    числа едут от `calm` к `punchy` только на этом отрезке, а после
+    кульминации возвращаются к `calm` без всякой рампы."""
+    board = {"direction": {"world": "цех, где всё горит", "rhythm": "build"},
+             "scenes": _rhythm_scenes()}
+    direct(board)
+    holds = [scene["rhythm"]["holdMax"] for scene in board["scenes"]]
+    climax_at = next(index for index, scene in enumerate(board["scenes"])
+                     if scene["beat"] == "climax")
+    рампа = holds[:climax_at + 1]
+    assert рампа == sorted(рампа, reverse=True), (
+        "потолок сцены обязан не расти на пути к кульминации")
+    assert рампа[0] == RHYTHMS["calm"]["holdMax"]
+    assert рампа[-1] == RHYTHMS["punchy"]["holdMax"]
+    после = holds[climax_at + 1:]
+    assert all(hold == RHYTHMS["calm"]["holdMax"] for hold in после), (
+        "после кульминации сцена обязана вернуться к числам `calm`, не рампе"
+    )
+
+
+def test_direct_без_direction_дефолт_steady():
+    """План без `direction` вовсе (старые прогоны) компонуется как `steady` —
+    контракт (`_schema_problems`) уже не пускает такой план агента дальше,
+    но код терпит его молча."""
+    board = {"scenes": _rhythm_scenes()}
+    direct(board)
+    assert board["rhythm"]["pattern"] == "steady"
+    assert all(scene["rhythm"]["holdMax"] == MAX_STATIC_SPAN
+              for scene in board["scenes"])
