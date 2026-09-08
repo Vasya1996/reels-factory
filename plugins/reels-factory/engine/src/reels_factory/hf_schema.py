@@ -612,9 +612,20 @@ def date_variables(value: str) -> dict:
     `metric`+`_is_dateline`): счётчику суффикс приклеивается к числу
     («87 %»), а `number-pop-in` печатает его отдельным полем `unit` под
     числом («20» + «августа»).
+
+    Само поле `unit` кладётся в `inline-flex` с `gap: 2px`
+    (`number-pop-in.html`, `.hf-transition-number-pop-in`), рассчитанным на
+    символьный хвост вплотную к цифре («k», «%») — там `gap` и даёт весь
+    отступ. Хвост-слово живёт по другому правилу письма: пробел между числом
+    и словом обязателен («23 августа», не «23августа»), а `gap` из
+    паста-контейнера этот пробел не восстанавливает — хвост либо целиком
+    приклеен, либо это ровно один explicit-пробел перед словом. Отличаем по
+    первому символу хвоста: буква — оставляем один пробел; символ — ничего.
     """
     number, tail = _metric_parts(value)
-    return {"value": str(number), "unit": tail.strip()}
+    word = tail.strip()
+    unit = f" {word}" if word and word[0].isalpha() else word
+    return {"value": str(number), "unit": unit}
 
 
 #: Их твин считает `CONFIG.value` со стартом 0,5 с и длительностью 1,6 с
