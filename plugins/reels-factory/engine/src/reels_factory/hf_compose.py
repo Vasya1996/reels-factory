@@ -562,6 +562,46 @@ def _measured_paste_box(html: str, width: int, height: int,
         return _run_measure_script(path, width, height, at=0)
 
 
+def _paste_box_scale(drawn: dict | None, rect: dict) -> float:
+    """Масштаб паста-примитива внутри его коробки в кадре — тот же приём,
+    каким `_overlay_geometry` сажает измеренное содержимое в полосу над
+    титром: по ширине зоны, ужато потолком её высоты, если по ширине число
+    не умещается. У пасты нет отдельного канваса шире содержимого (как у
+    карточки каталога с полями по бокам) — то, что вернул `_measured_paste_
+    box`, уже и есть весь нарисованный прямоугольник, поэтому цель по
+    ширине и потолок по высоте берутся прямо у зоны элемента (`rect`), а не
+    у постоянной полосы схемы/титра, как у `_overlay_geometry`/`SCHEMA_
+    METRIC_NUMBER_HEIGHT` порознь: у элемента-эффекта в цикле сцены зона
+    своя при каждом положении ведущей, не одна и та же на весь ролик.
+
+    Измерить нечем (нет браузера/Chrome, `drawn` пуст) — масштаб 1.0: паста
+    остаётся на родном кегле, тем же контрактом отступления, что и у
+    `_run_measure_script`.
+    """
+    width = float((drawn or {}).get("width") or 0)
+    height = float((drawn or {}).get("height") or 0)
+    if width <= 0 or height <= 0:
+        return 1.0
+    scale = rect["width"] / width
+    if height * scale > rect["height"]:
+        scale = rect["height"] / height
+    return round(scale, 4)
+
+
+def _paste_scale_wrap(html: str, scale: float) -> str:
+    """Оборачивает паста-примитив в `transform:scale`, только когда масштаб
+    не единица — разметка обёртки одна на оба места, где паста-примитив
+    подгоняется до канона: число схемной формы `metric` и любой паста-
+    эффект в цикле элементов сцены. Флекс-центрирование коробки-хозяина
+    мерит НЕИСКАЖЁННЫЙ (без трансформа) размер обёртки, поэтому масштаб
+    ставится на внутренний слой, а не на саму коробку — иначе центр уехал
+    бы вместе с трансформом мимо середины зоны.
+    """
+    if scale == 1.0:
+        return html
+    return f'<div style="transform:scale({scale})">{html}</div>'
+
+
 @functools.lru_cache(maxsize=1)
 def _texture_blocks() -> frozenset:
     """Имена накладок-фактур из каталога. Каталога может не быть (тесты,
@@ -3329,7 +3369,15 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 # Без `data-composition-src`: содержимое уже здесь, литералом.
                 # Центрируем в коробке — paste-примитивы полки саморазмерны
                 # (кнопка, бейдж, плашка), а не «эластичны» под любой размер,
-                # как саб-композиции с `declare_box`.
+                # как саб-композиции с `declare_box`. Их родной кегль рисован
+                # не под наш кадр (каталог держит его для широкого 1920x1080),
+                # и без подгонки паста в вертикальной зоне выходит заметно
+                # мельче, чем то же число на схемном маршруте (`_paste_box_
+                # scale` — тот же приём измерения и потолка зоны, что уже
+                # ужимает счётчик формы `metric`, разбор — докстринг функции).
+                drawn = _measured_paste_box(paste_html, OUT_W, OUT_H,
+                                            unique=unique)
+                scale = _paste_box_scale(drawn, rect)
                 body.append(
                     f'    <div class="ovl" style="left:{rect["left"]}px;'
                     f'top:{rect["top"]}px;width:{rect["width"]}px;'
@@ -3340,7 +3388,8 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                     f' style="position:absolute;left:0;top:0;'
                     f'width:{rect["width"]}px;height:{rect["height"]}px;'
                     f'display:flex;align-items:center;'
-                    f'justify-content:center">{paste_html}</div></div>')
+                    f'justify-content:center">'
+                    f'{_paste_scale_wrap(paste_html, scale)}</div></div>')
             elif kind == "effect":
                 body.append(
                     f'    <div class="ovl" style="left:{rect["left"]}px;'
@@ -3774,9 +3823,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             # тот же id без изменений: приём поверх схемы (`where: "schema"`,
             # `paste_target_selector`) целится в него же, живой ли это блок
             # или паста-примитив.
-            pasted = (f'<div style="transform:scale({paste_scale})">'
-                     f'{paste_html}</div>'
-                     if paste_scale != 1.0 else paste_html)
+            pasted = _paste_scale_wrap(paste_html, paste_scale)
             body.append(
                 f'    <div class="ovl" id="schema-box-{scene["id"]}">'
                 f'<div id="schema-{scene["id"]}" class="clip"'
