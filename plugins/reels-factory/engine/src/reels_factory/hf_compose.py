@@ -79,6 +79,8 @@ from reels_factory.hf_montage import (
 )
 from reels_factory.hf_schema import (
     FORMS, SAFE_BOTTOM as SCHEMA_SAFE_BOTTOM, build as schema_build,
+    date_variables as schema_date_variables,
+    _is_dateline as schema_is_dateline,
     is_elastic as schema_is_elastic, min_seconds as schema_min_seconds,
     frame_variables, overlay_css, palette_css, port_block,
 )
@@ -3431,8 +3433,20 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 print(f'{scene["id"]}: схема бренда снята — знак не подобрался')
                 drop_schema(scenes, scene)
                 continue
-        block, config, css, patches = schema_build(
-            plan["form"], content, duration=end - start, colors=colors)
+        # Дата, номер и время формы `metric` — не количество: считать нечего,
+        # и код ставит их компонентом каталога `number-pop-in` вместо счётчика
+        # `mk-progress-stat`, которому в такой сцене не от чего отсчитывать
+        # (`hf_schema._is_dateline`, разбор причины — `hf_schema.py:83`).
+        # Тот же слот схемы (зона, aurora, скрим ниже), но паста-примитив
+        # вместо саб-композиции этого блока: `number-pop-in` несёт
+        # `reels.mount: paste` и монтируется той же функцией, что монтирует
+        # любую позицию-эффект без мишени в цикле элементов сцены выше
+        # (`paste_effect`), а не `_stage_overlay`.
+        dateline = (plan["form"] == "metric"
+                   and schema_is_dateline(content.get("value")))
+        if not dateline:
+            block, config, css, patches = schema_build(
+                plan["form"], content, duration=end - start, colors=colors)
         need = schema_min_seconds(plan["form"],
                                   len(content.get("files")
                                       or content.get("items")
@@ -3443,26 +3457,55 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                   f"{end - start:.1f} с, а форме нужно {need:.1f}")
             drop_schema(scenes, scene)
             continue
-        elastic = schema_is_elastic(block)
-        # Упругий блок раскладывается по коробке, а не по числам внутри себя:
-        # во весь кадр он ставил третью карточку прямо под слова титра (их
-        # `content_overlap` на `div.gca-label`, замер 1260..1292 при пороге
-        # 980). Коробку обрезаем по той же черте, что держат остальные формы, —
-        # и обрезаем её НА КОРНЕ БЛОКА: их загрузчик читает `data-height`
-        # оттуда и ею же переписывает высоту хоста
-        # (`compositionLoader.ts:516-524`), поэтому обрезанный хост сам по себе
-        # распрямлялся обратно во весь кадр.
-        height = SCHEMA_SAFE_BOTTOM if elastic else OUT_H
-        unique, _, _ = _stage_overlay(
-            public, block, scene["id"], sdk=None,
-            port={"duration": end - start, "css": css, "patches": patches,
-                  "elastic": elastic, "height": height,
-                  "config": {} if elastic else config})
-        # У упругого блока содержимое идёт штатным каналом на хост, а не
-        # довеском к литералу: он читает `getVariables()`.
-        values = (" data-variable-values='"
-                  + json.dumps(config, ensure_ascii=False).replace("'", "&#39;")
-                  + "'") if elastic else ""
+        if dateline:
+            # Переменные позиции: полярность букв решает кадр
+            # (`frame_variables` — на нашем тёмном фоне это `tone: paper`),
+            # значение и хвост при цифрах — `hf_schema.date_variables`
+            # (тем же разбором, что уже режет счётчик на число и суффикс).
+            card = _catalog_cards().get("number-pop-in") or {}
+            variables = {**frame_variables(card, colors, None),
+                        **schema_date_variables(content.get("value"))}
+            unique = f'number-pop-in--{scene["id"]}'
+            try:
+                paste_html, lines, _ = paste_effect(
+                    sdk, public, "number-pop-in", unique=unique,
+                    variables=variables)
+            except RuntimeError as error:
+                print(f'{scene["id"]}: схема «metric» снята — '
+                      f"`number-pop-in` не встал: {error}")
+                drop_schema(scenes, scene)
+                continue
+            decor_code += paste_recipe_block(lines, start)
+            # Паста-примитив саморазмерен (кнопка, число), а не «эластичен»
+            # под любую коробку, как саб-композиции пяти форм схемы — тот же
+            # довод, что у `paste_html` в цикле элементов сцены выше. Своей
+            # высоты СХЕМЫ он не знает, поэтому коробка здесь — не
+            # `SCHEMA_SAFE_BOTTOM`/`OUT_H` с трансформом до масштаба зоны, а
+            # сама зона: число просто центруется в её полосе.
+            elastic = False
+            height = zone["height"]
+            values = ""
+        else:
+            elastic = schema_is_elastic(block)
+            # Упругий блок раскладывается по коробке, а не по числам внутри себя:
+            # во весь кадр он ставил третью карточку прямо под слова титра (их
+            # `content_overlap` на `div.gca-label`, замер 1260..1292 при пороге
+            # 980). Коробку обрезаем по той же черте, что держат остальные формы, —
+            # и обрезаем её НА КОРНЕ БЛОКА: их загрузчик читает `data-height`
+            # оттуда и ею же переписывает высоту хоста
+            # (`compositionLoader.ts:516-524`), поэтому обрезанный хост сам по себе
+            # распрямлялся обратно во весь кадр.
+            height = SCHEMA_SAFE_BOTTOM if elastic else OUT_H
+            unique, _, _ = _stage_overlay(
+                public, block, scene["id"], sdk=None,
+                port={"duration": end - start, "css": css, "patches": patches,
+                      "elastic": elastic, "height": height,
+                      "config": {} if elastic else config})
+            # У упругого блока содержимое идёт штатным каналом на хост, а не
+            # довеском к литералу: он читает `getVariables()`.
+            values = (" data-variable-values='"
+                      + json.dumps(config, ensure_ascii=False).replace("'", "&#39;")
+                      + "'") if elastic else ""
         # ── живой фон под схемой ─────────────────────────────────────────
         # Корень схемы прозрачен у всех пяти блоков, а на схемной сцене под ним
         # нет ни ведущей, ни вставки: в кадре оставался ровный цвет из
@@ -3602,31 +3645,51 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
                 f'"{TRACK_SCHEMA_SCRIM + staged_schema_scrims % schema_scrim_tracks}"'
                 f'></div>')
             staged_schema_scrims += 1
-        # Место коробки в кадре — от зоны, а не от нуля. Целая зона (`none` и
-        # нижние уголки) даёт прежние `left:0;top:0` знак в знак: масштаб
-        # ставится только там, где зона короче полосы схемы, и лишнего
-        # атрибута в разметке иначе не появляется. Ужимаем ТРАНСФОРМОМ, а не
-        # числами внутри блока: числа у пяти форм свои, а трансформ уносит с
-        # собой и кегли подписей — ровно ту читаемость, порог которой считает
-        # `SCHEMA_MIN_SCALE`. Точка отсчёта — левый верхний угол, поэтому
-        # `left` доводит ужатую коробку до середины кадра.
-        place = "left:0;top:0"
-        if zone["scale"] < 1:
-            place = (f'left:{round(OUT_W * (1 - zone["scale"]) / 2)}px;'
-                     f'top:{zone["top"]}px;'
-                     f'transform:scale({zone["scale"]});'
-                     f'transform-origin:0 0')
-        body.append(
-            f'    <div class="ovl" id="schema-box-{scene["id"]}">'
-            f'<div id="schema-{scene["id"]}" class="clip"'
-            f' data-composition-id="{unique}-host"'
-            f' data-composition-src="compositions/{unique}.html"'
-            f' data-start="{markup_time(start):.4f}"'
-            f' data-duration="{markup_time(end) - markup_time(start):.4f}"'
-            f' data-track-index="{TRACK_SCHEMA}"'
-            f' data-width="{OUT_W}" data-height="{height}"'
-            f' style="position:absolute;{place};'
-            f'width:{OUT_W}px;height:{height}px"{values}></div></div>')
+        if dateline:
+            # Паста-примитив без предрисованной коробки: `height` уже сама
+            # высота зоны (см. ветку выше), трансформом ужимать нечего — само
+            # число просто центруется в этой полосе флексом, тем же приёмом,
+            # что и `paste_html` элемента-эффекта без мишени в цикле сцены
+            # выше. Внешний `.ovl#schema-box-{id}` — тот же id без изменений:
+            # приём поверх схемы (`where: "schema"`, `paste_target_selector`)
+            # целится в него же, живой ли это блок или паста-примитив.
+            body.append(
+                f'    <div class="ovl" id="schema-box-{scene["id"]}">'
+                f'<div id="schema-{scene["id"]}" class="clip"'
+                f' data-start="{markup_time(start):.4f}"'
+                f' data-duration="{markup_time(end) - markup_time(start):.4f}"'
+                f' data-track-index="{TRACK_SCHEMA}"'
+                f' style="position:absolute;left:0;top:{zone["top"]}px;'
+                f'width:{OUT_W}px;height:{height}px;display:flex;'
+                f'align-items:center;justify-content:center">'
+                f'{paste_html}</div></div>')
+        else:
+            # Место коробки в кадре — от зоны, а не от нуля. Целая зона
+            # (`none` и нижние уголки) даёт прежние `left:0;top:0` знак в
+            # знак: масштаб ставится только там, где зона короче полосы
+            # схемы, и лишнего атрибута в разметке иначе не появляется.
+            # Ужимаем ТРАНСФОРМОМ, а не числами внутри блока: числа у пяти
+            # форм свои, а трансформ уносит с собой и кегли подписей — ровно
+            # ту читаемость, порог которой считает `SCHEMA_MIN_SCALE`. Точка
+            # отсчёта — левый верхний угол, поэтому `left` доводит ужатую
+            # коробку до середины кадра.
+            place = "left:0;top:0"
+            if zone["scale"] < 1:
+                place = (f'left:{round(OUT_W * (1 - zone["scale"]) / 2)}px;'
+                         f'top:{zone["top"]}px;'
+                         f'transform:scale({zone["scale"]});'
+                         f'transform-origin:0 0')
+            body.append(
+                f'    <div class="ovl" id="schema-box-{scene["id"]}">'
+                f'<div id="schema-{scene["id"]}" class="clip"'
+                f' data-composition-id="{unique}-host"'
+                f' data-composition-src="compositions/{unique}.html"'
+                f' data-start="{markup_time(start):.4f}"'
+                f' data-duration="{markup_time(end) - markup_time(start):.4f}"'
+                f' data-track-index="{TRACK_SCHEMA}"'
+                f' data-width="{OUT_W}" data-height="{height}"'
+                f' style="position:absolute;{place};'
+                f'width:{OUT_W}px;height:{height}px"{values}></div></div>')
         scene["schemaShown"] = True
 
     # ── ведущая ───────────────────────────────────────────────────────────

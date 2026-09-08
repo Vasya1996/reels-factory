@@ -1029,6 +1029,98 @@ def test_схема_закрывает_кадр_их_блоком(run):
     assert 'id="schema-scrim-s-02"' not in html
 
 
+def _install_metric_block(run):
+    """Настоящий `mk-progress-stat` — тем же файлом, что стоит в каталоге,
+    а не рукописной заглушкой: патч на `_COUNT_TWEEN` (`hf_schema.build`)
+    ищет свой needle в РЕАЛЬНОМ тексте блока, и заглушка без него `port_block`
+    уронила бы `RuntimeError` («в блоке нет места для правки»)."""
+    from reels_factory.hf_catalog import CATALOG_DIR, REGISTRY_SUBDIR
+
+    source = (CATALOG_DIR / REGISTRY_SUBDIR / "blocks" / "mk-progress-stat"
+              / "mk-progress-stat.html")
+    target = run / "public" / "compositions" / "mk-progress-stat.html"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+    return run
+
+
+def _install_number_pop_in(run):
+    """Настоящий `number-pop-in` — той же раскладкой, что кладёт `hyperframes
+    add` компоненту (`compositions/components/<имя>.html`,
+    `_installed_path`)."""
+    from reels_factory.hf_catalog import CATALOG_DIR, REGISTRY_SUBDIR
+
+    source = (CATALOG_DIR / REGISTRY_SUBDIR / "components" / "number-pop-in"
+              / "number-pop-in.html")
+    target = (run / "public" / "compositions" / "components"
+             / "number-pop-in.html")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+    return run
+
+
+def _metric_scene(value: str):
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = None
+    scenes[1]["schema"] = {"form": "metric", "why": "названа величина",
+                           "value": value, "label": "дедлайн приёма заявок"}
+    return scenes
+
+
+def test_количество_в_metric_по_прежнему_встаёт_mk_progress_stat(run):
+    """Регресс-стража к маршрутизации ниже: количество — не дата, и код
+    обязан по-прежнему собирать его их же счётчиком, а не веерно перевести
+    всю форму `metric` на `number-pop-in`."""
+    _install_metric_block(run)
+    html, board = _build(run, scenes=_metric_scene("87 %"), resolved={})
+    assert board["scenes"][1]["schemaShown"] is True
+    assert ('data-composition-src="compositions/mk-progress-stat--s-02.html"'
+           in html)
+    assert "hf-transition-number-pop-in" not in html
+    copy = (run / "public" / "compositions"
+           / "mk-progress-stat--s-02.html").read_text(encoding="utf-8")
+    assert "Object.assign(CONFIG," in copy
+    assert "tl.to(" in copy  # твин счёта на месте — величина растёт
+
+
+def test_дата_в_metric_встаёт_number_pop_in(run):
+    """rb0908-university: дата — не количество, и отсчитывать ей нечего.
+    Компонент, у которого для неё есть слот (`number-pop-in`, снят с
+    `reels.skip` в этой же правке), встаёт паста-примитивом в тот же слот
+    схемы, что держал бы счётчик — зона, живой фон (aurora), но без
+    саб-композиции `mk-progress-stat` (`hf_schema._is_dateline` +
+    `date_variables`, схемная ветка `hf_compose`)."""
+    _install_number_pop_in(run)
+    html, board = _build(run, scenes=_metric_scene("20 августа"), resolved={})
+    assert board["scenes"][1]["schemaShown"] is True
+    # Паста-примитив: своей саб-композиции нет вовсе, и файла `mk-progress-
+    # stat--s-02.html` на диске не появляется.
+    assert 'data-composition-src' not in html[html.index('id="schema-s-02"'):
+                                              html.index('id="schema-s-02"') + 600]
+    assert not (run / "public" / "compositions"
+               / "mk-progress-stat--s-02.html").exists()
+    assert 'id="schema-s-02" class="clip"' in html
+    assert "hf-transition-number-pop-in" in html
+    # Значение и хвост доехали переменными компонента (не текстом счётчика):
+    # тень `getVariables()` перед его же скриптом, тем же приёмом, что и у
+    # любой другой paste-позиции без мишени.
+    box = html[html.index('id="schema-s-02"'):]
+    shadow = box[:box.index("hf-transition-number-pop-in") + 4000]
+    assert 'window.__hyperframes.getVariables = function () { return' in shadow
+    assert '"value": "20"' in shadow
+    assert '"unit": "августа"' in shadow
+    # Полярность букв решает кадр — на тёмном фоне это `tone: paper`.
+    assert '"tone": "paper"' in shadow
+    # Живой фон (aurora) остаётся под датой — тот же слот схемы, тот же код.
+    assert 'id="bg-aurora-s-02" class="aurora"' in html
+    # Пятый шаг их контракта: рецепт таймлайна доехал до нашего таймлайна.
+    code = (run / "public" / hf_compose.DECOR_SCRIPT).read_text(
+        encoding="utf-8")
+    assert "hf-transition-number-pop-in" in code
+    assert "const startTime = 3.0333;" in code
+
+
 def test_схема_поверх_вставки_получает_плашку_читаемости(run):
     """Job rb0907-philosophers, сцена s-07: `presenter: "none"`, но `insert`
     назван и приехал — под схемой лежит реальный сток на весь кадр

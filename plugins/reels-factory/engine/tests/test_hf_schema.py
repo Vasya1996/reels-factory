@@ -5,9 +5,10 @@ import re
 import pytest
 
 from reels_factory.hf_schema import (
-    FORMS, ICONS, LIMITS, SAFE_BOTTOM, build, min_seconds, palette_css,
-    port_block,
+    FORMS, ICONS, LIMITS, SAFE_BOTTOM, build, date_variables, min_seconds,
+    palette_css, port_block,
 )
+from reels_factory.hf_schema import _is_dateline
 
 #: Скелет их блока — ровно те места, которые правит перенос: канвас в CSS и в
 #: data-атрибутах, длительность в двух видах, литерал CONFIG и арифметика
@@ -312,32 +313,49 @@ def test_счёт_количества_укладывается_в_долю_сц
         f"начинается на {fade_start:.4f} — запас {hold:.4f} с меньше 0,4")
 
 
-def test_дата_в_metric_встаёт_сразу_без_счёта():
-    """rb0907-university, сцена `s-21`, 07.09.2026: `value: "23 августа"`.
-    Дата отвечает «когда», а не «сколько» — отсчитывать от нуля к ней нечего
-    (в кадре стояло «18 августа» на 67,0 с, «23» держалось долю секунды до
-    угасания), и полосы `value/max` у неё тоже нет — «стольких» не бывает."""
+def test_build_больше_не_гасит_счёт_у_даты():
+    """rb0907-university, сцена `s-21`, 07.09.2026: `value: "23 августа"`,
+    первая правка (03.09) снимала твин прямо здесь, патчем `build()`. Корень
+    оказался глубже (rb0908-university): дата — неверный блок вообще, не
+    только неверный твин внутри него, — и маршрут ушёл в `hf_compose`
+    (`_is_dateline` + `date_variables` перед вызовом `schema_build`, мимо
+    этой функции целиком): дату там перехватывают ДО `build()` и монтируют
+    компонентом `number-pop-in`, а этот файл про неё больше не знает.
+    `build()`, вызванный напрямую (как здесь), теперь видит только форму
+    количества — муть «дата или количество» из него ушла, и любое значение
+    получает обычный счётный твин."""
     _, config, css, patches = build(
         "metric", {"value": "23 августа", "label": "дедлайн приёма заявок"},
         duration=2.6, colors={})
     assert config["value"] == 23 and config["suffix"] == " августа"
+    # Полосу гасит `base <= number` (базы нет — `base` по умолчанию 0), не
+    # то, что величина похожа на дату: строка не знает о дате ничего.
     assert "#mk-ps-track { display: none; }" in css
     needle, replacement = patches[0]
     assert ("num.textContent = Math.round(CONFIG.value) + CONFIG.suffix;"
-            in replacement)
-    assert "tl.to(" not in replacement
+            not in replacement)
+    assert "tl.to(" in replacement
 
 
-@pytest.mark.parametrize("value", ["2026 год", "2020 года", "10:30", "10–20",
-                                    "12 (протокол № 88)"])
-def test_остальные_даты_и_номера_тоже_не_считаются(value):
-    """Месяц в любом падеже, «год/года», время, диапазон, «№» — тот же
-    признак «когда/который», что и у «23 августа»."""
-    _, _, css, patches = build("metric", {"value": value, "label": "х"},
-                               duration=2.6, colors={})
-    assert "#mk-ps-track { display: none; }" in css
-    needle, replacement = patches[0]
-    assert "tl.to(" not in replacement
+@pytest.mark.parametrize("value", ["23 августа", "2026 год", "2020 года",
+                                    "10:30", "10–20", "12 (протокол № 88)"])
+def test_is_dateline_узнаёт_дату_номер_и_время(value):
+    """Месяц в любом падеже, «год/года», время, диапазон, «№» — признак
+    «когда/который», по которому `hf_compose` решает, маршрутить ли значение
+    формы `metric` в `number-pop-in` вместо счётчика. Раньше эти же значения
+    проверялись через поведение `build()` — теперь маршрутизация ушла из
+    этого файла в `hf_compose`, и `_is_dateline` — то место, которое
+    действительно решает."""
+    assert _is_dateline(value)
+
+
+def test_date_variables_режет_значение_на_число_и_хвост():
+    """`number-pop-in` печатает число и хвост при нём двумя отдельными
+    переменными (`value`, `unit`), а не одной строкой, как счётчик
+    (`_metric_parts`, тот же разбор — только суффикс едет не приклеенным к
+    числу, а отдельным полем)."""
+    assert date_variables("20 августа") == {"value": "20", "unit": "августа"}
+    assert date_variables("2026 год") == {"value": "2026", "unit": "год"}
 
 
 @pytest.mark.parametrize("value", ["100%", "8 из 10", "250 000 ₽", "87%"])
