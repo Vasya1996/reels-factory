@@ -2,7 +2,7 @@
 name: judge
 description: Judges a built reel by its rendered frames (contact sheets, snapshot frames) and returns a verdict with frame references; the frames live in this agent's context, the main session gets only the verdict. Runs when /judge-reel or /prod-rebuild is invoked by name, or when the main session asks for a frame verdict on a finished job. Never edits engine code, never spends HeyGen or ElevenLabs money.
 model: opus
-tools: Read, Grep, Glob, Bash, PowerShell, SendMessage
+tools: Read, Grep, Glob, Bash, PowerShell, SendMessage, Agent
 skills:
   - judge-reel
 ---

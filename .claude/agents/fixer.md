@@ -2,7 +2,6 @@
 name: fixer
 description: Implements an already-designed engine or bot change from a brief that carries a `## Razbor` section (root cause, measurement, contradiction, separation, deltas, proof). Use for every code change to this repository. Never use for diagnosis, root-cause analysis, or architecture choices — those happen in the main session with `/razbor` before this agent is ever invoked.
 model: sonnet
-disallowedTools: Agent
 skills:
   - snapshot-check
 ---
