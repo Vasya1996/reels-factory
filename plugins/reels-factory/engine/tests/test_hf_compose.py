@@ -2959,3 +2959,50 @@ def test_цвет_в_рецепте_не_читается_селектором()
     assert not refused, refused
     assert lines and "'#767676'" in lines[0]
     assert ".demo-root--s-02 .w" in lines[0]
+
+
+def _tween_numbers(line: str) -> tuple[float, float]:
+    """`(duration, at)` разобранные из одной строки `tl.fromTo`/`tl.set`."""
+    duration_match = re.search(r"duration:\s*([\d.]+)", line)
+    at_match = re.search(r",\s*([\d.]+)\);$", line)
+    duration = float(duration_match.group(1)) if duration_match else 0.0
+    return duration, float(at_match.group(1))
+
+
+def test_наезд_не_переживает_свой_план():
+    """`D37_keyframes` (прогон rb0908-university, 08.09.2026): наезд на
+    коротком плане мерян в сырых секундах (`hf_montage.zoom_ladder`), а стоит
+    на сетке кадра (`markup_time`) — сырая длительность уезжает за
+    `markup_time` конца своего же плана и накрывает следующий твин той же
+    трансформы (`scale`), что запрещено их правилом («Do not overlap tweens
+    that write the same transform property», hyperframes-keyframes/SKILL.md,
+    Timing). План 26.167–27.574 — плана из отчёта, где гейт поймал 27.574 у
+    наезда против 27.567 у следующей ступени."""
+    from reels_factory.hf_compose import _zoom_timeline
+
+    plans = [
+        {"start": 26.167, "end": 27.574, "kind": "push",
+         "scale_from": 1.0, "scale_to": 1.1, "ramp": 1.407},
+        {"start": 27.574, "end": 29.0, "kind": "static",
+         "scale_from": 1.1, "scale_to": 1.1, "ramp": 0.0},
+    ]
+    lines = _zoom_timeline(plans)
+    assert len(lines) == 2
+    assert lines[0].startswith("tl.fromTo(")
+    push_duration, push_at = _tween_numbers(lines[0])
+    assert lines[1].startswith("tl.set(")
+    _, next_at = _tween_numbers(lines[1])
+    # Твин той же трансформы не смеет дожить до следующей ступени.
+    assert push_at + push_duration <= next_at + 1e-9
+
+
+def test_наезд_на_длинном_плане_держит_полную_рампу():
+    """Плана хватает с запасом (3 с против рампы 1,5 с) — подрезка не должна
+    трогать длительность вовсе."""
+    from reels_factory.hf_compose import _zoom_timeline
+
+    plans = [{"start": 0.0, "end": 3.0, "kind": "push",
+              "scale_from": 1.0, "scale_to": 1.1, "ramp": 1.5}]
+    lines = _zoom_timeline(plans)
+    duration, _ = _tween_numbers(lines[0])
+    assert duration == pytest.approx(1.5, abs=1e-9)
