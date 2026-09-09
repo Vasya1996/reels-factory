@@ -156,6 +156,10 @@ def test_команда_видит_обычный_профиль_и_права(m
     assert "acceptEdits" in " ".join(map(str, seen["cmd"]))
     assert str(seen["cwd"]) == str(tmp_path)
     assert runner.total_cost_usd == 0.02
+    # Рендерер закреплён на _HF_VERSION, а роутер без этого флага сам
+    # обновляет скилл маршрута до последнего на npm — пин и скилл расходятся
+    # на каждой сборке. Флаг обязан быть выставлен всегда.
+    assert seen["env"]["HYPERFRAMES_SKIP_SKILLS"] == "1"
 
 
 def test_headless_подхватывает_токен_подписки(monkeypatch, tmp_path):

@@ -172,6 +172,15 @@ class HeyGenAgentRunner:
         if not env.get("CLAUDE_CODE_OAUTH_TOKEN") and token_file.exists():
             env["CLAUDE_CODE_OAUTH_TOKEN"] = token_file.read_text(
                 encoding="utf-8").strip()
+        # Наш рендерер закреплён на _HF_VERSION (hyperframes_blocks.py), а шаг
+        # маршрута `npx hyperframes skills update <workflow-name>` тянет
+        # последний скилл с npm — пин и обновление расходятся при каждой
+        # сборке. Флаг официальный, документирован как путь отказа от этого
+        # шага: skills/hyperframes/references/skill-lifecycle.md:14
+        # («CI and tests may opt out with HYPERFRAMES_SKIP_SKILLS=1»).
+        # Ставим и в обычной сборке: установка и обновление скилов — наше
+        # решение, а не побочный эффект каждого рендера.
+        env["HYPERFRAMES_SKIP_SKILLS"] = "1"
         model_args = ["--model", self.model] if self.model else []
         if self.effort:
             model_args += ["--effort", self.effort]
