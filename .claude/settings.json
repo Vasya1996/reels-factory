@@ -1,0 +1,28 @@
+{
+  "autoCompactWindow": 500000,
+  "env": {
+    "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "6"
+  },
+  "permissions": {
+    "ask": [
+      "Agent(general-purpose)",
+      "Agent(claude)",
+      "Bash(*systemctl restart reels-bot*)",
+      "PowerShell(*systemctl restart reels-bot*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/require-razbor.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
