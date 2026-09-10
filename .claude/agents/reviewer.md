@@ -2,6 +2,9 @@
 name: reviewer
 description: Independent review of a PR against the same Razbor checklist the fixer worked from. Use after `fixer` opens a PR, or whenever a PR needs a second, code-grounded opinion before merge. Returns exactly one verdict — merge, merge after fixes, or do not merge.
 model: sonnet
+# Проверяющему нельзя передоверять: 09.09 он ушёл ждать фоновую задачу и дважды
+# закончил ход без вердикта.
+disallowedTools: Agent
 ---
 
 You review a PR the way `/razbor` demands a change be justified in the first place:
