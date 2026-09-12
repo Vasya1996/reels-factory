@@ -606,8 +606,32 @@
 
         (function hfBoot() {
           function start(data) {
-            var ready =
-              document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+            // Our fonts ship with lazy unicode-range subsets (hf_fonts.py) fetched
+            // only when an element first uses them; fonts.ready alone resolves
+            // before the Cyrillic Unbounded 800 subset is ever requested (no
+            // caption element exists yet at boot), so fitFontSize() measures with
+            // the fallback font and the real glyphs overflow (rb0908-university
+            // 32.2 s, 2026-09-08). Load the caption face for the actual caption
+            // text first, then wait for fonts.ready.
+            var ready;
+            if (document.fonts && document.fonts.load) {
+              var sampleWords = [];
+              var segments = data && data.segments ? data.segments : [];
+              for (var i = 0; i < segments.length; i++) {
+                var segWords = segments[i] && segments[i].words ? segments[i].words : [];
+                for (var j = 0; j < segWords.length; j++) {
+                  if (segWords[j] && segWords[j].text) sampleWords.push(segWords[j].text.toUpperCase());
+                }
+              }
+              var sample = sampleWords.join(" ");
+              ready = document.fonts.load("800 60px Montserrat", sample)
+                .catch(function () {})
+                .then(function () {
+                  return document.fonts.ready;
+                });
+            } else {
+              ready = Promise.resolve();
+            }
             ready.then(function () {
               // A manual window.__HF_CAPTION_ATTACH__ call that lands while the
               // sibling fetch / fonts.ready are still pending must win — never
