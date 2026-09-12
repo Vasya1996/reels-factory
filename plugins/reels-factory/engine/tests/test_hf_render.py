@@ -90,9 +90,6 @@ def _fakes(monkeypatch, tmp_path, storyboards):
                         lambda board, found, clips, duration, public=None: [])
     monkeypatch.setattr(hf_render, "resolve_all",
                         lambda public, requests, **kw: {})
-    monkeypatch.setattr(hf_render, "rhythm_gates",
-                        lambda mp4: {"D18_change_rate": "PASS",
-                                     "D19_static_span": "PASS"})
 
     def fake_build(rdir, sdk, *, storyboard, clips, duration, words,
                    resolved=None, sfx_whoosh=None, theme=None, face=None):
@@ -186,6 +183,12 @@ def _board(scenes, duration=20.0):
                            "endSec": duration,
                            "bounds": {"x": 0, "y": 0, "width": 1080, "height": 1920}},
             "subtitles": {"enabled": True},
+            # Обязательное поле контракта (`_schema_problems`); `steady` —
+            # чтобы фикстуры этого файла (про заказ, пересдачи, бюджет) не
+            # заваливались новым полем, для которого они не написаны.
+            "direction": {"world": "контора, где всё горит, и облегчение, "
+                                   "когда рутину забирает ассистент",
+                          "rhythm": "steady"},
             "scenes": scenes}
 
 
@@ -2217,8 +2220,7 @@ def test_план_без_кадра_после_заказа_ведущей_то�
     (tmp_path / f".hf-{hf_render.EARLY_PLAN_STEP}.done").write_text(
         "ok", encoding="utf-8")
     hf_render.save_retry_reason(
-        tmp_path, "D18_change_rate: FAIL: картинка меняется реже раза в 2,5 "
-                  "секунды")
+        tmp_path, "D15_inserts_visible: FAIL: вставка не видна на кадре")
 
     молчит = json.loads(json.dumps(GOOD))
     молчит["scenes"][2].pop("frame")
@@ -2710,13 +2712,13 @@ def test_пересборка_после_провала_проверок_нес�
             tmp_path, TIMED, edit_plan=PLAN, avatar_mp4s=[tmp_path / "src.mp4"],
             master_audio=tmp_path / "voice.wav", alignment_words=WORDS)
 
-    # Прогон 1: ролик собрался, но ритм не прошёл — с решения 05 бот такой
-    # ролик доставляет как обычный (см. test_bot.py), а не отказывает; здесь
-    # проверяется, что причина всё равно доезжает до ручной пересборки той же
-    # папки, если кто-то её запустит.
-    monkeypatch.setattr(hf_render, "rhythm_gates", lambda mp4: {
-        "D18_change_rate": "FAIL: картинка меняется реже раза в 2,5 секунды",
-        "D19_static_span": "PASS"})
+    # Прогон 1: ролик собрался, но наезд не доехал (`D27_zoom`, меряется
+    # тем же способом, что раньше ритм, — по готовому файлу, после рендера) —
+    # с решения 05 бот такой ролик доставляет как обычный (см. test_bot.py),
+    # а не отказывает; здесь проверяется, что причина всё равно доезжает до
+    # ручной пересборки той же папки, если кто-то её запустит.
+    monkeypatch.setattr(hf_render, "zoom_gates", lambda mp4, camera: {
+        "D27_zoom": "FAIL: наезд не доехал — 3.2 с: ждали x1.18, в файле x1.05"})
     первый = собрать()
     assert _fails(первый["gates"]), "первый прогон обязан не пройти проверки"
 
@@ -2724,15 +2726,15 @@ def test_пересборка_после_провала_проверок_нес�
     # монтажные маркеры и зовёт сборку на той же папке. Оплаченное (`prepare`,
     # снятые клипы) остаётся на месте.
     hf_render.reset_montage_steps(tmp_path)
-    monkeypatch.setattr(hf_render, "rhythm_gates", lambda mp4: {
-        "D18_change_rate": "PASS", "D19_static_span": "PASS"})
+    monkeypatch.setattr(hf_render, "zoom_gates", lambda mp4, camera: {
+        "D27_zoom": "PASS: наездов 1, все по замеру"})
     второй = собрать()
 
     assert _fails(второй["gates"]) == []
     assert len(планы) == 2, (
         "на пересборке композитора не спросили заново — в кадр поехал тот же "
         "план, что проверки уже завернули")
-    assert "меняется реже" in _причина(планы[1]), (
+    assert "наезд не доехал" in _причина(планы[1]), (
         "композитор не узнал, чем не прошёл прошлый план")
 
 
@@ -2808,7 +2810,7 @@ def test_имена_гейтов_спрашивают_у_кода_а_не_у_с�
 
     assert "D26_flash" not in имена, (
         "снятый гейт считается живым — упоминание в тексте принято за код")
-    for живой in ("D34_inserts", "D18_change_rate", "D15_inserts_visible",
+    for живой in ("D34_inserts", "D27_zoom", "D15_inserts_visible",
                   "D25_empty_frame", "D26_frame_content", "D8_face"):
         assert живой in имена, f"живой гейт {живой} не найден в коде"
 
@@ -2995,11 +2997,12 @@ def test_продолжение_на_островах_спрашивает_аг�
             # списывается независимо от того, чем прогон кончился.
             meter.claude_agent(кошелёк.runs, кошелёк.total_cost_usd)
 
-    # Прогон 1: ролик собрался, но ритм не прошёл — с решения 05 такой ролик
-    # бот доставляет как обычный (см. test_bot.py), а не отказывает.
-    monkeypatch.setattr(hf_render, "rhythm_gates", lambda mp4: {
-        "D18_change_rate": "FAIL: картинка меняется реже раза в 2,5 секунды",
-        "D19_static_span": "PASS"})
+    # Прогон 1: ролик собрался, но наезд не доехал (`D27_zoom`, тот же
+    # готовый-файл-после-рендера гейт, что раньше держал ритм) — с решения 05
+    # такой ролик бот доставляет как обычный (см. test_bot.py), а не
+    # отказывает.
+    monkeypatch.setattr(hf_render, "zoom_gates", lambda mp4, camera: {
+        "D27_zoom": "FAIL: наезд не доехал — 3.2 с: ждали x1.18, в файле x1.05"})
     первый = собрать()
     assert _fails(первый["gates"]), "первый прогон обязан не пройти проверки"
     assert задания == [], (
@@ -3010,8 +3013,8 @@ def test_продолжение_на_островах_спрашивает_аг�
     # Продолжение: бот снимает монтажные маркеры и зовёт сборку на той же
     # папке. Оплаченное (prepare, plan-early, купленные клипы) остаётся.
     hf_render.reset_montage_steps(tmp_path)
-    monkeypatch.setattr(hf_render, "rhythm_gates", lambda mp4: {
-        "D18_change_rate": "PASS", "D19_static_span": "PASS"})
+    monkeypatch.setattr(hf_render, "zoom_gates", lambda mp4, camera: {
+        "D27_zoom": "PASS: наездов 1, все по замеру"})
     второй = собрать()
 
     assert _fails(второй["gates"]) == []
@@ -3026,7 +3029,7 @@ def test_продолжение_на_островах_спрашивает_аг�
     assert "## Где ведущей нет" in задания[0], (
         "задание пересдачи написано в режиме «аватар ещё не заказан» — агент "
         "решал бы, где ведущая нужна, поверх уже купленных клипов")
-    assert "меняется реже" in _причина(задания[0]), (
+    assert "наезд не доехал" in _причина(задания[0]), (
         "композитор не узнал, чем не прошёл прошлый прогон")
     assert hf_render.step_done(tmp_path, hf_render.EARLY_PLAN_STEP) is True, (
         "снят маркер раннего плана — по нему куплена ведущая")
@@ -3222,3 +3225,45 @@ def test_схема_со_вставкой_без_ведущей_не_затро�
         scenes, EARLY_TOTAL, phrases, avatar_islands_settings({}))
 
     assert гейты["D36_elements"] == "PASS", гейты["D36_elements"]
+
+
+def test_direct_считает_потолок_сцены_до_раскладки(tmp_path, monkeypatch):
+    """`direct()` обязан отработать НА КАЖДОЙ попытке раннего плана, ДО
+    `lay_out_scenes`: паттерн `punchy` держит потолок сцены 5 с, вдвое ниже
+    `steady`-умолчания в 8 с. План с одной сценой на фразы 0–3 (6,55 с по
+    `TIMED`/`WORDS`) под `steady` прошёл бы раскладку молча — под `punchy`
+    обязан вернуться агенту на пересдачу, а сообщение обязано назвать
+    потолок паттерна (5 с), а не восьмисекундное умолчание: иначе `direct()`
+    молча не сработал, и раскладка меряла сцену старой, не паттерновой
+    планкой.
+    """
+    from reels_factory import hf_render
+
+    плохой = {
+        "direction": {"world": "контора, где всё горит, и облегчение, "
+                               "когда рутину забирает ассистент",
+                      "rhythm": "punchy"},
+        "scenes": [
+            {"id": "s-01", "intent": "зачем", "phrases": [0, 3]},
+            {"id": "s-02", "intent": "зачем", "phrases": [4, 11]},
+        ],
+    }
+    хороший = json.loads(json.dumps(GOOD))
+    хороший["direction"] = {"world": "контора, где всё горит, и облегчение, "
+                                     "когда рутину забирает ассистент",
+                            "rhythm": "punchy"}
+
+    calls = _plan_fakes(monkeypatch, tmp_path, [плохой, хороший])
+
+    res = hf_render.plan_before_avatar(tmp_path, TIMED, alignment_words=WORDS)
+
+    планы = [текст for имя, текст in calls if имя == "plan"]
+    assert len(планы) == 2, "план длиннее потолка `punchy` не ушёл на пересдачу"
+    причина = _причина(планы[1])
+    assert "s-01" in причина, "пересдача не назвала виновную сцену"
+    assert "предел 5 с" in причина, (
+        f"пересдача не назвала потолок паттерна `punchy` (5 с) — {причина!r}")
+    assert "предел 8 с" not in причина, (
+        "потолок остался восьмисекундным — `direct()` не отработал до "
+        "раскладки, и сцена мерена старым умолчанием `steady`")
+    assert res["scenes"], "после починки план обязан разложиться"
