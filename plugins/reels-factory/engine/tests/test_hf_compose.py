@@ -1029,6 +1029,273 @@ def test_схема_закрывает_кадр_их_блоком(run):
     assert 'id="schema-scrim-s-02"' not in html
 
 
+def _install_metric_block(run):
+    """Настоящий `mk-progress-stat` — тем же файлом, что стоит в каталоге,
+    а не рукописной заглушкой: патч на `_COUNT_TWEEN` (`hf_schema.build`)
+    ищет свой needle в РЕАЛЬНОМ тексте блока, и заглушка без него `port_block`
+    уронила бы `RuntimeError` («в блоке нет места для правки»)."""
+    from reels_factory.hf_catalog import CATALOG_DIR, REGISTRY_SUBDIR
+
+    source = (CATALOG_DIR / REGISTRY_SUBDIR / "blocks" / "mk-progress-stat"
+              / "mk-progress-stat.html")
+    target = run / "public" / "compositions" / "mk-progress-stat.html"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+    return run
+
+
+def _install_number_pop_in(run):
+    """Настоящий `number-pop-in` — той же раскладкой, что кладёт `hyperframes
+    add` компоненту (`compositions/components/<имя>.html`,
+    `_installed_path`)."""
+    from reels_factory.hf_catalog import CATALOG_DIR, REGISTRY_SUBDIR
+
+    source = (CATALOG_DIR / REGISTRY_SUBDIR / "components" / "number-pop-in"
+              / "number-pop-in.html")
+    target = (run / "public" / "compositions" / "components"
+             / "number-pop-in.html")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+    return run
+
+
+def _metric_scene(value: str):
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["presenter"] = "none"
+    scenes[1]["insert"] = None
+    scenes[1]["schema"] = {"form": "metric", "why": "названа величина",
+                           "value": value, "label": "дедлайн приёма заявок"}
+    return scenes
+
+
+def test_количество_в_metric_по_прежнему_встаёт_mk_progress_stat(run):
+    """Регресс-стража к маршрутизации ниже: количество — не дата, и код
+    обязан по-прежнему собирать его их же счётчиком, а не веерно перевести
+    всю форму `metric` на `number-pop-in`."""
+    _install_metric_block(run)
+    html, board = _build(run, scenes=_metric_scene("87 %"), resolved={})
+    assert board["scenes"][1]["schemaShown"] is True
+    assert ('data-composition-src="compositions/mk-progress-stat--s-02.html"'
+           in html)
+    assert "hf-transition-number-pop-in" not in html
+    copy = (run / "public" / "compositions"
+           / "mk-progress-stat--s-02.html").read_text(encoding="utf-8")
+    assert "Object.assign(CONFIG," in copy
+    assert "tl.to(" in copy  # твин счёта на месте — величина растёт
+
+
+def test_дата_в_metric_встаёт_number_pop_in(run, monkeypatch):
+    """rb0908-university: дата — не количество, и отсчитывать ей нечего.
+    Компонент, у которого для неё есть слот (`number-pop-in`, снят с
+    `reels.skip` в этой же правке), встаёт паста-примитивом в тот же слот
+    схемы, что держал бы счётчик — зона, живой фон (aurora), но без
+    саб-композиции `mk-progress-stat` (`hf_schema._is_dateline` +
+    `date_variables`, схемная ветка `hf_compose`)."""
+    _install_number_pop_in(run)
+    # Замер нарисованного (масштаб до канона счётчика) требует настоящего
+    # браузера — та же причина, что у `_measured_content_box` в фикстуре
+    # `каталог`: заводить его в этом тесте нечем и незачем, отдельный тест
+    # ниже (`test_дата_масштабируется_до_канона_числа`) проверяет саму
+    # арифметику с подменённым измерением.
+    monkeypatch.setattr(hf_compose, "_measured_paste_box", lambda *a, **k: None)
+    html, board = _build(run, scenes=_metric_scene("20 августа"), resolved={})
+    assert board["scenes"][1]["schemaShown"] is True
+    # Паста-примитив: своей саб-композиции нет вовсе, и файла `mk-progress-
+    # stat--s-02.html` на диске не появляется.
+    assert 'data-composition-src' not in html[html.index('id="schema-s-02"'):
+                                              html.index('id="schema-s-02"') + 600]
+    assert not (run / "public" / "compositions"
+               / "mk-progress-stat--s-02.html").exists()
+    assert 'id="schema-s-02" class="clip"' in html
+    assert "hf-transition-number-pop-in" in html
+    # Значение и хвост доехали переменными компонента (не текстом счётчика):
+    # тень `getVariables()` перед его же скриптом, тем же приёмом, что и у
+    # любой другой paste-позиции без мишени.
+    box = html[html.index('id="schema-s-02"'):]
+    shadow = box[:box.index("hf-transition-number-pop-in") + 4000]
+    assert 'window.__hyperframes.getVariables = function () { return' in shadow
+    assert '"value": "20"' in shadow
+    assert '"unit": " августа"' in shadow
+    # Полярность букв решает кадр — на тёмном фоне это `tone: paper`.
+    assert '"tone": "paper"' in shadow
+    # Живой фон (aurora) остаётся под датой — тот же слот схемы, тот же код.
+    assert 'id="bg-aurora-s-02" class="aurora"' in html
+    # Пятый шаг их контракта: рецепт таймлайна доехал до нашего таймлайна.
+    code = (run / "public" / hf_compose.DECOR_SCRIPT).read_text(
+        encoding="utf-8")
+    assert "hf-transition-number-pop-in" in code
+    assert "const startTime = 3.0333;" in code
+
+
+def test_дата_масштабируется_до_канона_числа(run, monkeypatch):
+    """rb0908-university, 08.09.2026 00:51 UTC: с компонентом установленным
+    вручную дата вставала на родном кегле `number-pop-in` (76px) — около
+    60px измеренным прямоугольником — там, где `mk-progress-stat` в той же
+    зоне рисует число канона в 190px (`SCHEMA_METRIC_NUMBER_HEIGHT`). Замер
+    нарисованного (здесь — подменённый, реальный браузер не заводим) обязан
+    поднять число трансформом на внутреннем слое до той же зоны, какой
+    ужался бы сам счётчик."""
+    _install_number_pop_in(run)
+    monkeypatch.setattr(hf_compose, "_measured_paste_box",
+                        lambda *a, **k: {"left": 0, "top": 0,
+                                         "width": 240, "height": 60})
+    html, board = _build(run, scenes=_metric_scene("20 августа"), resolved={})
+    assert board["scenes"][1]["schemaShown"] is True
+    zone = hf_compose.schema_zone("none")
+    expected = round(hf_compose.SCHEMA_METRIC_NUMBER_HEIGHT * zone["scale"]
+                     / 60, 4)
+    box = html[html.index('id="schema-s-02"'):]
+    match = re.search(r"transform:scale\(([\d.]+)\)", box)
+    assert match, "паста без трансформа — измерение не применилось"
+    assert float(match.group(1)) == expected
+
+
+def test_дата_без_измерения_остаётся_на_родном_кегле(run, monkeypatch):
+    """Браузера нет (нет `node`, не закреплён Chrome) — то же отступление,
+    что у `_measured_content_box`: паста собирается как раньше, безо всякого
+    трансформа, а не роняет сборку и не выдумывает масштаб."""
+    _install_number_pop_in(run)
+    monkeypatch.setattr(hf_compose, "_measured_paste_box", lambda *a, **k: None)
+    html, board = _build(run, scenes=_metric_scene("20 августа"), resolved={})
+    assert board["scenes"][1]["schemaShown"] is True
+    box = html[html.index('id="schema-s-02"'):][:2000]
+    assert "transform:scale" not in box
+
+
+def test_дата_элемента_на_pip_делится_на_цифры_и_слово(run, monkeypatch):
+    """rb0908-university, 2026-09-08: элемент `number-pop-in` на `pip-tr`
+    (не схема `metric`) получил от агента всю дату одной строкой в `value`
+    и без `unit` — демо-умолчание карточки («k») село следом: «23 августак»
+    в кадре. Тот же разбор, что уже режет дату на схемном маршруте
+    (`hf_schema.date_variables`), обязан сработать и здесь — признак не имя
+    позиции, а её собственные строковые `value`+`unit`."""
+    _install_number_pop_in(run)
+    monkeypatch.setattr(hf_compose, "_measured_paste_box", lambda *a, **k: None)
+    html, _ = _build(run, scenes=_с_элементами(
+        {"name": "number-pop-in",
+         "variables": {"value": "23 августа", "lift": "standard",
+                       "tone": "accent"}}), resolved={})
+    box = html[html.index('id="el-s-02-0"'):]
+    shadow = box[:box.index("getVariables") + 4000]
+    assert '"value": "23"' in shadow, shadow
+    assert '"unit": " августа"' in shadow, shadow
+    assert '"lift": "standard"' in shadow
+    assert '"tone": "accent"' in shadow
+    # Демо-умолчание карточки («k») не пролезло следом за датой.
+    assert '"unit": "k"' not in shadow
+
+
+def test_дата_элемента_без_хвоста_даёт_пустой_unit(run, monkeypatch):
+    """Число без слова при нём («2026») — тоже дата, и хвоста у неё нет: код
+    обязан отдать пустую строку, а не оставить демо-умолчание карточки."""
+    _install_number_pop_in(run)
+    monkeypatch.setattr(hf_compose, "_measured_paste_box", lambda *a, **k: None)
+    html, _ = _build(run, scenes=_с_элементами(
+        {"name": "number-pop-in", "variables": {"value": "2026"}}),
+        resolved={})
+    box = html[html.index('id="el-s-02-0"'):]
+    shadow = box[:box.index("getVariables") + 4000]
+    assert '"value": "2026"' in shadow, shadow
+    assert '"unit": ""' in shadow, shadow
+
+
+def test_названный_agentом_unit_не_переписывается(run, monkeypatch):
+    """Агент, назвавший оба поля сам, сильнее разбора: код делит строку
+    только когда `unit` от него не пришёл вовсе."""
+    _install_number_pop_in(run)
+    monkeypatch.setattr(hf_compose, "_measured_paste_box", lambda *a, **k: None)
+    html, _ = _build(run, scenes=_с_элементами(
+        {"name": "number-pop-in",
+         "variables": {"value": "23", "unit": "августа"}}), resolved={})
+    box = html[html.index('id="el-s-02-0"'):]
+    shadow = box[:box.index("getVariables") + 4000]
+    assert '"value": "23"' in shadow, shadow
+    assert '"unit": "августа"' in shadow, shadow
+
+
+def test_paste_box_scale_по_канону_высоты_с_потолком_по_ширине():
+    """`_paste_box_scale` поднимает нарисованное до канона схемного числа
+    ПО ВЫСОТЕ (`SCHEMA_METRIC_NUMBER_HEIGHT`, домноженный на `rect["scale"]`
+    — долю зоны от полной полосы схемы), а не по ширине коробки: читаемый
+    размер числа задаёт его кегль, не ширина полосы под ним. Ширина только
+    ограничивает — если поднятое число шире своей коробки, масштаб падает
+    до потолка ширины (rb0908-university, s-17, 08.09.2026: паста-эффект на
+    полнокадровой вставке шёл прежней формулой на всю ширину кадра и резался
+    по правому краю — падал ровно тот случай, что здесь проверяет вторая
+    сборка)."""
+    wide = {"left": 0, "top": 0, "width": 2000, "height": 1000, "scale": 1.0}
+    # Канон высоты: 190 * 1.0 / 60 = 3.1(6). Коробка широкая — потолок
+    # ширины не трогает число (400 * 3.1667 = 1266.7 <= 2000).
+    assert hf_compose._paste_box_scale(
+        {"width": 400, "height": 60}, wide) == round(190 / 60, 4)
+    # Тот же нарисованный прямоугольник, но узкая коробка — потолок ширины
+    # срабатывает раньше канона высоты: 300 / 400 = 0.75, меньше 3.1667.
+    narrow = {"left": 0, "top": 583, "width": 300, "height": 100, "scale": 1.0}
+    assert hf_compose._paste_box_scale(
+        {"width": 400, "height": 60}, narrow) == 0.75
+    # Зона ýже полной полосы схемы (`scale` < 1) — канон высоты падает вместе
+    # с ней: 190 * 0.5 / 60 = 1.5833, потолок ширины (2000) не мешает.
+    half = {"left": 0, "top": 0, "width": 2000, "height": 500, "scale": 0.5}
+    assert hf_compose._paste_box_scale(
+        {"width": 400, "height": 60}, half) == round(190 * 0.5 / 60, 4)
+    # Поле `scale` может отсутствовать (эффект без зоны и без домножения) —
+    # тогда канон берётся без ужатия, `rect.get("scale", 1.0)`.
+    assert hf_compose._paste_box_scale(
+        {"width": 400, "height": 60}, {"width": 2000}) == round(190 / 60, 4)
+    # Измерить нечем — масштаб единица, паста остаётся на родном кегле (тот
+    # же контракт отступления, что у `_run_measure_script`).
+    assert hf_compose._paste_box_scale(None, wide) == 1.0
+    assert hf_compose._paste_box_scale({"width": 0, "height": 0}, wide) == 1.0
+
+
+def test_paste_scale_wrap_оборачивает_только_если_масштаб_не_единица():
+    """Разметка обёртки — одна на схемный маршрут и на цикл элементов сцены:
+    масштаб 1.0 значит паста осталась на родном кегле, и оборачивать её не в
+    что — лишний слой без трансформа менял бы только разметку, не кадр."""
+    assert hf_compose._paste_scale_wrap("<div>x</div>", 1.0) == "<div>x</div>"
+    assert (hf_compose._paste_scale_wrap("<div>x</div>", 2.5)
+           == '<div style="transform:scale(2.5)"><div>x</div></div>')
+
+
+def test_paste_эффект_в_цикле_элементов_масштабируется_до_зоны(run, monkeypatch):
+    """rb0908-university, сцена s-18 (08.09.2026): агент назвал `number-pop-
+    in` элементом сцены на `pip-tr` (вставка почти во весь кадр), и число
+    садилось флекс-центром на родном кегле (~40px измеренным прямоугольником
+    на контакт-листе, 67,15 с) — втрое мельче того же числа на схемном
+    маршруте. Замер (здесь — подменённый, реальный браузер не заводим) обязан
+    поднять число тем же приёмом, что уже поднимает его схемный маршрут
+    (`_paste_box_scale`), до свободной зоны кадра при этом положении ведущей
+    (`effect_zone`), а не оставлять на родном кегле."""
+    _install_number_pop_in(run)
+    drawn = {"left": 0, "top": 0, "width": 240, "height": 60}
+    monkeypatch.setattr(hf_compose, "_measured_paste_box", lambda *a, **k: drawn)
+    html, board = _build(run, scenes=_с_элементами(
+        {"name": "number-pop-in",
+         "variables": {"value": "23", "unit": "августа"}}), resolved={})
+    assert board["scenes"][1]["elements"][0]["name"] == "number-pop-in"
+    rect = hf_compose.effect_zone("pip-tr")
+    expected = hf_compose._paste_box_scale(drawn, rect)
+    assert expected != 1.0, "зона и измерение подобраны так, чтобы масштаб менялся"
+    frame = html[html.index('id="el-s-02-0"'):][:2000]
+    match = re.search(r"transform:scale\(([\d.]+)\)", frame)
+    assert match, "паста-эффект без трансформа — измерение не применилось"
+    assert float(match.group(1)) == expected
+
+
+def test_paste_эффект_без_измерения_остаётся_на_родном_кегле(run, monkeypatch):
+    """Тот же контракт отступления, что у схемного маршрута: браузера нет —
+    паста-эффект в цикле элементов остаётся без трансформа, как до этой
+    правки, а не роняет сборку и не выдумывает масштаб."""
+    _install_number_pop_in(run)
+    monkeypatch.setattr(hf_compose, "_measured_paste_box", lambda *a, **k: None)
+    html, board = _build(run, scenes=_с_элементами(
+        {"name": "number-pop-in",
+         "variables": {"value": "23", "unit": "августа"}}), resolved={})
+    assert board["scenes"][1]["elements"][0]["name"] == "number-pop-in"
+    frame = html[html.index('id="el-s-02-0"'):][:2000]
+    assert "transform:scale" not in frame
+
+
 def test_схема_поверх_вставки_получает_плашку_читаемости(run):
     """Job rb0907-philosophers, сцена s-07: `presenter: "none"`, но `insert`
     назван и приехал — под схемой лежит реальный сток на весь кадр
@@ -1528,6 +1795,30 @@ def test_позиция_со_skip_в_установку_не_попадает(mo
     scenes = json.loads(json.dumps(SCENES))
     scenes[1]["elements"] = [{"name": "demo-skip-component"}]
     assert "demo-skip-component" not in needed_blocks(_board(scenes))
+
+
+def test_дата_в_metric_ставит_number_pop_in_в_установку_блоков():
+    """rb0908-university, 08.09.2026 00:51 UTC: дата формы `metric` не
+    собирается блоком `FORMS['metric']` (`mk-progress-stat`) — её монтирует
+    компонент каталога `number-pop-in` (схемная ветка `hf_compose`,
+    `_is_dateline` + `date_variables`), а без него в списке `hyperframes add`
+    паста падает `[Errno 2] No such file …/number-pop-in.html` на любом
+    плане, ни разу не назвавшем компонент элементом сцены — ни один из пяти
+    боевых планов не называет."""
+    from reels_factory.hf_compose import needed_blocks
+    blocks = needed_blocks(_board(_metric_scene("20 августа")))
+    assert "number-pop-in" in blocks
+    assert "mk-progress-stat" not in blocks
+
+
+def test_количество_в_metric_не_ставит_number_pop_in_в_установку_блоков():
+    """Регресс-стража к маршрутизации: количество — не дата
+    (`hf_schema._is_dateline`), и установку по-прежнему получает
+    `mk-progress-stat`, а не паста-примитив, которому тут нечего делать."""
+    from reels_factory.hf_compose import needed_blocks
+    blocks = needed_blocks(_board(_metric_scene("87 %")))
+    assert "mk-progress-stat" in blocks
+    assert "number-pop-in" not in blocks
 
 
 # ---------- что не встанет в кадр, снимается до разбора пустых сцен ----------

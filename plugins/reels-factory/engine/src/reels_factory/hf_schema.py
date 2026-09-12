@@ -80,10 +80,16 @@ _ROOTS = {
 #: конца твина у крупных чисел (тот же «250 000 $» из карточки формы,
 #: `hf_montage_skill.py:566-572`).
 #:
-#: Правка — у причины, в две части. `_is_dateline` отличает дату/номер от
-#: количества и снимает у неё сам твин (`build()`, патч в `port_block`):
-#: значение встаёт сразу, отсчитывать нечего. Количеству же старт и
-#: длительность твина не фиксированы, а считаются `_count_timing` от
+#: Первая правка лечила это в `build()`: `_is_dateline` отличала дату/номер
+#: от количества и снимала твин патчем в `port_block`, оставляя счётчик
+#: (`mk-progress-stat`) самим блоком. Расследование пошло дальше корня, а не
+#: симптома (rb0908-university): счётчик — неверный блок для даты вообще,
+#: не только его твин. Дата не отвечает «сколько» и не отсчитывается ни от
+#: чего, поэтому дате нужен блок, который не считает, — `number-pop-in`
+#: (`hf_compose`, схемная ветка `metric`+`_is_dateline`, ДО вызова `build()`
+#: этого файла). `build()` теперь про количество целиком: дата до него не
+#: доходит, и муть от «дата или количество» из этой функции ушла. Количеству
+#: старт и длительность твина не фиксированы, а считаются `_count_timing` от
 #: длительности сцены — тем же приёмом, что у их `count-up`
 #: (`root.dataset.duration`, `count-up.html:222-232`), но без масштабирования
 #: вверх: длинная сцена просто дольше держит готовое число. Пол `metric`
@@ -596,6 +602,32 @@ def _is_dateline(value: str) -> bool:
     return bool(_DATELIKE.search(str(value or "")))
 
 
+def date_variables(value: str) -> dict:
+    """Дата/номер как переменные `number-pop-in`: `value` — цифры, `unit` —
+    хвост при них.
+
+    Один и тот же разбор, что уже режет счётчик на число и суффикс
+    (`_metric_parts`) — дата отличается от количества не разбором, а тем, в
+    какой компонент едут те же две части (`hf_compose`, схемная ветка
+    `metric`+`_is_dateline`): счётчику суффикс приклеивается к числу
+    («87 %»), а `number-pop-in` печатает его отдельным полем `unit` под
+    числом («20» + «августа»).
+
+    Само поле `unit` кладётся в `inline-flex` с `gap: 2px`
+    (`number-pop-in.html`, `.hf-transition-number-pop-in`), рассчитанным на
+    символьный хвост вплотную к цифре («k», «%») — там `gap` и даёт весь
+    отступ. Хвост-слово живёт по другому правилу письма: пробел между числом
+    и словом обязателен («23 августа», не «23августа»), а `gap` из
+    паста-контейнера этот пробел не восстанавливает — хвост либо целиком
+    приклеен, либо это ровно один explicit-пробел перед словом. Отличаем по
+    первому символу хвоста: буква — оставляем один пробел; символ — ничего.
+    """
+    number, tail = _metric_parts(value)
+    word = tail.strip()
+    unit = f" {word}" if word and word[0].isalpha() else word
+    return {"value": str(number), "unit": unit}
+
+
 #: Их твин считает `CONFIG.value` со стартом 0,5 с и длительностью 1,6 с
 #: (`mk-progress-stat.html:161-172`) — числа фиксированы и не знают длины
 #: сцены. При коротких сценах (наш пол `metric` — 2,6 с) счёт кончается на
@@ -667,15 +699,6 @@ _COUNT_TWEEN_SCALED = (
     ' __COUNT_DURATION__, ease: "power2.out" }, __COUNT_START__);'
 )
 
-#: Дата/номер: считать нечего — значение встаёт в кадр сразу, без твина и без
-#: полосы (полосу прячет CSS в `build()`, `#mk-ps-track { display: none }`).
-_COUNT_TWEEN_DATE = (
-    '        /* дата или номер — считать нечего: reels-factory\n'
-    '           hf_schema._is_dateline, rb0907-university s-21, 07.09.2026 */\n'
-    '        num.textContent = Math.round(CONFIG.value) + CONFIG.suffix;'
-)
-
-
 def _cards_markup(items: list[dict]) -> str:
     """Наши карточки перечисления — своими значками, их же разметкой.
 
@@ -711,11 +734,12 @@ def build(form: str, content: dict, *, duration: float, colors: dict,
 
     if form == "metric":
         number, suffix = _metric_parts(content.get("value"))
-        dateline = _is_dateline(content.get("value"))
         # База не названа — величине не с чем соотноситься, и полосу мы
         # убираем: залитая доверху, она обещает «столько из стольких» там, где
-        # никакого «стольких» нет. Это и была та самая «3 из 100». У даты и
-        # номера «стольких» нет по определению — полосу прячем всегда.
+        # никакого «стольких» нет. Это и была та самая «3 из 100». Дата и
+        # номер сюда больше не доходят вовсе — их перехватывает схемная ветка
+        # `hf_compose` (`_is_dateline` + `date_variables`) ДО вызова `build()`
+        # и монтирует компонентом `number-pop-in`, а не этим блоком.
         base = content.get("base")
         base = int(base) if base not in (None, "") else 0
         config = {
@@ -735,20 +759,15 @@ def build(form: str, content: dict, *, duration: float, colors: dict,
         # блока не зависит от наших чисел. Поэтому подписи даём просвет, а
         # группу поднимаем, чтобы она не уехала в полосу титра.
         css += "\n      #mk-ps-label { margin-top: 60px; }"
-        if dateline or base <= number:
+        if base <= number:
             css += "\n      #mk-ps-track { display: none; }"
-        if dateline:
-            # Дата/номер: значение встаёт сразу, отсчитывать нечего —
-            # rb0907-university, s-21, 07.09.2026 (см. `_is_dateline`).
-            patch = _COUNT_TWEEN_DATE
-        else:
-            # Количество: тот же твин их блока, но старт и длительность
-            # подогнаны под длину сцены, а не фиксированы их числом —
-            # `_count_timing` (там же разбор причины).
-            start, count_duration = _count_timing(duration)
-            patch = (_COUNT_TWEEN_SCALED
-                     .replace("__COUNT_DURATION__", f"{count_duration:.4f}")
-                     .replace("__COUNT_START__", f"{start:.4f}"))
+        # Тот же твин их блока, но старт и длительность подогнаны под длину
+        # сцены, а не фиксированы их числом — `_count_timing` (там же разбор
+        # причины).
+        start, count_duration = _count_timing(duration)
+        patch = (_COUNT_TWEEN_SCALED
+                .replace("__COUNT_DURATION__", f"{count_duration:.4f}")
+                .replace("__COUNT_START__", f"{start:.4f}"))
         return block, config, css, ((_COUNT_TWEEN, patch),)
 
     if form == "items":

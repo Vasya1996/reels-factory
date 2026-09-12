@@ -228,6 +228,26 @@ def test_позиции_вернутые_перепроверкой_предло
         assert (card.get("avoid_when") or "").strip(), name
 
 
+def test_number_pop_in_предложена_и_видна_агенту():
+    """rb0908-university: причина `skip` называла отсутствие слота под слова
+    плана — а слот всё это время был, просто под ДРУГОЕ содержание (дата,
+    номер, время формы `metric`), не под свободную надпись. `hf_compose`
+    маршрутит их сюда сам (`hf_schema._is_dateline` + `date_variables`), и
+    позиция обязана быть видна каталогу — как и то, что `hyperframes catalog`
+    её больше не считает снятой."""
+    offered = catalog_cards()
+    skipped = skipped_positions()
+    assert "number-pop-in" in offered, "не предложена — reels.skip не снят?"
+    assert "number-pop-in" not in skipped
+    card = offered["number-pop-in"]
+    assert card.get("kind") == "effect"
+    assert card.get("mount") == "paste"
+    reels = _card("components", "number-pop-in").get("reels", {})
+    assert "skip" not in reels
+    assert (card.get("use_when") or "").strip()
+    assert (card.get("avoid_when") or "").strip()
+
+
 def test_позиции_снятые_в_b15_предложены_и_валидны():
     """Карточка без `reels.skip`, с известным видом и (для компонента) с
     известным контрактом монтажа — тем же самым, каким уже проверяет карточки
