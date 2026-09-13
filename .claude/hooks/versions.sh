@@ -60,10 +60,4 @@ fi
 CC=$(claude --version 2>/dev/null | head -1)
 [ -n "$CC" ] && printf 'Claude Code: %s\n' "$CC"
 
-MAP=.claude/doc-map/claude-code.md
-if [ -f "$MAP" ]; then
-    stamp=$(grep -o 'Сгенерирована [0-9-]*' "$MAP" 2>/dev/null | head -1 | cut -d' ' -f2)
-    [ -n "$stamp" ] && printf 'Карта доков: %s\n' "$stamp"
-fi
-
 exit 0
