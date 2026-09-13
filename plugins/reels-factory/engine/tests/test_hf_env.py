@@ -1,10 +1,12 @@
 """Окружение: версия закреплена, облачные подкоманды не зовутся, GSAP локальный."""
+import json
 import re
 from pathlib import Path
 
 import pytest
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "reels_factory"
+ENGINE_DIR = SRC.parents[1]
 
 
 def test_версия_движка_закреплена():
@@ -20,6 +22,20 @@ def test_версия_движка_закреплена():
                         "\n".join(p.read_text(encoding="utf-8")
                                   for p in SRC.glob("hf_*.py")))
     assert not others, f"версия продублирована: {others}"
+
+    # Дописано 13.09.2026 (доработка PR #116, дельта C): пин движка и версия
+    # `@hyperframes/sdk`, которую тянет node-бридж (`package.json`), — два
+    # места, называющие одну и ту же зависимость, и раньше их дрейф друг с
+    # другом не проверялся ничем. Сверяем ДЕКЛАРАЦИЮ (`package.json`, решение
+    # в git), а не то, что фактически стоит в `node_modules`/`package-lock.json`
+    # на этой машине, — установленный пакет лечится переустановкой, а не
+    # сторожем.
+    package_json = json.loads((ENGINE_DIR / "package.json").read_text(encoding="utf-8"))
+    sdk_range = package_json["dependencies"]["@hyperframes/sdk"]
+    sdk_version = sdk_range.lstrip("^~")
+    assert sdk_version == version.group(1), (
+        f"package.json называет @hyperframes/sdk {sdk_range!r}, "
+        f"а _HF_VERSION — {version.group(1)!r}: движок и SDK-бридж разъехались")
 
 
 def test_облачные_подкоманды_не_зовутся():

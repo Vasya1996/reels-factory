@@ -39,20 +39,51 @@ scp plugins/reels-factory/agent-profile/settings.json root@134.209.80.75:/root/.
 Install/update the skill warehouse into the service profile — `CLAUDE_CONFIG_DIR` is
 what routes the installer there instead of `/root/.claude` (the CLI itself resolves
 `claudeHome` from it, `skillsMirror.ts:165` in the hyperframes-ref clone), so it must
-be set on this exact command, not assumed from a previous session:
+be set on this exact command, not assumed from a previous session. **Name every skill
+the `/hyperframes` route depends on — don't rely on one name to pull in the rest.**
+`talking-head-recut` and `embedded-captions` are on-demand (not "core" by the
+installer's own naming pattern, `isCoreSkill` in `skillsManifest.ts`) and only
+install because something asks for them; naming only one today happens to pull the
+other in as its dependency, but that's the installer's current behaviour, not a
+contract — naming both is what the route actually needs and doesn't depend on that
+holding. The names come from the route itself, not memory — grepped from
+`skills/hyperframes/SKILL.md` in the clone (source of the *list* only; it has no
+files to install from on prod):
 ```
-ssh root@134.209.80.75 'CLAUDE_CONFIG_DIR=/root/.reels-factory/claude npx --yes hyperframes@<pin from hyperframes_blocks.py _HF_VERSION> skills update talking-head-recut'
+ssh root@134.209.80.75 'CLAUDE_CONFIG_DIR=/root/.reels-factory/claude npx --yes hyperframes@<pin from hyperframes_blocks.py _HF_VERSION> skills update hyperframes hyperframes-animation hyperframes-audio hyperframes-cli hyperframes-core hyperframes-creative hyperframes-keyframes hyperframes-registry media-use embedded-captions talking-head-recut'
 ```
-One skill name is enough — the installer resolves and copies the whole related set
-(`embedded-captions`, `media-use`, the `hyperframes-*` route skills) in one pass, not
-just the one named.
+Naming `hyperframes-keyframes` here does not by itself guarantee it lands — see the
+measured gap below. It stays in the command anyway: leaving a known dependency
+unnamed because naming it doesn't fully fix a separate bug is how a second bug hides
+the first.
 
-Verify before touching code — the three names the engine actually reads from disk:
+Verify before touching code — **all eleven names, not just the three the engine
+reads from disk.** `hf_assets.py`/`hf_fonts.py`/`hf_media.py` fail loudly (a
+`RuntimeError` with an install hint) if their three are missing, but the other eight
+are read by the build agent's own Claude Code session as *its* skills, not by our
+Python — a session missing one plans and renders with whatever it *does* know,
+without raising anything. Silent is exactly the failure this check exists to catch:
 ```
-ssh root@134.209.80.75 'ls /root/.reels-factory/claude/skills | grep -E "^(talking-head-recut|embedded-captions|media-use)$"'
+ssh root@134.209.80.75 'comm -23 <(printf "%s\n" hyperframes hyperframes-animation hyperframes-audio hyperframes-cli hyperframes-core hyperframes-creative hyperframes-keyframes hyperframes-registry media-use embedded-captions talking-head-recut | sort) <(ls /root/.reels-factory/claude/skills | sort)'
 ```
-All three must print. Anything missing → re-run the install above before proceeding;
-do not pull code ahead of this.
+Empty output → all eleven are present, proceed. Anything printed → missing.
+
+**A bare re-run of the install command does not reliably fix a gap here** — measured
+13.09.2026, not theoretical. `skills update <names>` decides per-name freshness by
+scanning the *default* agent directories under `$HOME` (`~/.claude/skills` first,
+`discoverSkillRoots` in `skillsManifest.ts`) — a scan `CLAUDE_CONFIG_DIR` never enters
+into — and skips copying into the service-profile target for any name it finds
+already current there. Root's own personal profile already carries all eleven
+(see Facts, point 4), so any one of them can be "current" there at deploy time and
+silently never reach `/root/.reels-factory/claude/skills`; which name that is
+depends on which personal copies happen to already match the latest content, not on
+anything the deploy runner does. Re-running the same command re-runs the same check
+against the same personal copies and reproduces the same gap. The reliable fallback,
+staying on this one box (never the clone, which prod doesn't have):
+```
+ssh root@134.209.80.75 'cp -r /root/.claude/skills/<missing-name>/. /root/.reels-factory/claude/skills/<missing-name>/'
+```
+Re-run the verify comparison above after the copy; do not pull code ahead of it.
 
 ## 1. Pull
 
