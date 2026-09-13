@@ -30,85 +30,87 @@ more than it did before — it breaks the next real job on prod, quietly, hours 
 `plugins/reels-factory/agent-profile/settings.json` nor the skill set changed since
 the last deploy.
 
-Copy the tracked settings (destructive-command denials only — no path rules; a path
-rule from a neighboring project is exactly what took prod down on 22.08, see
+The eleven names the `/hyperframes` route depends on (from `skills/hyperframes/SKILL.md`
+in the clone, not memory): `hyperframes`, `hyperframes-animation`, `hyperframes-audio`,
+`hyperframes-cli`, `hyperframes-core`, `hyperframes-creative`, `hyperframes-keyframes`,
+`hyperframes-registry`, `media-use`, `embedded-captions`, `talking-head-recut`.
+
+**0a. Find every agent skill store on the box — don't assume there are two.** The
+installer judges freshness against however many agent tools it recognizes on this
+machine, not a fixed pair; measured 13.09.2026 on the dev machine, three were live
+(`~/.claude`, `~/.agents`, `~/.copilot`) and a stale copy in *any one* of them was
+enough to make the installer skip the real target silently. Check the box itself,
+every time:
+```
+ssh root@134.209.80.75 'for d in /root/.claude/skills /root/.agents/skills /root/.copilot/skills /root/.codex/skills /root/.vibe/skills; do [ -d "$d" ] && echo "$d"; done'
+```
+Checked on prod 13.09.2026: only `/root/.claude/skills` (70 names) and
+`/root/.agents/skills` (25 names) exist; `.copilot`, `.codex`, `.vibe` don't. That can
+change — always look, never paste "the usual two" from memory.
+
+**0b. Copy the tracked settings** (destructive-command denials only — no path rules; a
+path rule from a neighboring project is exactly what took prod down on 22.08, see
 `test_llm.py:16-49`):
 ```
 scp plugins/reels-factory/agent-profile/settings.json root@134.209.80.75:/root/.reels-factory/claude/settings.json
 ```
-Install/update the skill warehouse into the service profile — `CLAUDE_CONFIG_DIR` is
-what routes the installer there instead of `/root/.claude` (the CLI itself resolves
-`claudeHome` from it, `skillsMirror.ts:165` in the hyperframes-ref clone), so it must
-be set on this exact command, not assumed from a previous session. **Name every skill
-the `/hyperframes` route depends on — don't rely on one name to pull in the rest.**
-`talking-head-recut` and `embedded-captions` are on-demand (not "core" by the
-installer's own naming pattern, `isCoreSkill` in `skillsManifest.ts`) and only
-install because something asks for them; naming only one today happens to pull the
-other in as its dependency, but that's the installer's current behaviour, not a
-contract — naming both is what the route actually needs and doesn't depend on that
-holding. The names come from the route itself, not memory — grepped from
-`skills/hyperframes/SKILL.md` in the clone (source of the *list* only; it has no
-files to install from on prod):
+
+**0c. Pull the eleven names out of every store `0a` found — into a dated reserve, not
+gone.** This is the actual fix, not a workaround around it: the installer skips
+copying a name into the service profile whenever it finds that name *already current
+in some other store it scans* (`checkSkills`/`discoverSkillRoots` in
+`skillsManifest.ts` — a scan that never enters `CLAUDE_CONFIG_DIR`, so it can't tell
+the service profile from anywhere else). Measured 13.09.2026: clearing only
+`~/.claude/skills` left `~/.agents/skills` and `~/.copilot/skills` still competing —
+install put zero names in the service profile; clearing those two as well still left
+zero, because `~/.copilot/skills` was still there; only once *all three* were empty
+did the install immediately place nine names. Removing the competing copies isn't
+destructive here — reserve them so a bad outcome is a `mv` away from undone:
+```
+ssh root@134.209.80.75 'RESERVE=/root/.reels-factory/skills-reserve/$(date +%Y%m%d-%H%M%S)
+mkdir -p "$RESERVE"
+NAMES="hyperframes hyperframes-animation hyperframes-audio hyperframes-cli hyperframes-core hyperframes-creative hyperframes-keyframes hyperframes-registry media-use embedded-captions talking-head-recut"
+for store in /root/.claude/skills /root/.agents/skills /root/.copilot/skills /root/.codex/skills /root/.vibe/skills; do
+  [ -d "$store" ] || continue
+  dest="$RESERVE/$(basename "$(dirname "$store")")"
+  mkdir -p "$dest"
+  for name in $NAMES; do [ -e "$store/$name" ] && mv "$store/$name" "$dest/"; done
+done
+echo "reserved under $RESERVE"'
+```
+
+**0d. Install into the service profile** — `CLAUDE_CONFIG_DIR` is what routes the
+installer there instead of `/root/.claude` (the CLI itself resolves `claudeHome` from
+it, `skillsMirror.ts:165` in the clone), so it must be set on this exact command:
 ```
 ssh root@134.209.80.75 'CLAUDE_CONFIG_DIR=/root/.reels-factory/claude npx --yes hyperframes@<pin from hyperframes_blocks.py _HF_VERSION> skills update hyperframes hyperframes-animation hyperframes-audio hyperframes-cli hyperframes-core hyperframes-creative hyperframes-keyframes hyperframes-registry media-use embedded-captions talking-head-recut'
 ```
-Naming `hyperframes-keyframes` here does not by itself guarantee it lands — see the
-measured gap below. It stays in the command anyway: leaving a known dependency
-unnamed because naming it doesn't fully fix a separate bug is how a second bug hides
-the first.
 
-Verify before touching code — **all eleven names, not just the three the engine
-reads from disk.** `hf_assets.py`/`hf_fonts.py`/`hf_media.py` fail loudly (a
-`RuntimeError` with an install hint) if their three are missing, but the other eight
-are read by the build agent's own Claude Code session as *its* skills, not by our
-Python — a session missing one plans and renders with whatever it *does* know,
-without raising anything. Silent is exactly the failure this check exists to catch:
+**0e. Trust the file listing, never the installer's own words.** Measured 13.09.2026:
+with a competing store still in play, this same command printed "Installed skills are
+already up to date" and listed all eleven requested names under "Ready" — while
+placing nothing at all in the service profile. "Ready" names a request, not a
+delivery. The only trustworthy check is looking at the target directory itself:
 ```
 ssh root@134.209.80.75 'comm -23 <(printf "%s\n" hyperframes hyperframes-animation hyperframes-audio hyperframes-cli hyperframes-core hyperframes-creative hyperframes-keyframes hyperframes-registry media-use embedded-captions talking-head-recut | sort) <(ls /root/.reels-factory/claude/skills | sort)'
 ```
-Empty output → all eleven are present, proceed. Anything printed → missing. This only
-checks presence, not content — a name copied from a stale source (see the fallback
-below) passes the same as a fresh one. That gap predates this step; naming it here so
-whoever reads this before a deploy knows the check's actual limit.
+Empty output → all eleven are present. It checks presence only, not content — a stale
+copy would pass this the same as a fresh one; that's a pre-existing limit of this
+check, not a new one, worth knowing before you trust a green result.
 
-**A bare re-run of the install command does not reliably fix a gap here** — measured
-13.09.2026, not theoretical. `skills update <names>` decides per-name freshness by
-scanning the *default* agent directories under `$HOME` (`~/.claude/skills` first,
-`discoverSkillRoots` in `skillsManifest.ts`) — a scan `CLAUDE_CONFIG_DIR` never enters
-into — and skips copying into the service-profile target for any name it finds
-already current there. Root's own personal profile already carries all eleven
-(see Facts, point 4), so any one of them can be "current" there at deploy time and
-silently never reach `/root/.reels-factory/claude/skills`; which name that is
-depends on which personal copies happen to already match the latest content, not on
-anything the deploy runner does. Re-running the same command re-runs the same check
-against the same personal copies and reproduces the same gap. The fallback does NOT
-copy from the personal profile (`/root/.claude/skills`) — this whole change exists so
-the personal profile can eventually be cleared of framework skills, and a fallback
-that depends on it would make that cleanup break the next deploy. Try
-`/root/.agents/skills` — the "universal" store, a fixed path off `$HOME`
-(`const universalStore = join(home, ".agents", "skills")`, `skillsMirror.ts:257`)
-that `CLAUDE_CONFIG_DIR` never redirects, and that Claude Code itself never reads —
-clearing `/root/.claude/skills` later leaves it untouched:
-```
-ssh root@134.209.80.75 'cp -r /root/.agents/skills/<missing-name>/. /root/.reels-factory/claude/skills/<missing-name>/'
-```
-**This is a trace of some past install, not a guarantee of the one you just ran.**
-The same `skills add … --agent claude-code universal --copy` call writes both stores
-together (`GLOBAL_INSTALL_ARGS_TAIL`, `skills.ts:97-119`) — but only for names that
-actually reached `installSkills` this run. A name skipped as "current" against the
-personal profile (the exact gap this fallback exists for) was skipped for *both*
-stores in *this* run alike; whatever sits at `/root/.agents/skills/<name>` today is
-whatever the most recent run that DID install it left behind, which may predate the
-latest manifest content. Check it's not stale before trusting it — `diff -rq` against
-what the personal profile has, or re-run `skills check --json` and read that name's
-`installedHash`/`latestHash` for the universal store's copy. If `/root/.agents/skills`
-doesn't have the name either: don't invent a workaround here — the last resort still
-available today is the personal profile (`/root/.claude/skills/<name>`, same `cp`
-shape as above), since it isn't actually cleared yet. That is a stopgap, not a fix:
-once the personal-profile cleanup this change was for actually happens, this path
-stops existing and a real answer is owed then, not before.
+**0f. One pass rarely finishes it — repeat, don't improvise.** Measured 13.09.2026:
+naming all eleven in one command reliably delivered only the nine the installer treats
+as core (the `hyperframes-*` names plus `media-use`) — `embedded-captions` and
+`talking-head-recut` needed a second, separate run naming just the still-missing
+names before they landed. Which names arrive on which pass isn't something to predict
+or design around: re-run `0d` with whatever `0e` still shows missing, re-check, and
+repeat until `0e` prints nothing.
 
-Re-run the verify comparison above after any copy; do not pull code ahead of it.
+**0g. If it never converges, stop — don't deploy code on a partial skill set.** Restore
+the reserve from `0c` (`mv` each name back from `$RESERVE/<store-basename>/` to its
+original store) and treat this as a real installer problem to investigate, not
+something to route around with a fresh trick. Nothing past this point runs until `0e`
+is clean.
 
 ## 1. Pull
 
