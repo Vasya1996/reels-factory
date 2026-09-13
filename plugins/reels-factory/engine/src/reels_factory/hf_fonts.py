@@ -13,6 +13,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from reels_factory.llm import SKILL_PROFILE_DIR
+
 FONTS_DIR = Path(__file__).resolve().parents[2] / "hyperframes" / "_fonts"
 
 FONT_RANGES = {
@@ -120,7 +122,10 @@ def fonts_css() -> str:
 # font-family файла, пропускает уже объявленные и канонические, и делает это
 # идемпотентно (scripts/inject-fonts.cjs:109-144). Наш врезал всё подряд, то
 # есть каждый HTML утяжелялся полным набором начертаний.
-CAPTIONS_SKILL = Path.home() / ".claude" / "skills" / "embedded-captions"
+#: Склад скилов фреймворка — профиль сервиса, тот же путь, что уже держат
+#: вызовы `claude` в llm.py и hf_agent.py (единственный источник —
+#: SKILL_PROFILE_DIR, llm.py:19), не личный профиль пользователя ОС.
+CAPTIONS_SKILL = SKILL_PROFILE_DIR / "skills" / "embedded-captions"
 _INJECTOR = CAPTIONS_SKILL / "scripts" / "inject-fonts.cjs"
 #: Их библиотека шрифтов. Скрипт ищет её строго по SKILL_ROOT/modes/standard/
 #: fonts/fonts.css (inject-fonts.cjs:26-27), поэтому раскладку повторяем.
@@ -144,7 +149,8 @@ def _stage_injector(work_dir: Path) -> tuple[Path, Path]:
     library.parent.mkdir(parents=True, exist_ok=True)
     if not _INJECTOR.exists():
         raise RuntimeError(
-            f"не найден {_INJECTOR}; выполни "
+            f"не найден {_INJECTOR}; выполни (иначе скил ляжет в личный "
+            f'профиль, мимо склада) CLAUDE_CONFIG_DIR="{SKILL_PROFILE_DIR}" '
             "npx hyperframes skills update embedded-captions")
     shutil.copyfile(_INJECTOR, script)
     theirs = (CAPTIONS_SKILL / _LIBRARY_REL)

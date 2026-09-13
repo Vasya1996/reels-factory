@@ -1,10 +1,12 @@
 """Окружение: версия закреплена, облачные подкоманды не зовутся, GSAP локальный."""
+import json
 import re
 from pathlib import Path
 
 import pytest
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "reels_factory"
+ENGINE_DIR = SRC.parents[1]
 
 
 def test_версия_движка_закреплена():
@@ -21,6 +23,20 @@ def test_версия_движка_закреплена():
                                   for p in SRC.glob("hf_*.py")))
     assert not others, f"версия продублирована: {others}"
 
+    # Дописано 13.09.2026 (доработка PR #116, дельта C): пин движка и версия
+    # `@hyperframes/sdk`, которую тянет node-бридж (`package.json`), — два
+    # места, называющие одну и ту же зависимость, и раньше их дрейф друг с
+    # другом не проверялся ничем. Сверяем ДЕКЛАРАЦИЮ (`package.json`, решение
+    # в git), а не то, что фактически стоит в `node_modules`/`package-lock.json`
+    # на этой машине, — установленный пакет лечится переустановкой, а не
+    # сторожем.
+    package_json = json.loads((ENGINE_DIR / "package.json").read_text(encoding="utf-8"))
+    sdk_range = package_json["dependencies"]["@hyperframes/sdk"]
+    sdk_version = sdk_range.lstrip("^~")
+    assert sdk_version == version.group(1), (
+        f"package.json называет @hyperframes/sdk {sdk_range!r}, "
+        f"а _HF_VERSION — {version.group(1)!r}: движок и SDK-бридж разъехались")
+
 
 def test_облачные_подкоманды_не_зовутся():
     """Подкоманда ищется как отдельный аргумент вызова, а не подстрока."""
@@ -35,9 +51,13 @@ def test_облачные_подкоманды_не_зовутся():
 
 
 def test_gsap_кладётся_локально(tmp_path):
-    from reels_factory.hf_assets import vendor_gsap
+    from reels_factory.hf_assets import GSAP_SOURCE, vendor_gsap
 
-    if not (Path.home() / ".claude" / "skills" / "talking-head-recut").exists():
+    # Разбор 13.09.2026 (agent-profile): склад скилов переехал в профиль
+    # сервиса (GSAP_SOURCE теперь под SKILL_PROFILE_DIR, не под личным
+    # профилем пользователя ОС) — гвардия сверяется с тем же путём, что
+    # реально читает vendor_gsap, а не с прежним личным профилем.
+    if not GSAP_SOURCE.exists():
         pytest.skip("скилы HeyGen не установлены")
     target = vendor_gsap(tmp_path)
     assert target.exists() and target.stat().st_size > 10_000

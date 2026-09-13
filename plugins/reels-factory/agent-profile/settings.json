@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf /root)",
+      "Bash(dd *)",
+      "Bash(mkfs*)",
+      "Bash(shutdown*)",
+      "Bash(reboot*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)"
+    ]
+  }
+}

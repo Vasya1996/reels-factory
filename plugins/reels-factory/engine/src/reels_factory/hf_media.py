@@ -34,8 +34,12 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from reels_factory.config import FFMPEG, FFPROBE, cli_env
+from reels_factory.llm import SKILL_PROFILE_DIR
 
-SKILL_DIR = Path.home() / ".claude" / "skills" / "media-use"
+#: Склад скилов фреймворка — профиль сервиса, тот же путь, что уже держат
+#: вызовы `claude` в llm.py и hf_agent.py (единственный источник —
+#: SKILL_PROFILE_DIR, llm.py:19), не личный профиль пользователя ОС.
+SKILL_DIR = SKILL_PROFILE_DIR / "skills" / "media-use"
 RESOLVE = SKILL_DIR / "scripts" / "resolve.mjs"
 
 #: Сколько запросов держим в воздухе. Реестр media-use пишется атомарно
