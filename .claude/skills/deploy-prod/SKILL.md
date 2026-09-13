@@ -66,7 +66,10 @@ without raising anything. Silent is exactly the failure this check exists to cat
 ```
 ssh root@134.209.80.75 'comm -23 <(printf "%s\n" hyperframes hyperframes-animation hyperframes-audio hyperframes-cli hyperframes-core hyperframes-creative hyperframes-keyframes hyperframes-registry media-use embedded-captions talking-head-recut | sort) <(ls /root/.reels-factory/claude/skills | sort)'
 ```
-Empty output → all eleven are present, proceed. Anything printed → missing.
+Empty output → all eleven are present, proceed. Anything printed → missing. This only
+checks presence, not content — a name copied from a stale source (see the fallback
+below) passes the same as a fresh one. That gap predates this step; naming it here so
+whoever reads this before a deploy knows the check's actual limit.
 
 **A bare re-run of the install command does not reliably fix a gap here** — measured
 13.09.2026, not theoretical. `skills update <names>` decides per-name freshness by
@@ -81,17 +84,31 @@ anything the deploy runner does. Re-running the same command re-runs the same ch
 against the same personal copies and reproduces the same gap. The fallback does NOT
 copy from the personal profile (`/root/.claude/skills`) — this whole change exists so
 the personal profile can eventually be cleared of framework skills, and a fallback
-that depends on it would make that cleanup break the next deploy. Instead, copy from
-`/root/.agents/skills` — the same install pass always populates this second mirror
-too (`skills.ts:98-99` in the hyperframes-ref clone), its path is hardcoded off
-`$HOME` and never moved by `CLAUDE_CONFIG_DIR` (`agentDirs.generated.ts`, base
-`home`), so it fills every time regardless of what happens to the personal profile,
-and Claude Code itself never reads it — clearing `/root/.claude/skills` later leaves
-it untouched:
+that depends on it would make that cleanup break the next deploy. Try
+`/root/.agents/skills` — the "universal" store, a fixed path off `$HOME`
+(`const universalStore = join(home, ".agents", "skills")`, `skillsMirror.ts:257`)
+that `CLAUDE_CONFIG_DIR` never redirects, and that Claude Code itself never reads —
+clearing `/root/.claude/skills` later leaves it untouched:
 ```
 ssh root@134.209.80.75 'cp -r /root/.agents/skills/<missing-name>/. /root/.reels-factory/claude/skills/<missing-name>/'
 ```
-Re-run the verify comparison above after the copy; do not pull code ahead of it.
+**This is a trace of some past install, not a guarantee of the one you just ran.**
+The same `skills add … --agent claude-code universal --copy` call writes both stores
+together (`GLOBAL_INSTALL_ARGS_TAIL`, `skills.ts:97-119`) — but only for names that
+actually reached `installSkills` this run. A name skipped as "current" against the
+personal profile (the exact gap this fallback exists for) was skipped for *both*
+stores in *this* run alike; whatever sits at `/root/.agents/skills/<name>` today is
+whatever the most recent run that DID install it left behind, which may predate the
+latest manifest content. Check it's not stale before trusting it — `diff -rq` against
+what the personal profile has, or re-run `skills check --json` and read that name's
+`installedHash`/`latestHash` for the universal store's copy. If `/root/.agents/skills`
+doesn't have the name either: don't invent a workaround here — the last resort still
+available today is the personal profile (`/root/.claude/skills/<name>`, same `cp`
+shape as above), since it isn't actually cleared yet. That is a stopgap, not a fix:
+once the personal-profile cleanup this change was for actually happens, this path
+stops existing and a real answer is owed then, not before.
+
+Re-run the verify comparison above after any copy; do not pull code ahead of it.
 
 ## 1. Pull
 
