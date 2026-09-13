@@ -35,12 +35,13 @@ in the clone, not memory): `hyperframes`, `hyperframes-animation`, `hyperframes-
 `hyperframes-cli`, `hyperframes-core`, `hyperframes-creative`, `hyperframes-keyframes`,
 `hyperframes-registry`, `media-use`, `embedded-captions`, `talking-head-recut`.
 
-**0a. Find every agent skill store on the box — don't assume there are two.** The
-installer judges freshness against however many agent tools it recognizes on this
-machine, not a fixed pair; measured 13.09.2026 on the dev machine, three were live
-(`~/.claude`, `~/.agents`, `~/.copilot`) and a stale copy in *any one* of them was
-enough to make the installer skip the real target silently. Check the box itself,
-every time:
+**0a. Find every agent skill store on the box — don't assume there are two.** Measured
+13.09.2026 on the dev machine: three agent skill stores were live at once
+(`~/.claude`, `~/.agents`, `~/.copilot`). Which one of several populated stores the
+installer actually treats as "already current" wasn't isolated — only that with
+stores populated, nothing lands in the service profile (see 0c), and clearing all of
+them is what got skills to land. Check the box itself, every time, rather than
+assuming which stores exist:
 ```
 ssh root@134.209.80.75 'for d in /root/.claude/skills /root/.agents/skills /root/.copilot/skills /root/.codex/skills /root/.vibe/skills; do [ -d "$d" ] && echo "$d"; done'
 ```
@@ -56,16 +57,22 @@ scp plugins/reels-factory/agent-profile/settings.json root@134.209.80.75:/root/.
 ```
 
 **0c. Pull the eleven names out of every store `0a` found — into a dated reserve, not
-gone.** This is the actual fix, not a workaround around it: the installer skips
-copying a name into the service profile whenever it finds that name *already current
-in some other store it scans* (`checkSkills`/`discoverSkillRoots` in
-`skillsManifest.ts` — a scan that never enters `CLAUDE_CONFIG_DIR`, so it can't tell
-the service profile from anywhere else). Measured 13.09.2026: clearing only
-`~/.claude/skills` left `~/.agents/skills` and `~/.copilot/skills` still competing —
-install put zero names in the service profile; clearing those two as well still left
-zero, because `~/.copilot/skills` was still there; only once *all three* were empty
-did the install immediately place nine names. Removing the competing copies isn't
-destructive here — reserve them so a bad outcome is a `mv` away from undone:
+gone.** Clear all of them, not because each one's guilt is individually established —
+it isn't. Measured 13.09.2026, twice: with stores still populated, the install prints
+"already up to date" and lists every requested name as "Ready" while placing nothing
+in the service profile. Measured once: after every found store was cleared, the next
+install placed skills immediately. Which store (or combination) the installer was
+actually reading as "current" in each run was never isolated — the runs also differed
+in whether a store was emptied entirely or just had these eleven names pulled out of
+it, so the two observations don't pin the mechanism down, only the outcome. `checkSkills`
+/ `discoverSkillRoots` in `skillsManifest.ts` do confirm, from the source, that this
+scan runs over `$HOME`'s agent directories and never enters `CLAUDE_CONFIG_DIR` — which
+is why the service profile can never win that comparison on its own — but treat that as
+background for *why a scan like this exists*, not as a proven account of any one run
+above. Clearing every found store is the reliable move because isolating "the" culprit
+wasn't achieved and 0e's factual check is the real backstop regardless. Removing the
+competing copies isn't destructive here — reserve them so a bad outcome is a `mv` away
+from undone:
 ```
 ssh root@134.209.80.75 'RESERVE=/root/.reels-factory/skills-reserve/$(date +%Y%m%d-%H%M%S)
 mkdir -p "$RESERVE"
