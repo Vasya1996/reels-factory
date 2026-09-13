@@ -61,8 +61,10 @@ from or spending anything new.
 4. **Snapshot at the frames that matter.** From `/tmp/<name>` (or wherever `public`
    sits):
    ```
-   npx --yes hyperframes@0.8.27 snapshot public --output snaps --at <t1>,<t2> --no-end
+   npx --yes hyperframes@<pin> snapshot public --output snaps --at <t1>,<t2> --no-end
    ```
+   `<pin>` is `_HF_VERSION` in `hyperframes_blocks.py` — read it there rather than
+   typing a number here, or the check renders on a version the service doesn't use.
    `--no-end` skips the automatic end-of-timeline frame so only the times you name get
    captured. Pick times around the seam or state you changed, not just the midpoint —
    a caption fix shows on the frame where the words are on screen, not on an empty
