@@ -36,8 +36,11 @@ MULTILINGUAL_V2_MAX_CHARACTERS = 10_000
 DEFAULT_OUTPUT_FORMAT = "mp3_44100_128"
 DEFAULT_SPEED = 1.1
 DEFAULT_STABILITY = 0.6
-# v3 принимает stability только дискретными значениями (0.0/0.5/1.0); 0.5 —
-# «Natural», тот же дефолт, что и в legacy synth_voice для v3.
+# 0.5 — то же значение, что и в legacy synth_voice для v3. Дробные значения
+# схема принимает: в openapi ElevenLabs это число 0..1 без enum, и наша же
+# проверка ниже (_validate_request) пропускает любое из диапазона. Тройка
+# 0.0/0.5/1.0 — это пресеты их веб-интерфейса, а не ограничение API: подбирать
+# выразительность промежуточными значениями можно.
 DEFAULT_STABILITY_V3 = 0.5
 DEFAULT_SIMILARITY_BOOST = 0.8
 DEFAULT_STYLE = 0.0
