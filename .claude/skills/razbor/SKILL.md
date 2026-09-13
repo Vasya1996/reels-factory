@@ -1,6 +1,6 @@
 ---
 name: razbor
-description: Analysis before a change — engine and service code, the bot and its conversation with the user, the wrapper around HyperFrames and its configuration, the makeup of Claude Code itself (skills, agents, hooks, rules, claude -p). Apply when behaviour is being fixed, an architecture is being chosen, or a bug is being investigated; when this is already the second fix for the same symptom; when the requirements contradict each other.
+description: Analysis before a change — engine and service code, the bot and its conversation with the user, the wrapper around HyperFrames and its configuration, and the service's own harness — its skills, rules, agent briefs and prompts. Apply when behaviour is being fixed, an architecture is being chosen, or a bug is being investigated; when this is already the second fix for the same symptom; when the requirements contradict each other.
 ---
 
 # Razbor
@@ -38,10 +38,11 @@ Ask a librarian about a **class** of places, not the ones you already have in mi
 for instance a hint shown to the user that names a command which doesn't exist.
 
 Our code and the bot → `factory-librarian`. The framework → `hyperframes-librarian`.
-The makeup of Claude Code itself → `claude-code-librarian`. None of the three goes
-near prod or a dependency's own source — that part you do yourself.
+The service's own harness — skills, rules, agent briefs, prompts — lives in this repo,
+so it goes to `factory-librarian` as well. Neither goes near prod or a dependency's own
+source — that part you do yourself.
 
-The root can sit outside all three — in git, in the OS, in someone else's installer.
+The root can sit outside both — in git, in the OS, in someone else's installer.
 If no source explains the measurement, the source hasn't been found yet.
 
 ## 2. Root
@@ -93,8 +94,10 @@ scale — and separately by **the unit being billed**: what money or time is act
 charged for, and whether that is the unit this change is cutting.
 
 If separation doesn't work, relocate the responsibility onto something that already
-exists: the framework, our own wrapper code, a dependency, Claude Code itself. Adding
-something new is the last resort — say why separation didn't fit when it is chosen.
+exists: the framework, our own wrapper code, a dependency, Claude Code itself. Look
+there before you design — the framework in particular is checked through
+`hyperframes-librarian`, not from memory. Adding something new is the last resort —
+say why separation didn't fit and what you searched before choosing it.
 
 Stuck on an irreversible step — make the decision reversible instead of choosing
 between options: behind a flag, an interface, or deferred until there is more data.
