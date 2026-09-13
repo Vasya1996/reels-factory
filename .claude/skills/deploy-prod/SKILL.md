@@ -78,10 +78,18 @@ already current there. Root's own personal profile already carries all eleven
 silently never reach `/root/.reels-factory/claude/skills`; which name that is
 depends on which personal copies happen to already match the latest content, not on
 anything the deploy runner does. Re-running the same command re-runs the same check
-against the same personal copies and reproduces the same gap. The reliable fallback,
-staying on this one box (never the clone, which prod doesn't have):
+against the same personal copies and reproduces the same gap. The fallback does NOT
+copy from the personal profile (`/root/.claude/skills`) — this whole change exists so
+the personal profile can eventually be cleared of framework skills, and a fallback
+that depends on it would make that cleanup break the next deploy. Instead, copy from
+`/root/.agents/skills` — the same install pass always populates this second mirror
+too (`skills.ts:98-99` in the hyperframes-ref clone), its path is hardcoded off
+`$HOME` and never moved by `CLAUDE_CONFIG_DIR` (`agentDirs.generated.ts`, base
+`home`), so it fills every time regardless of what happens to the personal profile,
+and Claude Code itself never reads it — clearing `/root/.claude/skills` later leaves
+it untouched:
 ```
-ssh root@134.209.80.75 'cp -r /root/.claude/skills/<missing-name>/. /root/.reels-factory/claude/skills/<missing-name>/'
+ssh root@134.209.80.75 'cp -r /root/.agents/skills/<missing-name>/. /root/.reels-factory/claude/skills/<missing-name>/'
 ```
 Re-run the verify comparison above after the copy; do not pull code ahead of it.
 
