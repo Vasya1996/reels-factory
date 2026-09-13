@@ -1,13 +1,15 @@
 """Наш каталог блоков, отданный агенту их способом — через поле registry."""
 import json
 import logging
+import os
+from collections import Counter
 from pathlib import Path
 
 import pytest
 
 from reels_factory.hf_catalog import (
-    CATALOG_DIR, REGISTRY_SUBDIR, block_names, catalog_cards, catalog_index,
-    component_names, decor_texts, overlay_names, serve_catalog,
+    CATALOG_DIR, REGISTRY_SUBDIR, block_durations, block_names, catalog_cards,
+    catalog_index, component_names, decor_texts, overlay_names, serve_catalog,
     skipped_positions, texture_overlays, write_catalog_files,
     write_project_config,
 )
@@ -1237,4 +1239,65 @@ def test_image_переменная_получает_файл_в_data_variable_v
     values = mount[:mount.index(">")]
     assert '"shot": ".media/images/a.jpg"' in values
     assert "logo" not in values, "фирменный логотип не заполняется файлом биролла"
+
+
+def test_карточка_реестра_разбирается_один_раз_за_обход():
+    """Задание catalog-cache, Proof: `catalog_cards()` на настоящем каталоге
+    обязан разобрать каждый `registry-item.json` ровно один раз, а
+    `registry.json` — не больше одного раза. До кэша (`_registry_json`)
+    `_offered`/`_offered_components` каждый гоняют свой полный обход реестра
+    (`_registry_cards`), и тот внутри себя ещё раз читает `registry.json`
+    через `block_names`/`component_names` — на одном вызове `catalog_cards()`
+    без каталога-фикстуры это даёт `registry.json` шесть чтений, а каждый
+    `registry-item.json` — два."""
+    from reels_factory import hf_catalog
+
+    hf_catalog._registry_json.cache_clear()
+    calls = Counter()
+    real_read_text = Path.read_text
+
+    def counting_read_text(self, *args, **kwargs):
+        if self.name in ("registry-item.json", "registry.json"):
+            calls[str(self)] += 1
+        return real_read_text(self, *args, **kwargs)
+
+    original = Path.read_text
+    Path.read_text = counting_read_text
+    try:
+        cards = catalog_cards()
+    finally:
+        Path.read_text = original
+
+    assert len(cards) > 100, "каталог не разобрался"
+    registry_manifest_reads = sum(
+        n for path, n in calls.items() if path.endswith("registry.json"))
+    assert registry_manifest_reads <= 1, registry_manifest_reads
+    reread = {path: n for path, n in calls.items()
+             if path.endswith("registry-item.json") and n > 1}
+    assert not reread, reread
+
+
+def test_правка_карточки_на_диске_видна_без_перезапуска(tmp_path):
+    """Кэш карточки — по (путь, отпечаток), не по одному пути навсегда:
+    правка `registry-item.json` во время уже идущего процесса обязана быть
+    видна на следующем обращении (задание catalog-cache, Proof, второй
+    тест)."""
+    root = _with_blocks(tmp_path, ["g01"])
+    folder = _block(root, "g01", tags=["overlay"])
+    card = folder / "registry-item.json"
+
+    before = block_durations(root)
+    assert before.get("g01") is None
+
+    payload = json.loads(card.read_text(encoding="utf-8"))
+    payload["duration"] = 5.0
+    card.write_text(json.dumps(payload), encoding="utf-8")
+    # Отпечаток кэша — (mtime, size); сдвигаем mtime явно, чтобы правка не
+    # осталась незамеченной, если запись пришлась на ту же секунду и тот же
+    # размер файла, — известное свойство того же приёма у `_declared_options`.
+    stat = card.stat()
+    os.utime(card, (stat.st_atime, stat.st_mtime + 2))
+
+    after = block_durations(root)
+    assert after.get("g01") == 5.0
 

@@ -121,6 +121,28 @@ def serve_catalog(catalog_dir=None, *, timeout_s: float = 10.0):
             process.kill()
 
 
+@functools.lru_cache(maxsize=1024)
+def _registry_json(path: str, stamp: tuple) -> dict:
+    """Разобранный JSON одного файла реестра — карточки позиции или манифеста
+    `registry.json`. Кэш по пути и отпечатку файла, тем же приёмом, что
+    `_declared_options` (:339) кэширует разбор HTML: содержимое файла реестра
+    за время процесса не меняется — писателей в `catalog/registry/**` во время
+    прогона нет, — а девять читателей этого модуля разбирали его заново на
+    каждое обращение (задание catalog-cache, замер `write_brief`: шесть
+    обходов на один вызов).
+    """
+    del stamp  # часть ключа кэша, а не аргумент разбора
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def _cached_registry_json(path: Path) -> dict:
+    """Обёртка над `_registry_json`: считает отпечаток файла сама, чтобы
+    вызывающему не пришлось повторять `(st_mtime, st_size)` на каждом месте.
+    """
+    stat = path.stat()
+    return _registry_json(str(path), (stat.st_mtime, stat.st_size))
+
+
 def block_names(catalog_dir=None) -> list[str]:
     """Имена блоков реестра — для сообщений и проверок.
 
@@ -130,7 +152,7 @@ def block_names(catalog_dir=None) -> list[str]:
     `blocks/<имя>/registry-item.json` — компонент по этому пути не найдётся.
     """
     root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
-    manifest = json.loads((root / "registry.json").read_text(encoding="utf-8"))
+    manifest = _cached_registry_json(root / "registry.json")
     return [item["name"] for item in manifest.get("items") or []
             if item.get("type", "hyperframes:block") == "hyperframes:block"]
 
@@ -142,7 +164,7 @@ def component_names(catalog_dir=None) -> list[str]:
     `blocks/<имя>` — путь другой, поэтому функция отдельная от `block_names`.
     """
     root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
-    manifest = json.loads((root / "registry.json").read_text(encoding="utf-8"))
+    manifest = _cached_registry_json(root / "registry.json")
     return [item["name"] for item in manifest.get("items") or []
             if item.get("type") == "hyperframes:component"]
 
@@ -170,7 +192,7 @@ def component_install_target(name: str, catalog_dir=None) -> str | None:
     card = root / "components" / name / "registry-item.json"
     if not card.exists():
         return None
-    item = json.loads(card.read_text(encoding="utf-8"))
+    item = _cached_registry_json(card)
     for f in item.get("files") or []:
         if str(f.get("path")) == f"{name}.html":
             target = f.get("target")
@@ -188,8 +210,7 @@ def block_durations(catalog_dir=None) -> dict[str, float]:
     root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
     durations = {}
     for name in block_names(catalog_dir):
-        item = json.loads((root / "blocks" / name / "registry-item.json")
-                          .read_text(encoding="utf-8"))
+        item = _cached_registry_json(root / "blocks" / name / "registry-item.json")
         if item.get("duration"):
             durations[name] = float(item["duration"])
     return durations
@@ -236,7 +257,7 @@ def _registry_cards(catalog_dir=None):
             if not card.exists():
                 continue
             try:
-                item = json.loads(card.read_text(encoding="utf-8"))
+                item = _cached_registry_json(card)
             except ValueError:
                 continue
             yield subdir, name, folder, item
@@ -807,7 +828,10 @@ def catalog_cards(catalog_dir=None) -> dict[str, dict]:
         if item.get("jobs"):
             card["jobs"] = [str(job) for job in item["jobs"]]
         if item.get("dimensions"):
-            card["dimensions"] = item["dimensions"]
+            # Копия, не ссылка: с кэшем разбора (`_registry_json`) этот
+            # объект общий для всех обращений к позиции — правка карточки
+            # индекса без копии утекла бы обратно в кэш.
+            card["dimensions"] = dict(item["dimensions"])
         if item.get("duration"):
             card["duration"] = float(item["duration"])
         if kind is not None:
@@ -1224,7 +1248,7 @@ def block_backing(catalog_dir=None) -> dict[str, str]:
         card = root / "blocks" / name / "registry-item.json"
         if not card.exists():
             continue
-        item = json.loads(card.read_text(encoding="utf-8"))
+        item = _cached_registry_json(card)
         backing = (item.get("reels") or {}).get("backing")
         if backing:
             found[name] = str(backing)
@@ -1243,8 +1267,7 @@ def texture_overlays(catalog_dir=None) -> set[str]:
     root = Path(catalog_dir or CATALOG_DIR) / REGISTRY_SUBDIR
     found = set()
     for name in block_names(catalog_dir):
-        item = json.loads((root / "blocks" / name / "registry-item.json")
-                          .read_text(encoding="utf-8"))
+        item = _cached_registry_json(root / "blocks" / name / "registry-item.json")
         if TEXTURE_TAG in (item.get("tags") or []):
             found.add(name)
     return found
@@ -1260,8 +1283,7 @@ def overlay_passports(catalog_dir=None) -> str:
     with sdk_session() as sdk:
         for name in overlay_names(catalog_dir):
             folder = root / "blocks" / name
-            item = json.loads(
-                (folder / "registry-item.json").read_text(encoding="utf-8"))
+            item = _cached_registry_json(folder / "registry-item.json")
             sdk.open(name, folder / f"{name}.html")
             pages.append(passport(
                 sdk.elements(name), name=name, title=item.get("title", ""),
@@ -1287,8 +1309,7 @@ def block_passports(catalog_dir=None) -> str:
     with sdk_session() as sdk:
         for name in block_names(catalog_dir):
             folder = root / "blocks" / name
-            item = json.loads(
-                (folder / "registry-item.json").read_text(encoding="utf-8"))
+            item = _cached_registry_json(folder / "registry-item.json")
             sdk.open(name, folder / f"{name}.html")
             pages.append(passport(
                 sdk.elements(name), name=name, title=item.get("title", ""),
