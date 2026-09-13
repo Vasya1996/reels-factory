@@ -1,9 +1,12 @@
 """Сборка композиции агентом под скилами HeyGen.
 
 Скил — инструкция для агента, а не библиотека, поэтому композицию собирает
-headless-сессия. В отличие от ClaudeSkillRunner здесь нужен ОБЫЧНЫЙ профиль
-пользователя: скилы HeyGen лежат в ~/.claude/skills, а изолированный профиль
-их не видит.
+headless-сессия. Раньше этому вызову единственному из трёх приходилось
+работать без изоляции: скилы HeyGen лежали в личном профиле пользователя ОС,
+и добраться до них можно было только сняв CLAUDE_CONFIG_DIR целиком. Склад
+скилов перенесён в профиль сервиса (`SKILL_PROFILE_DIR`, `llm.py:19`) — тот
+же, что уже работает для ClaudeCliRunner и ClaudeSkillRunner, — и снимать
+переменную больше незачем.
 
 Заходим через парадную дверь /hyperframes. Намерение она в нашем случае не
 определяет: BRIEF.md уже лежит на месте, а для этого состояния её таблица велит
@@ -18,6 +21,8 @@ import shutil
 import subprocess
 import threading
 from pathlib import Path
+
+from reels_factory.llm import SKILL_PROFILE_DIR
 
 #: Прежняя редакция добавляла «следуй буквально: числа не рекомендации, а
 #: границы». Строку сняли: часть чисел задания — ориентиры («сцена живёт 1,5–4
@@ -129,7 +134,7 @@ class AgentSpend:
 
 
 class HeyGenAgentRunner:
-    """Headless-сессия в обычном профиле, с правом писать файлы."""
+    """Headless-сессия в профиле сервиса, с правом писать файлы."""
 
     def __init__(self, timeout_s: int = TIMEOUT_S, model: str | None = None,
                  effort: str | None = None, spend: AgentSpend | None = None):
@@ -163,7 +168,13 @@ class HeyGenAgentRunner:
         env = dict(os.environ)
         env.pop("ANTHROPIC_API_KEY", None)
         env.pop("ANTHROPIC_AUTH_TOKEN", None)
-        env.pop("CLAUDE_CONFIG_DIR", None)  # нужен обычный профиль со скилами
+        # Профиль сервиса — тот же склад скилов, что у ClaudeCliRunner и
+        # ClaudeSkillRunner (llm.py:19). Раньше переменную снимали целиком:
+        # скилы HeyGen лежали в личном профиле пользователя ОС, и это был
+        # единственный намеренный отказ от изоляции. Склад переехал —
+        # исключения больше нет.
+        env["CLAUDE_CONFIG_DIR"] = str(SKILL_PROFILE_DIR)
+        SKILL_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
         # Headless-вызов не умеет продлевать интерактивную OAuth-сессию:
         # без CLAUDE_CODE_OAUTH_TOKEN он падает «OAuth session expired», даже
         # когда десктопная сессия жива. Годовой токен подписки (claude

@@ -35,9 +35,13 @@ def test_облачные_подкоманды_не_зовутся():
 
 
 def test_gsap_кладётся_локально(tmp_path):
-    from reels_factory.hf_assets import vendor_gsap
+    from reels_factory.hf_assets import GSAP_SOURCE, vendor_gsap
 
-    if not (Path.home() / ".claude" / "skills" / "talking-head-recut").exists():
+    # Разбор 13.09.2026 (agent-profile): склад скилов переехал в профиль
+    # сервиса (GSAP_SOURCE теперь под SKILL_PROFILE_DIR, не под личным
+    # профилем пользователя ОС) — гвардия сверяется с тем же путём, что
+    # реально читает vendor_gsap, а не с прежним личным профилем.
+    if not GSAP_SOURCE.exists():
         pytest.skip("скилы HeyGen не установлены")
     target = vendor_gsap(tmp_path)
     assert target.exists() and target.stat().st_size > 10_000

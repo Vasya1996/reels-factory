@@ -126,7 +126,15 @@ def test_право_на_bash_объяснено_настоящей_причин
     assert "hyperframes add" not in исходник
 
 
-def test_команда_видит_обычный_профиль_и_права(monkeypatch, tmp_path):
+def test_команда_видит_профиль_сервиса_и_права(monkeypatch, tmp_path):
+    """Разбор 13.09.2026 (agent-profile): склад скилов переехал в профиль
+    сервиса (`SKILL_PROFILE_DIR`, `llm.py:19`), и снимать CLAUDE_CONFIG_DIR
+    больше незачем — раньше это было единственное намеренное исключение
+    (`hf_agent.py:166`), потому что скилы HeyGen лежали в личном профиле
+    пользователя ОС. Утверждение перевёрнуто: переменная теперь ЕСТЬ и равна
+    профилю сервиса. Утверждения про `--setting-sources` и `acceptEdits`
+    остались прежними — полная изоляция настроек отобрала бы у сессии скилл
+    монтажа из папки задания (проверено пробой, Measurement раздела Razbor)."""
     from reels_factory import hf_agent
 
     # На этой машине ~/.reels-factory/oauth-token существует по-настоящему;
@@ -151,7 +159,7 @@ def test_команда_видит_обычный_профиль_и_права(m
     runner = hf_agent.HeyGenAgentRunner()
     runner.run("/hyperframes привет", cwd=tmp_path)
 
-    assert "CLAUDE_CONFIG_DIR" not in seen["env"]
+    assert seen["env"]["CLAUDE_CONFIG_DIR"] == str(hf_agent.SKILL_PROFILE_DIR)
     assert "--setting-sources" not in " ".join(map(str, seen["cmd"]))
     assert "acceptEdits" in " ".join(map(str, seen["cmd"]))
     assert str(seen["cwd"]) == str(tmp_path)

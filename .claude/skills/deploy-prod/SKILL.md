@@ -18,6 +18,42 @@ Record the commit you're leaving, so a bad deploy has something to roll back to:
 ssh root@134.209.80.75 'cd /root/reels-factory && git rev-parse HEAD'
 ```
 
+## 0. Skills and settings for the service profile, BEFORE the code that reads them
+
+**Order is not optional here.** `hf_assets.py`, `hf_fonts.py` and `hf_media.py` read
+the skill warehouse from `SKILL_PROFILE_DIR/skills` (`llm.py:19`) — the service
+profile, not the personal profile of the user on the box. The moment the pulled code
+lands, those three reads point at the new path. If the skills aren't there yet, the
+build doesn't fail the deploy itself — pytest doesn't exercise the real files any
+more than it did before — it breaks the next real job on prod, quietly, hours later.
+**Run this step first, verify it, and only then pull.** Skip it only when neither
+`plugins/reels-factory/agent-profile/settings.json` nor the skill set changed since
+the last deploy.
+
+Copy the tracked settings (destructive-command denials only — no path rules; a path
+rule from a neighboring project is exactly what took prod down on 22.08, see
+`test_llm.py:16-49`):
+```
+scp plugins/reels-factory/agent-profile/settings.json root@134.209.80.75:/root/.reels-factory/claude/settings.json
+```
+Install/update the skill warehouse into the service profile — `CLAUDE_CONFIG_DIR` is
+what routes the installer there instead of `/root/.claude` (the CLI itself resolves
+`claudeHome` from it, `skillsMirror.ts:165` in the hyperframes-ref clone), so it must
+be set on this exact command, not assumed from a previous session:
+```
+ssh root@134.209.80.75 'CLAUDE_CONFIG_DIR=/root/.reels-factory/claude npx --yes hyperframes@<pin from hyperframes_blocks.py _HF_VERSION> skills update talking-head-recut'
+```
+One skill name is enough — the installer resolves and copies the whole related set
+(`embedded-captions`, `media-use`, the `hyperframes-*` route skills) in one pass, not
+just the one named.
+
+Verify before touching code — the three names the engine actually reads from disk:
+```
+ssh root@134.209.80.75 'ls /root/.reels-factory/claude/skills | grep -E "^(talking-head-recut|embedded-captions|media-use)$"'
+```
+All three must print. Anything missing → re-run the install above before proceeding;
+do not pull code ahead of this.
+
 ## 1. Pull
 
 ```
