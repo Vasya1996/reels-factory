@@ -14,10 +14,10 @@ was first found by looking, not by a gate. Judging a reel means looking at it.
 ## 1. Fetch the artefacts
 
 ```
-scp root@134.209.80.75:/root/reels-workspace/work/jobs/<job>/plan.json work/<job>/
-scp root@134.209.80.75:/root/reels-workspace/work/jobs/<job>/gates.json work/<job>/
-scp root@134.209.80.75:/root/reels-workspace/work/jobs/<job>/snapshots/contact-sheet-*.jpg work/<job>/
-scp root@134.209.80.75:/root/reels-workspace/work/jobs/<job>/reel.mp4 work/<job>/
+scp root@134.209.80.75:/srv/reels-workspace/work/jobs/<job>/plan.json work/<job>/
+scp root@134.209.80.75:/srv/reels-workspace/work/jobs/<job>/gates.json work/<job>/
+scp root@134.209.80.75:/srv/reels-workspace/work/jobs/<job>/snapshots/contact-sheet-*.jpg work/<job>/
+scp root@134.209.80.75:/srv/reels-workspace/work/jobs/<job>/reel.mp4 work/<job>/
 ```
 
 ## 2. Print the plan summary

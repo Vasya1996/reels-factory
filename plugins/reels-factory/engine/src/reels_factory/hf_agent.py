@@ -198,7 +198,13 @@ class HeyGenAgentRunner:
              # отбивало. acceptEdits покрывает только правку файлов.
              "--allowedTools", *AGENT_TOOLS, *model_args],
             input=prompt, capture_output=True, text=True, encoding="utf-8",
-            timeout=self.timeout_s, env=env, cwd=str(cwd) if cwd else None,
+            # .resolve() — не просто нормализация: логический путь через
+            # симлинк отдаёт процессу чужой каталог .claude из предков
+            # (обход cwd вверх до корня ФС находит CLAUDE.md и settings.json
+            # не той папки). Разворот в физический путь держит агента внутри
+            # своего дерева.
+            timeout=self.timeout_s, env=env,
+            cwd=str(Path(cwd).resolve()) if cwd else None,
         )
         if result.returncode != 0:
             raise RuntimeError(

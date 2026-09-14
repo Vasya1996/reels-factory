@@ -30,7 +30,7 @@ be isolated to a few frames.
 ## Steps
 
 All of this runs over SSH on `root@134.209.80.75`, working directory
-`/root/reels-workspace`.
+`/srv/reels-workspace`.
 
 1. **Pick a source job.** Any job under `work/jobs/<src>` that finished (or at least
    got through `prepare` and `plan`) has a frozen avatar order — clips, plan, and the
@@ -103,10 +103,10 @@ All of this runs over SSH on `root@134.209.80.75`, working directory
 
 8. **Fetch the result.**
    ```
-   scp root@134.209.80.75:/root/reels-workspace/work/jobs/<new>/snapshots/contact-sheet-*.jpg work/<new>/
-   scp root@134.209.80.75:/root/reels-workspace/work/jobs/<new>/reel.mp4 work/<new>/
-   scp root@134.209.80.75:/root/reels-workspace/work/jobs/<new>/plan.json work/<new>/
-   scp root@134.209.80.75:/root/reels-workspace/work/jobs/<new>/gates.json work/<new>/
+   scp root@134.209.80.75:/srv/reels-workspace/work/jobs/<new>/snapshots/contact-sheet-*.jpg work/<new>/
+   scp root@134.209.80.75:/srv/reels-workspace/work/jobs/<new>/reel.mp4 work/<new>/
+   scp root@134.209.80.75:/srv/reels-workspace/work/jobs/<new>/plan.json work/<new>/
+   scp root@134.209.80.75:/srv/reels-workspace/work/jobs/<new>/gates.json work/<new>/
    ```
    Then judge it — see `/judge-reel` for what to look at in the plan, the gates, and
    the frames rather than trusting a green gate file alone.

@@ -23,20 +23,20 @@ from or spending anything new.
 ## Steps
 
 1. **Pick a real job.** Any finished or in-progress job under
-   `/root/reels-workspace/work/jobs/<job>/public` on prod has real composed HTML,
+   `/srv/reels-workspace/work/jobs/<job>/public` on prod has real composed HTML,
    real clips, and a real `plan.json` — exactly what a from-scratch fixture would take
    effort to fake convincingly.
 
 2. **Copy it out, read-only against the original.** Either pull it to this machine or
    stage it in `/tmp` on the server itself:
    ```
-   scp -r root@134.209.80.75:/root/reels-workspace/work/jobs/<job>/public /tmp/<name>/public
+   scp -r root@134.209.80.75:/srv/reels-workspace/work/jobs/<job>/public /tmp/<name>/public
    ```
    or, staying on the server:
    ```
-   ssh root@134.209.80.75 'cp -r /root/reels-workspace/work/jobs/<job>/public /tmp/<name>/public'
+   ssh root@134.209.80.75 'cp -r /srv/reels-workspace/work/jobs/<job>/public /tmp/<name>/public'
    ```
-   Never write into `/root/reels-workspace/work/jobs/<job>` itself — that folder is a
+   Never write into `/srv/reels-workspace/work/jobs/<job>` itself — that folder is a
    live job the bot or a user may still be waiting on.
 
 3. **Swap in the changed file(s).** Copy your locally-edited file over its counterpart

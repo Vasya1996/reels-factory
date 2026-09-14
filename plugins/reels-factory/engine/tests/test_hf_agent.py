@@ -1,5 +1,6 @@
 """Монтаж планирует агент под скилами HeyGen; композицию собирает наш код."""
 import json
+import os
 
 import pytest
 
@@ -389,3 +390,59 @@ def test_без_кошелька_обёртка_работает_как_преж
 
     assert раннер.total_cost_usd == pytest.approx(0.01)
     assert len(раннер.runs) == 1
+
+
+# ---------- физический cwd вместо логического через симлинк ----------
+#
+# Обход cwd вверх по предкам в поисках .claude не ограничен $HOME — если
+# рабочая папка задания лежит за симлинком, логический путь отдаёт агенту
+# .claude чужого каталога-предка (замерено на проде 14.09.2026: тот же
+# каталог через /root/reels-workspace против /srv/reels-workspace дал разный
+# CLAUDE.md). Раннер обязан развернуть cwd в физический путь перед запуском.
+
+def _симлинки_доступны():
+    """Проверка по факту, а не по имени ОС: на Windows `os.symlink` иногда
+    работает (режим разработчика/права администратора), иногда нет."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        src = os.path.join(td, "src")
+        os.mkdir(src)
+        dst = os.path.join(td, "dst")
+        try:
+            os.symlink(src, dst)
+            return True
+        except (OSError, NotImplementedError):
+            return False
+
+
+@pytest.mark.skipif(not _симлинки_доступны(),
+                    reason="симлинки недоступны в этом окружении")
+def test_cwd_через_симлинк_разворачивается_в_физический_путь(monkeypatch, tmp_path):
+    """Логический путь через симлинк не должен уйти в subprocess: обход
+    предков от него находит .claude не той папки."""
+    from reels_factory import hf_agent
+
+    реальная = tmp_path / "реальная-папка"
+    реальная.mkdir()
+    ссылка = tmp_path / "ссылка-на-неё"
+    os.symlink(str(реальная), str(ссылка))
+
+    monkeypatch.setattr(hf_agent.Path, "home", lambda: tmp_path / "нет-профиля")
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["cwd"] = kw.get("cwd")
+
+        class P:
+            returncode = 0
+            stdout = json.dumps({"result": "ок", "total_cost_usd": 0.01})
+            stderr = ""
+
+        return P()
+
+    monkeypatch.setattr(hf_agent.subprocess, "run", fake_run)
+
+    hf_agent.HeyGenAgentRunner().run("/hyperframes", cwd=ссылка)
+
+    assert seen["cwd"] == str(реальная.resolve())
