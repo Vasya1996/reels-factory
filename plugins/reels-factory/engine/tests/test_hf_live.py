@@ -8,7 +8,7 @@ import pytest
 
 from reels_factory.config import FFPROBE
 
-WORK = Path(r"C:\Users\123\Videos\Reels\work\bot-583558720-1784873847")
+WORK = Path(r"C:\reels-work\work\bot-583558720-1784873847")
 
 
 @pytest.mark.slow
