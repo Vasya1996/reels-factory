@@ -181,6 +181,46 @@ def test_гарнитура_подменена_в_обоих_местах(tmp_pa
     assert "Unbounded" in snippet and "Unbounded" in engine
 
 
+def test_шрифт_прогружается_перед_подгонкой_кегля():
+    """rb0908-university 32.2с, «АВТОМАТИЗИРОВАТЬ» обрезано с двух сторон:
+    наши шрифты несут `unicode-range`-подмножества, догружаемые лениво по
+    первому использованию (`hf_fonts.py`), а на боте компонента ещё нет ни
+    одного элемента с текстом — `document.fonts.ready` сам по себе резолвится,
+    не дождавшись кириллического начертания Unbounded 800, и подгонка кегля
+    меряет запасным шрифтом. `hfBoot` обязан явно запросить гарнитуру
+    подписи под текст титра ДО `fonts.ready`."""
+    from reels_factory.hf_captions import VETTED
+
+    vetted_text = VETTED.read_text(encoding="utf-8")
+    boot_start = vetted_text.index("function hfBoot")
+    boot_text = vetted_text[boot_start:]
+    load_idx = boot_text.index("document.fonts.load(")
+    ready_idx = boot_text.index("document.fonts.ready")
+    call = boot_text[load_idx:load_idx + 200]
+    assert '"800 ' in call
+    assert "Montserrat" in call
+    assert load_idx < ready_idx
+
+
+def test_гарнитура_прогрузки_подменена_тем_же_способом(tmp_path):
+    """Подмена имени в `hf_captions.py:286` — слепой `replace` над ЛЮБЫМ
+    вхождением `Montserrat` в теле скрипта; строка, добавленная этой правкой,
+    должна пройти ту же подмену, что и `fitFontSize`/CSS, иначе движок
+    прогрел бы не ту гарнитуру, которую потом мерит и рисует. Проверяем на
+    реальной `VETTED`-копии (мок `COMPONENT` наверху файла не несёт `hfBoot`)."""
+    from reels_factory.hf_captions import VETTED
+
+    public = tmp_path
+    target = public / COMPONENT_REL
+    target.parent.mkdir(parents=True)
+    target.write_text(VETTED.read_text(encoding="utf-8"), encoding="utf-8")
+    write_caption_data(public, words=WORDS, duration=10.0)
+    _snippet(public)
+    engine = (public / "captions.js").read_text(encoding="utf-8")
+    assert 'fonts.load("800 60px Unbounded"' in engine
+    assert "Montserrat" not in engine
+
+
 def test_корень_подогнан_под_наш_кадр(tmp_path):
     public = _public(tmp_path)
     write_caption_data(public, words=WORDS, duration=10.0)
