@@ -164,9 +164,11 @@ failure.
 
 The bot's databases (`work/{billing,jobs,events}.sqlite3`) are not in git and have no
 backup — restarting mid-render doesn't lose the database, but it does orphan whatever
-job was running. Check before restarting:
+job was running. Check before restarting. `sqlite3` is not installed on the box
+(measured 14.09.2026: `bash: sqlite3: command not found`) — go through `python3`'s
+stdlib module instead:
 ```
-ssh root@134.209.80.75 "sqlite3 /root/reels-workspace/work/jobs.sqlite3 \"select job_id, status from build_jobs where status in ('audio_queued','audio_running','awaiting_audio_approval','awaiting_user_audio','user_audio_processing','queued','running');\""
+ssh root@134.209.80.75 "python3 -c \"import sqlite3; print(sqlite3.connect('/srv/reels-workspace/work/jobs.sqlite3').execute(\\\"select job_id, status from build_jobs where status in ('audio_queued','audio_running','awaiting_audio_approval','awaiting_user_audio','user_audio_processing','queued','running')\\\").fetchall())\""
 ```
 Empty result → restart:
 ```
@@ -178,5 +180,10 @@ is no queue-drain flag to force this, so this is a judgment call, not automatabl
 ## Leave alone
 
 Nothing under `/root/.reels-factory/bot.env` (the HeyGen/ElevenLabs keys, service-
-owned) or `/root/reels-workspace/work/{billing,jobs,events}.sqlite3` (user balances,
+owned) or `/srv/reels-workspace/work/{billing,jobs,events}.sqlite3` (user balances,
 no backup) is in git and none of it should be touched by a deploy.
+
+The workspace moved from `/root/reels-workspace` to `/srv/reels-workspace` on
+14.09.2026; the service's `WorkingDirectory` follows the new path. The compatibility
+symlink at the old place was removed the same day — `/root/reels-workspace` no longer
+exists, so any command still carrying that prefix simply fails.

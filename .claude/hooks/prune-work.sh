@@ -18,7 +18,7 @@ KEEP="avatar_cache bot elevenlabs-tts-sts plan-previews"
 
 # Рабочая папка: сперва переменная окружения, затем прод, затем эта машина.
 WORK=${REELS_WORK:-}
-[ -n "$WORK" ] || { [ -d /root/reels-workspace/work ] && WORK=/root/reels-workspace/work; }
+[ -n "$WORK" ] || { [ -d /srv/reels-workspace/work ] && WORK=/srv/reels-workspace/work; }
 [ -n "$WORK" ] || { [ -d "$HOME/Videos/Reels/work" ] && WORK="$HOME/Videos/Reels/work"; }
 [ -n "$WORK" ] || exit 0
 
