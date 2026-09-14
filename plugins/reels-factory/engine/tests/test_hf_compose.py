@@ -185,6 +185,50 @@ def test_класс_перехода_идёт_за_битом_сцены(run):
     assert 'tl.fromTo("#ins-s-02-1 .ins-media", { x:' not in html
 
 
+def test_cls_явный_переопределяет_класс_перехода_по_биту():
+    """`cls` — паттерн ритма ролика (`scene['rhythm']['transition']`,
+    посчитан `hf_montage.direct()` до сборки) — сильнее бита: `_entry`/`_exit`
+    получают его явно вызывающим (`build_composition`), и он решает вместо
+    `_transition_class(beat)`."""
+    at = hf_compose.markup_time(1.0)
+    assert hf_compose._entry("#t", "point", 1.0, cls="hard-cut") == [
+        f'tl.set("#t", {{ autoAlpha: 1 }}, {at});']
+    assert hf_compose._exit("#t", "point", 1.0, cls="hard-cut") == [
+        f'tl.set("#t", {{ autoAlpha: 0 }}, {at});']
+    # без `cls` бит `point` даёт их обычный шов (cut-the-curve), не мгновенную
+    # склейку — `cls` явно решает иначе, а не совпадает случайно.
+    assert hf_compose._entry("#t", "point", 1.0) != hf_compose._entry(
+        "#t", "point", 1.0, cls="hard-cut")
+
+
+def test_сцена_с_rhythm_transition_переопределяет_переход_по_биту(run):
+    """Паттерн ритма ролика решает класс перехода сильнее бита: сцена с
+    обычным `point` (без `rhythm` — `cut-the-curve`, см.
+    `test_класс_перехода_идёт_за_битом_сцены`) даёт мгновенный `tl.set`,
+    когда паттерн (например `punchy`) назначил ей `hard-cut` через
+    `scene['rhythm']['transition']` (`hf_montage.direct`)."""
+    scenes = json.loads(json.dumps(SCENES))
+    scenes[1]["rhythm"] = {"transition": "hard-cut"}
+    html, _ = _build(run, scenes=scenes)
+    assert 'tl.set("#ins-s-02-0 .ins-media", { autoAlpha: 0 }' in html
+    assert 'tl.set("#ins-s-02-1 .ins-media", { autoAlpha: 1 }' in html
+    assert 'tl.to("#ins-s-02-0 .ins-media", { x:' not in html
+
+
+def test_zoom_ladder_с_push_every_бьёт_наезд_каждый_второй():
+    """`push_every` — паттерн ритма ролика (`scene['rhythm']['pushEvery']`,
+    посчитан `hf_montage.direct()`); `camera_plans` (`hf_compose.py`)
+    прокидывает его в `zoom_ladder` вместо умолчания `PUSH_EVERY`."""
+    from reels_factory.hf_montage import zoom_ladder
+
+    plans = [{"start": index * 2.0, "end": index * 2.0 + 2.0}
+             for index in range(6)]
+    ladder = zoom_ladder(plans, push_every=2)
+    pushes = [index for index, plan in enumerate(ladder)
+             if plan["kind"] == "push"]
+    assert pushes == [0, 2, 4]
+
+
 def test_кульминация_прилетает_из_камеры(run):
     """climax — их «hero reveal», один из двух битов на весь ролик, которым
     их правило прямо назначает лучший переход («the hero reveal + the CTA»,

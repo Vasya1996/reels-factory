@@ -73,7 +73,7 @@ from reels_factory.hf_layout import (
 )
 from reels_factory.hf_media import insert_problem
 from reels_factory.hf_montage import (
-    PUSH_TO, cut_into_plans, drop_schema, flash_moments, insert_of,
+    PUSH_TO, RHYTHMS, cut_into_plans, drop_schema, flash_moments, insert_of,
     refill_scene, scene_elements, shot_queries,
     shots_for, split_series, zoom_ladder,
 )
@@ -869,18 +869,18 @@ def _beat(scene: dict) -> str:
 #:   0.3-0.8s transition would feel too slow» (:68) — открытие обязано
 #:   отдать кадр сути без разгона на eased-стыке. Раньше hook получал ту же
 #:   `cut-the-curve`, что и все точки; отличие внесено этой правкой.
-_TRANSITION_CLASS = {
-    "hook": "hard-cut",
-    "point": "cut-the-curve",
-    "turn": "cut-the-curve",
-    "climax": "zoom-arrival",
-    "outro": "blur-crossfade",
-}
-
-
 def _transition_class(beat: str) -> str:
-    """Класс перехода по биту — словарь `_TRANSITION_CLASS`, см. его коммент."""
-    return _TRANSITION_CLASS.get(beat, "cut-the-curve")
+    """Класс перехода по биту при паттерне `steady` — словарь выше решением.
+
+    Сам словарь — `hf_montage.RHYTHMS["steady"]["transitions"]`: там же
+    лежат классы остальных паттернов ритма (`hf_montage.direct`), и решение
+    по каждому классу здесь и относится только к `steady`-раскладке. Реальную
+    сцену это не всегда решает: у неё есть свой `rhythm.transition`,
+    посчитанный `direct()` под паттерн ролика, и вызывающий передаёт его
+    явно через `cls=` в `_entry`/`_exit` — эта функция только запасной путь
+    для мест, которые ритм ролика не знают (сцена без `direction`, тесты).
+    """
+    return RHYTHMS["steady"]["transitions"].get(beat, "cut-the-curve")
 
 
 def _axis(beat: str) -> tuple[str, int]:
@@ -894,8 +894,13 @@ def _axis(beat: str) -> tuple[str, int]:
     return ("y", 1) if beat == "turn" else ("x", -1)
 
 
-def _entry(target: str, beat: str, at: float) -> list[str]:
+def _entry(target: str, beat: str, at: float, *, cls: str | None = None) -> list[str]:
     """Вход вставки: класс перехода решает бит сцены (`_transition_class`).
+
+    `cls` — класс перехода паттерна ритма ролика (`scene["rhythm"]
+    ["transition"]`, посчитан `hf_montage.direct()`); не назван — берём
+    `steady`-раскладку по биту (`_transition_class`), для сцены без ритма
+    или прямого вызова из теста.
 
     `fromTo`, не `from`: их правило — начальное состояние явно, иначе холодная
     перемотка рисует элемент до входа (transitions/overview.md:22).
@@ -903,7 +908,7 @@ def _entry(target: str, beat: str, at: float) -> list[str]:
     # Позиция твина — время на шкале, значит через `markup_time`. Длительности
     # твинов оставлены как есть: GSAP интерполирует непрерывно.
     at = markup_time(at)
-    cls = _transition_class(beat)
+    cls = cls or _transition_class(beat)
     if cls == "blur-crossfade":
         return [f'tl.fromTo({_js(target)}, {{ autoAlpha: 0, '
                 f'filter: "blur(20px)" }}, {{ autoAlpha: 1, '
@@ -930,15 +935,18 @@ def _entry(target: str, beat: str, at: float) -> list[str]:
             f'duration: {CUT_SECONDS}, ease: "power4.out" }}, {at});']
 
 
-def _exit(target: str, next_beat: str, at: float) -> list[str]:
+def _exit(target: str, next_beat: str, at: float, *, cls: str | None = None) -> list[str]:
     """Выход вставки: класс перехода решает бит сцены (`_transition_class`).
+
+    `cls` — то же, что у `_entry`: класс паттерна ритма ролика, не назван —
+    `steady`-раскладка по биту.
 
     Гашение короче пути (CUT_FADE < CUT_SECONDS): элемент исчезает, ещё
     разгоняясь, — «the exit's opacity completes at ~25-30% of its travel»
     (cut-catalog.md:145-149). Выход `power4.in` зеркален входу `power4.out`.
     """
     at = markup_time(at)
-    cls = _transition_class(next_beat)
+    cls = cls or _transition_class(next_beat)
     if cls == "blur-crossfade":
         return [f'tl.to({_js(target)}, {{ autoAlpha: 0, duration: 0.5, '
                 f'ease: "sine.inOut" }}, {at});']
@@ -2355,18 +2363,27 @@ def crop_fractions(face: dict | None) -> tuple[float, float]:
 
 
 def camera_plans(moments: list[tuple], words: list[dict],
-                 duration: float, *, face: dict | None = None) -> list[dict]:
+                 duration: float, *, face: dict | None = None,
+                 scenes: list[dict] | None = None) -> list[dict]:
     """Планы камеры на всё аватарное время, со ступенями масштаба.
 
     Куски с ведущей режутся на планы по паузам речи (`hf_montage`), и каждому
     плану достаётся ступень: соседние отличаются не меньше чем на 8 %, наезд —
-    не чаще каждого третьего плана и только там, где окно большое.
+    не чаще, чем раз в `pushEvery` планов, и только там, где окно большое.
+
+    `scenes` — раскладка с числами паттерна ритма (`scene["rhythm"]`,
+    посчитан `hf_montage.direct` перед раскладкой). `moments` собраны из
+    `startSec` сцен (`presenter_timeline`), поэтому начало окна совпадает с
+    началом какой-то сцены — по нему и ищем её `rhythm`; окно без него (план
+    без `direction`, старые прогоны) режется сегодняшней вилкой по
+    умолчаниям `cut_into_plans`/`zoom_ladder`.
 
     Ступень подрезается потолком окна (`frame_safe_scale`): у окна, которое
     кадр не кроет, наезд выносит `<video>` за край кадра, и их `--frame-check`
     зовёт это `frame_out_of_frame`. Числа пишутся сюда же, в `camera.json`, —
     гейт наездов меряет готовый файл по ним.
     """
+    by_start = {_q(scene["startSec"]): scene for scene in (scenes or [])}
     plans: list[dict] = []
     for index, (start, position) in enumerate(moments):
         if position == "none":
@@ -2374,13 +2391,22 @@ def camera_plans(moments: list[tuple], words: list[dict],
         end = moments[index + 1][0] if index + 1 < len(moments) else duration
         if end - start < 0.2:
             continue
-        cut = cut_into_plans(words, float(start), float(end))
+        rhythm = (by_start.get(_q(start)) or {}).get("rhythm") or {}
+        cut_kwargs = {}
+        if "planMin" in rhythm:
+            cut_kwargs["plan_min"] = rhythm["planMin"]
+        if "planMax" in rhythm:
+            cut_kwargs["plan_max"] = rhythm["planMax"]
+        cut = cut_into_plans(words, float(start), float(end), **cut_kwargs)
         big = [position in _BIG_PRESENTER] * len(cut)
         cap = frame_safe_scale(position, face)
+        ladder_kwargs = ({"push_every": rhythm["pushEvery"]}
+                        if "pushEvery" in rhythm else {})
         plans += [dict(plan, position=position,
                        scale_from=min(plan["scale_from"], cap),
                        scale_to=min(plan["scale_to"], cap))
-                  for plan in zoom_ladder(cut, big=big, offset=len(plans))]
+                  for plan in zoom_ladder(cut, big=big, offset=len(plans),
+                                          **ladder_kwargs)]
     return plans
 
 
@@ -2775,11 +2801,16 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
             # `attachMotionBlur` ждёт ссылку («any element animated by your
             # GSAP timeline», motion-blur.html:5).
             insert_targets.setdefault(scene["id"], []).append(target)
+            # Класс перехода — из паттерна ритма этого ролика
+            # (`hf_montage.direct`, вызван перед раскладкой в `hf_render`);
+            # нет `rhythm` у сцены (план без `direction`) — `_entry`/`_exit`
+            # сами берут `steady`-раскладку по биту.
+            cls = (scene.get("rhythm") or {}).get("transition")
             if shot:
                 # шов внутри серии: второй план приезжает движением
-                timeline += _entry(target, beat, open_at)
+                timeline += _entry(target, beat, open_at, cls=cls)
             if not last:
-                timeline += _exit(target, beat, close_at)
+                timeline += _exit(target, beat, close_at, cls=cls)
             staged += 1
 
     # ── накладки агента: их блоки из каталога ────────────────────────────
@@ -3691,7 +3722,7 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     for time, position in moments[1:]:
         timeline += _presenter_move(position, _q(time))
 
-    plans = camera_plans(moments, words, duration, face=face)
+    plans = camera_plans(moments, words, duration, face=face, scenes=scenes)
     timeline += _zoom_timeline(plans)
     origin = zoom_origin(face)
 
@@ -3706,7 +3737,15 @@ def build_composition(rdir, sdk, *, storyboard: dict, clips: list[dict],
     # первой. Правило и предел — Юлины (`hf_montage.flash_moments`).
     climax = next((_q(scene["startSec"]) for scene in scenes
                    if _beat(scene) == "climax"), None)
-    flashes = flash_moments(plans, climax=climax, duration=duration)
+    # Предел вспышек — из паттерна ритма ролика (`hf_montage.direct`, число
+    # лежит на ролике целиком в `storyboard["rhythm"]`, не на сцене: вспышка,
+    # как и `FLASH_MAX`, до которого код эту раскладку читал, мерена на весь
+    # ролик). Плана без `direction` (старые прогоны) не считал — умолчание
+    # `flash_moments` то же `FLASH_MAX`.
+    flash_limit = (storyboard.get("rhythm") or {}).get("flashMax")
+    flash_kwargs = {"limit": flash_limit} if flash_limit is not None else {}
+    flashes = flash_moments(plans, climax=climax, duration=duration,
+                            **flash_kwargs)
     # Что из задуманного реально встало в разметку. Пишется в `camera.json`
     # вместо `flashes`: гейт `D26_flash` (`hf_zoom.py`) идёт мерить яркость по
     # этому списку, и обещание вспышки, которой в разметке нет, роняло приёмку

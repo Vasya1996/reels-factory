@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reels_factory.hf_montage import SERIES_MAX, SERIES_MIN
+from reels_factory.hf_montage import RHYTHMS, SERIES_MAX, SERIES_MIN
 
 SKILL_NAME = "reels-montage"
 
@@ -305,7 +305,8 @@ def _body(*, positions: str, no_effect_zone: str, schema_positions: str,
           face_gap: float,
           max_static: float, min_scene: float, avatar_ordered: bool,
           min_fullscreen: float, max_face_absence: float,
-          inserts_low: int, expected_scenes: int, char_limits: str) -> str:
+          inserts_low: int, expected_scenes: int, char_limits: str,
+          direction_table: str) -> str:
     return f"""# Монтаж вертикального рилса
 
 Правила выбора кадра. Данные этого ролика — фразы озвучки, материал, что
@@ -439,6 +440,49 @@ through documents closeup». Абстракция вроде «order symbol» н
 Кандидатов после поиска отбирает отдельный судья: твоя работа — точный запрос
 и честная реплика, а не подбор файла.
 
+## Режиссура
+
+Одно решение на весь ролик, и оно — первое, раньше сцен: поле `direction` —
+`world` (одна-две строки: где зритель и что он переживает — «офис, где всё
+горит, и облегчение, когда рутину забирает ассистент») и `rhythm` — паттерн
+из таблицы ниже. Одно на весь ролик, а не на сцену: «pick 2-3 transition
+types for the whole video and repeat them» (`TRANSITION-REGISTRY.md:154`) —
+переход, который меняется от сцены к сцене без системы, читается монтажным
+браком, а не решением.
+
+Дальше решение уже не твоё — код превращает паттерн в числа по каждой сцене
+(`hf_montage.direct`): потолок сцены без смены картинки, вилку планов камеры,
+частоту наездов, класс перехода по биту и предел вспышек на ролик. Внутри
+паттерна сцена всё равно звучит по-своему — короче на перечислении, длиннее
+на главной мысли, — эту разницу даёт не паттерн, а твои же биты и то, как ты
+разбил сцены; паттерн только держит ритм ролика одним почерком.
+
+Их доктрина, которой это следует:
+
+- «One continuous film … not a pile of slides that animate once and freeze»
+  (`motion-language.md:5`) — вот зачем ритм вообще решают одним словом, а не
+  оставляют плыть от сцены к сцене.
+- Схема или другой элемент кадра появляется на словах, которые его называют,
+  а не раньше (`motion-language.md:106`) — если мысль просит схему, дай ей
+  отдельную фразу, вместо того чтобы вставлять схему в середину чужой.
+- «I'd rather have NO motion than BAD motion» (`motion-language.md:116-126`)
+  — для спокойного, объясняющего материала бери `calm`: движения меньше, но
+  ни одно не выглядит случайным.
+- Высокая энергия — это жёсткие склейки: «HIGH energy … use
+  default_high_energy» (`TRANSITION-REGISTRY.md:146`) — под неё `punchy`.
+
+<direction-table>
+{direction_table}
+</direction-table>
+
+`build` — не отдельная строка чисел, а рампа: числа едут от `calm` на первой
+сцене к `punchy` на сцене с `beat: "climax"` (по номеру сцены, не по
+секундам — код считает это до того, как секунды вообще посчитаны), а после
+кульминации сцены возвращаются к числам и переходам `calm` без рампы —
+кульминация прошла, и дальше её же «выдох». Без `climax` рампа едет до
+последней сцены. Бери `build`, когда ролик правда идёт к одной точке, а не
+подряд равноважных мыслей — на последних ровным счётом ничего не «строится».
+
 ## Ритм и биты
 
 Сцены разной длины держат зрителя лучше метронома: короткие на перечислениях,
@@ -447,7 +491,7 @@ through documents closeup». Абстракция вроде «order symbol» н
 - Сцена с ведущей живёт не короче {seconds(min_scene)}. У сцены со вставкой,
   схемой или плашкой свой пол — он старше этого; у сцены без ведущей пол
   {seconds(min_fullscreen)} (правило ниже).
-- Ни одна сцена не длиннее {seconds(max_static)}.
+- Ни одна сцена не длиннее потолка своего паттерна — числа в таблице раздела «Режиссура» ({seconds(RHYTHMS["steady"]["holdMax"])} у `calm`/`steady`, {seconds(RHYTHMS["punchy"]["holdMax"])} у `punchy`, по рампе у `build`).
 {_blind_floor_rule(avatar_ordered, min_fullscreen)}
 {_face_absence_rule(avatar_ordered, max_face_absence)}
 - Меняй картинку между соседними сценами — положение ведущей либо вставку.
@@ -901,7 +945,7 @@ def write_montage_skill(rdir, *, positions: str, no_effect_zone: str,
                         icon_names: str, series_min: float, series_max: float,
                         face_gap: float, max_static: float, min_scene: float,
                         inserts_low: int, expected_scenes: int,
-                        char_limits: str,
+                        char_limits: str, direction_table: str,
                         avatar_ordered: bool = True,
                         min_fullscreen: float = 3.0,
                         max_face_absence: float = 10.0) -> Path:
@@ -921,7 +965,10 @@ def write_montage_skill(rdir, *, positions: str, no_effect_zone: str,
     `hf_gates.min_scenes`, подставленные `hf_brief`, а не переписанные здесь
     литералом. `char_limits` — уже собранная строка границ знаков по формам
     (`hf_schema.py`): собирается в `hf_brief`, потому что зависит сразу от
-    четырёх констант схемы.
+    четырёх констант схемы. `direction_table` — та же история про
+    `hf_montage.RHYTHMS`: собирается в `hf_brief` (`_direction_table`), чтобы
+    таблица паттернов ритма не жила вторым литералом рядом с кодом, который
+    их считает.
 
     Позиции каталога агенту в задание не переписываются: их индекс лежит
     рядом отдельным файлом (`hf_catalog.write_catalog_files`), и выбирает он их
@@ -942,6 +989,6 @@ def write_montage_skill(rdir, *, positions: str, no_effect_zone: str,
                 min_fullscreen=min_fullscreen,
                 max_face_absence=max_face_absence,
                 inserts_low=inserts_low, expected_scenes=expected_scenes,
-                char_limits=char_limits),
+                char_limits=char_limits, direction_table=direction_table),
         encoding="utf-8")
     return path

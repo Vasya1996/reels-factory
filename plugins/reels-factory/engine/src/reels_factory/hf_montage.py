@@ -17,6 +17,11 @@
    ровно её алгоритм (точка > запятая > пауза, фраза не рвётся).
 3. `zoom_ladder` — ступени масштаба на этих планах.
 4. `flash_moments` — где вспышка, и почему их не больше двух.
+5. `direct` — единственное решение агента о ритме (`direction.rhythm`)
+   превращает в числа по сцене: `RHYTHMS` держит таблицу паттернов, `direct`
+   раскладывает её на `scene["rhythm"]`. Само число решает не агент и не
+   свободная арифметика на сцену — только форма выбранного паттерна и биты,
+   которые агент расставил (см. докстринг `direct`).
 
 Секунды здесь настоящие, а не индексы фраз: модуль работает уже после
 раскладки (`hf_phrases.lay_out_scenes`).
@@ -27,6 +32,7 @@ import functools
 from itertools import combinations
 
 from reels_factory.hf_layout import avatar_gaps, in_avatar_gap
+from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 
 # ----------------------------------------------------------------- серии
 
@@ -1147,11 +1153,15 @@ MIN_STEP = 0.08
 PUSH_EVERY = 3
 
 
-def cut_into_plans(words: list[dict], start: float, end: float) -> list[dict]:
+def cut_into_plans(words: list[dict], start: float, end: float, *,
+                   plan_min: float = PLAN_MIN,
+                   plan_max: float = PLAN_MAX) -> list[dict]:
     """Нарезать кусок речи на планы камеры — её `cut_into_plans` целиком.
 
-    Граница плана — самая сильная пауза в окне 1,2–3,9 с; фраза не рвётся
-    посередине. Окно без единой годной границы режется по длине.
+    Граница плана — самая сильная пауза в окне `plan_min`–`plan_max`
+    (умолчания — сегодняшние 1,2–3,9 с); фраза не рвётся посередине. Окно без
+    единой годной границы режется по длине. Вилку меняет паттерн ритма
+    ролика (`RHYTHMS[...]["planMin"/"planMax"]`, посчитан `direct()`).
     """
     inner = [w for w in words
              if float(w["end"]) > start and float(w["start"]) < end]
@@ -1168,9 +1178,9 @@ def cut_into_plans(words: list[dict], start: float, end: float) -> list[dict]:
             following = inner[step + 1] if step + 1 < len(inner) else None
             cut = min(end, float(following["start"]) if following else end)
             size = cut - opened
-            if size < PLAN_MIN:
+            if size < plan_min:
                 continue
-            if size > PLAN_MAX:
+            if size > plan_max:
                 break
             weight = (_pause_weight(word, following) if following
                       else 9.0)
@@ -1181,7 +1191,7 @@ def cut_into_plans(words: list[dict], start: float, end: float) -> list[dict]:
         else:
             step = index
             while (step + 1 < len(inner)
-                   and float(inner[step + 1]["start"]) - opened < PLAN_MAX):
+                   and float(inner[step + 1]["start"]) - opened < plan_max):
                 step += 1
             cut = (min(end, float(inner[step + 1]["start"]))
                    if step + 1 < len(inner) else end)
@@ -1193,18 +1203,21 @@ def cut_into_plans(words: list[dict], start: float, end: float) -> list[dict]:
 
 
 def zoom_ladder(plans: list[dict], *, big: list[bool] | None = None,
-                offset: int = 0) -> list[dict]:
+                offset: int = 0, push_every: int = PUSH_EVERY) -> list[dict]:
     """Раздать планам масштабы: ступени и редкие наезды.
 
     `big` — можно ли на этом плане ехать: в окне-уголке наезд не виден, там
     только ступень. `offset` — сколько планов уже роздано раньше: наезды
-    считаются на весь ролик, а не на каждый кусок заново.
+    считаются на весь ролик, а не на каждый кусок заново. `push_every` —
+    паттерн ритма ролика (`RHYTHMS[...]["pushEvery"]`, посчитан `direct()`
+    на сцену); по умолчанию — сегодняшний `PUSH_EVERY` для вызовов без
+    решения о ритме.
     """
     def pushes(index: int) -> bool:
         order = index + offset
         wide = True if big is None else big[index]
         size = float(plans[index]["end"]) - float(plans[index]["start"])
-        return order % PUSH_EVERY == 0 and wide and size >= PUSH_RAMP * 0.6
+        return order % push_every == 0 and wide and size >= PUSH_RAMP * 0.6
 
     out: list[dict] = []
     previous = 1.0
@@ -1255,17 +1268,23 @@ FLASH_AFTER = 1.12
 
 
 def flash_moments(plans: list[dict], *, climax: float | None = None,
-                  duration: float = 0.0) -> list[float]:
+                  duration: float = 0.0,
+                  limit: int = FLASH_MAX) -> list[float]:
     """Где вспыхнуть. Её правило: на «выдохе» — возврате к 100 % после крупного.
 
     Кульминация, названная агентом, идёт первой: это решение о рассказе, а не
     арифметика. Остальные места — возвраты масштаба к единице.
+
+    `limit` — предел вспышек паттерна ритма ролика
+    (`RHYTHMS[...]["flashMax"]`, посчитан `direct()` и лежит на ролике
+    целиком, не на сцене — как и сама вспышка); по умолчанию сегодняшний
+    `FLASH_MAX`, для вызова без решения о ритме.
     """
     picked: list[float] = []
     if climax is not None:
         picked.append(round(float(climax), 3))
     for index, plan in enumerate(plans[1:], start=1):
-        if len(picked) >= FLASH_MAX:
+        if len(picked) >= limit:
             break
         if plan["kind"] != "static" or plan["scale_from"] != 1.0:
             continue
@@ -1277,4 +1296,145 @@ def flash_moments(plans: list[dict], *, climax: float | None = None,
         if any(abs(at - other) < FLASH_APART for other in picked):
             continue
         picked.append(at)
-    return sorted(picked)[:FLASH_MAX]
+    return sorted(picked)[:limit]
+
+
+# -------------------------------------------------------------- режиссура
+
+#: Таблица паттернов ритма. Один паттерн — одно решение агента на весь ролик
+#: (`direction.rhythm`), а не арифметика на сцену: их доктрина требует и
+#: того, и другого разом — «pick 2-3 transition types for the whole video and
+#: repeat them» (`TRANSITION-REGISTRY.md:154`) держит переход постоянным,
+#: «short on lists, long on the main thought» просит длину разной, — и
+#: единственное место, где оба требования не спорят, это форма паттерна:
+#: числа общие на реил, а бит и разбивка сцен, которые агент уже сделал,
+#: решают, где сцена короткая, а где длинная.
+#:
+#: `steady` — сегодняшние константы без изменений: план без `direction`
+#: (старые прогоны) и явный `direction.rhythm: "steady"` дают одно и то же.
+#: `calm` — «I'd rather have NO motion than BAD motion»
+#: (`motion-language.md:116-126`): потолок сцены остаётся тем же восьми
+#: секундам, но переходы и вставки мягче, наездов и вспышек меньше.
+#: `punchy` — «HIGH energy … use default_high_energy»
+#: (`TRANSITION-REGISTRY.md:146`): High energy у них — это `hard-cut` и
+#: короче план, поэтому потолок и вилка плана сжаты, наезд и вспышка чаще.
+#: `build` — не строчка таблицы, а рампа: `direct()` считает её отдельно, см.
+#: его докстринг.
+RHYTHMS: dict[str, dict] = {
+    "calm": {
+        "holdMax": 8.0, "planMin": 2.4, "planMax": 3.9,
+        "pushEvery": 4, "flashMax": 0,
+        "transitions": {
+            "hook": "hard-cut", "point": "blur-crossfade",
+            "turn": "blur-crossfade", "climax": "zoom-arrival",
+            "outro": "blur-crossfade",
+        },
+    },
+    "steady": {
+        "holdMax": MAX_STATIC_SPAN, "planMin": PLAN_MIN, "planMax": PLAN_MAX,
+        "pushEvery": PUSH_EVERY, "flashMax": FLASH_MAX,
+        # Сам словарь классов — бывший `hf_compose._TRANSITION_CLASS`;
+        # решение по каждому классу с цитатами из их доктрины стоит там же,
+        # комментарием над `hf_compose._transition_class` — оно объясняет
+        # именно эту, `steady`-раскладку и с самим словарём не переехало.
+        "transitions": {
+            "hook": "hard-cut", "point": "cut-the-curve",
+            "turn": "cut-the-curve", "climax": "zoom-arrival",
+            "outro": "blur-crossfade",
+        },
+    },
+    "punchy": {
+        "holdMax": 5.0, "planMin": 1.2, "planMax": 2.6,
+        "pushEvery": 2, "flashMax": 2,
+        "transitions": {
+            "hook": "hard-cut", "point": "hard-cut",
+            "turn": "cut-the-curve", "climax": "zoom-arrival",
+            "outro": "blur-crossfade",
+        },
+    },
+}
+
+#: Порядок паттернов, в котором их видит агент и печатает таблица скилла.
+#: `build` — не ключ `RHYTHMS`: он ссылается на `calm`/`punchy`, а не хранит
+#: свою строку, поэтому в свод правил идёт этим списком, а не `RHYTHMS`.
+RHYTHM_NAMES = ("calm", "steady", "punchy", "build")
+
+
+def direct(board: dict) -> dict:
+    """Превратить решение агента о ритме в числа по каждой сцене.
+
+    Агент называет только `direction.rhythm` (`("calm", "steady", "punchy",
+    "build")`, дефолт `"steady"` — план без `direction` вовсе, старые папки
+    без него включительно, собирается ровно как до этой правки). Дальше
+    решает код: пишет `scene["rhythm"] = {"holdMax", "planMin", "planMax",
+    "pushEvery", "transition"}` каждой сцене и `board["rhythm"] =
+    {"flashMax", "pattern"}` — уровнем ролика, потому что вспышка тоже мерена
+    на весь ролик (`FLASH_MAX`), не на сцену.
+
+    `calm`/`steady`/`punchy` — таблица без интерполяции: каждая сцена
+    получает числа своего паттерна как есть, а класс перехода — по биту сцены
+    (`scene["beat"]`, дефолт `"point"`, как у `hf_compose._beat`) из словаря
+    `transitions` этого паттерна.
+
+    `build` — рампа, а не строка таблицы: числа едут линейно от `calm` на
+    первой сцене к `punchy` на сцене с `beat == "climax"` — по ДОЛЕ ИНДЕКСА
+    сцены в этом отрезке, а не по секундам: `direct` вызывается ДО раскладки
+    (`hf_phrases.lay_out_scenes`), секунд у сцен ещё нет. Нет сцены с
+    `climax` вовсе — рампа едет до последней сцены. Класс перехода на этом
+    отрезке берётся из словаря `punchy` целиком (не интерполируется — класса
+    "наполовину" не бывает), а после кульминации сцены возвращаются к
+    числам и переходам `calm` без всякой рампы: кульминация прошла, и дальше
+    — это её же «выдох», для которого их правило и просит стишать движение
+    (`calm`, см. коммент `RHYTHMS`).
+
+    Круглим `holdMax`/`planMin`/`planMax` до 0,1 с и `pushEvery` до целого —
+    оба ложатся дальше в план кадров, дробная секунда там не читается.
+
+    Идемпотентна: пересчитывает `scene["rhythm"]` с нуля по `direction`,
+    а не дописывает поверх прежнего — повторный вызов на уже размеченной
+    доске не копит расхождений.
+    """
+    name = str((board.get("direction") or {}).get("rhythm") or "steady")
+    scenes = board.get("scenes") or []
+
+    def _write(scene: dict, hold: float, plan_min: float, plan_max: float,
+              push: float, transitions: dict) -> None:
+        beat = str(scene.get("beat") or "point")
+        scene["rhythm"] = {
+            "holdMax": round(float(hold), 1),
+            "planMin": round(float(plan_min), 1),
+            "planMax": round(float(plan_max), 1),
+            "pushEvery": max(1, round(float(push))),
+            "transition": transitions.get(beat, "cut-the-curve"),
+        }
+
+    if name == "build":
+        climax_at = next((index for index, scene in enumerate(scenes)
+                          if scene.get("beat") == "climax"),
+                         len(scenes) - 1)
+        climax_at = max(climax_at, 0)
+        calm, punchy = RHYTHMS["calm"], RHYTHMS["punchy"]
+        for index, scene in enumerate(scenes):
+            if index > climax_at:
+                _write(scene, calm["holdMax"], calm["planMin"],
+                      calm["planMax"], calm["pushEvery"], calm["transitions"])
+                continue
+            frac = index / climax_at if climax_at else 1.0
+            hold = calm["holdMax"] + (punchy["holdMax"] - calm["holdMax"]) * frac
+            plan_min = calm["planMin"] + (punchy["planMin"] - calm["planMin"]) * frac
+            plan_max = calm["planMax"] + (punchy["planMax"] - calm["planMax"]) * frac
+            push = calm["pushEvery"] + (punchy["pushEvery"] - calm["pushEvery"]) * frac
+            _write(scene, hold, plan_min, plan_max, push, punchy["transitions"])
+        # Вспышка — про кульминацию, которую этот паттерн и строит: её предел
+        # берём у `punchy`, к которому рампа доезжает.
+        flash_max = punchy["flashMax"]
+    else:
+        pattern = RHYTHMS.get(name, RHYTHMS["steady"])
+        for scene in scenes:
+            _write(scene, pattern["holdMax"], pattern["planMin"],
+                  pattern["planMax"], pattern["pushEvery"],
+                  pattern["transitions"])
+        flash_max = pattern["flashMax"]
+
+    board["rhythm"] = {"flashMax": flash_max, "pattern": name}
+    return board

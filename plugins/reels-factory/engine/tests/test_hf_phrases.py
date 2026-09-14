@@ -134,6 +134,24 @@ def test_сцена_длиннее_предела_возвращается_аг�
         lay_out_scenes(_scenes((0, 3)), phrases, duration=12.0)
 
 
+def test_потолок_сцены_берётся_из_паттерна_ритма_не_из_константы():
+    """Потолок — `scene['rhythm']['holdMax']`, посчитан `hf_montage.direct`
+    ДО раскладки, а не глобальная `MAX_STATIC_SPAN`. Сцена на ~6 с (фразы
+    0–1) проходит под умолчанием (сцена без `rhythm` — восемь секунд, как у
+    `steady`) и возвращается на пересдачу под `punchy` (потолок пять)."""
+    phrases = phrase_timeline(SCENARIO, WORDS)
+    steady = lay_out_scenes(_scenes((0, 1), (2, 3)), phrases, duration=12.0)
+    span = steady[0]["endSec"] - steady[0]["startSec"]
+    assert 5.0 < span <= MAX_STATIC_SPAN, (
+        f"сцена вышла {span:.2f} с — не годится проверить именно потолок "
+        "punchy (5 с) на фоне потолка steady (8 с)")
+
+    punchy = _scenes((0, 1), (2, 3))
+    punchy[0]["rhythm"] = {"holdMax": 5.0}
+    with pytest.raises(RuntimeError, match="предел 5"):
+        lay_out_scenes(punchy, phrases, duration=12.0)
+
+
 def test_вспышка_дотягивается_за_счёт_соседней():
     """Фраза бывает и в две десятых секунды — сцена на ней читается вспышкой."""
     phrases = phrase_timeline(SCENARIO, WORDS)

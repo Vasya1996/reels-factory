@@ -23,13 +23,13 @@ from reels_factory.hf_layout import (
     in_avatar_gap,
 )
 from reels_factory.hf_montage import (
-    FRAME_KINDS, SERIES_SHOTS, filling_element, frame_filler, insert_of,
-    same_look, scene_look, schema_scene, shot_queries,
+    FRAME_KINDS, RHYTHM_NAMES, RHYTHMS, SERIES_SHOTS, filling_element,
+    frame_filler, insert_of, same_look, scene_look, schema_scene,
+    shot_queries,
 )
-from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 
 
-def min_scenes(duration: float) -> int:
+def min_scenes(duration: float, rhythm: str = "steady") -> int:
     """Пол числа сцен — только против дыр, не против ритма.
 
     Ни верхней границы, ни «правильного» числа нет: их маршрут велит «Match
@@ -43,10 +43,15 @@ def min_scenes(duration: float) -> int:
     ровно то, с чем боремся. Предположение неверно: смену дают и переход, и
     смена положения ведущей, и наезд — D18 меряет их все по готовому файлу.
 
-    Остаётся один пол — из D19: кусок без смены не длиннее MAX_STATIC_SPAN,
-    значит сцен не меньше, чем таких кусков помещается в ролик.
+    Остаётся один пол — из потолка сцены без смены (раньше D19-мерка на
+    готовом файле, теперь та же граница у раскладки): кусок без смены не
+    длиннее `holdMax` паттерна `rhythm`, значит сцен не меньше, чем таких
+    кусков помещается в ролик. Паттерн ролика ещё не выбран (`rhythm` не
+    назван) — считаем по `steady`, тому же числу, что было здесь до
+    режиссуры.
     """
-    return max(1, math.ceil(float(duration) / MAX_STATIC_SPAN))
+    ceiling = RHYTHMS.get(rhythm, RHYTHMS["steady"])["holdMax"]
+    return max(1, math.ceil(float(duration) / ceiling))
 
 
 def _form_problems(scene_id: str, field: str, plan) -> list[str]:
@@ -719,6 +724,29 @@ def _schema_problems(storyboard: dict, face: dict | None = None) -> list[str]:
     чтобы решения были явными, а разбирает его только наш код.
     """
     problems = []
+    # Решение о ритме — одно на весь ролик, и его агент обязан назвать
+    # раньше сцен: `direct()` (`hf_montage.py`) превращает его в числа по
+    # каждой сцене ДО раскладки, и без него подставить нечего, только
+    # умолчание. Проверяем здесь, а не молчаливым дефолтом в коде компоновки:
+    # план без `direction` — не то же самое, что план, где агент осознанно
+    # выбрал `steady`, а гейту нужно различить незаполненное поле и
+    # обдуманный выбор.
+    direction = storyboard.get("direction")
+    if not isinstance(direction, dict):
+        problems.append(
+            "нет поля `direction` — сначала одно решение на весь ролик: "
+            "`world` (где зритель и что переживает) и `rhythm` (паттерн из "
+            "свода правил, раздел «Режиссура»)")
+    else:
+        if not str(direction.get("world") or "").strip():
+            problems.append(
+                "`direction.world` пуст — назови, где зритель и что он "
+                "переживает, одной-двумя строками")
+        rhythm = direction.get("rhythm")
+        if rhythm not in RHYTHM_NAMES:
+            problems.append(
+                f"`direction.rhythm` {rhythm!r} неизвестен, есть "
+                f"{', '.join(RHYTHM_NAMES)}")
     # Шапку раскадровки (`schemaVersion`, `composition`, `videoTrack`,
     # `subtitles`) проверять больше нечего: её целиком пишет наш же
     # `complete_storyboard` перед сборкой, а гейт читает файл уже после него.
@@ -1049,9 +1077,9 @@ def check_storyboard(storyboard: dict, *, clips: list[dict] | None = None,
     # D9 (сетка кадров) — времена сцен квантует `lay_out_scenes`
     #   (hf_phrases.py:204-205), а перед записью раскадровки ещё раз квантует
     #   `build_composition` (hf_compose.py). Гейт читал этот же файл.
-    # D13 (плотность) — пол `ceil(duration / MAX_STATIC_SPAN)` следует из того,
-    #   что сцены обязаны выстилать ролик без дыр и ни одна не длиннее
-    #   MAX_STATIC_SPAN; и то и другое роняет `lay_out_scenes` раньше гейтов.
+    # D13 (плотность) — пол `ceil(duration / holdMax)` следует из того, что
+    #   сцены обязаны выстилать ролик без дыр и ни одна не длиннее потолка
+    #   паттерна ритма; и то и другое роняет `lay_out_scenes` раньше гейтов.
     #   Сама `min_scenes` жива — её число идёт агенту в задание.
     # D23 (грамматика серий) — число планов роняет `check_shots` до подбора,
     #   а длину серии и лицо между сериями обеспечивает отбор `pick_series`.

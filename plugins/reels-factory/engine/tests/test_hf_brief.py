@@ -14,9 +14,10 @@ from reels_factory.avatar_islands import DEFAULTS as ISLAND_DEFAULTS
 from reels_factory.editplan import MAX_FACE_ABSENCE_S, MIN_FULLSCREEN_S
 from reels_factory.hf_brief import FONTS, write_brief
 from reels_factory.hf_gates import min_scenes as _min_scenes
-from reels_factory.hf_montage import SERIES_MAX, SERIES_MIN, face_gap, inserts_wanted
+from reels_factory.hf_montage import (
+    RHYTHMS, SERIES_MAX, SERIES_MIN, face_gap, inserts_wanted,
+)
 from reels_factory.hf_phrases import MIN_SCENE
-from reels_factory.hf_rhythm import MAX_STATIC_SPAN
 from reels_factory.hf_schema import LIMITS, MINIMUM, min_seconds
 # Написание секунд одно на оба текста, и тесты обязаны искать ровно его:
 # «29,05 с» печатается как «29 с», и поиск по `f"{x:.1f}"` находил бы пустоту.
@@ -1100,6 +1101,33 @@ def test_свод_правил_до_заказа_не_объявляет_кли�
         "после заказа правило обратное и должно остаться")
 
 
+# ---------- режиссура ----------
+
+def test_свод_несёт_режиссуру_с_четырьмя_паттернами(tmp_path):
+    """«Режиссура» — раздел, а не абзац: одно решение агента на весь ролик
+    (`direction.rhythm`), и агент обязан увидеть последствия в числах —
+    таблицу по всем четырём паттернам, не только их имена россыпью."""
+    skill = _skill(tmp_path)
+    assert "## Режиссура" in skill
+    for pattern in ("calm", "steady", "punchy", "build"):
+        assert f"`{pattern}`" in skill, f"паттерн `{pattern}` не назван в своде"
+    # Раздел стоит раньше «Ритм и биты» — решение о паттерне идёт раньше
+    # объяснения, как код раскладывает биты внутри него.
+    assert skill.index("## Режиссура") < skill.index("## Ритм и биты")
+
+
+def test_задание_несёт_шаг_про_direction_раньше_сцен(tmp_path):
+    """Решение о ритме — первый шаг «Порядка работы», раньше разбивки на
+    сцены: код превращает паттерн в числа по сцене ДО того, как секунды
+    вообще посчитаны (`hf_montage.direct`, вызван перед раскладкой)."""
+    text = _text(tmp_path)
+    шаги = text.split("## Порядок работы")[1].split("\n## ")[0]
+    assert "`direction`" in шаги and "`rhythm`" in шаги, (
+        "шаг про direction не попал в порядок работы")
+    assert шаги.index("direction") < шаги.index("Разбей фразы"), (
+        "решение о ритме идёт позже разбивки на сцены, а не раньше неё")
+
+
 # ---------- финал ролика и числа проверок ----------
 
 def test_финал_ролика_назван_сценой_а_не_секундами(tmp_path):
@@ -1626,13 +1654,15 @@ def test_пол_числа_сцен_не_требует_больше_сцен_ч
     """
     коротко = _text(tmp_path / "three", phrases=GAP_PHRASES[:3], clips=[],
                     avatar_ordered=False)
-    assert "Сцен не\n   меньше 3" in коротко or "меньше 3:" in коротко, (
-        "пол числа сцен больше числа фраз")
+    # Шаг называет два пола разом — по числу фраз оба сжаты до одного и того
+    # же числа (`calm`/`steady`/`build` и `punchy` считают от одного потолка
+    # раскладки, а не от разных фраз).
+    assert "не меньше 3 при" in коротко, "пол числа сцен больше числа фраз"
     assert "меньше 6" not in коротко, "прежний пол остался в тексте"
 
     длинно = _text(tmp_path / "eight", phrases=EVEN_PHRASES, clips=[],
                    avatar_ordered=False)
-    assert "меньше 6" in длинно, (
+    assert "не меньше 6 при" in длинно, (
         "фраз хватает, а пол числа сцен всё равно срезан")
 
 
@@ -3172,8 +3202,14 @@ def test_числа_задания_совпадают_с_числами_кода
 
     assert f"не короче {_секунды(MIN_SCENE)}" in skill, (
         f"{name}: пол обычной сцены не сходится с MIN_SCENE")
-    assert f"не длиннее {_секунды(MAX_STATIC_SPAN)}" in skill, (
-        f"{name}: потолок сцены не сходится с MAX_STATIC_SPAN")
+    потолки = (
+        f"числа в таблице раздела «Режиссура» "
+        f"({_секунды(RHYTHMS['steady']['holdMax'])} у `calm`/`steady`, "
+        f"{_секунды(RHYTHMS['punchy']['holdMax'])} у `punchy`, "
+        "по рампе у `build`)"
+    )
+    assert потолки in skill, (
+        f"{name}: потолок сцены по паттерну не сходится с RHYTHMS")
     assert _секунды(MIN_FULLSCREEN_S) in skill, (
         f"{name}: пол сцены без ведущей не сходится с MIN_FULLSCREEN_S")
 
