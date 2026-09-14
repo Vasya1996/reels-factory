@@ -17,9 +17,11 @@ RETENTION_DAYS=${RETENTION_DAYS:-14}
 KEEP="avatar_cache bot elevenlabs-tts-sts plan-previews"
 
 # Рабочая папка: сперва переменная окружения, затем прод, затем эта машина.
+# Локальная лежит вне домашней папки: Клод читает .claude каждой родительской
+# папки, и из-под C:\Users сборочный агент подхватывал личные инструкции.
 WORK=${REELS_WORK:-}
 [ -n "$WORK" ] || { [ -d /srv/reels-workspace/work ] && WORK=/srv/reels-workspace/work; }
-[ -n "$WORK" ] || { [ -d "$HOME/Videos/Reels/work" ] && WORK="$HOME/Videos/Reels/work"; }
+[ -n "$WORK" ] || { [ -d /c/reels-work/work ] && WORK=/c/reels-work/work; }
 [ -n "$WORK" ] || exit 0
 
 DRY=0

@@ -89,10 +89,15 @@ install page is the one thing that lives outside it (https://developers.heygen.c
 
 ## Money and results
 
+- The local workspace is `C:\reels-work` — deliberately outside `C:\Users\123`, because
+  Claude Code reads the `.claude` of every parent folder, and a build agent started under
+  the home folder picked up the personal `C:\Users\123\.claude\CLAUDE.md` as project
+  settings. Never move it back under the home folder and never leave a symlink at the old
+  place: on prod that symlink was the leak itself.
 - **IMPORTANT: test hypotheses by re-cutting the clips already downloaded into
-  `C:\Users\123\Videos\Reels\work\*\public\avatar_*.mp4`.** Every HeyGen render costs money, so
+  `C:\reels-work\work\*\public\avatar_*.mp4`.** Every HeyGen render costs money, so
   a new one is worth asking about first.
-- Finished reels go to `C:\Users\123\Videos\Reels` under a descriptive name; everything
+- Finished reels go to `C:\reels-work` under a descriptive name; everything
   under `work/` is scratch.
 - The workspace is internal: end users go through the Telegram bot, and the bot must
   deliver the finished reel into the chat as the final result.
