@@ -1,7 +1,6 @@
 ---
 name: prod-rebuild
 description: Rebuild a finished job through the real bot queue on a frozen avatar order — without buying the presenter again; costs one `claude -p` session — a copy of a job re-runs the whole montage pipeline without buying the presenter again. Only trigger this by explicit name (/prod-rebuild); it is not for "just check if this works", which is `/snapshot-check`.
-disable-model-invocation: true
 context: fork
 agent: judge
 background: false
