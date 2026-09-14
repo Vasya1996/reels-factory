@@ -181,6 +181,46 @@ def test_гарнитура_подменена_в_обоих_местах(tmp_pa
     assert "Unbounded" in snippet and "Unbounded" in engine
 
 
+def test_шрифт_прогружается_перед_подгонкой_кегля():
+    """rb0908-university 32.2с, «АВТОМАТИЗИРОВАТЬ» обрезано с двух сторон:
+    наши шрифты несут `unicode-range`-подмножества, догружаемые лениво по
+    первому использованию (`hf_fonts.py`), а на боте компонента ещё нет ни
+    одного элемента с текстом — `document.fonts.ready` сам по себе резолвится,
+    не дождавшись кириллического начертания Unbounded 800, и подгонка кегля
+    меряет запасным шрифтом. `hfBoot` обязан явно запросить гарнитуру
+    подписи под текст титра ДО `fonts.ready`."""
+    from reels_factory.hf_captions import VETTED
+
+    vetted_text = VETTED.read_text(encoding="utf-8")
+    boot_start = vetted_text.index("function hfBoot")
+    boot_text = vetted_text[boot_start:]
+    load_idx = boot_text.index("document.fonts.load(")
+    ready_idx = boot_text.index("document.fonts.ready")
+    call = boot_text[load_idx:load_idx + 200]
+    assert '"800 ' in call
+    assert "Montserrat" in call
+    assert load_idx < ready_idx
+
+
+def test_гарнитура_прогрузки_подменена_тем_же_способом(tmp_path):
+    """Подмена имени в `hf_captions.py:286` — слепой `replace` над ЛЮБЫМ
+    вхождением `Montserrat` в теле скрипта; строка, добавленная этой правкой,
+    должна пройти ту же подмену, что и `fitFontSize`/CSS, иначе движок
+    прогрел бы не ту гарнитуру, которую потом мерит и рисует. Проверяем на
+    реальной `VETTED`-копии (мок `COMPONENT` наверху файла не несёт `hfBoot`)."""
+    from reels_factory.hf_captions import VETTED
+
+    public = tmp_path
+    target = public / COMPONENT_REL
+    target.parent.mkdir(parents=True)
+    target.write_text(VETTED.read_text(encoding="utf-8"), encoding="utf-8")
+    write_caption_data(public, words=WORDS, duration=10.0)
+    _snippet(public)
+    engine = (public / "captions.js").read_text(encoding="utf-8")
+    assert 'fonts.load("800 60px Unbounded"' in engine
+    assert "Montserrat" not in engine
+
+
 def test_корень_подогнан_под_наш_кадр(tmp_path):
     public = _public(tmp_path)
     write_caption_data(public, words=WORDS, duration=10.0)
@@ -317,11 +357,16 @@ def test_уже_лежащая_в_staging_версия_без_подгонки_�
     assert result.read_bytes() == hf_captions.VETTED.read_bytes()
 
 
-def test_уже_лежащая_в_staging_версия_с_обеими_правками_остаётся(
+def test_три_метки_есть_но_байты_не_vetted_всё_равно_заменяются(
         tmp_path, monkeypatch):
-    """Обратный случай — компонент в staging уже несёт все три метки
-    (собран уже после PR #98/#102): `install()` возвращает его как есть, а не
-    подменяет проверенным файлом почём зря, и `npx` не запускает."""
+    """08.09.2026, прод, задание `rb0908-university`: `.hf-captions/` несла
+    компонент от 31.08 — до PR #105 с прогревом кириллического начертания
+    перед подгонкой кегля. Все три метки (`DATA_HOOK`/`FIT_MARKER`/
+    `CONTRAST_MARKER`) уже были внутри этого старого файла, старый
+    маркерный `_vet` принимал его как свой ранним возвратом, и
+    «ИССЛЕДОВАТЕЛЯМИ» обрезало по краям кадра. Критерий теперь — совпадение
+    байтов с `VETTED`, а не список меток: файл с тремя метками, но чужим
+    телом, обязан замениться."""
     import subprocess
 
     from reels_factory import hf_captions
@@ -329,19 +374,50 @@ def test_уже_лежащая_в_staging_версия_с_обеими_прав�
     def fail_run(cmd, **kwargs):
         raise AssertionError("npx add не должен запускаться: target уже есть")
 
-    vetted_text = hf_captions.VETTED.read_text(encoding="utf-8")
-    assert hf_captions.DATA_HOOK in vetted_text
-    assert hf_captions.FIT_MARKER in vetted_text
-    assert hf_captions.CONTRAST_MARKER in vetted_text
+    stale_with_all_markers = (
+        "<html><body>"
+        f"{hf_captions.DATA_HOOK} {hf_captions.FIT_MARKER} "
+        f"{hf_captions.CONTRAST_MARKER}"
+        "</body></html>"
+    )
+    assert stale_with_all_markers != hf_captions.VETTED.read_text(encoding="utf-8")
 
     target = tmp_path / ".hf-captions" / hf_captions.COMPONENT_REL
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(vetted_text, encoding="utf-8")
+    target.write_text(stale_with_all_markers, encoding="utf-8")
 
     monkeypatch.setattr(hf_captions.subprocess, "run", fail_run)
     result = hf_captions.install(tmp_path)
     assert result == target
-    assert result.read_text(encoding="utf-8") == vetted_text
+    assert result.read_bytes() == hf_captions.VETTED.read_bytes()
+
+
+def test_уже_лежащая_в_staging_версия_идентичная_vetted_не_перезаписывается(
+        tmp_path, monkeypatch):
+    """Совпадающие с `VETTED` байты не должны трогать файл: не только
+    содержимое остаётся тем же, но и `_vet` не должен переписывать файл,
+    когда сверять уже нечего — иначе каждый прогон бил бы по диску и по
+    mtime staging-копии без всякой причины."""
+    import shutil
+    import subprocess
+    import time
+
+    from reels_factory import hf_captions
+
+    def fail_run(cmd, **kwargs):
+        raise AssertionError("npx add не должен запускаться: target уже есть")
+
+    target = tmp_path / ".hf-captions" / hf_captions.COMPONENT_REL
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(hf_captions.VETTED, target)
+    before_mtime = target.stat().st_mtime_ns
+    time.sleep(0.01)
+
+    monkeypatch.setattr(hf_captions.subprocess, "run", fail_run)
+    result = hf_captions.install(tmp_path)
+    assert result == target
+    assert target.stat().st_mtime_ns == before_mtime
+    assert result.read_bytes() == hf_captions.VETTED.read_bytes()
 
 
 def test_движок_титра_уезжает_отдельным_файлом(tmp_path):
