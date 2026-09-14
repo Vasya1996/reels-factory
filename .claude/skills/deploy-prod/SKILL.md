@@ -184,7 +184,6 @@ owned) or `/srv/reels-workspace/work/{billing,jobs,events}.sqlite3` (user balanc
 no backup) is in git and none of it should be touched by a deploy.
 
 The workspace moved from `/root/reels-workspace` to `/srv/reels-workspace` on
-14.09.2026; the service's `WorkingDirectory` follows the new path, and the old one is
-now only a compatibility symlink. Never run anything against a path carrying the
-`/root/reels-workspace` prefix — it resolves to the same files, but going through it
-hands the wrong ancestor `.claude` to anything that walks up from cwd.
+14.09.2026; the service's `WorkingDirectory` follows the new path. The compatibility
+symlink at the old place was removed the same day — `/root/reels-workspace` no longer
+exists, so any command still carrying that prefix simply fails.
